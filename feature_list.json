@@ -3,9 +3,9 @@
     {
       "id": "F1",
       "name": "資料層＋記錄 API",
-      "acceptance": "uv run pytest 全過：workout/sets CRUD、client_uuid 冪等（重送回 200 不新增列）、缺欄位 400、錯 token 401、數值範圍驗證。詳見 docs/prd/mvp-lift-log.md R1",
-      "status": "failing",
-      "evidence": null
+      "acceptance": "uv run pytest 全過：workout/sets CRUD、client_uuid 冪等（重送回 200 不新增列；跨 workout／已刪除 409；TOCTOU 復原）、缺欄位 400、錯 token 401、數值範圍驗證。詳見 docs/prd/mvp-lift-log.md R1 與邊界情況",
+      "status": "passing",
+      "evidence": "2026-07-17：uv run pytest --cov → 28 passed，覆蓋率 99%（TOTAL 291 stmts）；ruff check 無錯誤。code review（8 finder + 3 verifier agents）10 findings 全數修復：冪等範圍修正、IntegrityError 復原、LIKE 跳脫、compare_digest、last-sets 404、409 語意入 PRD"
     },
     {
       "id": "F2",

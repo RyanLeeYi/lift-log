@@ -5,7 +5,7 @@
 ## 啟動與驗證
 
 - 環境恢復：`./init.sh`
-- 啟動：`uv run uvicorn app.main:app --reload`；測試：`uv run pytest`；lint：`uv run ruff check .`
+- 啟動：`uv run uvicorn app.main:app_factory --factory --reload`；測試：`uv run pytest`；lint：`uv run ruff check .`
 - 你宣告任何功能完成前，必須先跑過測試與 lint 並貼出輸出
 
 ## 專案結構與邊界

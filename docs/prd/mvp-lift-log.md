@@ -186,8 +186,10 @@ POST /api/workouts/12/sets
 ## 邊界情況與錯誤行為
 
 - 缺必填欄位／型別錯：`400 {"error":"<欄位> required"}`（Pydantic 驗證）
-- token 缺或錯：`401 {"error":"unauthorized"}`（所有 `/api/*` 與 `/mcp`；靜態頁不擋，資料靠 API token 保護）
-- 不存在的 id：`404`
+- token 缺或錯：`401 {"error":"unauthorized"}`（所有 `/api/*` 與 `/mcp`；靜態頁不擋，資料靠 API token 保護；比較用常數時間 `secrets.compare_digest`）
+- 不存在的 id：**路徑上的 id**（`/workouts/{id}`、`/exercises/{id}/…`、`/sets/{id}`）→ `404 {"error":"not found"}`；**body 引用的 id**（如 set 的 `exercise_id`）→ `400 {"error":"exercise not found"}`
+- 冪等鍵衝突：`client_uuid` 已存在但屬於**別的 workout**、或該組**已被軟刪除** → `409 {"error":"client_uuid already used"}`（重放不得指鹿為馬或復活已刪的組）；冪等成功限「同 workout 且未刪除」
+- 併發同 `client_uuid`（TOCTOU 撞 UNIQUE）：server 復原為冪等 `200` 回既有那筆，不得漏出 500
 - `weight_kg < 0`、`reps <= 0`、`rpe` 超出 1–10、體重超出 30–300：`400`
 - 離線補傳時 workout 已不存在（被刪）：該筆標記失敗留在佇列供手動捨棄，不無限重試
 - SQLite 寫入衝突：FastAPI 單 worker，寫入序列化，不做額外鎖
@@ -198,6 +200,7 @@ POST /api/workouts/12/sets
 - 前端：原生 JS（ES modules）＋ CSS，**無打包器、無框架**；heatmap 用 CSS grid 自繪，不引入圖表庫
 - 深色主題優先（健身房環境）；動作名稱顯示語言切換存 localStorage
 - token 存 `.env`（`LIFTLOG_TOKEN`），啟動時驗證存在，缺少即拒絕啟動
+- F6 前置（code review 已預警）：(1) services 需新增**單一交易**的 log_workout 入口實作 R7b 整包寫入，勿以迴圈呼叫 log_set 拼裝；(2) `/mcp` 掛載走不到 APIRouter 的 `require_token` dependency，需用 fastmcp 的 auth 機制接同一個 token 來源，實連測試必驗 401
 
 ## 分階段任務清單
 

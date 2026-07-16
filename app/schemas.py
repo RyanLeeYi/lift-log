@@ -1,0 +1,62 @@
+from datetime import date as date_type
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ExerciseCreate(BaseModel):
+    name_zh: str = Field(min_length=1)
+    name_en: str = Field(min_length=1)
+    muscle_group: str = Field(min_length=1)
+    is_bodyweight: bool = False
+
+
+class ExerciseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name_zh: str
+    name_en: str
+    muscle_group: str
+    is_bodyweight: bool
+
+
+class WorkoutCreate(BaseModel):
+    date: date_type | None = None
+    template_id: int | None = None
+    note: str | None = None
+
+
+class SetCreate(BaseModel):
+    client_uuid: str = Field(min_length=8)
+    exercise_id: int
+    set_number: int = Field(gt=0)
+    weight_kg: float = Field(ge=0)
+    reps: int = Field(gt=0)
+    rpe: int | None = Field(default=None, ge=1, le=10)
+    rest_seconds: int | None = Field(default=None, ge=0)
+
+
+class SetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workout_id: int
+    exercise_id: int
+    set_number: int
+    weight_kg: float
+    reps: int
+    rpe: int | None
+    rest_seconds: int | None
+
+
+class WorkoutOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: date_type
+    template_id: int | None
+    note: str | None
+
+
+class WorkoutDetailOut(WorkoutOut):
+    sets: list[SetOut]
