@@ -38,7 +38,7 @@
     {
       "id": "F6",
       "name": "MCP＋AI connector",
-      "acceptance": "/mcp 帶 token 連上，query_workouts/get_progress/list_templates/get_body_metrics 回正確 JSON、動作參數雙語匹配；Claude/ChatGPT/Gemini 至少一家 connector 實連成功（截圖）。詳見 PRD R7",
+      "acceptance": "/mcp 帶 token 連上，查詢 tools（query_workouts/get_progress/list_templates/get_body_metrics）回正確 JSON、雙語匹配；記錄 tools（log_workout/log_body_metrics）可代記錄、未知動作整包拒絕並回建議；至少一家 connector 實連成功（截圖）。詳見 PRD R7/R7b",
       "status": "failing",
       "evidence": null
     },

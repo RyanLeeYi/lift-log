@@ -79,6 +79,17 @@ vault 對應：`projects/2026-07-健身紀錄系統/PLAN.md`。
 - Then 回傳結構化 JSON；`exercise` 參數同時匹配 `name_zh` 與 `name_en`（如「深蹲」「squat」皆命中）
 - 同資料另有 REST `GET /api/*` 端點，OpenAPI schema 可供 Custom GPT Action 匯入
 
+#### R7b：作為 AI agent，我想代主人記錄訓練與體重，以便他用一句話完成記錄
+
+- Given 以 Bearer token 連上 `/mcp`
+- When 呼叫 `log_workout(sets: [{exercise, weight_kg, reps, rpe?}], date?, template?, note?)`
+- Then 建立一筆 workout 與所有 sets（重用 services 層，同 R1 驗證規則），回傳摘要 JSON（workout id、組數、總噸位）供 agent 向主人覆述確認
+- Given `sets` 內含動作庫比對不到的動作名（雙語皆未命中）
+- When 呼叫 `log_workout`
+- Then **不寫入任何資料**（整包拒絕，不留半套），回傳未知動作與相近名稱建議；帶 `create_missing=true` 重呼叫才自動建新動作
+- When 呼叫 `log_body_metrics(weight_kg, body_fat_pct?, date?)`
+- Then 行為同 R6（同日覆蓋）；數值超出範圍回錯誤訊息不寫入
+
 #### R8：作為使用者，我想服務公開可達且被監控，以便健身房手機與雲端 AI 都連得到
 
 - Given 自家機以 Cloudflare Tunnel 發布公開 HTTPS
@@ -119,6 +130,8 @@ GET    /api/stats/calendar?year=&month= heatmap 資料（每日噸位）
 GET/POST /api/body-metrics              體重體脂（同日覆蓋）
 GET    /api/stats/progress?exercise=    進步曲線（每次訓練該動作最大重量×次數）
 /mcp                                    MCP endpoint（fastmcp，Streamable HTTP）
+  查詢 tools：query_workouts / get_progress / list_templates / get_body_metrics
+  記錄 tools：log_workout / log_body_metrics（重用 services，驗證同 REST）
 /                                       靜態 PWA
 ```
 
@@ -155,6 +168,8 @@ POST /api/workouts/12/sets
 
 3. MCP 查進步：`get_progress(exercise="squat")` → `{"exercise":{"name_zh":"深蹲","name_en":"Squat"},"points":[{"date":"2026-07-10","top_weight_kg":80,"reps":8},{"date":"2026-07-16","top_weight_kg":85,"reps":6}]}`
 
+4. MCP 代記錄：`log_workout(sets=[{"exercise":"深蹲","weight_kg":80,"reps":8},{"exercise":"深蹲","weight_kg":80,"reps":8}])` → `{"workout_id":13,"date":"2026-07-17","sets_count":2,"tonnage_kg":1280}`；含未知動作「深躦」→ `{"error":"unknown exercise","unknown":["深躦"],"suggestions":["深蹲 Squat"]}` 且不寫入任何列
+
 ## 邊界情況與錯誤行為
 
 - 缺必填欄位／型別錯：`400 {"error":"<欄位> required"}`（Pydantic 驗證）
@@ -178,7 +193,7 @@ POST /api/workouts/12/sets
 - [ ] F3 日曆 heatmap（驗證：pytest 噸位計算含自體重規則；月視圖與日明細顯示正確）
 - [ ] F4 課表選單（驗證：建課表→開練帶出清單→臨時加動作；刪課表不影響歷史）
 - [ ] F5 PWA 離線佇列（驗證：DevTools offline 記 3 組→恢復連線自動補傳不重複）
-- [ ] F6 MCP＋AI connector（驗證：4 個 tools 回正確資料；至少一家 connector 實連成功）
+- [ ] F6 MCP＋AI connector（驗證：4 個查詢 tools＋2 個記錄 tools 行為正確含未知動作整包拒絕；至少一家 connector 實連成功）
 - [ ] F7 Cloudflare Tunnel 部署＋mission-control 收編（驗證：4G 手機實測記錄成功）
 - [ ] F8 體重體脂（驗證：同日覆蓋、趨勢頁、heatmap 改用最新體重、MCP get_body_metrics）
 
