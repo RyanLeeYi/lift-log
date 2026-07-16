@@ -39,7 +39,7 @@ vault 對應：`projects/2026-07-健身紀錄系統/PLAN.md`。
 - When 點「開練」→ 選動作 → 輸入 kg × reps → 送出
 - Then 一組記錄完成的操作皆為大按鈕點擊與數字輸入；同一動作**上次訓練的重量與次數自動帶入**為預設值
 - When 送出一組
-- Then 組間計時器自動開始；下一組送出時，經過秒數寫入上一組的 `rest_seconds`；RPE 為選填快速鈕（1–10），不擋送出
+- Then 組間計時器自動開始；下一組送出時，把經過秒數放進**新那組**的 `rest_seconds`（語意＝「這組之前休息了多久」，維持 sets append-only、不需 update API）；RPE 為選填快速鈕（1–10），不擋送出
 
 #### R3：作為使用者，我想用日曆 heatmap 看到堅持成果，以便維持動力
 
@@ -95,7 +95,8 @@ templates      id, name, created_at
 template_exercises  template_id, exercise_id, position, default_sets
 workouts       id, date, template_id?, note?, created_at
 sets           id, client_uuid(UNIQUE), workout_id, exercise_id, set_number,
-               weight_kg(REAL, 自體重動作=額外負重), reps, rpe?, rest_seconds?, created_at
+               weight_kg(REAL, 自體重動作=額外負重), reps, rpe?,
+               rest_seconds?(這組之前的休息秒數), created_at
 body_metrics   id, date(UNIQUE), weight_kg, body_fat_pct?, created_at
 ```
 
