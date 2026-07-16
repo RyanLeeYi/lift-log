@@ -55,6 +55,13 @@
       "acceptance": "POST /api/body-metrics 同日覆蓋；/body 趨勢折線；heatmap 自體重噸位改用最新體重；MCP get_body_metrics 查得到。詳見 PRD R6",
       "status": "failing",
       "evidence": null
+    },
+    {
+      "id": "F9",
+      "name": "當日狀態記錄",
+      "acceptance": "energy(1-5)+sleep_quality+note 同日覆蓋、休息日可記、評分越界 400；日曆明細顯示狀態；MCP log/get_daily_status；log-workout-interview prompt 模板引導後一次寫入。詳見 PRD R9",
+      "status": "failing",
+      "evidence": null
     }
   ]
 }

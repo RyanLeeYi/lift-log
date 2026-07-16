@@ -18,6 +18,7 @@ vault 對應：`projects/2026-07-健身紀錄系統/PLAN.md`。
 - 不做 OAuth（token 夠用；connector 若強制 OAuth 再開）
 - 不做訓練計畫生成／AI 教練建議（AI 只「查」，不「教」）
 - 不做社群、分享、匯出報表
+- 不做 PWA 內建 AI 聊天框（post-MVP 再議——對話式記錄由三家 AI app 經 MCP 覆蓋，內建要自付 LLM token 與對話 UI 成本）
 - 不改動既有 weight-tracker skill（Roam）——它之後自行改接本系統 API，不在本 repo 範圍
 
 ## 需求與驗收標準
@@ -89,6 +90,15 @@ vault 對應：`projects/2026-07-健身紀錄系統/PLAN.md`。
 - Then **不寫入任何資料**（整包拒絕，不留半套），回傳未知動作與相近名稱建議；帶 `create_missing=true` 重呼叫才自動建新動作
 - When 呼叫 `log_body_metrics(weight_kg, body_fat_pct?, date?)`
 - Then 行為同 R6（同日覆蓋）；數值超出範圍回錯誤訊息不寫入
+- 另提供 MCP **prompt 模板** `log-workout-interview`：引導 AI 逐題問答（今天練什麼→重量→次數→組數→RPE→當日狀態），全部確認後才呼叫一次 `log_workout` 寫入——不邊問邊寫
+
+#### R9：作為使用者，我想記錄當日狀態（精力／睡眠／描述），以便之後對照狀態與訓練表現
+
+- Given 帶 token（UI 或 MCP `log_daily_status`）
+- When 送出 `date?, energy(1–5), sleep_quality?(1–5), note?`（energy 必填，其餘選填）
+- Then 同日重複送出為覆蓋更新（一天一筆）；休息日也可記，不依附 workout
+- When 開啟日曆點某一天／AI 呼叫 `get_daily_status(start_date, end_date)`
+- Then 當日明細含狀態評分與描述（如有）；評分超出 1–5 回 `400`
 
 #### R8：作為使用者，我想服務公開可達且被監控，以便健身房手機與雲端 AI 都連得到
 
@@ -109,6 +119,7 @@ sets           id, client_uuid(UNIQUE), workout_id, exercise_id, set_number,
                weight_kg(REAL, 自體重動作=額外負重), reps, rpe?,
                rest_seconds?(這組之前的休息秒數), created_at
 body_metrics   id, date(UNIQUE), weight_kg, body_fat_pct?, created_at
+daily_status   id, date(UNIQUE), energy(1-5), sleep_quality?(1-5), note?, created_at
 ```
 
 - `sets` 為 append-only：API 不提供 update；記錯提供 `DELETE /api/sets/{id}`（軟刪除 `deleted_at`）
@@ -128,10 +139,12 @@ GET/POST/PUT/DELETE /api/templates…    課表 CRUD
 GET    /api/exercises/{id}/last-sets    該動作上次訓練的各組（帶入預設用）
 GET    /api/stats/calendar?year=&month= heatmap 資料（每日噸位）
 GET/POST /api/body-metrics              體重體脂（同日覆蓋）
+GET/POST /api/daily-status              當日狀態（同日覆蓋）
 GET    /api/stats/progress?exercise=    進步曲線（每次訓練該動作最大重量×次數）
 /mcp                                    MCP endpoint（fastmcp，Streamable HTTP）
-  查詢 tools：query_workouts / get_progress / list_templates / get_body_metrics
-  記錄 tools：log_workout / log_body_metrics（重用 services，驗證同 REST）
+  查詢 tools：query_workouts / get_progress / list_templates / get_body_metrics / get_daily_status
+  記錄 tools：log_workout / log_body_metrics / log_daily_status（重用 services，驗證同 REST）
+  prompt 模板：log-workout-interview（引導式問答記錄）
 /                                       靜態 PWA
 ```
 
@@ -196,6 +209,7 @@ POST /api/workouts/12/sets
 - [ ] F6 MCP＋AI connector（驗證：4 個查詢 tools＋2 個記錄 tools 行為正確含未知動作整包拒絕；至少一家 connector 實連成功）
 - [ ] F7 Cloudflare Tunnel 部署＋mission-control 收編（驗證：4G 手機實測記錄成功）
 - [ ] F8 體重體脂（驗證：同日覆蓋、趨勢頁、heatmap 改用最新體重、MCP get_body_metrics）
+- [ ] F9 當日狀態（驗證：評分+文字同日覆蓋、休息日可記、日曆明細顯示、MCP log/get_daily_status、interview prompt 模板存在且引導後一次寫入）
 
 ## 完成定義（必過的指令）
 
