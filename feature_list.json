@@ -1,0 +1,60 @@
+{
+  "features": [
+    {
+      "id": "F1",
+      "name": "資料層＋記錄 API",
+      "acceptance": "uv run pytest 全過：workout/sets CRUD、client_uuid 冪等（重送回 200 不新增列）、缺欄位 400、錯 token 401、數值範圍驗證。詳見 docs/prd/mvp-lift-log.md R1",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F2",
+      "name": "手機記錄 UI",
+      "acceptance": "手機瀏覽器完成「開練→選動作→kg×reps→送出」；同動作上次重量次數自動帶入；送出後組間計時器啟動、下一組寫回 rest_seconds；RPE 選填不擋送出。詳見 PRD R2",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F3",
+      "name": "日曆 heatmap",
+      "acceptance": "pytest 驗噸位計算（自體重=最新體重+負重，無體重紀錄只計負重）；/calendar 月視圖 5 級深淺、點日期看明細。詳見 PRD R3",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F4",
+      "name": "課表選單",
+      "acceptance": "建課表（名稱+動作+順序+預設組數）→開練選課表帶出清單→訓練中可臨時加動作；刪課表不影響歷史 workout。詳見 PRD R4",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F5",
+      "name": "PWA 離線佇列",
+      "acceptance": "DevTools offline 模式記 3 組（UI 標示待同步）→恢復連線自動補傳、client_uuid 冪等不重複、標示消失。詳見 PRD R5",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F6",
+      "name": "MCP＋AI connector",
+      "acceptance": "/mcp 帶 token 連上，query_workouts/get_progress/list_templates/get_body_metrics 回正確 JSON、動作參數雙語匹配；Claude/ChatGPT/Gemini 至少一家 connector 實連成功（截圖）。詳見 PRD R7",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F7",
+      "name": "Cloudflare Tunnel 部署＋mission-control 收編",
+      "acceptance": "公開 HTTPS 可達；手機 4G 實測完成一次記錄；mission-control 可啟停與監控本服務。詳見 PRD R8",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F8",
+      "name": "體重體脂記錄與趨勢",
+      "acceptance": "POST /api/body-metrics 同日覆蓋；/body 趨勢折線；heatmap 自體重噸位改用最新體重；MCP get_body_metrics 查得到。詳見 PRD R6",
+      "status": "failing",
+      "evidence": null
+    }
+  ]
+}
