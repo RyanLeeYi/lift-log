@@ -8,6 +8,7 @@ from app.api import exercises, stats, templates, workouts
 from app.config import Settings
 from app.db import make_engine
 from app.errors import register_error_handlers
+from app.mcp import create_mcp
 from app.models import Base
 from app.seed import seed_exercises
 
@@ -20,17 +21,29 @@ def create_app(settings: Settings) -> FastAPI:
 
     engine = make_engine(settings.db_path)
     Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
 
-    app = FastAPI(title="lift-log")
+    # MCP 先建：FastAPI 必須接 mcp_app.lifespan，session manager 才會初始化
+    mcp_app = create_mcp(session_factory, settings.token).http_app(path="/")
+
+    app = FastAPI(title="lift-log", lifespan=mcp_app.lifespan)
     app.state.settings = settings
-    app.state.session_factory = sessionmaker(bind=engine)
+    app.state.session_factory = session_factory
+
+    @app.middleware("http")
+    async def normalize_mcp_path(request, call_next):  # type: ignore[no-untyped-def]
+        # connector 常用無尾斜線的 /mcp；不改寫會掉進靜態檔 mount 變 405
+        if request.scope["path"] == "/mcp":
+            request.scope["path"] = "/mcp/"
+        return await call_next(request)
 
     register_error_handlers(app)
     app.include_router(workouts.router)
     app.include_router(exercises.router)
     app.include_router(stats.router)
     app.include_router(templates.router)
-    # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/*
+    app.mount("/mcp", mcp_app)
+    # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/* 與 /mcp
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
 

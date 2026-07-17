@@ -62,6 +62,63 @@ class SetCreate(BaseModel):
     rest_seconds: int | None = Field(default=None, ge=0)
 
 
+class LogSetIn(BaseModel):
+    """MCP 代記錄的一組：動作以雙語名稱指定（非 id）。"""
+
+    exercise: str = Field(min_length=1)
+    weight_kg: float = Field(ge=0)
+    reps: int = Field(gt=0)
+    rpe: int | None = Field(default=None, ge=1, le=10)
+
+
+class LogWorkoutIn(BaseModel):
+    sets: list[LogSetIn] = Field(min_length=1)
+    date: date_type | None = None
+    template: str | None = None
+    note: str | None = None
+    create_missing: bool = False
+
+
+class LogWorkoutSummary(BaseModel):
+    workout_id: int
+    date: date_type
+    sets_count: int
+    tonnage_kg: float
+
+
+class ExerciseName(BaseModel):
+    name_zh: str
+    name_en: str
+
+
+class ProgressPoint(BaseModel):
+    date: date_type
+    top_weight_kg: float
+    reps: int
+
+
+class ProgressOut(BaseModel):
+    """進步曲線：每次訓練該動作的最大重量與該重量的次數。"""
+
+    exercise: ExerciseName
+    points: list[ProgressPoint]
+
+
+class BodyMetricIn(BaseModel):
+    date: date_type | None = None
+    weight_kg: float = Field(ge=30, le=300)
+    body_fat_pct: float | None = Field(default=None, gt=0, lt=100)
+
+
+class BodyMetricOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: date_type
+    weight_kg: float
+    body_fat_pct: float | None
+
+
 class SetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -4,11 +4,23 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
+from app.db import make_engine
 from app.main import create_app
+from app.models import Base
 
 TEST_TOKEN = "test-token"
+
+
+@pytest.fixture()
+def db_session(tmp_path: Path) -> Iterator[Session]:
+    """service 層測試用：獨立 SQLite，不經 HTTP。"""
+    engine = make_engine(str(tmp_path / "svc.db"))
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as session:
+        yield session
 
 
 @pytest.fixture()

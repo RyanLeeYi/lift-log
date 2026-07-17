@@ -1,4 +1,4 @@
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,19 @@ def create_exercise(session: Session, data: ExerciseCreate) -> Exercise:
         raise DomainError("exercise name already exists") from exc
     session.refresh(exercise)
     return exercise
+
+
+def find_by_name(session: Session, name: str) -> Exercise | None:
+    """雙語名稱精確比對（去空白、不分大小寫）；MCP 與 progress 的動作解析入口。"""
+    target = name.strip().lower()
+    return session.scalar(
+        select(Exercise).where(
+            or_(
+                func.lower(Exercise.name_zh) == target,
+                func.lower(Exercise.name_en) == target,
+            )
+        )
+    )
 
 
 def _escape_like(q: str) -> str:

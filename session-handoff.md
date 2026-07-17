@@ -1,34 +1,45 @@
 # Session Handoff
-> 最後更新：2026-07-17（第五場：F6 研究完成即觸用量門檻收工，未動工）
+> 最後更新：2026-07-17（第六場：F6 實作完成＋connector 實連成功；code review finder 跑完但 verify/修復未做即觸用量門檻收工——**F6 維持 failing**）
 
-## F6 技術研究成果（已查證 fastmcp v3.2 官方文件，下場直接照做）
-- **安裝**：`uv add fastmcp`
-- **掛載**：`mcp_app = mcp.http_app(path="/")` → `app.mount("/mcp", mcp_app)`；**FastAPI 必須帶 `lifespan=mcp_app.lifespan`** 否則 session manager 不會初始化（create_app 目前沒有 lifespan，直接傳入即可）
-- **auth（滿足 PRD compare_digest 要求）**：`from fastmcp.server.auth.providers.debug import DebugTokenVerifier`，`DebugTokenVerifier(validate=lambda t: secrets.compare_digest(t, settings.token))` → `FastMCP(name=..., auth=verifier)`；實連測試必驗錯 token 401
-- **測試**：`from fastmcp import Client; async with Client(mcp_server) as c:`（in-memory transport，直接傳 server 實例）→ `c.list_tools()` / `c.call_tool(name, args)`；pytest 需 asyncio 支援（可能要 `uv add pytest-asyncio`）
-- **connector 實連取證**：`claude mcp add --transport http lift-log http://127.0.0.1:8137/mcp`（帶 header Authorization）後用 `claude -p` 呼叫 tool，截終端輸出當證據；真・雲端 connector（claude.ai/ChatGPT）要等 F7 公開 HTTPS
-- **實作順序（TDD）**：(1) 先紅：`services/workouts.log_workout` 單一交易入口測試——整包寫入、未知動作（雙語皆未命中）整包拒絕回相近建議、`create_missing=true` 才建檔（PRD R7b 範例有輸入輸出）；(2) body_metrics 模型＋service（同日覆蓋 upsert、30–300 驗證）——F6 的 get/log_body_metrics tools 需要，F8 只剩 UI/heatmap 接線；(3) `app/mcp.py`：查詢 tools ×4（query_workouts/get_progress/list_templates/get_body_metrics，重用 services 不重寫查詢）＋記錄 tools ×2；(4) 掛載＋auth＋401 測試
-- **注意**：get_progress 的 service 函式尚不存在（stats.py 目前只有 calendar_tonnage）；MCP tools 一律經 services，勿在 tool 內寫查詢
+## 這個 session 做了（全程 TDD，先紅後綠）
+- **services.workouts.log_workout**：單一交易入口（整包寫入/整包拒絕、未知動作雙語比對回相近建議、create_missing 才建檔、template 名稱解析、噸位含自體重×最新體重）
+- **body_metrics**：BodyMetric 模型（date UNIQUE）＋service（同日覆蓋 upsert、區間查詢、latest_weight）；schema 驗證 30–300／體脂 0–100
+- **services.stats.get_progress**＋REST `GET /api/stats/progress?exercise=`（雙語解析 `exercises.find_by_name`）
+- **app/mcp.py**：查詢 tools ×4＋記錄 tools ×2＋prompt `log-workout-interview`；DebugTokenVerifier+compare_digest 接 settings.token；掛載 `/mcp`（FastAPI 帶 `lifespan=mcp_app.lifespan`）
+- **踩坑已修**：`/mcp`（無尾斜線）掉進靜態檔 mount 回 405 → main.py 加 middleware 改寫 path（有測試釘住）；Claude CLI 因此初連失敗，修後 ✔ Connected
+- **connector 實連成功**：`claude mcp add` → `claude -p` 實呼叫 log_workout＋get_progress，證據 `docs/evidence-f6-mcp-connector.txt`（用 `LIFTLOG_DB=./liftlog_connector_demo.db` 隔離，主資料未污染）
+- 92 tests 全過、覆蓋率 99%、ruff 乾淨
 
----
-# 前場紀錄（F5 收官）
+## 下一步（下場開場直接做）：處置 review findings → acceptance-verifier → 才能改 passing
+8 個 finder agents 已跑完（verify 階段未跑）。findings 去重後如下，下場先 verify 再修：
 
-## 這個 session 做了
-- **F5 PWA 離線佇列：passing**（evidence 見 feature_list.json）
-  - 新增 `app/static/sw.js`（app shell SWR 快取＋waitUntil、install 逐檔容錯、/api 不快取）、`app/static/js/queue.js`（IndexedDB 佇列：0/5xx 保留重試、401 上拋、永久 4xx 標 failed 手動捨棄）
-  - app.js：logSet 離線入列、⏳/⚠ 標示由 `state.queueStatus` 即時推導（不存旗標）、online 事件與開站自動 flush、背景重繪不清輸入焦點、離線選動作帶入本次待同步組數
-  - state.js：setCounts 隨 sessionStorage 續接（F2 遺留正式修復，重整後 set_number 不撞號）
-  - 測試 +2：/sw.js 供應、SHELL 清單漂移防護（新增 js/css 檔忘了進 SHELL 會紅）
-  - code review（8 finder + 2 verifier）10 findings 全處置；REFUTED：saveActiveWorkout 每組全量序列化（<1KB 人速操作，可忽略）；確認為正確行為：收工後佇列仍補傳（server 是 SSOT，該組確實練了）
-  - acceptance-verifier 獨立以 Playwright setOffline 重現全部情境：8/8 PASS
-- 60 tests、覆蓋率 99%（後端未動）、ruff 乾淨、console 0 errors
+**正確性（嚴重度排序）**
+1. `log_workout` 冪等缺失：client_uuid 由 server 端 uuid4 產生——MCP 呼叫 timeout 後 LLM 重試會整包重複寫入（REST 路徑有冪等、MCP 路徑沒有）。方向：tool 加選填 client_uuid/idempotency key，或文件化風險
+2. create_missing 大小寫變體重複建檔：unknown 去重用原字串、比對用 lower——`["Face Pull","face pull"]` 會建兩筆 Exercise 留一筆孤兒
+3. mcp `log_workout` 沒接 ValidationError：`sets=[]` 時 LogWorkoutIn 炸 raw tool error，違反 {"error":...} 契約（log_body_metrics 有接，不一致）
+4. auth：`secrets.compare_digest` 遇非 ASCII token 會 TypeError → 500 而非 401（guard `t.isascii()` 或比 bytes）
+5. DebugTokenVerifier（debug 命名、預設 validate 全放行）當生產 auth——升級 fastmcp 或重構漏掉 validate 參數會靜默變成全放行；考慮改自訂 TokenVerifier 或 StaticTokenVerifier
+6. 空白動作名：`" "` 過 min_length=1，strip 後空字串 → create_missing 建出空名動作；_suggest 對空字串 substring 全命中
+7. log_workout 的 commit 沒接 IntegrityError（併發同名 create_missing 會漏 raw error；log_set/create_exercise 都有 rollback 處理）
+8. template 以名稱解析但 Template.name 無 unique——同名課表隨機掛一個
+9. `date.today()` 用 server 本地時區（F7 部署時若 UTC 會日期錯位——部署前確認）
+10. 已知不一致（F8 範圍）：MCP 噸位含自體重、heatmap 還是 None——F8 接線時要對齊
+
+**清理類**
+- mcp `_validation_message` 抄自 errors.py 且已 drift（missing → "required" 沒帶過來）→ 公開共用
+- `_metric_out` 手刻 dict、BodyMetricOut 變死碼 → model_validate().model_dump()
+- `_exercise_index`（Python lower）vs `find_by_name`（SQL lower，ASCII-only）兩套解析語意不一致 → 抽共用 normalize
+- mcp query_workouts 直接 `session.query(Exercise)` 違反 CLAUDE.md「MCP tools 重用 services」邊界；N+1（每 workout 一次 get_active_sets）→ 一次 in_ 查詢
+- `_exercise_label` 與 _suggest 的「zh en」格式兩處硬編；「未分類」/0.9 magic number；UnknownExerciseError 未進 error registry（future REST 曝露會 500）
+- log_body_metrics 可改 Annotated[float, Field(ge=30…)] 讓 fastmcp 統一驗證，刪手動 try/except
+- tests/test_mcp.py session_factory 與 conftest db_session 重複 bootstrap → 併進 conftest
+- main.py middleware 硬編 "/mcp" 字串與 mount path 耦合（改 mount 要同步改兩處——至少加註）
 
 ## 做到一半 / 已知未修
-- 無半成品
-- 有意識接受：捨棄 failed 組後 setCounts 不回滾（set_number 留空號，append-only 無唯一約束，無害）；離線重整後 done-list 的逐列歷史不重建（佇列 badge 仍在，資料安全）；SW 需 HTTPS（部署走 F7 Cloudflare Tunnel 沒問題，純 http LAN IP 直連不會有離線快取——已知窄缺口）
-- F6 前置預警（PRD 技術約束）：(1) services 需新增單一交易的 log_workout 入口，勿以迴圈拼裝 log_set；(2) /mcp 掛載走不到 APIRouter 的 require_token，需用 fastmcp auth 接同一 token 來源，實連必驗 401
-- F8 接點：services/stats.py set_tonnage(bodyweight_kg)
-- F2–F5 真機最終確認留待 Ryan（手機實開：記錄＋課表＋飛航模式離線記錄）
+- review verify＋修復未做（上面全部）；acceptance-verifier 未跑；**feature_list F6 維持 failing**
+- claude CLI 的 lift-log MCP 註冊在 local scope（`claude mcp remove lift-log` 可清）；port 8137 的背景 server 收工時已停
+- F2–F5 真機最終確認仍留待 Ryan（手機實開：記錄＋課表＋飛航離線）
 
-## 下一步（具體到可直接動手）
-- **F6 MCP＋AI connector**：fastmcp 掛 /mcp（Streamable HTTP）。TDD 起手：先寫 services.log_workout 單一交易入口的測試（整包寫入、未知動作整包拒絕回建議、create_missing=true 才建檔——PRD R7b）；再掛查詢 tools（query_workouts/get_progress/list_templates/get_body_metrics）與記錄 tools（log_workout/log_body_metrics）、prompt 模板 log-workout-interview；/mcp 帶錯 token 必須 401（fastmcp auth）。最後至少一家 connector（Claude）實連成功截圖。注意 get_body_metrics/log_body_metrics 依賴 F8 的 body_metrics 表——可先建模型與 service（F8 只剩 UI 與 heatmap 接線），或 F6 先做 workout 相關 tools、body metrics tools 留到 F8 後補
+## 驗證指令
+- `uv run pytest`（92 passed）；`uv run ruff check .`；server：`uv run uvicorn app.main:app_factory --factory --port 8137`（demo DB：先設 `LIFTLOG_DB=./liftlog_connector_demo.db`）
+- connector 快驗：`claude mcp list` 應顯示 lift-log ✔ Connected（server 要先起）

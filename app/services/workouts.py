@@ -1,13 +1,113 @@
+import uuid
 from datetime import date as date_type
 from datetime import datetime
+from difflib import SequenceMatcher
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.errors import ConflictError, DomainError, NotFoundError
-from app.models import Exercise, Workout, WorkoutSet
-from app.schemas import SetCreate, WorkoutCreate
+from app.errors import ConflictError, DomainError, NotFoundError, UnknownExerciseError
+from app.models import Exercise, Template, Workout, WorkoutSet
+from app.schemas import LogWorkoutIn, LogWorkoutSummary, SetCreate, WorkoutCreate
+from app.services.body_metrics import latest_weight
+from app.services.stats import set_tonnage
+
+_SUGGEST_CUTOFF = 0.4
+_SUGGEST_LIMIT = 3
+
+
+def _exercise_index(exercises: list[Exercise]) -> dict[str, Exercise]:
+    """雙語名稱（去空白、不分大小寫）→ Exercise。"""
+    index: dict[str, Exercise] = {}
+    for exercise in exercises:
+        index[exercise.name_zh.strip().lower()] = exercise
+        index[exercise.name_en.strip().lower()] = exercise
+    return index
+
+
+def _suggest(exercises: list[Exercise], unknown: str) -> list[str]:
+    """對未命中名稱給相近動作建議，格式「深蹲 Squat」。"""
+    target = unknown.strip().lower()
+    scored: list[tuple[float, str]] = []
+    for exercise in exercises:
+        zh = exercise.name_zh.lower()
+        en = exercise.name_en.lower()
+        score = max(
+            SequenceMatcher(None, target, zh).ratio(),
+            SequenceMatcher(None, target, en).ratio(),
+        )
+        if target in zh or target in en or zh in target or en in target:
+            score = max(score, 0.9)
+        if score >= _SUGGEST_CUTOFF:
+            scored.append((score, f"{exercise.name_zh} {exercise.name_en}"))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [label for _, label in scored[:_SUGGEST_LIMIT]]
+
+
+def _resolve_template_id(session: Session, name: str) -> int:
+    template_id = session.scalar(select(Template.id).where(Template.name == name))
+    if template_id is None:
+        raise DomainError("template not found")
+    return template_id
+
+
+def log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
+    """MCP 代記錄的單一交易入口（PRD R7b）。
+
+    整包寫入或整包拒絕（單一 commit，不留半套）；動作名雙語比對，
+    未命中且未帶 create_missing 時回未知清單＋相近建議。
+    """
+    template_id = _resolve_template_id(session, data.template) if data.template else None
+
+    exercises = list(session.scalars(select(Exercise)))
+    index = _exercise_index(exercises)
+    wanted = list(dict.fromkeys(item.exercise.strip() for item in data.sets))
+    unknown = [name for name in wanted if name.lower() not in index]
+
+    if unknown and not data.create_missing:
+        suggestions: list[str] = []
+        for name in unknown:
+            suggestions.extend(_suggest(exercises, name))
+        raise UnknownExerciseError(unknown, list(dict.fromkeys(suggestions)))
+
+    for name in unknown:
+        created = Exercise(name_zh=name, name_en=name, muscle_group="未分類")
+        session.add(created)
+        index[name.lower()] = created
+    session.flush()
+
+    workout = Workout(
+        date=data.date or date_type.today(), template_id=template_id, note=data.note
+    )
+    session.add(workout)
+    session.flush()
+
+    bodyweight_kg = latest_weight(session)
+    set_counts: dict[int, int] = {}
+    tonnage = 0.0
+    for item in data.sets:
+        exercise = index[item.exercise.strip().lower()]
+        set_counts[exercise.id] = set_counts.get(exercise.id, 0) + 1
+        session.add(
+            WorkoutSet(
+                client_uuid=str(uuid.uuid4()),
+                workout_id=workout.id,
+                exercise_id=exercise.id,
+                set_number=set_counts[exercise.id],
+                weight_kg=item.weight_kg,
+                reps=item.reps,
+                rpe=item.rpe,
+            )
+        )
+        tonnage += set_tonnage(item.weight_kg, item.reps, exercise.is_bodyweight, bodyweight_kg)
+    session.commit()
+    return LogWorkoutSummary(
+        workout_id=workout.id,
+        date=workout.date,
+        sets_count=len(data.sets),
+        tonnage_kg=tonnage,
+    )
 
 
 def create_workout(session: Session, data: WorkoutCreate) -> Workout:

@@ -59,6 +59,18 @@ class Workout(Base):
     sets: Mapped[list["WorkoutSet"]] = relationship(back_populates="workout")
 
 
+class BodyMetric(Base):
+    """體重體脂 SSOT：一天一筆（date UNIQUE），同日重送為覆蓋更新。"""
+
+    __tablename__ = "body_metrics"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    weight_kg: Mapped[float] = mapped_column(Float)
+    body_fat_pct: Mapped[float | None] = mapped_column(Float, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class WorkoutSet(Base):
     """一組訓練，append-only：不做 update，記錯用軟刪除（deleted_at）。"""
 

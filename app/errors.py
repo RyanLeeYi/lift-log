@@ -16,6 +16,15 @@ class DomainError(Exception):
         super().__init__(message)
 
 
+class UnknownExerciseError(Exception):
+    """log_workout 內含動作庫比對不到的動作名（雙語皆未命中）→ 整包拒絕不寫入。"""
+
+    def __init__(self, unknown: list[str], suggestions: list[str]) -> None:
+        self.unknown = unknown
+        self.suggestions = suggestions
+        super().__init__(f"unknown exercise: {', '.join(unknown)}")
+
+
 class ConflictError(Exception):
     """冪等鍵衝突（client_uuid 已用於其他 workout 或已刪除的組）→ 409。"""
 

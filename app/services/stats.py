@@ -1,11 +1,42 @@
-"""統計服務：日曆噸位（F3）。進步曲線（F6）、體重整合（F8）之後加在這裡。"""
+"""統計服務：日曆噸位（F3）、進步曲線（F6）。體重整合（F8）之後加在這裡。"""
 
 from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.errors import NotFoundError
 from app.models import Exercise, Workout, WorkoutSet
+from app.schemas import ExerciseName, ProgressOut, ProgressPoint
+from app.services.exercises import find_by_name
+
+
+def get_progress(session: Session, exercise: str) -> ProgressOut:
+    """每次訓練（workout）該動作的最大重量與該重量的次數，依日期排序（PRD R7 範例 3）。"""
+    found = find_by_name(session, exercise)
+    if found is None:
+        raise NotFoundError()
+
+    rows = session.execute(
+        select(Workout.id, Workout.date, WorkoutSet.weight_kg, WorkoutSet.reps)
+        .join(WorkoutSet, WorkoutSet.workout_id == Workout.id)
+        .where(WorkoutSet.exercise_id == found.id, WorkoutSet.deleted_at.is_(None))
+        .order_by(Workout.date, Workout.id)
+    ).all()
+
+    top: dict[int, ProgressPoint] = {}
+    for workout_id, workout_date, weight_kg, reps in rows:
+        current = top.get(workout_id)
+        heavier = current is None or weight_kg > current.top_weight_kg
+        same_weight_more_reps = (
+            current is not None and weight_kg == current.top_weight_kg and reps > current.reps
+        )
+        if heavier or same_weight_more_reps:
+            top[workout_id] = ProgressPoint(date=workout_date, top_weight_kg=weight_kg, reps=reps)
+    return ProgressOut(
+        exercise=ExerciseName(name_zh=found.name_zh, name_en=found.name_en),
+        points=list(top.values()),
+    )
 
 
 def set_tonnage(

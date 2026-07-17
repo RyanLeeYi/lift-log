@@ -1,0 +1,18 @@
+Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.
+兩個 tool 都執行完成，回報如下：
+
+**1. `log_workout` — 記錄深蹲三組（80kg×8、80kg×8、85kg×6）**
+
+回傳內容：
+```json
+{"workout_id": 1, "date": "2026-07-17", "sets_count": 3, "tonnage_kg": 1790}
+```
+成功建立 workout #1，日期為今天（2026-07-17），共 3 組，總量（tonnage）1790 kg（80×8 + 80×8 + 85×6 = 640 + 640 + 510）。
+
+**2. `get_progress` — 查詢 squat 進步曲線**
+
+回傳內容：
+```json
+{"exercise": {"name_zh": "深蹲", "name_en": "Squat"}, "points": [{"date": "2026-07-17", "top_weight_kg": 85, "reps": 6}]}
+```
+英文名 `squat` 成功比對到雙語動作「深蹲 / Squat」。進步曲線目前只有一個資料點：2026-07-17 的最大重量 85 kg × 6 下，正是剛才記錄的那次訓練——代表記錄有正確寫入且 progress 查詢即時反映。
