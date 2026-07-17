@@ -1,6 +1,7 @@
 // 日曆 heatmap：CSS grid 月視圖、5 級深淺（依當月最大噸位分四檔）、點日看明細。
 
 import { api } from "./api.js";
+import { el } from "./dom.js";
 import { exerciseName, getLang, state } from "./state.js";
 
 // 本模組自己的畫面狀態（不進全域 state：換畫面即重置無妨）
@@ -58,17 +59,6 @@ async function selectDay(dateStr) {
       sets: (await api.workoutDetail(w.id)).sets,
     })),
   );
-}
-
-function el(tag, attrs = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key === "class") node.className = value;
-    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
-    else node.setAttribute(key, value);
-  }
-  for (const child of children) node.append(child);
-  return node;
 }
 
 function detailRows() {

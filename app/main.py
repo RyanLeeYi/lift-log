@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import sessionmaker
 
-from app.api import exercises, stats, workouts
+from app.api import exercises, stats, templates, workouts
 from app.config import Settings
 from app.db import make_engine
 from app.errors import register_error_handlers
@@ -29,6 +29,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(workouts.router)
     app.include_router(exercises.router)
     app.include_router(stats.router)
+    app.include_router(templates.router)
     # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/*
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

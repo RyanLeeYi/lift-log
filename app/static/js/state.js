@@ -5,8 +5,9 @@ const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
 
 export const state = {
-  screen: "home", // setup | home | picker | logger
+  screen: "home", // setup | home | templateSelect | picker | logger | templates | templateEdit
   workoutId: null,
+  template: null, // 開練選中的課表快照 {id, name, exercises}；刪課表不影響進行中訓練
   exercise: null, // {id, name_zh, name_en, is_bodyweight}
   weightKg: 20,
   reps: 8,
@@ -38,13 +39,19 @@ export function exerciseAlias(exercise) {
 }
 
 export function saveActiveWorkout() {
-  sessionStorage.setItem(WORKOUT_KEY, JSON.stringify({ workoutId: state.workoutId }));
+  sessionStorage.setItem(
+    WORKOUT_KEY,
+    JSON.stringify({ workoutId: state.workoutId, template: state.template }),
+  );
 }
 
 export function restoreActiveWorkout() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(WORKOUT_KEY));
-    if (saved && saved.workoutId) state.workoutId = saved.workoutId;
+    if (saved && saved.workoutId) {
+      state.workoutId = saved.workoutId;
+      state.template = saved.template || null;
+    }
   } catch {
     /* 壞資料當沒存過 */
   }
@@ -53,6 +60,7 @@ export function restoreActiveWorkout() {
 export function clearActiveWorkout() {
   sessionStorage.removeItem(WORKOUT_KEY);
   state.workoutId = null;
+  state.template = null;
 }
 
 export function restElapsedSeconds() {

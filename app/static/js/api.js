@@ -41,7 +41,12 @@ export const api = {
   searchExercises: (q) =>
     request("GET", q ? `/api/exercises?q=${encodeURIComponent(q)}` : "/api/exercises"),
   lastSets: (exerciseId) => request("GET", `/api/exercises/${exerciseId}/last-sets`),
-  createWorkout: () => request("POST", "/api/workouts", {}),
+  createWorkout: (payload = {}) => request("POST", "/api/workouts", payload),
+  listTemplates: () => request("GET", "/api/templates"),
+  createTemplate: (payload) => request("POST", "/api/templates", payload),
+  updateTemplate: (templateId, payload) =>
+    request("PUT", `/api/templates/${templateId}`, payload),
+  deleteTemplate: (templateId) => request("DELETE", `/api/templates/${templateId}`),
   logSet: (workoutId, payload) => request("POST", `/api/workouts/${workoutId}/sets`, payload),
   workoutDetail: (workoutId) => request("GET", `/api/workouts/${workoutId}`),
   listWorkouts: (start, end) => request("GET", `/api/workouts?start=${start}&end=${end}`),

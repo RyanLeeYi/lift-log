@@ -19,6 +19,34 @@ class Exercise(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class Template(Base):
+    """課表：動作清單＋順序＋預設組數。刪除不影響歷史 workout（workouts.template_id 無 FK）。"""
+
+    __tablename__ = "templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    exercises: Mapped[list["TemplateExercise"]] = relationship(
+        back_populates="template",
+        cascade="all, delete-orphan",
+        order_by="TemplateExercise.position",
+    )
+
+
+class TemplateExercise(Base):
+    __tablename__ = "template_exercises"
+
+    template_id: Mapped[int] = mapped_column(ForeignKey("templates.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(primary_key=True)
+    exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"))
+    default_sets: Mapped[int] = mapped_column()
+
+    template: Mapped[Template] = relationship(back_populates="exercises")
+    exercise: Mapped[Exercise] = relationship()
+
+
 class Workout(Base):
     __tablename__ = "workouts"
 

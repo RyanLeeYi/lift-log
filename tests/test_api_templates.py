@@ -1,0 +1,203 @@
+"""F4 課表 API 驗收測試（PRD R4）：CRUD、動作順序與預設組數、刪課表不影響歷史 workout。"""
+
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture()
+def exercise_ids(client: TestClient) -> list[int]:
+    """三個動作，供順序與更新測試用。"""
+    ids = []
+    for zh, en, group in [
+        ("深蹲", "Squat", "腿"),
+        ("硬舉", "Deadlift", "背"),
+        ("臥推", "Bench Press", "胸"),
+    ]:
+        resp = client.post(
+            "/api/exercises",
+            json={"name_zh": zh, "name_en": en, "muscle_group": group},
+        )
+        assert resp.status_code == 201
+        ids.append(resp.json()["id"])
+    return ids
+
+
+def make_template_payload(exercise_ids: list[int], **overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": "練腿日",
+        "exercises": [
+            {"exercise_id": exercise_ids[0], "default_sets": 5},
+            {"exercise_id": exercise_ids[1], "default_sets": 3},
+        ],
+    }
+    return {**payload, **overrides}
+
+
+class TestAuth:
+    def test_templates_require_token(self, anon_client):
+        assert anon_client.get("/api/templates").status_code == 401
+        assert anon_client.post("/api/templates", json={}).status_code == 401
+
+
+class TestCreateTemplate:
+    def test_create_returns_201_with_exercises_in_order(self, client, exercise_ids):
+        resp = client.post("/api/templates", json=make_template_payload(exercise_ids))
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["id"] > 0
+        assert body["name"] == "練腿日"
+        assert [e["exercise_id"] for e in body["exercises"]] == exercise_ids[:2]
+        assert [e["position"] for e in body["exercises"]] == [1, 2]
+        assert [e["default_sets"] for e in body["exercises"]] == [5, 3]
+
+    def test_create_includes_bilingual_names_for_display(self, client, exercise_ids):
+        resp = client.post("/api/templates", json=make_template_payload(exercise_ids))
+        first = resp.json()["exercises"][0]
+        assert first["name_zh"] == "深蹲"
+        assert first["name_en"] == "Squat"
+
+    def test_exercises_include_is_bodyweight_for_logger_defaults(self, client):
+        """前端 logger 靠 is_bodyweight 決定預設重量（自體重動作負重 0）。"""
+        pullup = client.post(
+            "/api/exercises",
+            json={
+                "name_zh": "引體向上",
+                "name_en": "Pull-up",
+                "muscle_group": "背",
+                "is_bodyweight": True,
+            },
+        ).json()
+        resp = client.post(
+            "/api/templates",
+            json={
+                "name": "背日",
+                "exercises": [{"exercise_id": pullup["id"], "default_sets": 3}],
+            },
+        )
+        assert resp.json()["exercises"][0]["is_bodyweight"] is True
+
+    def test_unknown_exercise_id_returns_400_and_writes_nothing(self, client, exercise_ids):
+        payload = make_template_payload(exercise_ids)
+        payload["exercises"].append({"exercise_id": 9999, "default_sets": 3})
+        resp = client.post("/api/templates", json=payload)
+        assert resp.status_code == 400
+        assert resp.json() == {"error": "exercise not found"}
+        assert client.get("/api/templates").json() == []
+
+    def test_empty_name_returns_400(self, client, exercise_ids):
+        resp = client.post("/api/templates", json=make_template_payload(exercise_ids, name=""))
+        assert resp.status_code == 400
+
+    def test_empty_exercises_returns_400(self, client, exercise_ids):
+        resp = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids, exercises=[])
+        )
+        assert resp.status_code == 400
+
+    def test_nonpositive_default_sets_returns_400(self, client, exercise_ids):
+        payload = make_template_payload(exercise_ids)
+        payload["exercises"][0]["default_sets"] = 0
+        resp = client.post("/api/templates", json=payload)
+        assert resp.status_code == 400
+
+
+class TestListAndGetTemplate:
+    def test_list_returns_all_templates_with_exercises(self, client, exercise_ids):
+        client.post("/api/templates", json=make_template_payload(exercise_ids))
+        client.post("/api/templates", json=make_template_payload(exercise_ids, name="上半身日"))
+        body = client.get("/api/templates").json()
+        assert [t["name"] for t in body] == ["練腿日", "上半身日"]
+        assert all(len(t["exercises"]) == 2 for t in body)
+
+    def test_get_detail_orders_by_position(self, client, exercise_ids):
+        # 逆序建立，回傳仍須照 position 排序
+        payload = make_template_payload(
+            exercise_ids,
+            exercises=[
+                {"exercise_id": exercise_ids[2], "default_sets": 4},
+                {"exercise_id": exercise_ids[0], "default_sets": 5},
+            ],
+        )
+        template_id = client.post("/api/templates", json=payload).json()["id"]
+        body = client.get(f"/api/templates/{template_id}").json()
+        assert [e["exercise_id"] for e in body["exercises"]] == [
+            exercise_ids[2],
+            exercise_ids[0],
+        ]
+
+    def test_get_unknown_id_returns_404(self, client):
+        resp = client.get("/api/templates/9999")
+        assert resp.status_code == 404
+        assert resp.json() == {"error": "not found"}
+
+
+class TestUpdateTemplate:
+    def test_put_replaces_name_and_exercises(self, client, exercise_ids):
+        template_id = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids)
+        ).json()["id"]
+        resp = client.put(
+            f"/api/templates/{template_id}",
+            json={
+                "name": "混合日",
+                "exercises": [{"exercise_id": exercise_ids[2], "default_sets": 4}],
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "混合日"
+        assert [e["exercise_id"] for e in body["exercises"]] == [exercise_ids[2]]
+
+        fetched = client.get(f"/api/templates/{template_id}").json()
+        assert fetched["name"] == "混合日"
+        assert len(fetched["exercises"]) == 1
+
+    def test_put_unknown_id_returns_404(self, client, exercise_ids):
+        resp = client.put(
+            "/api/templates/9999", json=make_template_payload(exercise_ids)
+        )
+        assert resp.status_code == 404
+
+    def test_put_unknown_exercise_keeps_original(self, client, exercise_ids):
+        """更新失敗不得留半套：原課表內容必須原封不動。"""
+        template_id = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids)
+        ).json()["id"]
+        resp = client.put(
+            f"/api/templates/{template_id}",
+            json={"name": "壞課表", "exercises": [{"exercise_id": 9999, "default_sets": 1}]},
+        )
+        assert resp.status_code == 400
+        body = client.get(f"/api/templates/{template_id}").json()
+        assert body["name"] == "練腿日"
+        assert len(body["exercises"]) == 2
+
+
+class TestDeleteTemplate:
+    def test_delete_returns_204_then_404(self, client, exercise_ids):
+        template_id = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids)
+        ).json()["id"]
+        assert client.delete(f"/api/templates/{template_id}").status_code == 204
+        assert client.get(f"/api/templates/{template_id}").status_code == 404
+
+    def test_delete_unknown_id_returns_404(self, client):
+        assert client.delete("/api/templates/9999").status_code == 404
+
+    def test_delete_does_not_affect_historical_workouts(self, client, exercise_ids):
+        """PRD R4：刪除課表不影響歷史 workout 紀錄。"""
+        template_id = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids)
+        ).json()["id"]
+        workout = client.post(
+            "/api/workouts", json={"template_id": template_id, "note": "練腿日"}
+        ).json()
+
+        assert client.delete(f"/api/templates/{template_id}").status_code == 204
+
+        detail = client.get(f"/api/workouts/{workout['id']}")
+        assert detail.status_code == 200
+        assert detail.json()["template_id"] == template_id
+        assert detail.json()["note"] == "練腿日"

@@ -20,6 +20,31 @@ class ExerciseOut(BaseModel):
     is_bodyweight: bool
 
 
+class TemplateExerciseIn(BaseModel):
+    exercise_id: int
+    default_sets: int = Field(gt=0)
+
+
+class TemplateCreate(BaseModel):
+    name: str = Field(min_length=1)
+    exercises: list[TemplateExerciseIn] = Field(min_length=1)
+
+
+class TemplateExerciseOut(BaseModel):
+    exercise_id: int
+    position: int
+    default_sets: int
+    name_zh: str
+    name_en: str
+    is_bodyweight: bool
+
+
+class TemplateOut(BaseModel):
+    id: int
+    name: str
+    exercises: list[TemplateExerciseOut]
+
+
 class WorkoutCreate(BaseModel):
     date: date_type | None = None
     template_id: int | None = None

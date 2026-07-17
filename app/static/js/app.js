@@ -1,7 +1,10 @@
-// lift-log 記錄頁：setup → home → picker → logger 四個畫面，全部由 render() 重繪。
+// lift-log 記錄頁：setup → home →（templateSelect）→ picker → logger，全部由 render() 重繪；
+// 課表管理（templates / templateEdit）在 templates.js。
 
 import { api, ApiError, getToken, setToken } from "./api.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
+import { el } from "./dom.js";
+import { openTemplates, renderTemplateEdit, renderTemplates } from "./templates.js";
 import {
   clearActiveWorkout,
   exerciseAlias,
@@ -18,19 +21,6 @@ const root = document.getElementById("app");
 let restTicker = null;
 
 // ---------- 小工具 ----------
-
-function el(tag, attrs = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key === "class") node.className = value;
-    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
-    else node.setAttribute(key, value);
-  }
-  for (const child of children) {
-    node.append(child);
-  }
-  return node;
-}
 
 function todayLabel() {
   const now = new Date();
@@ -90,15 +80,32 @@ function renderSetup() {
 
 // ---------- home ----------
 
+async function goPicker() {
+  if (pickerExercises.length === 0) await loadExercises("");
+  state.screen = "picker";
+  render();
+}
+
+async function startWorkout(template) {
+  const workout = await api.createWorkout(template ? { template_id: template.id } : {});
+  state.workoutId = workout.id;
+  state.template = template; // 課表快照跟著這次訓練走，之後刪課表不受影響
+  saveActiveWorkout();
+  await goPicker();
+}
+
 function renderHome() {
   const start = async () => {
-    if (!state.workoutId) {
-      const workout = await api.createWorkout();
-      state.workoutId = workout.id;
-      saveActiveWorkout();
+    if (state.workoutId) {
+      await goPicker(); // 訓練開著：直接回去（課表已隨 workout 還原）
+      return;
     }
-    if (pickerExercises.length === 0) await loadExercises("");
-    state.screen = "picker";
+    templateChoices = await api.listTemplates();
+    if (templateChoices.length === 0) {
+      await startWorkout(null);
+      return;
+    }
+    state.screen = "templateSelect";
     render();
   };
   return el("section", { class: "screen" }, [
@@ -121,6 +128,19 @@ function renderHome() {
         class: "btn",
         onclick: () =>
           guard(async () => {
+            await openTemplates();
+            state.screen = "templates";
+            render();
+          }),
+      },
+      ["📋 課表"],
+    ),
+    el(
+      "button",
+      {
+        class: "btn",
+        onclick: () =>
+          guard(async () => {
             await openCalendar();
             state.screen = "calendar";
             render();
@@ -128,6 +148,38 @@ function renderHome() {
       },
       ["📅 日曆"],
     ),
+  ]);
+}
+
+// ---------- templateSelect（開練：挑今日課表） ----------
+
+let templateChoices = [];
+
+function renderTemplateSelect() {
+  return el("section", { class: "screen" }, [
+    el("header", { class: "topbar" }, [el("h1", {}, ["今天練哪份？"])]),
+    ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    el("div", { class: "exercise-list" }, [
+      ...templateChoices.map((template) =>
+        el(
+          "button",
+          { class: "btn exercise-item", onclick: () => guard(() => startWorkout(template)) },
+          [
+            el("span", {}, [template.name]),
+            el("span", { class: "sub" }, [`${template.exercises.length} 動作`]),
+          ],
+        ),
+      ),
+      el(
+        "button",
+        { class: "btn exercise-item", onclick: () => guard(() => startWorkout(null)) },
+        [
+          el("span", {}, ["自由訓練"]),
+          el("span", { class: "sub" }, ["不用課表"]),
+        ],
+      ),
+    ]),
+    el("button", { class: "btn btn-ghost", onclick: () => { state.screen = "home"; render(); } }, ["← 回首頁"]),
   ]);
 }
 
@@ -174,13 +226,47 @@ function exerciseButtons() {
   );
 }
 
+function templateMenu() {
+  if (!state.template) return [];
+  return [
+    el("div", { class: "menu-head" }, [`今日菜單 · ${state.template.name}`]),
+    el("div", { class: "exercise-list menu-list" },
+      state.template.exercises.map((item) => {
+        const done = state.setCounts[item.exercise_id] || 0;
+        return el(
+          "button",
+          {
+            class: `btn exercise-item${done >= item.default_sets ? " menu-done" : ""}`,
+            onclick: () =>
+              guard(() =>
+                pickExercise({
+                  id: item.exercise_id,
+                  name_zh: item.name_zh,
+                  name_en: item.name_en,
+                  is_bodyweight: item.is_bodyweight,
+                }),
+              ),
+          },
+          [
+            el("span", {}, [exerciseName(item)]),
+            el("span", { class: `sub${done > 0 ? " lit" : ""}` }, [
+              `${done}/${item.default_sets} 組`,
+            ]),
+          ],
+        );
+      }),
+    ),
+    el("div", { class: "menu-head" }, ["臨時加動作"]),
+  ];
+}
+
 function renderPicker() {
   const groups = [...new Set(pickerExercises.map((e) => e.muscle_group))];
   const list = el("div", { class: "exercise-list" }, exerciseButtons());
 
   return el("section", { class: "screen picker" }, [
     el("header", { class: "topbar" }, [
-      el("h1", {}, ["選動作"]),
+      el("h1", {}, [state.template ? "今日菜單" : "選動作"]),
       el(
         "button",
         { class: "btn btn-ghost chip", onclick: () => { toggleLang(); render(); } },
@@ -188,6 +274,7 @@ function renderPicker() {
       ),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    ...templateMenu(),
     el("input", {
       type: "search",
       placeholder: "搜尋（中英皆可）",
@@ -366,8 +453,19 @@ function render() {
   const screens = {
     setup: renderSetup,
     home: renderHome,
+    templateSelect: renderTemplateSelect,
     picker: renderPicker,
     logger: renderLogger,
+    templates: () =>
+      renderTemplates(
+        render,
+        () => {
+          state.screen = "home";
+          render();
+        },
+        guard,
+      ),
+    templateEdit: () => renderTemplateEdit(render, guard),
     calendar: () =>
       renderCalendar(
         render,
