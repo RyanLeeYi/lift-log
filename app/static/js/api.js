@@ -52,4 +52,6 @@ export const api = {
   listWorkouts: (start, end) => request("GET", `/api/workouts?start=${start}&end=${end}`),
   calendarStats: (year, month) =>
     request("GET", `/api/stats/calendar?year=${year}&month=${month}`),
+  listBodyMetrics: () => request("GET", "/api/body-metrics"),
+  logBodyMetric: (payload) => request("POST", "/api/body-metrics", payload),
 };

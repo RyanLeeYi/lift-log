@@ -334,6 +334,39 @@ body {
 .cal-detail-row .n { font-family: var(--mono); color: var(--text); text-align: right; }
 .cal-empty { color: var(--text-dim); font-size: 14px; padding: 8px 4px; }
 
+/* ---------- 體重體脂（F8） ---------- */
+.body-form { display: flex; flex-direction: column; gap: 10px; }
+.body-form input {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 18px;
+  padding: 12px 14px;
+}
+.body-form input:focus { outline: none; border-color: var(--led-dim); }
+.body-saved { color: var(--led); font-size: 13px; padding: 2px 4px; }
+.body-card {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.body-card-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 14px; color: var(--text-dim);
+}
+.body-card-head .latest { font-family: var(--mono); font-size: 20px; color: var(--led); }
+.body-chart { color: var(--led); }
+.body-chart svg { width: 100%; height: 96px; display: block; }
+.body-card-foot {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+}
+.body-empty { color: var(--text-dim); font-size: 14px; padding: 4px 0 8px; }
+
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; }
   .rest-led .digits { text-shadow: none; }

@@ -2,6 +2,7 @@
 // 課表管理（templates / templateEdit）在 templates.js。
 
 import { api, ApiError, getToken, setToken } from "./api.js";
+import { openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { el } from "./dom.js";
 import { discardFailed, enqueueSet, flushQueue, listQueued, queueCounts } from "./queue.js";
@@ -211,6 +212,19 @@ function renderHome() {
           }),
       },
       ["📅 日曆"],
+    ),
+    el(
+      "button",
+      {
+        class: "btn",
+        onclick: () =>
+          guard(async () => {
+            await openBody();
+            state.screen = "body";
+            render();
+          }),
+      },
+      ["⚖️ 體重"],
     ),
   ]);
 }
@@ -571,6 +585,15 @@ function render() {
     templateEdit: () => renderTemplateEdit(render, guard),
     calendar: () =>
       renderCalendar(
+        render,
+        () => {
+          state.screen = "home";
+          render();
+        },
+        guard,
+      ),
+    body: () =>
+      renderBody(
         render,
         () => {
           state.screen = "home";

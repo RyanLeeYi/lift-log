@@ -1,8 +1,9 @@
-"""body_metrics：體重體脂 SSOT（PRD R6 的資料層；F6 先建模型與 service 供 MCP tools 用）。"""
+"""body_metrics：體重體脂 SSOT（PRD R6；F6 建模型與 service，F8 補 REST 與 heatmap 接線）。"""
 
 from datetime import date
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,7 +15,8 @@ from app.services.workouts import log_workout
 
 
 def test_upsert_creates_row_with_default_today(db_session: Session) -> None:
-    row = upsert_body_metric(db_session, BodyMetricIn(weight_kg=101.6))
+    row, created = upsert_body_metric(db_session, BodyMetricIn(weight_kg=101.6))
+    assert created is True
     assert row.date == date.today()
     assert row.weight_kg == 101.6
     assert row.body_fat_pct is None
@@ -23,8 +25,11 @@ def test_upsert_creates_row_with_default_today(db_session: Session) -> None:
 def test_upsert_same_day_overwrites_single_row(db_session: Session) -> None:
     day = date(2026, 7, 10)
     upsert_body_metric(db_session, BodyMetricIn(date=day, weight_kg=101.6))
-    row = upsert_body_metric(db_session, BodyMetricIn(date=day, weight_kg=100.9, body_fat_pct=24.5))
+    row, created = upsert_body_metric(
+        db_session, BodyMetricIn(date=day, weight_kg=100.9, body_fat_pct=24.5)
+    )
 
+    assert created is False
     assert row.weight_kg == 100.9
     assert row.body_fat_pct == 24.5
     assert len(list(db_session.scalars(select(BodyMetric)))) == 1
@@ -40,6 +45,41 @@ def test_list_body_metrics_filters_range_sorted(db_session: Session) -> None:
         (date(2026, 7, 8), 101.0),
         (date(2026, 7, 15), 100.5),
     ]
+
+
+def test_upsert_race_on_first_insert_recovers_to_overwrite(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """併發同日首寫撞 date UNIQUE：不得裸拋 500，要復原為「同日覆蓋」語意。"""
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import Session as SASession
+
+    day = date(2026, 7, 10)
+    real_commit = db_session.commit
+    raced = {"done": False}
+
+    def racing_commit() -> None:
+        if not raced["done"]:
+            raced["done"] = True
+            # 模擬輸掉競賽：另一請求先寫入同日列，自己的 INSERT 撞 UNIQUE
+            other = SASession(bind=db_session.get_bind())
+            other.add(BodyMetric(date=day, weight_kg=99.0))
+            other.commit()
+            other.close()
+            db_session.rollback()
+            raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
+        real_commit()
+
+    monkeypatch.setattr(db_session, "commit", racing_commit)
+    row, created = upsert_body_metric(
+        db_session, BodyMetricIn(date=day, weight_kg=100.0, body_fat_pct=24.0)
+    )
+
+    assert created is False
+    assert row.weight_kg == 100.0
+    assert row.body_fat_pct == 24.0
+    monkeypatch.undo()
+    assert len(list(db_session.scalars(select(BodyMetric)))) == 1  # 一天一筆不變量保住
 
 
 def test_latest_weight_returns_most_recent_or_none(db_session: Session) -> None:
@@ -58,6 +98,72 @@ def test_schema_rejects_out_of_range() -> None:
         BodyMetricIn(weight_kg=100, body_fat_pct=0)
     with pytest.raises(ValidationError):
         BodyMetricIn(weight_kg=100, body_fat_pct=100)
+
+
+class TestBodyMetricsApi:
+    """F8：REST GET/POST /api/body-metrics（同日覆蓋）。"""
+
+    def test_requires_token(self, anon_client: TestClient) -> None:
+        assert anon_client.get("/api/body-metrics").status_code == 401
+        assert anon_client.post("/api/body-metrics", json={"weight_kg": 100}).status_code == 401
+
+    def test_post_creates_201_then_same_day_overwrites_200(self, client: TestClient) -> None:
+        first = client.post(
+            "/api/body-metrics", json={"date": "2026-07-10", "weight_kg": 101.6}
+        )
+        assert first.status_code == 201
+        assert first.json()["weight_kg"] == 101.6
+
+        second = client.post(
+            "/api/body-metrics",
+            json={"date": "2026-07-10", "weight_kg": 100.9, "body_fat_pct": 24.5},
+        )
+        assert second.status_code == 200
+        assert second.json()["weight_kg"] == 100.9
+        assert second.json()["body_fat_pct"] == 24.5
+
+        rows = client.get("/api/body-metrics").json()
+        assert [(r["date"], r["weight_kg"]) for r in rows] == [("2026-07-10", 100.9)]
+
+    def test_get_filters_range_sorted(self, client: TestClient) -> None:
+        for day, weight in [("2026-07-01", 102.0), ("2026-07-08", 101.0), ("2026-07-15", 100.5)]:
+            client.post("/api/body-metrics", json={"date": day, "weight_kg": weight})
+        rows = client.get("/api/body-metrics?start=2026-07-02&end=2026-07-15").json()
+        assert [(r["date"], r["weight_kg"]) for r in rows] == [
+            ("2026-07-08", 101.0),
+            ("2026-07-15", 100.5),
+        ]
+
+    def test_post_out_of_range_returns_400(self, client: TestClient) -> None:
+        assert client.post("/api/body-metrics", json={"weight_kg": 29.9}).status_code == 400
+        assert client.post("/api/body-metrics", json={}).status_code == 400
+
+    def test_calendar_bodyweight_tonnage_uses_latest_weight(self, client: TestClient) -> None:
+        """F8 接線：heatmap 的自體重噸位改用最新體重（F3 只計負重的行為在此升級）。"""
+        exercise = client.post(
+            "/api/exercises",
+            json={
+                "name_zh": "引體向上",
+                "name_en": "Pull-up",
+                "muscle_group": "背",
+                "is_bodyweight": True,
+            },
+        ).json()
+        workout = client.post("/api/workouts", json={"date": "2026-07-10"}).json()
+        client.post(
+            f"/api/workouts/{workout['id']}/sets",
+            json={
+                "client_uuid": "cal-bw-0001",
+                "exercise_id": exercise["id"],
+                "set_number": 1,
+                "weight_kg": 0,
+                "reps": 6,
+            },
+        )
+        client.post("/api/body-metrics", json={"date": "2026-07-12", "weight_kg": 100.0})
+
+        days = client.get("/api/stats/calendar?year=2026&month=7").json()["days"]
+        assert days["2026-07-10"] == 600.0
 
 
 def test_log_workout_bodyweight_tonnage_uses_latest_weight(db_session: Session) -> None:

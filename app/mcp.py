@@ -185,7 +185,8 @@ def create_mcp(session_factory: sessionmaker, token: str) -> FastMCP:
                 data = BodyMetricIn(date=date, weight_kg=weight_kg, body_fat_pct=body_fat_pct)
             except ValidationError as exc:
                 return {"error": validation_message(exc)}
-            return _metric_out(body_metrics_svc.upsert_body_metric(session, data))
+            row, _created = body_metrics_svc.upsert_body_metric(session, data)
+            return _metric_out(row)
 
     @mcp.prompt(name="log-workout-interview")
     def log_workout_interview() -> str:

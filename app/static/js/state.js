@@ -5,7 +5,7 @@ const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
 
 export const state = {
-  screen: "home", // setup | home | templateSelect | picker | logger | templates | templateEdit
+  screen: "home", // setup | home | templateSelect | picker | logger | templates | templateEdit | calendar | body
   workoutId: null,
   template: null, // 開練選中的課表快照 {id, name, exercises}；刪課表不影響進行中訓練
   exercise: null, // {id, name_zh, name_en, is_bodyweight}

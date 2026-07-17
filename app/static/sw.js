@@ -1,12 +1,13 @@
 // lift-log service worker：app shell 快取（stale-while-revalidate）。
 // /api/* 一律走網路不快取——寫入靠前端 IndexedDB 佇列緩衝（js/queue.js），server 是 SSOT。
 
-const CACHE_NAME = "liftlog-shell-v1";
+const CACHE_NAME = "liftlog-shell-v2";
 const SHELL = [
   "/",
   "/css/app.css",
   "/js/api.js",
   "/js/app.js",
+  "/js/body.js",
   "/js/calendar.js",
   "/js/dom.js",
   "/js/queue.js",
