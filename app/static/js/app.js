@@ -243,6 +243,7 @@ function templateMenu() {
                   id: item.exercise_id,
                   name_zh: item.name_zh,
                   name_en: item.name_en,
+                  muscle_group: item.muscle_group,
                   is_bodyweight: item.is_bodyweight,
                 }),
               ),

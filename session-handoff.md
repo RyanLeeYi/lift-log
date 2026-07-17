@@ -1,21 +1,20 @@
 # Session Handoff
-> 最後更新：2026-07-17（第二場，用量門檻收工）
+> 最後更新：2026-07-17（第三場：F4 收官）
 
 ## 這個 session 做了
-- **F4 課表選單：實作完成，驗收流程未跑完**（詳見下方「做到一半」）
-  - 後端 TDD：17 個新測試先寫先紅（templates CRUD、順序/預設組數、400/401/404、刪課表不影響歷史 workout、更新失敗不留半套）→ 全套 58 tests 過、覆蓋率 99%、ruff 乾淨
-  - 新增：`app/models.py` Template/TemplateExercise、`app/services/templates.py`、`app/api/templates.py`、schemas TemplateCreate/Out（含 is_bodyweight 供 logger 預設）
-  - 前端：`js/templates.js`（課表管理＋編輯器：加動作/↑↓排序/組數步進/兩段確認刪除）、`js/dom.js`（抽共用 el()，app.js/calendar.js 已改用）、app.js 加 templateSelect 畫面與 picker 今日菜單區（進度 n/m 組、臨時加動作區照舊）、state.js template 快照隨 sessionStorage 續接
-  - Playwright 390×844 全流程實測 PASS：建課表（深蹲5組+硬舉3組）→ 開練選課表帶出菜單 → 記一組後菜單 1/5 → 臨時加臥推（課表定義未被污染）→ 重新整理課表續接 → 刪課表 → 日曆明細歷史完好（噸位 320 kg）；console 0 errors
-  - 證據截圖：`docs/evidence-f4-templates.png`、`docs/evidence-f4-menu.png`
+- **F4 課表選單：passing**（evidence 見 feature_list.json）
+  - 補跑上場欠的 `/code-review medium`：8 finder + 2 verifier agents，7 findings 成立、2 REFUTED
+  - 已修：儲存/刪除雙擊防重入（tpl.busy）、加動作面板排除已加入動作（進度以 exercise_id 計數，同動作兩列會共用計數器）、搜尋回應 race 防護（searchSeq）、TemplateExerciseOut 補 muscle_group（state.exercise 契約一致，TDD 先紅後綠）、delete_template 去掉無用 nested join、CSS input 三份重複合併
+  - 已知未修（有意識接受）：create/update 後的 _get() 重載（單人系統代價可忽略；verifier 確認 expire_on_commit 下屬務實選擇）、templates service 回 DTO 與其他 service 回 ORM 的分層差異（verifier 判 REFUTED：扁平欄位無法 model_validate 重建）、搜尋面板模式與 picker 重複（F5 會動 picker，屆時再抽）
+  - acceptance-verifier 以 live curl + 全套測試逐條覆核 R4 五項全 PASS
+  - 回歸：58 tests 全綠、覆蓋率 99%、ruff 乾淨、Playwright 快速回歸（過濾/儲存/開練菜單/logger）console 0 errors
 
 ## 做到一半 / 已知未修
-- **F4 驗收流程沒跑完就觸發用量門檻**：/code-review（medium）與 acceptance-verifier 都還沒跑 → `feature_list.json` F4 維持 failing（規則：verifier 過了才能改 passing）
-- 已知非 F4 問題：重新整理後 setCounts 歸零（菜單進度顯示歸零、可能撞編號）——F5 acceptance 已涵蓋，勿在 F4 修
-- F2/F3 真機確認仍待 Ryan
+- 無半成品
+- F5 已知範圍：setCounts 未隨 sessionStorage 恢復（重整後菜單進度歸零＋set_number 撞號，F2 遺留、F5 acceptance 已明列）
+- F6 前置預警在 PRD 技術約束（原子 log_workout、/mcp auth）
+- F8 接點已備好：services/stats.py set_tonnage(bodyweight_kg)
+- F2/F3/F4 真機最終確認仍待 Ryan（手機實開一次流程）
 
 ## 下一步（具體到可直接動手）
-1. 跑 `/code-review medium`（範圍：本次 commit diff），CRITICAL/HIGH 必修
-2. 跑 acceptance-verifier agent 對照 F4 acceptance 逐條驗收（伺服器啟動：`$env:LIFTLOG_TOKEN='verify-token'; $env:LIFTLOG_DB='<scratch>.db'; uv run uvicorn app.main:app_factory --factory --port 8137`）
-3. 兩者都過 → `feature_list.json` F4 改 passing 附 evidence（58 tests/99% 覆蓋率/ruff 乾淨/Playwright 全流程/兩張截圖）
-4. 然後進 F5 PWA 離線佇列（含 F2 遺留的 setCounts 續接恢復）
+- **F5 PWA 離線佇列**：manifest 已有、無 service worker。TDD 起手：先寫「client_uuid 冪等補傳不重複」已有後端保證（F1 測試涵蓋），F5 主戰場在前端——(1) service worker + IndexedDB 佇列（離線 POST 失敗入列、UI 標示待同步、上線自動重放、靠 client_uuid 冪等）；(2) setCounts 隨 sessionStorage 續接恢復（或從 GET /api/workouts/{id} 重建）；(3) workout 已刪時該筆標失敗留佇列。驗證：DevTools offline 記 3 組→恢復連線自動補傳不重複、標示消失

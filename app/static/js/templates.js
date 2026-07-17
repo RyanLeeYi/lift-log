@@ -8,11 +8,13 @@ import { exerciseAlias, exerciseName, state } from "./state.js";
 // 本模組自己的畫面狀態（不進全域 state：離開課表畫面即重置無妨）
 const tpl = {
   list: [], // GET /api/templates 結果
-  editing: null, // {id|null, name, items: [{exercise_id, name_zh, name_en, is_bodyweight, default_sets}]}
+  editing: null, // {id|null, name, items: [{exercise_id, name_zh, name_en, muscle_group, is_bodyweight, default_sets}]}
   confirmDeleteId: null, // 兩段刪除：第一下記 id、第二下才真刪
   adding: false, // 編輯器內是否展開「加動作」面板
   exercises: [], // 加動作面板的動作庫清單
   searchQ: "",
+  searchSeq: 0, // 搜尋回應排序：舊回應晚到不得覆蓋新結果
+  busy: false, // 儲存/刪除進行中——防手機雙擊重複送出
 };
 
 export async function openTemplates() {
@@ -42,8 +44,14 @@ function templateRow(template, rerender, guard, openEditor) {
       rerender();
       return;
     }
-    await api.deleteTemplate(template.id);
-    await openTemplates();
+    if (tpl.busy) return; // 防雙擊：第一發刪除完成前不再送
+    tpl.busy = true;
+    try {
+      await api.deleteTemplate(template.id);
+      await openTemplates();
+    } finally {
+      tpl.busy = false;
+    }
     rerender();
   };
   return el("div", { class: "tpl-row" }, [
@@ -84,7 +92,11 @@ export function renderTemplates(rerender, goHome, guard) {
 // ---------- 編輯器畫面 ----------
 
 async function loadPickable(q) {
-  tpl.exercises = await api.searchExercises(q || "");
+  const seq = ++tpl.searchSeq;
+  const result = await api.searchExercises(q || "");
+  if (seq !== tpl.searchSeq) return false; // 已有更新的查詢在跑：丟棄這批舊結果
+  tpl.exercises = result;
+  return true;
 }
 
 function itemRow(item, index, rerender) {
@@ -141,8 +153,13 @@ function itemRow(item, index, rerender) {
 }
 
 function addPanel(rerender, guard) {
+  // 已在課表裡的動作不再列出——一個動作只出現一次（進度以 exercise_id 計數）
+  const pickable = () => {
+    const added = new Set(tpl.editing.items.map((it) => it.exercise_id));
+    return tpl.exercises.filter((e) => !added.has(e.id));
+  };
   const buttons = () =>
-    tpl.exercises.map((exercise) =>
+    pickable().map((exercise) =>
       el(
         "button",
         {
@@ -156,6 +173,7 @@ function addPanel(rerender, guard) {
                   exercise_id: exercise.id,
                   name_zh: exercise.name_zh,
                   name_en: exercise.name_en,
+                  muscle_group: exercise.muscle_group,
                   is_bodyweight: exercise.is_bodyweight,
                   default_sets: 3,
                 },
@@ -181,8 +199,8 @@ function addPanel(rerender, guard) {
       oninput: (e) => {
         tpl.searchQ = e.target.value;
         guard(async () => {
-          await loadPickable(tpl.searchQ);
-          list.replaceChildren(...buttons());
+          const fresh = await loadPickable(tpl.searchQ);
+          if (fresh) list.replaceChildren(...buttons());
         });
       },
     }),
@@ -208,6 +226,7 @@ export function renderTemplateEdit(rerender, guard) {
   };
 
   const save = async () => {
+    if (tpl.busy) return; // 防雙擊：同一份課表不重複建立
     const payload = {
       name: tpl.editing.name.trim(),
       exercises: tpl.editing.items.map(({ exercise_id, default_sets }) => ({
@@ -217,8 +236,13 @@ export function renderTemplateEdit(rerender, guard) {
     };
     if (!payload.name) throw new Error("課表要有名稱");
     if (payload.exercises.length === 0) throw new Error("課表至少要有一個動作");
-    if (editing.id === null) await api.createTemplate(payload);
-    else await api.updateTemplate(editing.id, payload);
+    tpl.busy = true;
+    try {
+      if (editing.id === null) await api.createTemplate(payload);
+      else await api.updateTemplate(editing.id, payload);
+    } finally {
+      tpl.busy = false;
+    }
     await backToList();
   };
 

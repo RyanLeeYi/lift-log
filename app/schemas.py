@@ -36,6 +36,7 @@ class TemplateExerciseOut(BaseModel):
     default_sets: int
     name_zh: str
     name_en: str
+    muscle_group: str
     is_bodyweight: bool
 
 

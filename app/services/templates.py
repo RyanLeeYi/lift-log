@@ -38,6 +38,7 @@ def _to_out(template: Template) -> TemplateOut:
                 default_sets=item.default_sets,
                 name_zh=item.exercise.name_zh,
                 name_en=item.exercise.name_en,
+                muscle_group=item.exercise.muscle_group,
                 is_bodyweight=item.exercise.is_bodyweight,
             )
             for item in template.exercises
@@ -88,7 +89,14 @@ def update_template(session: Session, template_id: int, data: TemplateCreate) ->
 
 
 def delete_template(session: Session, template_id: int) -> None:
-    """刪課表不影響歷史 workout（workouts.template_id 為純數值欄，無 FK）。"""
-    template = _get(session, template_id)
+    """刪課表不影響歷史 workout（workouts.template_id 為純數值欄，無 FK）。
+
+    只載 exercises 供 ORM cascade 用，不載 nested Exercise（這裡用不到）。
+    """
+    template = session.get(
+        Template, template_id, options=[selectinload(Template.exercises)]
+    )
+    if template is None:
+        raise NotFoundError()
     session.delete(template)
     session.commit()

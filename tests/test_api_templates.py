@@ -57,6 +57,7 @@ class TestCreateTemplate:
         first = resp.json()["exercises"][0]
         assert first["name_zh"] == "深蹲"
         assert first["name_en"] == "Squat"
+        assert first["muscle_group"] == "腿"  # 前端 state.exercise 契約：與動作庫 shape 一致
 
     def test_exercises_include_is_bodyweight_for_logger_defaults(self, client):
         """前端 logger 靠 is_bodyweight 決定預設重量（自體重動作負重 0）。"""

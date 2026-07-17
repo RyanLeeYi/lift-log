@@ -98,7 +98,10 @@ body {
 .today-summary { color: var(--text-dim); font-size: 14px; line-height: 1.6; }
 
 /* ---------- picker（選動作） ---------- */
-.picker input[type="search"] {
+/* 文字/搜尋輸入框共用樣式（picker 搜尋、課表名稱、加動作搜尋） */
+.picker input[type="search"],
+.template-edit input[type="text"],
+.tpl-add-panel input[type="search"] {
   background: var(--card);
   border: 1px solid var(--card-edge);
   border-radius: 12px;
@@ -231,15 +234,6 @@ body {
 .tpl-actions { display: flex; gap: 8px; }
 .tpl-empty { color: var(--text-dim); font-size: 14px; line-height: 1.6; }
 
-.template-edit input[type="text"] {
-  background: var(--card);
-  border: 1px solid var(--card-edge);
-  border-radius: 12px;
-  color: var(--text);
-  font-size: 16px;
-  padding: 12px 14px;
-  width: 100%;
-}
 .template-edit input:focus-visible { outline: 2px solid var(--led); }
 .tpl-items { display: flex; flex-direction: column; gap: 8px; }
 .tpl-item {
@@ -262,15 +256,6 @@ body {
 .tpl-item .chip { padding: 6px 12px; font-size: 15px; border-radius: 10px; }
 .tpl-item .chip:disabled { opacity: .3; cursor: default; }
 .tpl-add-panel { display: flex; flex-direction: column; gap: 10px; }
-.tpl-add-panel input[type="search"] {
-  background: var(--card);
-  border: 1px solid var(--card-edge);
-  border-radius: 12px;
-  color: var(--text);
-  font-size: 16px;
-  padding: 12px 14px;
-  width: 100%;
-}
 .tpl-add-panel .exercise-list { max-height: 40dvh; }
 
 /* ---------- calendar（heatmap） ---------- */
