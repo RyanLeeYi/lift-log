@@ -36,6 +36,14 @@ class TestSeed:
 
 
 class TestStatic:
+    def test_health_returns_ok_without_token_and_probes_db(
+        self, anon_client: TestClient
+    ) -> None:
+        """mission-control 健康檢查入口：無 auth、實際碰 DB（靜態 / 的 200 反映不了 DB 壞掉）。"""
+        resp = anon_client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
     def test_root_serves_pwa_index_without_token(self, anon_client: TestClient) -> None:
         resp = anon_client.get("/")
         assert resp.status_code == 200

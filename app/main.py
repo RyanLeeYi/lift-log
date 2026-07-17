@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app.api import exercises, stats, templates, workouts
@@ -37,6 +38,13 @@ def create_app(settings: Settings) -> FastAPI:
         if request.scope["path"] == MCP_MOUNT:
             request.scope["path"] = f"{MCP_MOUNT}/"
         return await call_next(request)
+
+    @app.get("/health")
+    def health() -> dict:
+        # mission-control 健康檢查：無 auth（不吐資料）、實際探 DB——靜態 / 反映不了 DB 壞掉
+        with session_factory() as session:
+            session.execute(select(1))
+        return {"status": "ok"}
 
     register_error_handlers(app)
     app.include_router(workouts.router)
