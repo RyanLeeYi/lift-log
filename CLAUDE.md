@@ -20,7 +20,7 @@
 2. feature 狀態只能 failing → passing，且必須附驗證證據（測試輸出/截圖）
 3. 不做 feature_list 之外的事；發現該做的新事項 → 先加進 list 標 failing，不直接做
 4. session 結束前更新 `session-handoff.md`（L2 起）
-5. 收官（session 結束）時檢查 `git status` + 未推 commit：程式碼有改動就 commit 並 push（remote 建立後補 URL）
+5. 收官（session 結束）時檢查 `git status` + 未推 commit：程式碼有改動就 commit 並 push（remote：https://github.com/RyanLeeYi/lift-log）
 
 ## 專案特有約束
 

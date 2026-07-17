@@ -9,7 +9,7 @@
 
 ## 做到一半 / 已知未修
 - 無半成品。兩條 F6 前置預警已記在 PRD 技術約束（services 需原子 log_workout 入口；/mcp auth 走不到 router dependency）
-- repo 尚無 GitHub remote（等 Ryan 決定 `gh repo create RyanLeeYi/lift-log --private`）
+- GitHub remote 已建：https://github.com/RyanLeeYi/lift-log（private，main 已推）
 
 ## 下一步（具體到可直接動手）
 - F2 手機記錄 UI：先建 `app/static/`（index.html + JS modules），FastAPI 掛靜態檔；驗收＝手機瀏覽器完成「開練→選動作→kg×reps→送出」、上次重量帶入（GET /api/exercises/{id}/last-sets 已就緒）、組間計時器（rest_seconds 隨下一組送出）
