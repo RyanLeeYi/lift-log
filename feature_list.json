@@ -39,8 +39,8 @@
       "id": "F6",
       "name": "MCP＋AI connector",
       "acceptance": "/mcp 帶 token 連上，查詢 tools（query_workouts/get_progress/list_templates/get_body_metrics）回正確 JSON、雙語匹配；記錄 tools（log_workout/log_body_metrics）可代記錄、未知動作整包拒絕並回建議；至少一家 connector 實連成功（截圖）。詳見 PRD R7/R7b",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "2026-07-18：103 tests 全過、覆蓋率 99%、ruff 乾淨（commit 6b13980 修完 review ~20 findings：MCP client_uuid 冪等、SingleTokenVerifier、未知動作整包拒絕細節、課表同名 guard 等）。acceptance-verifier 以 live server（隔離 DB port 8137）實呼叫 MCP 逐條 8/8 PASS：token/401/無尾斜線、4 查詢 tools 雙語大小寫匹配、log_workout 代記錄後查回、未知動作整包拒絕含建議且零寫入、create_missing 才建檔、同 client_uuid 重放同 workout_id 組數不翻倍、log-workout-interview prompt 存在、connector 實連證據 docs/evidence-f6-mcp-connector.txt（claude -p 實呼叫）"
     },
     {
       "id": "F7",
