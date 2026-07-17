@@ -18,8 +18,8 @@
       "id": "F3",
       "name": "日曆 heatmap",
       "acceptance": "pytest 驗噸位計算（自體重=最新體重+負重，無體重紀錄只計負重）；/calendar 月視圖 5 級深淺、點日期看明細。詳見 PRD R3",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "2026-07-17：41 tests 全過（+7 F3：噸位加總/自體重無體重只計負重/軟刪除排除/月界含末日/空月/400/401）；Playwright 實測月視圖 3 天 3 級深淺、點日明細（噸位 2,700 kg、動作分組 kg×reps@RPE）、◀▶ 換月、零噸位日顯示 0 kg；截圖 docs/evidence-f3-calendar.png。fresh-context review 4 findings（guard 繞過/重複抓動作庫/零噸位 falsy/月份不重置）全修。set_tonnage 的 bodyweight_kg 參數已為 F8 預留"
     },
     {
       "id": "F4",

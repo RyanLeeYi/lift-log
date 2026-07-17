@@ -44,4 +44,7 @@ export const api = {
   createWorkout: () => request("POST", "/api/workouts", {}),
   logSet: (workoutId, payload) => request("POST", `/api/workouts/${workoutId}/sets`, payload),
   workoutDetail: (workoutId) => request("GET", `/api/workouts/${workoutId}`),
+  listWorkouts: (start, end) => request("GET", `/api/workouts?start=${start}&end=${end}`),
+  calendarStats: (year, month) =>
+    request("GET", `/api/stats/calendar?year=${year}&month=${month}`),
 };

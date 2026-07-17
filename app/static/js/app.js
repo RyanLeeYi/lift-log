@@ -1,6 +1,7 @@
 // lift-log 記錄頁：setup → home → picker → logger 四個畫面，全部由 render() 重繪。
 
 import { api, ApiError, getToken, setToken } from "./api.js";
+import { openCalendar, renderCalendar } from "./calendar.js";
 import {
   clearActiveWorkout,
   exerciseAlias,
@@ -113,6 +114,19 @@ function renderHome() {
       "button",
       { class: "btn btn-primary home-start", onclick: () => guard(start) },
       [state.workoutId ? "繼續訓練" : "開練"],
+    ),
+    el(
+      "button",
+      {
+        class: "btn",
+        onclick: () =>
+          guard(async () => {
+            await openCalendar();
+            state.screen = "calendar";
+            render();
+          }),
+      },
+      ["📅 日曆"],
     ),
   ]);
 }
@@ -349,11 +363,22 @@ function renderLogger() {
 // ---------- render ----------
 
 function render() {
-  root.replaceChildren(
-    { setup: renderSetup, home: renderHome, picker: renderPicker, logger: renderLogger }[
-      state.screen
-    ](),
-  );
+  const screens = {
+    setup: renderSetup,
+    home: renderHome,
+    picker: renderPicker,
+    logger: renderLogger,
+    calendar: () =>
+      renderCalendar(
+        render,
+        () => {
+          state.screen = "home";
+          render();
+        },
+        guard,
+      ),
+  };
+  root.replaceChildren(screens[state.screen]());
 }
 
 // ---------- 啟動 ----------
