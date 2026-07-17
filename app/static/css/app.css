@@ -196,6 +196,24 @@ body {
 
 .log-btn { font-size: 20px; padding: 18px; border-radius: 18px; }
 
+/* 離線佇列標示：待同步／同步失敗（F5） */
+.sync-line {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 13px;
+  font-family: var(--mono);
+}
+.sync-pending { color: var(--led); }
+.sync-failed {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.done-row.pending { opacity: .75; }
+
 .done-list { display: flex; flex-direction: column; gap: 6px; }
 .done-row {
   display: flex; justify-content: space-between;

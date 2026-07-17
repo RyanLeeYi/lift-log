@@ -45,3 +45,33 @@ class TestStatic:
     def test_manifest_served(self, anon_client: TestClient) -> None:
         resp = anon_client.get("/manifest.webmanifest")
         assert resp.status_code == 200
+
+    def test_service_worker_served_at_root_scope(self, anon_client: TestClient) -> None:
+        """F5：sw.js 必須掛在根路徑（scope 才能涵蓋整個 app），且為 JS。"""
+        resp = anon_client.get("/sw.js")
+        assert resp.status_code == 200
+        assert "javascript" in resp.headers["content-type"]
+
+    def test_sw_shell_list_matches_static_files(self) -> None:
+        """F5 漂移防護：SHELL 清單的檔案要存在；新增的 js/css 檔要記得進 SHELL。
+
+        漏列的檔案不會進離線快取——使用者離線重整就 404，且沒有任何建置期錯誤。
+        """
+        import re
+        from pathlib import Path
+
+        static_dir = Path(__file__).parent.parent / "app" / "static"
+        sw_source = (static_dir / "sw.js").read_text(encoding="utf-8")
+        shell_block = re.search(r"const SHELL = \[(.*?)\];", sw_source, re.S)
+        assert shell_block, "sw.js 裡找不到 SHELL 清單"
+        shell = set(re.findall(r'"(/[^"]*)"', shell_block.group(1)))
+
+        # SHELL 裡的每個路徑都必須真的存在（"/" 對應 index.html）
+        for url in shell:
+            target = static_dir / ("index.html" if url == "/" else url.lstrip("/"))
+            assert target.is_file(), f"SHELL 列了不存在的檔案：{url}"
+
+        # 每個 js/css 檔都必須列進 SHELL（sw.js 自己除外——瀏覽器另行管理）
+        for file in [*static_dir.glob("js/*.js"), *static_dir.glob("css/*.css")]:
+            url = "/" + file.relative_to(static_dir).as_posix()
+            assert url in shell, f"{url} 沒列進 sw.js 的 SHELL，離線時會載不到"

@@ -4,6 +4,7 @@
 import { api, ApiError, getToken, setToken } from "./api.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { el } from "./dom.js";
+import { discardFailed, enqueueSet, flushQueue, listQueued, queueCounts } from "./queue.js";
 import { openTemplates, renderTemplateEdit, renderTemplates } from "./templates.js";
 import {
   clearActiveWorkout,
@@ -52,6 +53,68 @@ async function guard(action) {
     }
     showError(err.message);
   }
+}
+
+// ---------- 離線佇列（F5）：送不出去先入列，恢復連線自動補傳 ----------
+
+function isOffline(err) {
+  return err instanceof ApiError && err.status === 0;
+}
+
+async function refreshQueueCounts() {
+  // 一次讀取同時推導計數與逐筆狀態——done-list 的 ⏳/⚠ 標示以佇列為唯一事實來源
+  const entries = await listQueued();
+  state.queue = {
+    pending: entries.filter((e) => e.status === "pending").length,
+    failed: entries.filter((e) => e.status === "failed").length,
+  };
+  state.queueStatus = Object.fromEntries(entries.map((e) => [e.client_uuid, e.status]));
+}
+
+function renderUnlessTyping() {
+  // 背景同步觸發的重繪不得清掉使用者正在輸入的搜尋框（重繪會失焦收鍵盤）；
+  // 略過也無妨——標示會在下一次自然重繪時更新
+  const active = document.activeElement;
+  if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+  render();
+}
+
+async function syncQueue() {
+  const before = state.queue;
+  const synced = await flushQueue(api.logSet);
+  await refreshQueueCounts();
+  const changed =
+    synced > 0 ||
+    before.pending !== state.queue.pending ||
+    before.failed !== state.queue.failed;
+  if (changed) renderUnlessTyping();
+}
+
+function syncStatusLine() {
+  const { pending, failed } = state.queue;
+  if (pending === 0 && failed === 0) return [];
+  const parts = [];
+  if (pending > 0) parts.push(el("span", { class: "sync-pending" }, [`⏳ 待同步 ${pending} 組`]));
+  if (failed > 0) {
+    parts.push(
+      el(
+        "button",
+        {
+          class: "btn btn-danger sync-failed",
+          onclick: () =>
+            guard(async () => {
+              const discarded = new Set(await discardFailed());
+              // 捨棄＝這些組沒進 server——從清單移除，不能讓它們看起來像已同步
+              state.doneSets = state.doneSets.filter((s) => !discarded.has(s.client_uuid));
+              await refreshQueueCounts();
+              render();
+            }),
+        },
+        [`⚠ 同步失敗 ${failed} 組（點此捨棄）`],
+      ),
+    );
+  }
+  return [el("div", { class: "sync-line" }, parts)];
 }
 
 // ---------- setup ----------
@@ -114,6 +177,7 @@ function renderHome() {
       el("span", { class: "date" }, [todayLabel()]),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    ...syncStatusLine(),
     el("p", { class: "today-summary" }, [
       state.workoutId ? "今天的訓練還開著——繼續。" : "還沒開始。按下去，就是今天的第一組。",
     ]),
@@ -196,11 +260,38 @@ async function pickExercise(exercise) {
   state.rpe = null;
   state.doneSets = [];
   state.setNumber = (state.setCounts[exercise.id] || 0) + 1; // 回頭選同動作時接續編號
-  const last = await api.lastSets(exercise.id);
+  let last = [];
+  let offline = false;
+  try {
+    last = await api.lastSets(exercise.id);
+  } catch (err) {
+    if (!isOffline(err)) throw err; // 離線拿不到「上次」——退而求其次，不擋記錄
+    offline = true;
+  }
   if (last.length > 0) {
     state.weightKg = last[0].weight_kg;
     state.reps = last[0].reps;
-    state.lastHint = last.map((s) => `${s.weight_kg}×${s.reps}`).join("  ");
+    state.lastHint = `上次  ${last.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
+  } else if (offline) {
+    // 離線：沿用本次已排隊的同動作組數當預設，沒有就用通用預設；不假裝是「第一次做」
+    const queued = (await listQueued()).filter(
+      (e) =>
+        e.status === "pending" &&
+        e.workout_id === state.workoutId &&
+        e.payload.exercise_id === exercise.id,
+    );
+    if (queued.length > 0) {
+      const newest = queued[queued.length - 1].payload;
+      state.weightKg = newest.weight_kg;
+      state.reps = newest.reps;
+      state.lastHint = `本次（待同步）  ${queued
+        .map((e) => `${e.payload.weight_kg}×${e.payload.reps}`)
+        .join("  ")}`;
+    } else {
+      state.weightKg = exercise.is_bodyweight ? 0 : 20;
+      state.reps = 8;
+      state.lastHint = "離線中——載不到上次紀錄";
+    }
   } else {
     state.weightKg = exercise.is_bodyweight ? 0 : 20;
     state.reps = 8;
@@ -354,11 +445,20 @@ function renderLogger() {
         ...(state.rpe ? { rpe: state.rpe } : {}),
         ...(restElapsedSeconds() !== null ? { rest_seconds: restElapsedSeconds() } : {}),
       };
-      const saved = await api.logSet(state.workoutId, payload);
+      let saved;
+      try {
+        saved = await api.logSet(state.workoutId, payload);
+      } catch (err) {
+        if (!isOffline(err)) throw err;
+        await enqueueSet(state.workoutId, payload); // 離線：入列緩衝，恢復連線自動補傳
+        saved = payload; // 標示由 state.queueStatus 推導，不另存旗標
+        await refreshQueueCounts();
+      }
       state.doneSets.push(saved);
       state.setCounts[exercise.id] = state.setNumber;
       state.setNumber += 1;
       state.rpe = null;
+      saveActiveWorkout(); // setCounts 持久化：重新整理後編號續接
       startRestTimer(); // 招牌時刻：LED 亮起＝已記錄
     } finally {
       state.submitting = false;
@@ -374,6 +474,7 @@ function renderLogger() {
   };
 
   const endWorkout = () => {
+    // 收工只清 client 狀態；佇列裡未同步的組之後仍會補傳進這個 workout（server 是 SSOT）
     stopRestTimer();
     clearActiveWorkout();
     state.setCounts = {};
@@ -387,9 +488,7 @@ function renderLogger() {
       el("h2", {}, [exerciseName(exercise)]),
       el("span", { class: "alias" }, [exerciseAlias(exercise)]),
     ]),
-    el("div", { class: "last-hint" }, [
-      state.lastHint ? `上次  ${state.lastHint}` : "第一次做這個動作",
-    ]),
+    el("div", { class: "last-hint" }, [state.lastHint || "第一次做這個動作"]),
     el("div", { class: `rest-led${state.restStartedAt ? " on" : ""}` }, [
       el("span", { class: "label" }, ["REST"]),
       el("span", { class: "digits" }, [
@@ -397,15 +496,18 @@ function renderLogger() {
       ]),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    ...syncStatusLine(),
     el("div", { class: "done-list" },
-      state.doneSets.map((s) =>
-        el("div", { class: "done-row" }, [
-          el("span", {}, [`#${s.set_number}`]),
+      state.doneSets.map((s) => {
+        const queued = state.queueStatus[s.client_uuid]; // pending | failed | undefined（已同步）
+        const mark = queued === "pending" ? " ⏳" : queued === "failed" ? " ⚠" : "";
+        return el("div", { class: `done-row${queued ? ` ${queued}` : ""}` }, [
+          el("span", {}, [`#${s.set_number}${mark}`]),
           el("span", { class: "n" }, [
             `${s.weight_kg} kg × ${s.reps}${s.rpe ? `  @${s.rpe}` : ""}`,
           ]),
-        ]),
-      ),
+        ]);
+      }),
     ),
     el("div", { class: "steppers" }, [
       stepper(exercise.is_bodyweight ? "負重 KG" : "KG", state.weightKg, [
@@ -482,6 +584,13 @@ function render() {
 
 // ---------- 啟動 ----------
 
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {
+    /* SW 註冊失敗不影響線上使用 */
+  });
+}
+window.addEventListener("online", () => guard(syncQueue)); // 恢復連線：自動補傳佇列
+
 restoreActiveWorkout();
 if (!getToken()) {
   state.screen = "setup";
@@ -489,4 +598,5 @@ if (!getToken()) {
 } else {
   render();
   guard(loadExercises); // 預載動作庫，token 失效會導回 setup
+  guard(syncQueue); // 開站補傳上次離線留下的佇列
 }

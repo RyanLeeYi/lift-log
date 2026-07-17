@@ -1,20 +1,22 @@
 # Session Handoff
-> 最後更新：2026-07-17（第三場：F4 收官）
+> 最後更新：2026-07-17（第四場：F5 收官）
 
 ## 這個 session 做了
-- **F4 課表選單：passing**（evidence 見 feature_list.json）
-  - 補跑上場欠的 `/code-review medium`：8 finder + 2 verifier agents，7 findings 成立、2 REFUTED
-  - 已修：儲存/刪除雙擊防重入（tpl.busy）、加動作面板排除已加入動作（進度以 exercise_id 計數，同動作兩列會共用計數器）、搜尋回應 race 防護（searchSeq）、TemplateExerciseOut 補 muscle_group（state.exercise 契約一致，TDD 先紅後綠）、delete_template 去掉無用 nested join、CSS input 三份重複合併
-  - 已知未修（有意識接受）：create/update 後的 _get() 重載（單人系統代價可忽略；verifier 確認 expire_on_commit 下屬務實選擇）、templates service 回 DTO 與其他 service 回 ORM 的分層差異（verifier 判 REFUTED：扁平欄位無法 model_validate 重建）、搜尋面板模式與 picker 重複（F5 會動 picker，屆時再抽）
-  - acceptance-verifier 以 live curl + 全套測試逐條覆核 R4 五項全 PASS
-  - 回歸：58 tests 全綠、覆蓋率 99%、ruff 乾淨、Playwright 快速回歸（過濾/儲存/開練菜單/logger）console 0 errors
+- **F5 PWA 離線佇列：passing**（evidence 見 feature_list.json）
+  - 新增 `app/static/sw.js`（app shell SWR 快取＋waitUntil、install 逐檔容錯、/api 不快取）、`app/static/js/queue.js`（IndexedDB 佇列：0/5xx 保留重試、401 上拋、永久 4xx 標 failed 手動捨棄）
+  - app.js：logSet 離線入列、⏳/⚠ 標示由 `state.queueStatus` 即時推導（不存旗標）、online 事件與開站自動 flush、背景重繪不清輸入焦點、離線選動作帶入本次待同步組數
+  - state.js：setCounts 隨 sessionStorage 續接（F2 遺留正式修復，重整後 set_number 不撞號）
+  - 測試 +2：/sw.js 供應、SHELL 清單漂移防護（新增 js/css 檔忘了進 SHELL 會紅）
+  - code review（8 finder + 2 verifier）10 findings 全處置；REFUTED：saveActiveWorkout 每組全量序列化（<1KB 人速操作，可忽略）；確認為正確行為：收工後佇列仍補傳（server 是 SSOT，該組確實練了）
+  - acceptance-verifier 獨立以 Playwright setOffline 重現全部情境：8/8 PASS
+- 60 tests、覆蓋率 99%（後端未動）、ruff 乾淨、console 0 errors
 
 ## 做到一半 / 已知未修
 - 無半成品
-- F5 已知範圍：setCounts 未隨 sessionStorage 恢復（重整後菜單進度歸零＋set_number 撞號，F2 遺留、F5 acceptance 已明列）
-- F6 前置預警在 PRD 技術約束（原子 log_workout、/mcp auth）
-- F8 接點已備好：services/stats.py set_tonnage(bodyweight_kg)
-- F2/F3/F4 真機最終確認仍待 Ryan（手機實開一次流程）
+- 有意識接受：捨棄 failed 組後 setCounts 不回滾（set_number 留空號，append-only 無唯一約束，無害）；離線重整後 done-list 的逐列歷史不重建（佇列 badge 仍在，資料安全）；SW 需 HTTPS（部署走 F7 Cloudflare Tunnel 沒問題，純 http LAN IP 直連不會有離線快取——已知窄缺口）
+- F6 前置預警（PRD 技術約束）：(1) services 需新增單一交易的 log_workout 入口，勿以迴圈拼裝 log_set；(2) /mcp 掛載走不到 APIRouter 的 require_token，需用 fastmcp auth 接同一 token 來源，實連必驗 401
+- F8 接點：services/stats.py set_tonnage(bodyweight_kg)
+- F2–F5 真機最終確認留待 Ryan（手機實開：記錄＋課表＋飛航模式離線記錄）
 
 ## 下一步（具體到可直接動手）
-- **F5 PWA 離線佇列**：manifest 已有、無 service worker。TDD 起手：先寫「client_uuid 冪等補傳不重複」已有後端保證（F1 測試涵蓋），F5 主戰場在前端——(1) service worker + IndexedDB 佇列（離線 POST 失敗入列、UI 標示待同步、上線自動重放、靠 client_uuid 冪等）；(2) setCounts 隨 sessionStorage 續接恢復（或從 GET /api/workouts/{id} 重建）；(3) workout 已刪時該筆標失敗留佇列。驗證：DevTools offline 記 3 組→恢復連線自動補傳不重複、標示消失
+- **F6 MCP＋AI connector**：fastmcp 掛 /mcp（Streamable HTTP）。TDD 起手：先寫 services.log_workout 單一交易入口的測試（整包寫入、未知動作整包拒絕回建議、create_missing=true 才建檔——PRD R7b）；再掛查詢 tools（query_workouts/get_progress/list_templates/get_body_metrics）與記錄 tools（log_workout/log_body_metrics）、prompt 模板 log-workout-interview；/mcp 帶錯 token 必須 401（fastmcp auth）。最後至少一家 connector（Claude）實連成功截圖。注意 get_body_metrics/log_body_metrics 依賴 F8 的 body_metrics 表——可先建模型與 service（F8 只剩 UI 與 heatmap 接線），或 F6 先做 workout 相關 tools、body metrics tools 留到 F8 後補

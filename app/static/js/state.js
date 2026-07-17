@@ -20,6 +20,8 @@ export const state = {
   searchQ: "",
   submitting: false,
   error: null,
+  queue: { pending: 0, failed: 0 }, // 離線佇列計數（顯示「待同步」標示用）
+  queueStatus: {}, // {client_uuid: "pending"|"failed"}——done-list 標示的唯一來源，隨佇列即時推導
 };
 
 export function getLang() {
@@ -41,7 +43,11 @@ export function exerciseAlias(exercise) {
 export function saveActiveWorkout() {
   sessionStorage.setItem(
     WORKOUT_KEY,
-    JSON.stringify({ workoutId: state.workoutId, template: state.template }),
+    JSON.stringify({
+      workoutId: state.workoutId,
+      template: state.template,
+      setCounts: state.setCounts, // 續接恢復：重新整理後 set_number 不得與已存組撞號
+    }),
   );
 }
 
@@ -51,6 +57,7 @@ export function restoreActiveWorkout() {
     if (saved && saved.workoutId) {
       state.workoutId = saved.workoutId;
       state.template = saved.template || null;
+      state.setCounts = saved.setCounts || {};
     }
   } catch {
     /* 壞資料當沒存過 */
