@@ -54,4 +54,5 @@ export const api = {
     request("GET", `/api/stats/calendar?year=${year}&month=${month}`),
   listBodyMetrics: () => request("GET", "/api/body-metrics"),
   logBodyMetric: (payload) => request("POST", "/api/body-metrics", payload),
+  listDailyStatus: (start, end) => request("GET", `/api/daily-status?start=${start}&end=${end}`),
 };

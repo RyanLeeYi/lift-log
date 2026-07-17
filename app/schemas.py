@@ -130,6 +130,23 @@ class BodyMetricOut(BaseModel):
     body_fat_pct: float | None
 
 
+class DailyStatusIn(BaseModel):
+    date: date_type | None = None
+    energy: int = Field(ge=1, le=5)
+    sleep_quality: int | None = Field(default=None, ge=1, le=5)
+    note: str | None = None
+
+
+class DailyStatusOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: date_type
+    energy: int
+    sleep_quality: int | None
+    note: str | None
+
+
 class SetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

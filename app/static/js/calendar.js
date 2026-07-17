@@ -11,6 +11,7 @@ const cal = {
   days: {}, // {"YYYY-MM-DD": tonnage}
   selected: null, // "YYYY-MM-DD"
   detail: [], // [{workout, sets}]
+  status: null, // 當日狀態 {energy, sleep_quality, note}（F9；沒記就是 null）
   exerciseById: null, // 進日曆時載一次，點日不重抓
 };
 
@@ -52,7 +53,11 @@ function shiftMonth(delta) {
 
 async function selectDay(dateStr) {
   cal.selected = dateStr;
-  const workouts = await api.listWorkouts(dateStr, dateStr);
+  const [workouts, statuses] = await Promise.all([
+    api.listWorkouts(dateStr, dateStr),
+    api.listDailyStatus(dateStr, dateStr),
+  ]);
+  cal.status = statuses[0] || null;
   cal.detail = await Promise.all(
     workouts.map(async (w) => ({
       workout: w,
@@ -61,10 +66,24 @@ async function selectDay(dateStr) {
   );
 }
 
+function statusRow() {
+  if (!cal.status) return [];
+  const s = cal.status;
+  const parts = [`精力 ${s.energy}/5`];
+  if (s.sleep_quality != null) parts.push(`睡眠 ${s.sleep_quality}/5`);
+  return [
+    el("div", { class: "cal-status" }, [
+      el("span", {}, [parts.join("  ")]),
+      ...(s.note ? [el("span", { class: "note" }, [s.note])] : []),
+    ]),
+  ];
+}
+
 function detailRows() {
   if (!cal.selected) return [];
   if (cal.detail.length === 0) {
-    return [el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`])];
+    // 休息日也可能記了當日狀態（R9：不依附 workout）
+    return [el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]), ...statusRow()];
   }
   const tonnage = cal.days[cal.selected];
   const rows = [
@@ -75,6 +94,7 @@ function detailRows() {
         tonnage !== undefined ? `噸位 ${Math.round(tonnage).toLocaleString()} kg` : "",
       ]),
     ]),
+    ...statusRow(),
   ];
   for (const { sets } of cal.detail) {
     // 依動作分組顯示：深蹲 80×8 80×8 85×6

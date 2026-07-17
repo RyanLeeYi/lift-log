@@ -14,9 +14,17 @@ from pydantic import ValidationError
 from sqlalchemy.orm import sessionmaker
 
 from app.errors import DomainError, NotFoundError, UnknownExerciseError, validation_message
-from app.models import BodyMetric
-from app.schemas import BodyMetricIn, BodyMetricOut, LogSetIn, LogWorkoutIn
+from app.models import BodyMetric, DailyStatus
+from app.schemas import (
+    BodyMetricIn,
+    BodyMetricOut,
+    DailyStatusIn,
+    DailyStatusOut,
+    LogSetIn,
+    LogWorkoutIn,
+)
 from app.services import body_metrics as body_metrics_svc
+from app.services import daily_status as daily_status_svc
 from app.services import exercises as exercises_svc
 from app.services import stats as stats_svc
 from app.services import templates as templates_svc
@@ -32,13 +40,19 @@ INTERVIEW_PROMPT = """\
 3. 問當日狀態：精力 1-5？睡眠品質 1-5？想補充的描述？
 4. 把整理好的清單覆述給使用者確認（動作×組數×重量×次數）。
 5. 確認無誤後「一次」呼叫 log_workout 寫入全部組數——不要邊問邊寫；
-   動作名比對不到時，把 suggestions 唸給使用者選，或經同意後帶 create_missing=true。
-6. 寫入成功後覆述摘要（總組數、總噸位）。當日狀態記錄工具上線前先以 note 附註。
+   動作名比對不到時，把 suggestions 唸給使用者選，或經同意後帶 create_missing=true；
+   自產一個 client_uuid（≥8 字元），timeout 重試帶同值避免重複寫入。
+6. 當日狀態另以 log_daily_status 寫入（energy 必填、sleep_quality 與 note 選填）。
+7. 寫入成功後覆述摘要（總組數、總噸位、當日狀態）。
 """
 
 
 def _metric_out(row: BodyMetric) -> dict:
     return BodyMetricOut.model_validate(row).model_dump(mode="json", exclude={"id"})
+
+
+def _status_out(row: DailyStatus) -> dict:
+    return DailyStatusOut.model_validate(row).model_dump(mode="json", exclude={"id"})
 
 
 class SingleTokenVerifier(TokenVerifier):
@@ -187,6 +201,36 @@ def create_mcp(session_factory: sessionmaker, token: str) -> FastMCP:
                 return {"error": validation_message(exc)}
             row, _created = body_metrics_svc.upsert_body_metric(session, data)
             return _metric_out(row)
+
+    @mcp.tool
+    def get_daily_status(
+        start_date: date_type | None = None, end_date: date_type | None = None
+    ) -> dict:
+        """查詢當日狀態紀錄（精力／睡眠評分＋描述；區間可省略＝全部），依日期排序。"""
+        with session_factory() as session:
+            rows = daily_status_svc.list_daily_status(session, start_date, end_date)
+            return {"statuses": [_status_out(row) for row in rows]}
+
+    @mcp.tool
+    def log_daily_status(
+        energy: int,
+        sleep_quality: int | None = None,
+        note: str | None = None,
+        date: date_type | None = None,
+    ) -> dict:
+        """代主人記錄當日狀態（energy 1–5 必填、sleep_quality 1–5 與 note 選填）。
+
+        休息日也可記，不依附訓練；同日重送為覆蓋更新。
+        """
+        with session_factory() as session:
+            try:
+                data = DailyStatusIn(
+                    date=date, energy=energy, sleep_quality=sleep_quality, note=note
+                )
+            except ValidationError as exc:
+                return {"error": validation_message(exc)}
+            row, _created = daily_status_svc.upsert_daily_status(session, data)
+            return _status_out(row)
 
     @mcp.prompt(name="log-workout-interview")
     def log_workout_interview() -> str:

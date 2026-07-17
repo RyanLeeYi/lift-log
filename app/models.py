@@ -71,6 +71,19 @@ class BodyMetric(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class DailyStatus(Base):
+    """當日狀態：一天一筆（date UNIQUE），同日重送為覆蓋更新；休息日也可記，不依附 workout。"""
+
+    __tablename__ = "daily_status"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    energy: Mapped[int] = mapped_column()
+    sleep_quality: Mapped[int | None] = mapped_column(default=None)
+    note: Mapped[str | None] = mapped_column(String, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class WorkoutSet(Base):
     """一組訓練，append-only：不做 update，記錯用軟刪除（deleted_at）。"""
 

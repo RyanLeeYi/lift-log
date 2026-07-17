@@ -333,6 +333,13 @@ body {
 }
 .cal-detail-row .n { font-family: var(--mono); color: var(--text); text-align: right; }
 .cal-empty { color: var(--text-dim); font-size: 14px; padding: 8px 4px; }
+.cal-status {
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: 13px; color: var(--text-dim);
+  padding: 4px 4px 6px;
+  border-bottom: 1px solid var(--card-edge);
+}
+.cal-status .note { color: var(--text); }
 
 /* ---------- 體重體脂（F8） ---------- */
 .body-form { display: flex; flex-direction: column; gap: 10px; }
