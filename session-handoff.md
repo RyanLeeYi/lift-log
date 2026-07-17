@@ -1,5 +1,17 @@
 # Session Handoff
-> 最後更新：2026-07-17（第四場：F5 收官）
+> 最後更新：2026-07-17（第五場：F6 研究完成即觸用量門檻收工，未動工）
+
+## F6 技術研究成果（已查證 fastmcp v3.2 官方文件，下場直接照做）
+- **安裝**：`uv add fastmcp`
+- **掛載**：`mcp_app = mcp.http_app(path="/")` → `app.mount("/mcp", mcp_app)`；**FastAPI 必須帶 `lifespan=mcp_app.lifespan`** 否則 session manager 不會初始化（create_app 目前沒有 lifespan，直接傳入即可）
+- **auth（滿足 PRD compare_digest 要求）**：`from fastmcp.server.auth.providers.debug import DebugTokenVerifier`，`DebugTokenVerifier(validate=lambda t: secrets.compare_digest(t, settings.token))` → `FastMCP(name=..., auth=verifier)`；實連測試必驗錯 token 401
+- **測試**：`from fastmcp import Client; async with Client(mcp_server) as c:`（in-memory transport，直接傳 server 實例）→ `c.list_tools()` / `c.call_tool(name, args)`；pytest 需 asyncio 支援（可能要 `uv add pytest-asyncio`）
+- **connector 實連取證**：`claude mcp add --transport http lift-log http://127.0.0.1:8137/mcp`（帶 header Authorization）後用 `claude -p` 呼叫 tool，截終端輸出當證據；真・雲端 connector（claude.ai/ChatGPT）要等 F7 公開 HTTPS
+- **實作順序（TDD）**：(1) 先紅：`services/workouts.log_workout` 單一交易入口測試——整包寫入、未知動作（雙語皆未命中）整包拒絕回相近建議、`create_missing=true` 才建檔（PRD R7b 範例有輸入輸出）；(2) body_metrics 模型＋service（同日覆蓋 upsert、30–300 驗證）——F6 的 get/log_body_metrics tools 需要，F8 只剩 UI/heatmap 接線；(3) `app/mcp.py`：查詢 tools ×4（query_workouts/get_progress/list_templates/get_body_metrics，重用 services 不重寫查詢）＋記錄 tools ×2；(4) 掛載＋auth＋401 測試
+- **注意**：get_progress 的 service 函式尚不存在（stats.py 目前只有 calendar_tonnage）；MCP tools 一律經 services，勿在 tool 內寫查詢
+
+---
+# 前場紀錄（F5 收官）
 
 ## 這個 session 做了
 - **F5 PWA 離線佇列：passing**（evidence 見 feature_list.json）
