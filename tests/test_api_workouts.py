@@ -33,6 +33,13 @@ class TestAuth:
         app = app_factory()
         assert app.state.settings.token == "env-token"
 
+    def test_liftlog_db_env_var_controls_db_path(self, tmp_path, monkeypatch):
+        """`.env.example` 文件寫的是 LIFTLOG_DB——它必須真的生效，不能默默用預設路徑。"""
+        target = str(tmp_path / "custom.db")
+        monkeypatch.setenv("LIFTLOG_TOKEN", "t")
+        monkeypatch.setenv("LIFTLOG_DB", target)
+        assert Settings().db_path == target
+
 
 class TestCreateWorkout:
     def test_create_workout_returns_201_with_id_and_date(self, client):

@@ -11,8 +11,8 @@
       "id": "F2",
       "name": "手機記錄 UI",
       "acceptance": "手機瀏覽器完成「開練→選動作→kg×reps→送出」；同動作上次重量次數自動帶入；送出後組間計時器啟動、休息秒數隨下一組送出（rest_seconds=該組前休息）；RPE 選填不擋送出。詳見 PRD R2",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "2026-07-17：34 tests 全過（覆蓋率 99%）+ ruff 乾淨；acceptance-verifier 以獨立 Playwright 390×844 重跑全流程逐條 PASS（rest_seconds 掛下一組、RPE 選填、上次帶入、set_number 接續、搜尋即時過濾）；截圖 docs/evidence-f2-logger.png。真機最終確認留待 Ryan。fresh-context review 4 findings（搜尋框重繪清空、雙擊重送、回選同動作編號重複、計時器洩漏）+ 驗證中發現 LIFTLOG_DB env 未生效，全數修復"
     },
     {
       "id": "F3",
@@ -31,7 +31,7 @@
     {
       "id": "F5",
       "name": "PWA 離線佇列",
-      "acceptance": "DevTools offline 模式記 3 組（UI 標示待同步）→恢復連線自動補傳、client_uuid 冪等不重複、標示消失。詳見 PRD R5",
+      "acceptance": "DevTools offline 模式記 3 組（UI 標示待同步）→恢復連線自動補傳、client_uuid 冪等不重複、標示消失；訓練中重新整理頁面後 set_number 不得與已存組重複（setCounts 需隨續接恢復，F2 驗收遺留）。詳見 PRD R5",
       "status": "failing",
       "evidence": null
     },
