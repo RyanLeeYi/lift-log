@@ -2,16 +2,14 @@
 
 import json
 from datetime import date
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from fastmcp import Client, FastMCP
 from sqlalchemy.orm import sessionmaker
 
-from app.db import make_engine
 from app.mcp import create_mcp
-from app.models import Base, BodyMetric, Exercise, Workout, WorkoutSet
+from app.models import BodyMetric, Exercise, Workout, WorkoutSet
 from app.schemas import BodyMetricIn, LogSetIn, LogWorkoutIn, TemplateCreate, TemplateExerciseIn
 from app.services.body_metrics import upsert_body_metric
 from app.services.templates import create_template
@@ -25,13 +23,6 @@ EXPECTED_TOOLS = {
     "log_workout",
     "log_body_metrics",
 }
-
-
-@pytest.fixture()
-def session_factory(tmp_path: Path) -> sessionmaker:
-    engine = make_engine(str(tmp_path / "mcp.db"))
-    Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine)
 
 
 @pytest.fixture()
@@ -161,6 +152,33 @@ async def test_mcp_query_workouts_and_progress(
 
 
 @pytest.mark.asyncio
+async def test_mcp_log_workout_empty_sets_returns_error_contract(
+    mcp_server: FastMCP,
+) -> None:
+    """sets=[] 要回 {"error": ...}，不得裸拋 ValidationError 違反工具契約。"""
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("log_workout", {"sets": []})
+    assert "error" in _structured(result)
+
+
+@pytest.mark.asyncio
+async def test_mcp_log_workout_client_uuid_replay_idempotent(
+    mcp_server: FastMCP, session_factory: sessionmaker
+) -> None:
+    """LLM timeout 重試帶同 client_uuid：不得重複寫入。"""
+    args = {
+        "sets": [{"exercise": "深蹲", "weight_kg": 80, "reps": 8}],
+        "client_uuid": "llm-retry-01",
+    }
+    async with Client(mcp_server) as client:
+        first = _structured(await client.call_tool("log_workout", args))
+        second = _structured(await client.call_tool("log_workout", args))
+    assert second["workout_id"] == first["workout_id"]
+    with session_factory() as session:
+        assert session.query(WorkoutSet).count() == 1
+
+
+@pytest.mark.asyncio
 async def test_mcp_get_progress_unknown_exercise(mcp_server: FastMCP) -> None:
     async with Client(mcp_server) as client:
         result = await client.call_tool("get_progress", {"exercise": "nope"})
@@ -187,6 +205,14 @@ def test_http_mcp_requires_token(anon_client: TestClient) -> None:
     assert resp.status_code == 401
     resp = anon_client.post(
         "/mcp/", json={}, headers={"Authorization": "Bearer wrong-token"}
+    )
+    assert resp.status_code == 401
+
+
+def test_http_mcp_non_ascii_token_rejected_as_401(anon_client: TestClient) -> None:
+    """非 ASCII token 必須乾淨回 401，不得因 compare_digest TypeError 變 500。"""
+    resp = anon_client.post(
+        "/mcp/", json={}, headers={b"Authorization": "Bearer 密碼token".encode()}
     )
     assert resp.status_code == 401
 

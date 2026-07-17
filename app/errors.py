@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -37,7 +38,8 @@ def _error(status_code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"error": message})
 
 
-def _validation_message(exc: RequestValidationError) -> str:
+def validation_message(exc: RequestValidationError | ValidationError) -> str:
+    """驗證錯誤 → 單行人話（REST handler 與 MCP tools 共用，避免兩套訊息 drift）。"""
     first = exc.errors()[0]
     field = str(first["loc"][-1]) if first["loc"] else "body"
     if first["type"] == "missing":
@@ -48,7 +50,19 @@ def _validation_message(exc: RequestValidationError) -> str:
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def on_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
-        return _error(status.HTTP_400_BAD_REQUEST, _validation_message(exc))
+        return _error(status.HTTP_400_BAD_REQUEST, validation_message(exc))
+
+    @app.exception_handler(UnknownExerciseError)
+    async def on_unknown_exercise(request: Request, exc: UnknownExerciseError) -> JSONResponse:
+        # 目前只有 MCP 走 log_workout；註冊 handler 讓未來 REST 曝露時不會 500
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "error": "unknown exercise",
+                "unknown": exc.unknown,
+                "suggestions": exc.suggestions,
+            },
+        )
 
     @app.exception_handler(NotFoundError)
     async def on_not_found(request: Request, exc: NotFoundError) -> JSONResponse:

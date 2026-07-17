@@ -1,6 +1,6 @@
 from datetime import date as date_type
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ExerciseCreate(BaseModel):
@@ -70,6 +70,15 @@ class LogSetIn(BaseModel):
     reps: int = Field(gt=0)
     rpe: int | None = Field(default=None, ge=1, le=10)
 
+    @field_validator("exercise")
+    @classmethod
+    def _strip_and_require_content(cls, value: str) -> str:
+        # 空白名若放行，create_missing 會建出空名動作、_suggest 對空字串全命中
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
 
 class LogWorkoutIn(BaseModel):
     sets: list[LogSetIn] = Field(min_length=1)
@@ -77,6 +86,8 @@ class LogWorkoutIn(BaseModel):
     template: str | None = None
     note: str | None = None
     create_missing: bool = False
+    client_uuid: str | None = Field(default=None, min_length=8)
+    """呼叫端冪等鍵：timeout 重試帶同值不會重複寫入（每組落庫為 client_uuid:序號）。"""
 
 
 class LogWorkoutSummary(BaseModel):

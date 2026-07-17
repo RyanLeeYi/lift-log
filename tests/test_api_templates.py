@@ -103,6 +103,36 @@ class TestCreateTemplate:
         resp = client.post("/api/templates", json=payload)
         assert resp.status_code == 400
 
+    def test_duplicate_name_returns_400(self, client, exercise_ids):
+        """MCP log_workout 以名稱解析課表——同名課表會讓解析歧義，建立時就擋。"""
+        payload = make_template_payload(exercise_ids, name="練腿日")
+        assert client.post("/api/templates", json=payload).status_code == 201
+        resp = client.post("/api/templates", json=payload)
+        assert resp.status_code == 400
+        assert client.get("/api/templates").json()[0]["name"] == "練腿日"
+        assert len(client.get("/api/templates").json()) == 1
+
+    def test_put_rename_onto_existing_name_returns_400(self, client, exercise_ids):
+        first = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids, name="練腿日")
+        ).json()
+        client.post("/api/templates", json=make_template_payload(exercise_ids, name="上半身日"))
+        resp = client.put(
+            f"/api/templates/{first['id']}",
+            json=make_template_payload(exercise_ids, name="上半身日"),
+        )
+        assert resp.status_code == 400
+
+    def test_put_keeping_own_name_is_allowed(self, client, exercise_ids):
+        created = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids, name="練腿日")
+        ).json()
+        resp = client.put(
+            f"/api/templates/{created['id']}",
+            json=make_template_payload(exercise_ids, name="練腿日"),
+        )
+        assert resp.status_code == 200
+
 
 class TestListAndGetTemplate:
     def test_list_returns_all_templates_with_exercises(self, client, exercise_ids):

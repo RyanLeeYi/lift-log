@@ -1,25 +1,27 @@
 """MCP server（PRD R7/R7b）：tools 一律重用 services，不重寫查詢邏輯。
 
 auth：與 REST 同一個 token 來源（settings.token），常數時間比較；
-/mcp 掛載走不到 APIRouter 的 require_token，由 DebugTokenVerifier 把關。
+/mcp 掛載走不到 APIRouter 的 require_token，由 SingleTokenVerifier 把關。
 """
 
 import secrets
 from datetime import date as date_type
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.debug import DebugTokenVerifier
+from fastmcp.server.auth import TokenVerifier
+from mcp.server.auth.provider import AccessToken
 from pydantic import ValidationError
 from sqlalchemy.orm import sessionmaker
 
-from app.errors import DomainError, NotFoundError, UnknownExerciseError
-from app.models import BodyMetric, Exercise
-from app.schemas import BodyMetricIn, LogSetIn, LogWorkoutIn
+from app.errors import DomainError, NotFoundError, UnknownExerciseError, validation_message
+from app.models import BodyMetric
+from app.schemas import BodyMetricIn, BodyMetricOut, LogSetIn, LogWorkoutIn
 from app.services import body_metrics as body_metrics_svc
 from app.services import exercises as exercises_svc
 from app.services import stats as stats_svc
 from app.services import templates as templates_svc
 from app.services import workouts as workouts_svc
+from app.services.exercises import exercise_label
 
 INTERVIEW_PROMPT = """\
 你是健身紀錄助手。用逐題問答引導使用者口述今天的訓練，全部確認後才寫入：
@@ -35,27 +37,29 @@ INTERVIEW_PROMPT = """\
 """
 
 
-def _validation_message(exc: ValidationError) -> str:
-    first = exc.errors()[0]
-    field = str(first["loc"][-1]) if first["loc"] else "body"
-    return f"{field} invalid: {first['msg']}"
-
-
-def _exercise_label(exercise: Exercise) -> str:
-    return f"{exercise.name_zh} {exercise.name_en}"
-
-
 def _metric_out(row: BodyMetric) -> dict:
-    return {
-        "date": row.date.isoformat(),
-        "weight_kg": row.weight_kg,
-        "body_fat_pct": row.body_fat_pct,
-    }
+    return BodyMetricOut.model_validate(row).model_dump(mode="json", exclude={"id"})
+
+
+class SingleTokenVerifier(TokenVerifier):
+    """單人系統唯一 token 的 verifier。
+
+    自訂而不用 DebugTokenVerifier：後者預設 validate 全放行，升級或重構漏掉參數會
+    靜默變成無認證。bytes 比較讓非 ASCII token 也走常數時間比對回 401，不會 TypeError。
+    """
+
+    def __init__(self, token: str) -> None:
+        super().__init__()
+        self._expected = token.encode()
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not secrets.compare_digest(token.encode(), self._expected):
+            return None
+        return AccessToken(token=token, client_id="lift-log", scopes=[])
 
 
 def create_mcp(session_factory: sessionmaker, token: str) -> FastMCP:
-    verifier = DebugTokenVerifier(validate=lambda t: secrets.compare_digest(t, token))
-    mcp = FastMCP(name="lift-log", auth=verifier)
+    mcp = FastMCP(name="lift-log", auth=SingleTokenVerifier(token))
 
     @mcp.tool
     def query_workouts(
@@ -70,10 +74,16 @@ def create_mcp(session_factory: sessionmaker, token: str) -> FastMCP:
                     return {"error": "exercise not found"}
                 wanted_id = found.id
 
-            names = {e.id: _exercise_label(e) for e in session.query(Exercise)}
+            names = {
+                e.id: exercise_label(e) for e in exercises_svc.search_exercises(session, None)
+            }
+            listed = workouts_svc.list_workouts(session, start_date, end_date)
+            sets_by_workout = workouts_svc.get_active_sets_by_workout(
+                session, [w.id for w in listed]
+            )
             workouts = []
-            for workout in workouts_svc.list_workouts(session, start_date, end_date):
-                sets = workouts_svc.get_active_sets(session, workout.id)
+            for workout in listed:
+                sets = sets_by_workout[workout.id]
                 if wanted_id is not None:
                     sets = [s for s in sets if s.exercise_id == wanted_id]
                     if not sets:
@@ -131,11 +141,14 @@ def create_mcp(session_factory: sessionmaker, token: str) -> FastMCP:
         template: str | None = None,
         note: str | None = None,
         create_missing: bool = False,
+        client_uuid: str | None = None,
     ) -> dict:
         """代主人記錄一次訓練（整包寫入或整包拒絕）。
 
         動作名雙語比對；比對不到時整包拒絕並回相近建議，
         經主人同意後帶 create_missing=true 才自動建新動作。
+        每次記錄請自產一個 client_uuid（≥8 字元）；timeout 重試帶同值
+        即冪等，不會重複寫入。
         """
         with session_factory() as session:
             try:
@@ -147,8 +160,11 @@ def create_mcp(session_factory: sessionmaker, token: str) -> FastMCP:
                         template=template,
                         note=note,
                         create_missing=create_missing,
+                        client_uuid=client_uuid,
                     ),
                 )
+            except ValidationError as exc:
+                return {"error": validation_message(exc)}
             except UnknownExerciseError as exc:
                 return {
                     "error": "unknown exercise",
@@ -168,7 +184,7 @@ def create_mcp(session_factory: sessionmaker, token: str) -> FastMCP:
             try:
                 data = BodyMetricIn(date=date, weight_kg=weight_kg, body_fat_pct=body_fat_pct)
             except ValidationError as exc:
-                return {"error": _validation_message(exc)}
+                return {"error": validation_message(exc)}
             return _metric_out(body_metrics_svc.upsert_body_metric(session, data))
 
     @mcp.prompt(name="log-workout-interview")

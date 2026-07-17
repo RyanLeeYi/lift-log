@@ -11,59 +11,111 @@ from app.errors import ConflictError, DomainError, NotFoundError, UnknownExercis
 from app.models import Exercise, Template, Workout, WorkoutSet
 from app.schemas import LogWorkoutIn, LogWorkoutSummary, SetCreate, WorkoutCreate
 from app.services.body_metrics import latest_weight
+from app.services.exercises import exercise_label, normalize_name
 from app.services.stats import set_tonnage
 
 _SUGGEST_CUTOFF = 0.4
 _SUGGEST_LIMIT = 3
+_SUBSTRING_BOOST = 0.9  # 子字串命中視為高相似（difflib ratio 對中英混排偏低）
+DEFAULT_MUSCLE_GROUP = "未分類"  # create_missing 自動建檔的預設部位
 
 
 def _exercise_index(exercises: list[Exercise]) -> dict[str, Exercise]:
-    """雙語名稱（去空白、不分大小寫）→ Exercise。"""
+    """正規化雙語名稱 → Exercise（與 exercises.find_by_name 同語意）。"""
     index: dict[str, Exercise] = {}
     for exercise in exercises:
-        index[exercise.name_zh.strip().lower()] = exercise
-        index[exercise.name_en.strip().lower()] = exercise
+        index[normalize_name(exercise.name_zh)] = exercise
+        index[normalize_name(exercise.name_en)] = exercise
     return index
 
 
 def _suggest(exercises: list[Exercise], unknown: str) -> list[str]:
     """對未命中名稱給相近動作建議，格式「深蹲 Squat」。"""
-    target = unknown.strip().lower()
+    target = normalize_name(unknown)
     scored: list[tuple[float, str]] = []
     for exercise in exercises:
-        zh = exercise.name_zh.lower()
-        en = exercise.name_en.lower()
+        zh = normalize_name(exercise.name_zh)
+        en = normalize_name(exercise.name_en)
         score = max(
             SequenceMatcher(None, target, zh).ratio(),
             SequenceMatcher(None, target, en).ratio(),
         )
         if target in zh or target in en or zh in target or en in target:
-            score = max(score, 0.9)
+            score = max(score, _SUBSTRING_BOOST)
         if score >= _SUGGEST_CUTOFF:
-            scored.append((score, f"{exercise.name_zh} {exercise.name_en}"))
+            scored.append((score, exercise_label(exercise)))
     scored.sort(key=lambda pair: pair[0], reverse=True)
     return [label for _, label in scored[:_SUGGEST_LIMIT]]
 
 
 def _resolve_template_id(session: Session, name: str) -> int:
-    template_id = session.scalar(select(Template.id).where(Template.name == name))
-    if template_id is None:
+    ids = list(session.scalars(select(Template.id).where(Template.name == name)))
+    if not ids:
         raise DomainError("template not found")
-    return template_id
+    if len(ids) > 1:
+        # 同名課表隨機掛一個會安靜寫錯資料——寧可拒絕要求改名
+        raise DomainError("multiple templates share this name; rename to disambiguate")
+    return ids[0]
+
+
+def _set_uuid(client_uuid: str | None, ordinal: int) -> str:
+    """呼叫端有帶冪等鍵→確定性 uuid（重放撞 UNIQUE 可辨識）；否則隨機。"""
+    return f"{client_uuid}:{ordinal}" if client_uuid else str(uuid.uuid4())
+
+
+def _replayed_summary(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary | None:
+    """同 client_uuid 重放（MCP timeout 後 LLM 重試）：回既有 workout 摘要，不重複寫入。"""
+    if data.client_uuid is None:
+        return None
+    first = _find_by_client_uuid(session, _set_uuid(data.client_uuid, 1))
+    if first is None:
+        return None
+    workout = get_workout(session, first.workout_id)
+    prefix = f"{data.client_uuid}:"
+    logged = [
+        s
+        for s in session.scalars(
+            select(WorkoutSet).where(WorkoutSet.workout_id == workout.id)
+        )
+        if s.client_uuid.startswith(prefix)
+    ]
+    bodyweight_kg = latest_weight(session)
+    flags = {e.id: e.is_bodyweight for e in session.scalars(select(Exercise))}
+    tonnage = sum(
+        set_tonnage(s.weight_kg, s.reps, flags[s.exercise_id], bodyweight_kg) for s in logged
+    )
+    return LogWorkoutSummary(
+        workout_id=workout.id,
+        date=workout.date,
+        sets_count=len(logged),
+        tonnage_kg=tonnage,
+    )
 
 
 def log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
     """MCP 代記錄的單一交易入口（PRD R7b）。
 
     整包寫入或整包拒絕（單一 commit，不留半套）；動作名雙語比對，
-    未命中且未帶 create_missing 時回未知清單＋相近建議。
+    未命中且未帶 create_missing 時回未知清單＋相近建議；
+    同 client_uuid 重放冪等回既有摘要。
     """
+    replayed = _replayed_summary(session, data)
+    if replayed is not None:
+        return replayed
+
     template_id = _resolve_template_id(session, data.template) if data.template else None
 
     exercises = list(session.scalars(select(Exercise)))
     index = _exercise_index(exercises)
-    wanted = list(dict.fromkeys(item.exercise.strip() for item in data.sets))
-    unknown = [name for name in wanted if name.lower() not in index]
+    wanted = list(dict.fromkeys(item.exercise for item in data.sets))
+    # 大小寫變體視為同一動作：以 lower 去重，避免 create_missing 建出重複動作留孤兒
+    unknown: list[str] = []
+    seen_unknown: set[str] = set()
+    for name in wanted:
+        key = name.lower()
+        if key not in index and key not in seen_unknown:
+            seen_unknown.add(key)
+            unknown.append(name)
 
     if unknown and not data.create_missing:
         suggestions: list[str] = []
@@ -72,13 +124,16 @@ def log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
         raise UnknownExerciseError(unknown, list(dict.fromkeys(suggestions)))
 
     for name in unknown:
-        created = Exercise(name_zh=name, name_en=name, muscle_group="未分類")
+        created = Exercise(name_zh=name, name_en=name, muscle_group=DEFAULT_MUSCLE_GROUP)
         session.add(created)
         index[name.lower()] = created
     session.flush()
 
     workout = Workout(
-        date=data.date or date_type.today(), template_id=template_id, note=data.note
+        # server 本地時區＝自家機台灣時間；異地（UTC）部署前要重新確認
+        date=data.date or date_type.today(),
+        template_id=template_id,
+        note=data.note,
     )
     session.add(workout)
     session.flush()
@@ -86,12 +141,12 @@ def log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
     bodyweight_kg = latest_weight(session)
     set_counts: dict[int, int] = {}
     tonnage = 0.0
-    for item in data.sets:
-        exercise = index[item.exercise.strip().lower()]
+    for ordinal, item in enumerate(data.sets, start=1):
+        exercise = index[item.exercise.lower()]
         set_counts[exercise.id] = set_counts.get(exercise.id, 0) + 1
         session.add(
             WorkoutSet(
-                client_uuid=str(uuid.uuid4()),
+                client_uuid=_set_uuid(data.client_uuid, ordinal),
                 workout_id=workout.id,
                 exercise_id=exercise.id,
                 set_number=set_counts[exercise.id],
@@ -101,7 +156,15 @@ def log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
             )
         )
         tonnage += set_tonnage(item.weight_kg, item.reps, exercise.is_bodyweight, bodyweight_kg)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        # 兩種撞法：同 client_uuid 併發重放（復原為冪等）、create_missing 同名競賽（明確錯誤）
+        raced = _replayed_summary(session, data)
+        if raced is not None:
+            return raced
+        raise DomainError("concurrent write conflict, please retry") from exc
     return LogWorkoutSummary(
         workout_id=workout.id,
         date=workout.date,
@@ -138,6 +201,23 @@ def get_active_sets(session: Session, workout_id: int) -> list[WorkoutSet]:
             .order_by(WorkoutSet.exercise_id, WorkoutSet.set_number, WorkoutSet.id)
         )
     )
+
+
+def get_active_sets_by_workout(
+    session: Session, workout_ids: list[int]
+) -> dict[int, list[WorkoutSet]]:
+    """多 workout 一次查未刪除組（MCP 區間查詢避免 N+1）；組內排序同 get_active_sets。"""
+    grouped: dict[int, list[WorkoutSet]] = {workout_id: [] for workout_id in workout_ids}
+    rows = session.scalars(
+        select(WorkoutSet)
+        .where(WorkoutSet.workout_id.in_(workout_ids), WorkoutSet.deleted_at.is_(None))
+        .order_by(
+            WorkoutSet.workout_id, WorkoutSet.exercise_id, WorkoutSet.set_number, WorkoutSet.id
+        )
+    )
+    for row in rows:
+        grouped[row.workout_id].append(row)
+    return grouped
 
 
 def list_workouts(

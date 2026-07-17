@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,17 +19,27 @@ def create_exercise(session: Session, data: ExerciseCreate) -> Exercise:
     return exercise
 
 
+def normalize_name(name: str) -> str:
+    """雙語動作名的統一正規化——所有名稱解析（find_by_name、log_workout index）共用同一語意。"""
+    return name.strip().lower()
+
+
+def exercise_label(exercise: Exercise) -> str:
+    """對外顯示的雙語標籤（MCP 輸出與建議清單共用同一格式）。"""
+    return f"{exercise.name_zh} {exercise.name_en}"
+
+
 def find_by_name(session: Session, name: str) -> Exercise | None:
-    """雙語名稱精確比對（去空白、不分大小寫）；MCP 與 progress 的動作解析入口。"""
-    target = name.strip().lower()
-    return session.scalar(
-        select(Exercise).where(
-            or_(
-                func.lower(Exercise.name_zh) == target,
-                func.lower(Exercise.name_en) == target,
-            )
-        )
-    )
+    """雙語名稱精確比對；MCP 與 progress 的動作解析入口。
+
+    Python 端比對而非 SQL lower()（SQLite 的 lower 只處理 ASCII）——與 log_workout
+    的 _exercise_index 同語意，非 ASCII 大小寫不會兩套結果。動作表量級小，全載無妨。
+    """
+    target = normalize_name(name)
+    for exercise in session.scalars(select(Exercise)):
+        if target in (normalize_name(exercise.name_zh), normalize_name(exercise.name_en)):
+            return exercise
+    return None
 
 
 def _escape_like(q: str) -> str:

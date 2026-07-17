@@ -13,6 +13,7 @@ from app.models import Base
 from app.seed import seed_exercises
 
 STATIC_DIR = Path(__file__).parent / "static"
+MCP_MOUNT = "/mcp"  # middleware 的路徑改寫與 mount 共用，兩處不得漂移
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -33,8 +34,8 @@ def create_app(settings: Settings) -> FastAPI:
     @app.middleware("http")
     async def normalize_mcp_path(request, call_next):  # type: ignore[no-untyped-def]
         # connector 常用無尾斜線的 /mcp；不改寫會掉進靜態檔 mount 變 405
-        if request.scope["path"] == "/mcp":
-            request.scope["path"] = "/mcp/"
+        if request.scope["path"] == MCP_MOUNT:
+            request.scope["path"] = f"{MCP_MOUNT}/"
         return await call_next(request)
 
     register_error_handlers(app)
@@ -42,7 +43,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(exercises.router)
     app.include_router(stats.router)
     app.include_router(templates.router)
-    app.mount("/mcp", mcp_app)
+    app.mount(MCP_MOUNT, mcp_app)
     # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/* 與 /mcp
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

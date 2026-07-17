@@ -24,6 +24,14 @@ def db_session(tmp_path: Path) -> Iterator[Session]:
 
 
 @pytest.fixture()
+def session_factory(tmp_path: Path) -> sessionmaker:
+    """需要多開 session 的測試用（MCP in-memory client）：同一顆獨立 SQLite 的 factory。"""
+    engine = make_engine(str(tmp_path / "factory.db"))
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)
+
+
+@pytest.fixture()
 def anon_client(tmp_path: Path) -> Iterator[TestClient]:
     settings = Settings(token=TEST_TOKEN, db_path=str(tmp_path / "test.db"))
     app = create_app(settings)

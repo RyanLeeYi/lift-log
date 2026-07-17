@@ -6,6 +6,15 @@ from app.models import Exercise, Template, TemplateExercise
 from app.schemas import TemplateCreate, TemplateExerciseOut, TemplateOut
 
 
+def _ensure_unique_name(session: Session, name: str, exclude_id: int | None = None) -> None:
+    """MCP log_workout 以名稱解析課表——同名會歧義，寫入前就擋（DB 無 unique 約束，app 層把關）。"""
+    query = select(Template.id).where(Template.name == name)
+    if exclude_id is not None:
+        query = query.where(Template.id != exclude_id)
+    if session.scalar(query) is not None:
+        raise DomainError("template name already exists")
+
+
 def _validate_exercise_ids(session: Session, data: TemplateCreate) -> None:
     """課表引用的動作必須全部存在，否則整包拒絕不寫入。"""
     wanted = {item.exercise_id for item in data.exercises}
@@ -58,6 +67,7 @@ def _get(session: Session, template_id: int) -> Template:
 
 
 def create_template(session: Session, data: TemplateCreate) -> TemplateOut:
+    _ensure_unique_name(session, data.name)
     _validate_exercise_ids(session, data)
     template = Template(name=data.name, exercises=_build_items(data))
     session.add(template)
@@ -81,6 +91,7 @@ def get_template(session: Session, template_id: int) -> TemplateOut:
 def update_template(session: Session, template_id: int, data: TemplateCreate) -> TemplateOut:
     """整份取代（名稱＋動作清單）；驗證失敗不留半套（單一 commit）。"""
     template = _get(session, template_id)
+    _ensure_unique_name(session, data.name, exclude_id=template_id)
     _validate_exercise_ids(session, data)
     template.name = data.name
     template.exercises = _build_items(data)

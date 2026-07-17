@@ -4,7 +4,8 @@ from datetime import date
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.errors import DomainError, UnknownExerciseError
@@ -142,3 +143,79 @@ def test_log_workout_schema_rejects_out_of_range_values() -> None:
         LogSetIn(exercise="深蹲", weight_kg=80, reps=8, rpe=11)
     with pytest.raises(ValidationError):
         LogWorkoutIn(sets=[])
+
+
+def test_log_workout_schema_rejects_blank_exercise_name() -> None:
+    """空白動作名不得過驗——否則 create_missing 會建出空名動作。"""
+    with pytest.raises(ValidationError):
+        LogSetIn(exercise="   ", weight_kg=80, reps=8)
+
+
+def test_log_workout_same_client_uuid_replays_idempotently(
+    db_session: Session, squat: Exercise
+) -> None:
+    """MCP 呼叫 timeout 後 LLM 重試：同 client_uuid 不得重複寫入。"""
+    payload = _payload(client_uuid="retry-4f9a1c22")
+    first = log_workout(db_session, payload)
+    second = log_workout(db_session, payload)
+
+    assert second.workout_id == first.workout_id
+    assert second.sets_count == first.sets_count == 2
+    assert db_session.scalar(select(func.count()).select_from(WorkoutSet)) == 2
+    assert db_session.scalar(select(func.count()).select_from(Workout)) == 1
+
+
+def test_log_workout_create_missing_dedupes_case_variants(
+    db_session: Session, squat: Exercise
+) -> None:
+    """同名不同大小寫只建一筆 Exercise，不留孤兒。"""
+    payload = _payload(
+        sets=[
+            LogSetIn(exercise="Face Pull", weight_kg=20, reps=15),
+            LogSetIn(exercise="face pull", weight_kg=20, reps=15),
+        ],
+        create_missing=True,
+    )
+    summary = log_workout(db_session, payload)
+    assert summary.sets_count == 2
+
+    created = list(
+        db_session.scalars(select(Exercise).where(func.lower(Exercise.name_en) == "face pull"))
+    )
+    assert len(created) == 1
+    sets = list(db_session.scalars(select(WorkoutSet)))
+    assert {s.exercise_id for s in sets} == {created[0].id}
+
+
+def test_log_workout_commit_conflict_maps_to_domain_error(
+    db_session: Session, squat: Exercise, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """併發 create_missing 撞 UNIQUE：commit 的 IntegrityError 不得裸拋。"""
+
+    def boom() -> None:
+        raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    with pytest.raises(DomainError):
+        log_workout(db_session, _payload())
+    monkeypatch.undo()
+    db_session.rollback()
+    assert db_session.scalars(select(Workout)).first() is None
+
+
+def test_log_workout_duplicate_template_name_is_ambiguous(
+    db_session: Session, squat: Exercise
+) -> None:
+    """同名課表不得隨機掛一個——回明確錯誤。"""
+    for _ in range(2):
+        db_session.add(
+            Template(
+                name="撞名日",
+                exercises=[TemplateExercise(position=1, exercise_id=squat.id, default_sets=3)],
+            )
+        )
+    db_session.commit()
+
+    with pytest.raises(DomainError):
+        log_workout(db_session, _payload(template="撞名日"))
+    assert db_session.scalars(select(Workout)).first() is None
