@@ -7,6 +7,27 @@
 - 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
 - **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
+## 下場優先：紀錄「編輯＋刪除」（F16–F18，設計已與 Ryan 談定，待凍結驗收＋開工）
+Ryan 回饋：要能清掉/編輯特定筆紀錄，涵蓋 **訓練組 + 體重 + 每日狀態**，入口在 **logger 當場 + 日曆過去 +（體重）/body 頁**。
+
+**已談定的設計決定（下場照這個寫驗收，不用重談）：**
+- **訓練組 sets**：
+  - 刪除＝**軟刪（後端已全做好）**：`deleted_at` 欄位、`DELETE /api/sets/{id}`→`svc.soft_delete_set`（`app/services/workouts.py:275`）、所有查詢（exercises/stats/workouts services）已濾 `deleted_at.is_(None)`。缺前端入口。
+  - 編輯＝**原位修改，新增 `PATCH /api/sets/{id}`**（改 weight_kg/reps/rpe/rest_seconds），**set_number/位置不變**。**Ryan 拍板放寬 CLAUDE.md「sets 不做 update」原則**（單人 app、audit 需求低）——記得同步更新 CLAUDE.md 那條約束的措辭。
+- **體重 body_metrics / 每日狀態 daily_status**（都是 date UNIQUE、一天一筆、POST 本來就覆蓋 upsert）：
+  - 刪除＝**硬刪（Ryan 拍板）**：新增 `DELETE /api/body-metrics/{date}`、`DELETE /api/daily-status/{date}`（軟刪會撞 UNIQUE(date) 無法重記同日，故硬刪最乾淨）。
+  - 編輯＝**沿用現有 POST upsert**（同日覆蓋，已支援過去日期），前端只要「把某天的值載進表單改一改再存」，後端不用動。
+- **確認 UX**：一律沿用課表刪除的**兩段式**（第一下變確認、第二下才真刪；範式在 `app/static/js/templates.js` 的 `confirmDeleteId`），不用瀏覽器彈窗。
+- **離線 sets**：done-list 裡尚未同步（queued、無 server id）的組，刪除/編輯＝改 IndexedDB 佇列那筆（`queue.js`），不打 API。
+
+**入口位置：**
+- logger「已完成的組」每列：編輯（把值帶回 steppers 改）＋刪除（兩段式）。注意線上組有 server `id`、離線 queued 組只有 client_uuid。
+- 日曆某天明細（`calendar.js` `detailRows`/`statusRow`）：把分組文字「深蹲 80×8 80×8」改成**每組一列**可編輯/刪除；狀態列可編輯/刪除；**新增當日體重顯示**可編輯/刪除（目前明細只顯示噸位、沒顯示體重）。
+- /body 頁（`body.js`，目前只有折線圖）：體重紀錄列成**可編輯/刪除的清單**。
+
+**拆法（一次一個、TDD）**：F16 訓練組 編輯＋刪除（前端為主＋新 PATCH endpoint）→ F17 體重 編輯＋刪除（後端 DELETE + /body 清單 UI）→ F18 每日狀態 編輯＋刪除（後端 DELETE + 日曆 UI）。
+**下場第一步**：把 F16–F18 完整驗收草擬好給 Ryan 簽核 → 凍結進 feature_list → 從 F16 TDD 開工（PATCH /sets 要後端測試；前端兩態切換/刪除用 Playwright E2E）。
+
 ## 下場開場動作
 - **從 F10 自訂動作開始**（acceptance 已簽核：中文名必填、英文/部位選填、自體重勾選；POST /api/exercises 已存在，主戰場前端 picker/加動作面板）→ 再 F11 體重補記過去日期（API date 欄位已支援，純 UI）。一次一個 feature、TDD、改 static 記得 bump `sw.js` CACHE_NAME（現 v5）
 - **提醒 Ryan（F14 部署後一次性動作）**：桌機/手機各**手動刷一次**（手機關掉 app 重開或下拉重整）才會拿到 F14 這版；**從此之後每次部署都自動到位、不用再手動**。這是引入自動更新功能的一次性 bootstrap 成本（舊版 app.js 沒有 listener），非 bug
