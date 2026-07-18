@@ -1,11 +1,12 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十場：又是開場即撞 Session 98% 用量門檻收工，零程式碼改動）
+> 最後更新：2026-07-18（第十場續：**F7 passing → MVP F1–F9 全數收齊**；Ryan 真機回饋轉 F10–F12 入列 failing）
 
 ## 第十場（2026-07-18）
-- 開場確認：repo 乾淨、8137 `/health` ok（`{"status":"ok"}`）、F1–F6/F8/F9 passing 不變、F7 failing 不變
-- 開完場正要探公開 HTTPS（`curl https://lift-log.my-super-dev-server.work/health`）就被用量 hook 擋下，**hostname 加了沒尚未確認**
-- **下場開場動作**（承第九場，原樣有效）：先問 Ryan hostname 加了沒 → 加了就驗證公開 HTTPS ＋ 請 Ryan 手機 4G 記錄一組 → 兩者都過才把 F7 改 passing（附證據）→ 進 MVP 收官（vault PLAN.md checklist）
-- ⚠️ 連兩場開場即撞門檻：建議 Ryan 等 5h session 窗口重置後再開工，或先在別的 session 把用量花在刀口上
+- 開場撞 Session 98% 用量門檻一次（帳號輪替後續作；usage-guard 已另案改版成以 cswap per-account 判定，見 `~/.claude/scripts/usage-guard.sh`）
+- **F7 → passing**：Ryan 於 Cloudflare dashboard 加 public hostname `lift-log.my-super-dev-server.work` → 公開 HTTPS `/health` 200、首頁 200；Ryan 手機 4G 真機記錄（當日 workout 1–3 含實值 sets）；mission-control 收編（第八場實測＋services.toml＋存活旁證）。acceptance-verifier 逐條 3/3 PASS
+- **MVP 全 passing**。收官事項（vault PLAN.md checklist）：連續自用 2 週對成功指標、README（先讀 vault `identity/voice-and-tone.md` 若存在）、after-action → 尚未動
+- **Ryan 真機試用回饋 → 新 feature 入列（failing，acceptance 已含 Ryan 的設計選擇）**：F10 自訂動作（完整欄位、多數選填）、F11 體重補記過去日期（API 已支援 date，純 UI）、F12 組間休息目標倒數提醒（實際量測邏輯不變）。回饋 #2（課表編輯 ↑↓ 箭頭）確認是正常功能（調動作順序）非 bug，未入列；回饋 #5（收工按鈕語意）已口頭說明（收工只清 client 狀態，資料每組即時寫入），未入列
+- **下場開場動作**：從 F10 開始（一次一個 feature、TDD）；F10/F11 的 API 面已存在（POST /api/exercises、body-metrics date 欄位），主戰場在前端 `app/static/js/`——記得改 static 資產要 bump `sw.js` CACHE_NAME
 
 ## 第九場（2026-07-18）
 

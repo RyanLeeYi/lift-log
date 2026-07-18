@@ -46,8 +46,8 @@
       "id": "F7",
       "name": "Cloudflare Tunnel 部署＋mission-control 收編",
       "acceptance": "公開 HTTPS 可達；手機 4G 實測完成一次記錄；mission-control 可啟停與監控本服務。詳見 PRD R8",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "2026-07-18：acceptance-verifier 逐條 3/3 PASS。公開 HTTPS：https://lift-log.my-super-dev-server.work/health 回 200 status ok、首頁 200 經 Cloudflare（Ryan 於 dashboard 加 public hostname → localhost:8137）。手機 4G 記錄：Ryan 真機實測確認＋資料面證據（當日 workout 1-3 含 2/5/6 組實值 sets，20kg×8 等，跨 exercise 17/24，rest_seconds 有量測）。mission-control：services.toml 收編（port 8137、autostart、health_url），啟停實測記錄於雙方 session-handoff（2026-07-18），8137 /health 由中台拉起存活中"
     },
     {
       "id": "F8",
@@ -62,6 +62,27 @@
       "acceptance": "energy(1-5)+sleep_quality+note 同日覆蓋、休息日可記、評分越界 400；日曆明細顯示狀態；MCP log/get_daily_status；log-workout-interview prompt 模板引導後一次寫入。詳見 PRD R9",
       "status": "passing",
       "evidence": "2026-07-18：121 tests 全過、覆蓋率 98%、ruff 乾淨。acceptance-verifier live 逐條 6/6 PASS：同日覆蓋 201→200 同 id、休息日（該日零 workout）可記、越界與缺欄 400 全整包拒絕、日曆明細顯示狀態（截圖 docs/evidence-f9-daily-status.png：休息日顯示精力＋note）、MCP log/get_daily_status 中文 note 同值查回且越界不寫入、interview prompt 含 log_daily_status＋覆述確認（含當日狀態）後才一次寫入。Codex review 2 P2 findings 全修（prompt 覆述納入當日狀態、shell cache bump v3 防新舊資產混版）"
+    },
+    {
+      "id": "F10",
+      "name": "自訂動作（使用者新增）",
+      "acceptance": "手機 UI 可新增自訂動作：中文名必填；英文名、部位選填；「自體重動作」勾選。建立後立即出現在動作選單與課表編輯可選清單並可直接記錄；自體重動作噸位計算沿用既有規則（最新體重＋負重）；名稱與現有動作重複（zh 或 en 任一衝突）擋下並提示；前端走既有 POST /api/exercises，不繞過 services 層。來源：2026-07-18 Ryan 真機試用回饋 #1，欄位範圍 Ryan 選「完整但多數選填」",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F11",
+      "name": "體重補記過去日期",
+      "acceptance": "/body 頁可選日期補記過去的體重／體脂（預設今天、不可選未來日期）；同日覆蓋語意與 F8 一致（重送覆蓋該日紀錄）；補記後趨勢折線正確反映；heatmap 自體重噸位規則維持 F8 現狀（最新體重）不變；前端走既有 POST /api/body-metrics 的 date 欄位。來源：2026-07-18 Ryan 真機試用回饋 #3",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F12",
+      "name": "組間休息目標倒數提醒",
+      "acceptance": "訓練中可設定目標休息秒數（常用值快選＋自訂）；設定後 REST 計時器改顯示倒數，到點給明顯視覺提示（不強制阻擋操作）；目標值在同一訓練內沿用、關掉重開仍保留；實際 rest_seconds 的量測與寫入邏輯完全不變。來源：2026-07-18 Ryan 真機試用回饋 #4，語意 Ryan 選「目標倒數提醒」",
+      "status": "failing",
+      "evidence": null
     }
   ]
 }
