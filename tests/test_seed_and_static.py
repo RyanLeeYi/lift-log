@@ -72,6 +72,33 @@ class TestStatic:
         assert resp.status_code == 200
         assert resp.headers.get("cache-control") != "no-cache"
 
+    def test_sw_install_fetches_shell_with_version_bust(self) -> None:
+        """F14：install 抓 SHELL 必須帶 ?v=CACHE_NAME 版本戳並以原始 URL 存入。
+
+        用 cache.add(url) 會吃到 CDN／瀏覽器快取的舊檔——新 SW 裝出「新版本號＋舊內容」
+        的混版（2026-07-18 部署 F12 時實際發生）。版本戳讓每次換版的快取 key 必失效。
+        """
+        from pathlib import Path
+
+        sw_source = (
+            Path(__file__).parent.parent / "app" / "static" / "sw.js"
+        ).read_text(encoding="utf-8")
+        install_block = sw_source[sw_source.index('addEventListener("install"'):]
+        install_block = install_block[: install_block.index("addEventListener", 20)]
+        assert "cache.add(" not in install_block, "install 不得用 cache.add——吃快取舊檔"
+        assert "?v=${CACHE_NAME}" in install_block, "SHELL 抓取要帶 ?v=CACHE_NAME 版本戳"
+        assert "cache.put(url" in install_block, "回應要以原始 URL 存入（fetch handler 才對得到）"
+
+    def test_app_reloads_once_when_new_sw_takes_over(self) -> None:
+        """F14：新 SW 接管（controllerchange）後頁面自動 reload 一次，使用者不需手動強制重整。"""
+        from pathlib import Path
+
+        app_source = (
+            Path(__file__).parent.parent / "app" / "static" / "js" / "app.js"
+        ).read_text(encoding="utf-8")
+        assert "controllerchange" in app_source
+        assert "location.reload()" in app_source
+
     def test_sw_shell_list_matches_static_files(self) -> None:
         """F5 漂移防護：SHELL 清單的檔案要存在；新增的 js/css 檔要記得進 SHELL。
 

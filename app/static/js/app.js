@@ -697,6 +697,15 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {
     /* SW 註冊失敗不影響線上使用 */
   });
+  // F14 部署自動到位：新 SW 接管即自動重載一次，開 app 就是新版。
+  // 首次安裝不重載（啟動時尚無 controller）；旗標防 reload 循環
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloadedByTakeover = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloadedByTakeover) return;
+    reloadedByTakeover = true;
+    location.reload();
+  });
 }
 window.addEventListener("online", () => guard(syncQueue)); // 恢復連線：自動補傳佇列
 // 切走再回來時系統會自動釋放 wake lock——回到可見就重新申請

@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v4"; // R10：改了 app.js/state.js/templates.js/app.css 必須換版
+const CACHE_NAME = "liftlog-shell-v5"; // F14：install 版本戳＋接管自動重載
 const SHELL = [
   "/",
   "/css/app.css",
@@ -20,11 +20,21 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
-  // 逐檔快取：單一檔案失敗不整包放棄（漏掉的執行期 fetch handler 會補）
+  // 逐檔快取：單一檔案失敗不整包放棄（漏掉的執行期 fetch handler 會補）。
+  // ?v= 版本戳讓 CDN／瀏覽器快取的 key 必失效——新 SW 絕不裝到舊資產（F14 混版教訓）；
+  // 回應以原始 URL 存入，fetch handler 才對得到
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => Promise.allSettled(SHELL.map((url) => cache.add(url))))
+      .then((cache) =>
+        Promise.allSettled(
+          SHELL.map(async (url) => {
+            const resp = await fetch(`${url}?v=${CACHE_NAME}`, { cache: "reload" });
+            if (!resp.ok) throw new Error(`${url}: ${resp.status}`);
+            await cache.put(url, resp);
+          }),
+        ),
+      )
       .then(() => self.skipWaiting()),
   );
 });
