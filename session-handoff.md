@@ -7,7 +7,13 @@
 - 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
 - **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
-## 下場優先：紀錄「編輯＋刪除」（F16–F18，設計已與 Ryan 談定，待凍結驗收＋開工）
+## 紀錄「編輯＋刪除」進度（F16 ✅ 完成上線；F17/F18 待做）
+- **F16 訓練組 編輯＋刪除 → passing 並部署（sw v8）**：後端 `PATCH /api/sets/{id}`（原位、set_number 不變、404/範圍驗證，`SetUpdate` schema + `update_set` service）；logger done-list 與日曆明細每組可**用 stepper +/- 編輯**（`stepper`/`rpePicker` 已抽到 `dom.js` 共用）＋兩段式刪除；離線 queued 組刪除移出佇列、`flushQueue` 同步後回填 server id 到 doneSets。acceptance-verifier R1–R14 全 pass。codex-review 3 條已修（P1 回填 id、P2 刪除更新 setCounts、R9 改用 steppers）。CLAUDE.md sets 規則已改。E2E：scratchpad `verify_f16_logger/calendar/p1.py`
+- **F17 體重 編輯＋刪除**（下一個做）：後端 `DELETE /api/body-metrics/{date}` 硬刪、不存在 404；/body 頁折線圖下新增可編輯/刪除清單；編輯＝POST 覆蓋、日期不可改；兩段式刪除。body_metrics model 在 `app/models.py`、service `app/services/`（body/metrics 相關）、既有測試 `tests/test_body_metrics.py`
+- **F18 每日狀態 編輯＋刪除**：後端 `DELETE /api/daily-status/{date}` 硬刪、404；日曆明細 statusRow 可編輯/刪除；編輯＝POST 覆蓋。既有測試 `tests/test_daily_status.py`、`calendar.js` `statusRow()`
+- 通用：刪除確認一律兩段式（範式已在 `templates.js` 與本場 F16）；改 static 記得 bump `sw.js` CACHE_NAME（現 **v8**）
+
+## （F16 開工前的原始設計筆記，供 F17/F18 參照）
 Ryan 回饋：要能清掉/編輯特定筆紀錄，涵蓋 **訓練組 + 體重 + 每日狀態**，入口在 **logger 當場 + 日曆過去 +（體重）/body 頁**。
 
 **已談定的設計決定（下場照這個寫驗收，不用重談）：**
