@@ -15,7 +15,8 @@ const cal = {
   exerciseById: null, // 進日曆時載一次，點日不重抓
   editSetId: null, // F16：日曆明細正在行內編輯的 set id
   editDraft: null, // {weight, reps, rpe} 編輯草稿（steppers 就地維護）
-  confirmDelSetId: null, // F16：兩段式刪除中的 set id
+  selectMode: false, // F19：多選批次刪除模式
+  selectedIds: [], // F19：多選模式下已勾選的 set id
 };
 
 async function loadMonth() {
@@ -56,9 +57,10 @@ function shiftMonth(delta) {
 
 async function selectDay(dateStr) {
   cal.selected = dateStr;
-  cal.editSetId = null; // 換日/重載時清掉行內編輯與刪除確認的殘留態
+  cal.editSetId = null; // 換日/重載時清掉行內編輯與多選的殘留態
   cal.editDraft = null;
-  cal.confirmDelSetId = null;
+  cal.selectMode = false;
+  cal.selectedIds = [];
   const [workouts, statuses] = await Promise.all([
     api.listWorkouts(dateStr, dateStr),
     api.listDailyStatus(dateStr, dateStr),
@@ -93,7 +95,17 @@ async function refreshMonthAndDay() {
 
 async function deleteSet(s, rerender) {
   await api.deleteSet(s.id); // 日曆的組都來自 server，一律走軟刪 API（無離線佇列）
-  cal.confirmDelSetId = null;
+  await refreshMonthAndDay();
+  rerender();
+}
+
+// F19：批次刪除已勾選的組——後端無批次端點，逐筆軟刪
+async function batchDeleteSelected(rerender) {
+  for (const id of cal.selectedIds) {
+    await api.deleteSet(id);
+  }
+  cal.selectMode = false;
+  cal.selectedIds = [];
   await refreshMonthAndDay();
   rerender();
 }
@@ -130,12 +142,21 @@ function calSetRow(s, guard, rerender) {
       ]),
     ]);
   }
-  if (cal.confirmDelSetId === s.id) {
-    return el("div", { class: "cal-detail-row confirm-del" }, [
+  if (cal.selectMode) {
+    // F19 多選：整列可點切換勾選，隱藏編輯/刪除單擊鈕
+    const checked = cal.selectedIds.includes(s.id);
+    return el("div", {
+      class: `cal-detail-row set selectable${checked ? " selected" : ""}`,
+      onclick: () => {
+        cal.selectedIds = checked
+          ? cal.selectedIds.filter((x) => x !== s.id)
+          : [...cal.selectedIds, s.id];
+        rerender();
+      },
+    }, [
+      el("span", { class: "check" }, [checked ? "☑" : "☐"]),
       el("span", { class: "setno" }, [`#${s.set_number}`]),
-      el("span", { class: "n" }, ["確定刪除？"]),
-      el("button", { class: "btn btn-danger sm", onclick: () => guard(() => deleteSet(s, rerender)) }, ["刪除"]),
-      el("button", { class: "btn btn-ghost sm", onclick: () => { cal.confirmDelSetId = null; rerender(); } }, ["取消"]),
+      el("span", { class: "n" }, [`${s.weight_kg}×${s.reps}${s.rpe ? `@${s.rpe}` : ""}`]),
     ]);
   }
   return el("div", { class: "cal-detail-row set" }, [
@@ -146,13 +167,13 @@ function calSetRow(s, guard, rerender) {
       onclick: () => {
         cal.editSetId = s.id;
         cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? null };
-        cal.confirmDelSetId = null;
         rerender();
       },
     }, ["✎"]),
     el("button", {
+      // F19：單擊即刪（軟刪），不再兩段式確認
       class: "btn icon-btn del-set",
-      onclick: () => { cal.confirmDelSetId = s.id; cal.editSetId = null; rerender(); },
+      onclick: () => guard(() => deleteSet(s, rerender)),
     }, ["🗑"]),
   ]);
 }
@@ -174,6 +195,23 @@ function detailRows(guard, rerender) {
     ]),
     ...statusRow(),
   ];
+  // F19：有組才顯示「選取」入口（進多選批次刪除）
+  const hasSets = cal.detail.some((d) => d.sets.length > 0);
+  if (hasSets) {
+    rows.push(
+      el("div", { class: "cal-select-bar" }, [
+        cal.selectMode
+          ? el("button", {
+              class: "btn btn-ghost sm cal-select-cancel",
+              onclick: () => { cal.selectMode = false; cal.selectedIds = []; rerender(); },
+            }, ["取消"])
+          : el("button", {
+              class: "btn btn-ghost sm cal-select-toggle",
+              onclick: () => { cal.selectMode = true; cal.editSetId = null; rerender(); },
+            }, ["選取"]),
+      ]),
+    );
+  }
   for (const { sets } of cal.detail) {
     // F16：每個動作一個標題列，其下每組獨立一列可編輯/刪除
     const grouped = new Map();
@@ -188,6 +226,17 @@ function detailRows(guard, rerender) {
       );
       for (const s of groupSets) rows.push(calSetRow(s, guard, rerender));
     }
+  }
+  if (cal.selectMode) {
+    rows.push(
+      el("div", { class: "cal-batch-bar" }, [
+        el("button", {
+          class: "btn btn-danger cal-batch-del",
+          ...(cal.selectedIds.length === 0 ? { disabled: "" } : {}),
+          onclick: () => guard(() => batchDeleteSelected(rerender)),
+        }, [`刪除選取 (${cal.selectedIds.length})`]),
+      ]),
+    );
   }
   return rows;
 }

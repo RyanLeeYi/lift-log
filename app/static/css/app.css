@@ -376,6 +376,13 @@ body {
 .cal-detail-row.editing .edit-actions { display: flex; gap: 10px; }
 .cal-detail-row.editing .edit-actions .btn { flex: 1; }
 .cal-detail-row .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
+/* F19 多選批次刪除 */
+.cal-select-bar { display: flex; justify-content: flex-end; padding: 2px 4px; }
+.cal-detail-row.selectable { cursor: pointer; padding-left: 8px; }
+.cal-detail-row.selectable .check { flex: none; font-size: 16px; }
+.cal-detail-row.selectable.selected { color: var(--text); background: var(--card-edge); border-radius: 6px; }
+.cal-batch-bar { position: sticky; bottom: 8px; padding: 8px 0; }
+.cal-batch-bar .cal-batch-del { width: 100%; }
 .cal-empty { color: var(--text-dim); font-size: 14px; padding: 8px 4px; }
 .cal-status {
   display: flex; flex-direction: column; gap: 2px;

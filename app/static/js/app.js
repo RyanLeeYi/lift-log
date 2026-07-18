@@ -33,8 +33,7 @@ let restTicker = null;
 let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
 let wakeLockPending = false; // request 進行中——完成時要重驗畫面狀態，避免離開後鎖洩漏
 let restAlerted = false; // 本段休息是否已提醒過；調長目標後重新武裝
-// F16 done-list 行內編輯/刪除（key＝已同步組的 id，未同步組退回 client_uuid）
-let confirmDeleteSetKey = null; // 兩段式刪除：第一下記 key、第二下才真刪
+// F16/F19 done-list 行內編輯/單擊刪除（key＝已同步組的 id，未同步組退回 client_uuid）
 let editDraft = null; // {key, weight, reps, rpe} 正在行內編輯的草稿
 
 function setRowKey(s) {
@@ -596,7 +595,6 @@ function renderLogger() {
     state.setCounts = { ...state.setCounts, [state.exercise.id]: state.doneSets.length };
     state.setNumber = state.doneSets.reduce((m, x) => Math.max(m, x.set_number), 0) + 1;
     saveActiveWorkout();
-    confirmDeleteSetKey = null;
     render();
   };
 
@@ -641,14 +639,6 @@ function renderLogger() {
         ]),
       ]);
     }
-    if (confirmDeleteSetKey === key) {
-      return el("div", { class: "done-row confirm-del" }, [
-        el("span", {}, [`#${s.set_number}`]),
-        el("span", { class: "n" }, ["確定刪除？"]),
-        el("button", { class: "btn btn-danger sm", onclick: () => guard(() => deleteDoneSet(s)) }, ["刪除"]),
-        el("button", { class: "btn btn-ghost sm", onclick: () => { confirmDeleteSetKey = null; render(); } }, ["取消"]),
-      ]);
-    }
     const queued = state.queueStatus[s.client_uuid]; // pending | failed | undefined（已同步）
     const mark = queued === "pending" ? " ⏳" : queued === "failed" ? " ⚠" : "";
     return el("div", { class: `done-row${queued ? ` ${queued}` : ""}` }, [
@@ -660,13 +650,13 @@ function renderLogger() {
         class: "btn icon-btn edit-set",
         onclick: () => {
           editDraft = { key, weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? null };
-          confirmDeleteSetKey = null;
           render();
         },
       }, ["✎"]),
       el("button", {
+        // F19：單擊即刪（軟刪／未同步移出佇列，資料非真的消失），不再兩段式確認
         class: "btn icon-btn del-set",
-        onclick: () => { confirmDeleteSetKey = key; editDraft = null; render(); },
+        onclick: () => guard(() => deleteDoneSet(s)),
       }, ["🗑"]),
     ]);
   };
