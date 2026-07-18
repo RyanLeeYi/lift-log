@@ -41,6 +41,15 @@ def create_app(settings: Settings) -> FastAPI:
             request.scope["path"] = f"{MCP_MOUNT}/"
         return await call_next(request)
 
+    @app.middleware("http")
+    async def sw_no_edge_cache(request, call_next):  # type: ignore[no-untyped-def]
+        # PWA 更新靠 sw.js 換版觸發；被 CDN 邊緣快取（Cloudflare 預設 4h）會讓部署
+        # 延遲整個 TTL 才到手機。只針對 sw.js——其餘殼資產由 SW 的 CACHE_NAME 版本管理
+        response = await call_next(request)
+        if request.scope["path"] == "/sw.js":
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.get("/health")
     def health() -> dict:
         # mission-control 健康檢查：無 auth（不吐資料）、實際探 DB——靜態 / 反映不了 DB 壞掉

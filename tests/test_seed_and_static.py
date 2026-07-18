@@ -60,6 +60,18 @@ class TestStatic:
         assert resp.status_code == 200
         assert "javascript" in resp.headers["content-type"]
 
+    def test_service_worker_is_never_edge_cached(self, anon_client: TestClient) -> None:
+        """F13：/sw.js 回 no-cache——PWA 更新靠 sw.js 換版觸發，被 CDN 邊緣快取
+        （Cloudflare 預設 4h）會讓部署延遲整個 TTL 才到手機。"""
+        resp = anon_client.get("/sw.js")
+        assert resp.headers.get("cache-control") == "no-cache"
+
+    def test_other_shell_assets_keep_default_cache_policy(self, anon_client: TestClient) -> None:
+        """F13：只有 sw.js 改策略；其餘殼資產由 SW CACHE_NAME 版本管理，不加 no-cache。"""
+        resp = anon_client.get("/js/app.js")
+        assert resp.status_code == 200
+        assert resp.headers.get("cache-control") != "no-cache"
+
     def test_sw_shell_list_matches_static_files(self) -> None:
         """F5 漂移防護：SHELL 清單的檔案要存在；新增的 js/css 檔要記得進 SHELL。
 
