@@ -61,6 +61,11 @@ async function removeEntry(clientUuid) {
   await asPromise((await store("readwrite")).delete(clientUuid));
 }
 
+/** F16：從佇列移除未同步的一組（刪除尚未上傳的組）。編輯未同步組則直接 enqueueSet 覆蓋同 client_uuid。 */
+export async function removeQueued(clientUuid) {
+  await removeEntry(clientUuid);
+}
+
 async function markFailed(entry) {
   await asPromise((await store("readwrite")).put({ ...entry, status: "failed" }));
 }

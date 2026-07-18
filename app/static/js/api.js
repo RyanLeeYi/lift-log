@@ -48,6 +48,9 @@ export const api = {
     request("PUT", `/api/templates/${templateId}`, payload),
   deleteTemplate: (templateId) => request("DELETE", `/api/templates/${templateId}`),
   logSet: (workoutId, payload) => request("POST", `/api/workouts/${workoutId}/sets`, payload),
+  updateSet: (setId, payload) => request("PATCH", `/api/sets/${setId}`, payload), // F16 原位編輯
+  deleteSet: (setId) => request("DELETE", `/api/sets/${setId}`), // F16 軟刪
+
   workoutDetail: (workoutId) => request("GET", `/api/workouts/${workoutId}`),
   listWorkouts: (start, end) => request("GET", `/api/workouts?start=${start}&end=${end}`),
   calendarStats: (year, month) =>

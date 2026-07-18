@@ -224,14 +224,28 @@ body {
 
 .done-list { display: flex; flex-direction: column; gap: 6px; }
 .done-row {
-  display: flex; justify-content: space-between;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
   color: var(--text-dim);
   font-family: var(--mono);
   font-size: 14px;
   padding: 6px 4px;
   border-bottom: 1px solid var(--card-edge);
 }
-.done-row .n { color: var(--text); }
+.done-row .n { color: var(--text); flex: 1; }
+/* F16 行內編輯/刪除 */
+.done-row .icon-btn {
+  flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
+  background: transparent; border: 1px solid var(--card-edge);
+}
+.done-row.confirm-del { color: var(--danger, #e5484d); }
+.done-row.editing { flex-wrap: wrap; }
+.done-row.editing input {
+  width: 64px; flex: 1 1 56px; min-width: 48px;
+  font-family: var(--mono); font-size: 14px; padding: 6px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--card-edge); border-radius: 6px;
+}
+.done-row .btn.sm { flex: none; padding: 4px 10px; min-height: 32px; font-size: 13px; }
 
 .logger-foot { display: flex; gap: 10px; }
 .logger-foot .btn { flex: 1; }

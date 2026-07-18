@@ -5,7 +5,14 @@ import { api, ApiError, getToken, setToken } from "./api.js";
 import { openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { el } from "./dom.js";
-import { discardFailed, enqueueSet, flushQueue, listQueued, queueCounts } from "./queue.js";
+import {
+  discardFailed,
+  enqueueSet,
+  flushQueue,
+  listQueued,
+  queueCounts,
+  removeQueued,
+} from "./queue.js";
 import { openTemplates, renderTemplateEdit, renderTemplates } from "./templates.js";
 import {
   clearActiveWorkout,
@@ -26,6 +33,13 @@ let restTicker = null;
 let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
 let wakeLockPending = false; // request 進行中——完成時要重驗畫面狀態，避免離開後鎖洩漏
 let restAlerted = false; // 本段休息是否已提醒過；調長目標後重新武裝
+// F16 done-list 行內編輯/刪除（key＝已同步組的 id，未同步組退回 client_uuid）
+let confirmDeleteSetKey = null; // 兩段式刪除：第一下記 key、第二下才真刪
+let editDraft = null; // {key, weight, reps, rpe} 正在行內編輯的草稿
+
+function setRowKey(s) {
+  return s.id != null ? `id:${s.id}` : `uuid:${s.client_uuid}`;
+}
 
 // ---------- 小工具 ----------
 
@@ -571,6 +585,98 @@ function renderLogger() {
     render();
   };
 
+  // ---------- F16 done-list 行內編輯/刪除 ----------
+  const replaceInDone = (target, next) => {
+    state.doneSets = state.doneSets.map((x) => (x === target ? next : x));
+  };
+
+  const deleteDoneSet = async (s) => {
+    if (s.id != null) {
+      await api.deleteSet(s.id); // 已同步：軟刪
+    } else {
+      await removeQueued(s.client_uuid); // 未同步：移出佇列
+      await refreshQueueCounts();
+    }
+    state.doneSets = state.doneSets.filter((x) => x !== s);
+    confirmDeleteSetKey = null;
+    render();
+  };
+
+  const saveEditDoneSet = async (s) => {
+    const w = Math.round(Number(root.querySelector(".edit-weight").value) * 10) / 10;
+    const r = Math.trunc(Number(root.querySelector(".edit-reps").value));
+    const rpeRaw = root.querySelector(".edit-rpe").value.trim();
+    const rpe = rpeRaw ? Math.trunc(Number(rpeRaw)) : null;
+    if (!(w >= 0) || !(r >= 1) || (rpe !== null && (rpe < 1 || rpe > 10))) {
+      state.error = "重量/次數/RPE 不正確";
+      render();
+      return;
+    }
+    if (s.id != null) {
+      const updated = await api.updateSet(s.id, {
+        weight_kg: w,
+        reps: r,
+        ...(rpe ? { rpe } : {}),
+        ...(s.rest_seconds != null ? { rest_seconds: s.rest_seconds } : {}),
+      });
+      replaceInDone(s, updated); // 原位 PATCH
+    } else {
+      const payload = { ...s, weight_kg: w, reps: r, rpe }; // 未同步：覆蓋佇列同 client_uuid
+      await enqueueSet(state.workoutId, payload);
+      replaceInDone(s, payload);
+    }
+    state.error = null;
+    editDraft = null;
+    render();
+  };
+
+  const doneRow = (s) => {
+    const key = setRowKey(s);
+    if (editDraft && editDraft.key === key) {
+      return el("div", { class: "done-row editing" }, [
+        el("span", {}, [`#${s.set_number}`]),
+        el("input", {
+          type: "number", class: "edit-weight", step: "0.5",
+          inputmode: "decimal", value: String(s.weight_kg),
+        }),
+        el("input", {
+          type: "number", class: "edit-reps", step: "1",
+          inputmode: "numeric", value: String(s.reps),
+        }),
+        el("input", {
+          type: "number", class: "edit-rpe", step: "1", min: "1", max: "10",
+          inputmode: "numeric", placeholder: "RPE", value: s.rpe ? String(s.rpe) : "",
+        }),
+        el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditDoneSet(s)) }, ["儲存"]),
+        el("button", { class: "btn btn-ghost sm", onclick: () => { editDraft = null; state.error = null; render(); } }, ["取消"]),
+      ]);
+    }
+    if (confirmDeleteSetKey === key) {
+      return el("div", { class: "done-row confirm-del" }, [
+        el("span", {}, [`#${s.set_number}`]),
+        el("span", { class: "n" }, ["確定刪除？"]),
+        el("button", { class: "btn btn-danger sm", onclick: () => guard(() => deleteDoneSet(s)) }, ["刪除"]),
+        el("button", { class: "btn btn-ghost sm", onclick: () => { confirmDeleteSetKey = null; render(); } }, ["取消"]),
+      ]);
+    }
+    const queued = state.queueStatus[s.client_uuid]; // pending | failed | undefined（已同步）
+    const mark = queued === "pending" ? " ⏳" : queued === "failed" ? " ⚠" : "";
+    return el("div", { class: `done-row${queued ? ` ${queued}` : ""}` }, [
+      el("span", {}, [`#${s.set_number}${mark}`]),
+      el("span", { class: "n" }, [
+        `${s.weight_kg} kg × ${s.reps}${s.rpe ? `  @${s.rpe}` : ""}`,
+      ]),
+      el("button", {
+        class: "btn icon-btn edit-set",
+        onclick: () => { editDraft = { key }; confirmDeleteSetKey = null; state.error = null; render(); },
+      }, ["✎"]),
+      el("button", {
+        class: "btn icon-btn del-set",
+        onclick: () => { confirmDeleteSetKey = key; editDraft = null; render(); },
+      }, ["🗑"]),
+    ]);
+  };
+
   return el("section", { class: "screen logger" }, [
     el("header", { class: "exercise-head" }, [
       el("h2", {}, [exerciseName(exercise)]),
@@ -609,18 +715,7 @@ function renderLogger() {
     ),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...syncStatusLine(),
-    el("div", { class: "done-list" },
-      state.doneSets.map((s) => {
-        const queued = state.queueStatus[s.client_uuid]; // pending | failed | undefined（已同步）
-        const mark = queued === "pending" ? " ⏳" : queued === "failed" ? " ⚠" : "";
-        return el("div", { class: `done-row${queued ? ` ${queued}` : ""}` }, [
-          el("span", {}, [`#${s.set_number}${mark}`]),
-          el("span", { class: "n" }, [
-            `${s.weight_kg} kg × ${s.reps}${s.rpe ? `  @${s.rpe}` : ""}`,
-          ]),
-        ]);
-      }),
-    ),
+    el("div", { class: "done-list" }, state.doneSets.map(doneRow)),
     el("div", { class: "steppers" }, [
       stepper(exercise.is_bodyweight ? "負重 KG" : "KG", state.weightKg, [
         ["−2.5", -2.5],
