@@ -6,7 +6,8 @@
 - **注意：Cloudflare 邊緣快取 sw.js 4 小時**（cf-cache-status HIT）——公開 URL 的新版最多延遲 ~4h 到手機；急件去 CF dashboard purge。通案已入列 **F13（sw.js no-cache 標頭）**
 - **Codex 驗收限制（記憶已存）**：workspace-write sandbox 跑不了 uv（寫不了 cache、讀不了 managed Python）——uv 專案驗收直接派 acceptance-verifier fallback，別燒 Codex 額度
 - **測試孤兒教訓**：`uv run uvicorn` 的 Popen 用 `terminate()` 只殺 uv 層，孤兒 uvicorn 佔 port 頂替下一輪（症狀：fresh DB 卻回 template name already exists）。一律 `taskkill /F /T /PID` 整樹殺＋隨機 port
-- **下場開場動作**：照順序做 **F10 自訂動作**（acceptance 已簽核；POST /api/exercises 已存在，主戰場前端 picker/加動作面板）→ F11 體重補記（body-metrics date 欄位已支援）→ F13 sw.js 標頭（小）。改 static 資產記得 bump sw.js CACHE_NAME（現為 v4）
+- **F13 也完成了（同場加映）**：sw_no_edge_cache middleware（commit 0c2eb11）→ 驗收 4/4 PASS → passing。公開 URL 實測 CF 對 no-cache 的行為是「存但每次回源驗證」（REVALIDATED），部署即時生效；zone 會改寫瀏覽器側標頭為 max-age=14400 但不影響 SW 更新（瀏覽器對 SW 主腳本預設繞過 HTTP cache）。改版前的舊 /sw.js 快取條目一次性 HIT 至 TTL 過期或 Ryan purge
+- **下場開場動作**：照順序做 **F10 自訂動作**（acceptance 已簽核；POST /api/exercises 已存在，主戰場前端 picker/加動作面板）→ F11 體重補記（body-metrics date 欄位已支援）。改 static 資產記得 bump sw.js CACHE_NAME（現為 v4）
 - Ryan 手機實測 F12 倒數（等 CF 快取過期或 purge 後）：課表設參考秒數→倒數→超時變紅震動→點 chip 臨時調
 - vault DEVLOG 本場已記（MVP 收官＋F12 全流程）
 

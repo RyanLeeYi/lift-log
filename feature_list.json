@@ -88,8 +88,8 @@
       "id": "F13",
       "name": "靜態資產快取策略（sw.js no-cache）",
       "acceptance": "origin 對 /sw.js 回應 Cache-Control: no-cache（或 max-age=0, must-revalidate），部署新版後公開 URL 的 sw.js 不再被 Cloudflare 邊緣快取延誤（cf-cache-status 不得為 HIT 舊版）；其餘 shell 資產快取策略不變（由 SW CACHE_NAME 版本管理）；pytest 驗 /sw.js 回應標頭。來源：2026-07-18 F12 部署時發現 CF 邊緣快取 sw.js 4 小時，更新最多延遲 4 小時才到手機",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "2026-07-18：136 tests 全過、ruff 乾淨、codex review 無 findings。acceptance-verifier 4/4 PASS：pytest 兩條 F13 測試＋正式 8137 實回 cache-control: no-cache；公開 URL cache-bust 三連打 MISS→REVALIDATED→REVALIDATED（每次回源驗證，部署即時生效；zone 會把瀏覽器側標頭改寫 max-age=14400，但瀏覽器對 SW 主腳本更新預設繞過 HTTP cache，不影響）；/js/app.js 無 no-cache（策略不變）。已知一次性殘留：改版前的舊 /sw.js 快取條目 HIT 至 TTL 過期（~2h）或手動 purge，此後不再發生"
     }
   ]
 }
