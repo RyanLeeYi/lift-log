@@ -130,8 +130,8 @@
       "id": "F19",
       "name": "訓練組刪除 UX 改版（單擊即刪 + 日曆多選批次刪除）",
       "acceptance": "拿掉訓練組刪除的兩段式確認：logger done-list 與日曆明細每組的 🗑 單擊即刪（已同步走 DELETE 軟刪、未同步移出佇列），刪後即時從畫面移除、setCounts/heatmap 正確更新；多選批次刪除只在日曆明細：日曆明細有「選取」入口進多選模式，模式中每組可勾選、隱藏 ✎/🗑，底部顯示「刪除選取 (N)」與「取消」，勾多筆按一次全刪（各自軟刪），完成後退出模式並刷新噸位與明細；多選模式中不可編輯，「取消」退出不刪任何東西。E2E 驗：logger 與日曆單擊即刪（無確認步驟）＋日曆多選勾兩筆一次刪、server 端確認。取代 F16 的兩段式確認（F16 仍為 passing，按其原規格交付）。Ryan 2026-07-18 簽核。",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "acceptance-verifier 12/12 全 pass（Playwright + httpx 實測）：logger 與日曆單擊即刪無確認態（.confirm-del count=0、明細少一筆軟刪）、刪後噸位/heatmap 即時更新（1000→500kg DOM 與 API 同步）、日曆多選模式（選取→勾選 selectable、隱藏 ✎/🗑、刪除選取 (N)、批次軟刪 server 確認、退出模式）、取消不刪（server 未動）、多選中不可編輯。codex-review 2 P2 已修（404 當成功防連點、批次 finally 重載）。死 CSS 已清。sw v9。commits fb4d73e/e91414c/+css。uv run pytest 146、ruff clean。E2E verify_f19_logger/calendar（scratchpad）。取代 F16 兩段式確認（F16 仍 passing）。"
     }
   ]
 }

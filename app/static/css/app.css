@@ -237,7 +237,6 @@ body {
   flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
   background: transparent; border: 1px solid var(--card-edge);
 }
-.done-row.confirm-del { color: var(--danger, #e5484d); }
 /* 編輯態：展開成 steppers 迷你表單（與記錄新組同款控制項，觸控友善） */
 .done-row.editing { flex-direction: column; align-items: stretch; gap: 10px; }
 .done-row.editing .edit-head { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
@@ -366,7 +365,6 @@ body {
 .cal-detail-row.set { padding-left: 12px; }
 .cal-detail-row .setno { color: var(--text-dim); font-family: var(--mono); flex: none; }
 .cal-detail-row.set .n { flex: 1; }
-.cal-detail-row.confirm-del { color: var(--danger, #e5484d); padding-left: 12px; }
 .cal-detail-row .icon-btn {
   flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
   background: transparent; border: 1px solid var(--card-edge);
