@@ -95,8 +95,8 @@
       "id": "F14",
       "name": "部署自動到位（SW 殼資產版本戳＋接管自動重載）",
       "acceptance": "sw.js install 以 ?v=CACHE_NAME 查詢字串抓取 SHELL 每個資產並以原始 URL 存入 cache（CDN/瀏覽器快取必失效，杜絕新 SW 裝舊內容的混版；pytest 驗 sw.js 源碼模式）；app.js 監聽 controllerchange 自動 reload（防循環：每次接管只 reload 一次；首次安裝不 reload——以啟動時已有 controller 為條件）；Playwright 驗證：已載入舊版的頁面在部署新 CACHE_NAME 後重新導航一次，無手動強制重整即自動顯示新版內容。來源：2026-07-18 F12 部署後 Ryan 桌機需 Ctrl+Shift+R、手機需重開兩次才見新版，Ryan 簽核根治",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "acceptance-verifier 逐條 3/3 PASS（commits 8820688 + 8426a15）：R1 sw.js install 以 ?v=CACHE_NAME 版本戳逐檔抓取 + cache.put(url) 原始 URL 存入、無 cache.add；R2 app.js controllerchange 自動 reload、refreshing 防循環、skippedInitialClaim 只跳過首裝初次接管（修 Codex P2① 首訪者不更新，以 hadController 判首裝）；R3 驗收者自寫 Playwright 實測：部署新 CACHE_NAME 後重新導航一次即自動顯示新版（marker_seen=True，server log 見第二次未經腳本觸發的自動導航）。uv run pytest 138 passed、ruff clean。codex-review 3 條：P2① 已修；P1（首次 F14 部署對舊 app.js 頁面需手動刷一次的一次性 bootstrap）與 P2②（記錄中途被 reload 丟失正填的一組輸入）已揭露並接受。"
     }
   ]
 }
