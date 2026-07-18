@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.errors import ConflictError, DomainError, NotFoundError, UnknownExerciseError
 from app.models import Exercise, Template, Workout, WorkoutSet
-from app.schemas import LogWorkoutIn, LogWorkoutSummary, SetCreate, WorkoutCreate
+from app.schemas import LogWorkoutIn, LogWorkoutSummary, SetCreate, SetUpdate, WorkoutCreate
 from app.services.body_metrics import latest_weight
 from app.services.exercises import exercise_label, normalize_name
 from app.services.stats import set_tonnage
@@ -276,3 +276,17 @@ def soft_delete_set(session: Session, set_id: int) -> None:
         raise NotFoundError()
     workout_set.deleted_at = datetime.now()
     session.commit()
+
+
+def update_set(session: Session, set_id: int, data: SetUpdate) -> WorkoutSet:
+    """F16 原位編輯：只改量測欄位，set_number/exercise/client_uuid 不動；已刪或不存在回 404。"""
+    workout_set = session.get(WorkoutSet, set_id)
+    if workout_set is None or workout_set.deleted_at is not None:
+        raise NotFoundError()
+    workout_set.weight_kg = data.weight_kg
+    workout_set.reps = data.reps
+    workout_set.rpe = data.rpe
+    workout_set.rest_seconds = data.rest_seconds
+    session.commit()
+    session.refresh(workout_set)
+    return workout_set

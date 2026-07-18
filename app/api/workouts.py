@@ -3,7 +3,14 @@ from datetime import date as date_type
 from fastapi import APIRouter, Depends, Response, status
 
 from app.api.deps import DbSession, require_token
-from app.schemas import SetCreate, SetOut, WorkoutCreate, WorkoutDetailOut, WorkoutOut
+from app.schemas import (
+    SetCreate,
+    SetOut,
+    SetUpdate,
+    WorkoutCreate,
+    WorkoutDetailOut,
+    WorkoutOut,
+)
 from app.services import workouts as svc
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
@@ -45,6 +52,11 @@ def log_set(
     workout_set, created = svc.log_set(session, workout_id, data)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return SetOut.model_validate(workout_set)
+
+
+@router.patch("/sets/{set_id}", response_model=SetOut)
+def update_set(set_id: int, data: SetUpdate, session: DbSession) -> SetOut:
+    return SetOut.model_validate(svc.update_set(session, set_id, data))
 
 
 @router.delete("/sets/{set_id}", status_code=status.HTTP_204_NO_CONTENT)

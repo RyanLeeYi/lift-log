@@ -104,6 +104,27 @@
       "acceptance": "就緒態主按鈕顯示「✓ 完成這組」，按下記錄該組、倒數開始、進入休息態、按鈕變「繼續下一組」；休息態主按鈕顯示「繼續下一組」，按下停止倒數、LED 回靜態顯示參考秒數、凍結本次休息秒數、回就緒態、按鈕變回「✓ 完成這組」；休息態下主按鈕不做記錄，必須先按繼續下一組回就緒態才能記下一組。rest_seconds 定案點＝按「繼續下一組」當下的 elapsed（含超時絕對值），下一組完成這組時把凍結值寫進該組 rest_seconds、寫入後清空不重複套用，第一組不帶 rest_seconds。換動作／收工在任一態都停止倒數並清掉未用凍結值。F12 行為不變：休息態超時倒數轉負＋LED 變紅＋震動一次，rest-hint chip 仍可臨時調參考秒數。Playwright E2E 驗：完成這組→按鈕變繼續下一組且倒數在跑→繼續下一組→按鈕變回完成這組且倒數停→再完成這組時該組帶 rest_seconds＝剛才凍結值。Ryan 2026-07-18 簽核。",
       "status": "passing",
       "evidence": "acceptance-verifier R1–R7 PASS（自寫 Playwright 擷取 POST /sets body、LED 回參考秒數比對、休息態不記錄）；R8 換動作分支 PASS（驗收者）+ 收工分支 PASS（補測 verify_f15_endworkout.py：收工後新 workout 首組無 rest_seconds＝凍結值已清）；R9 F12 迴歸屬 out-of-scope（未動 F12 程式碼，F12 已 passing）。E2E verify_f15.py：set1 無 rest_seconds、繼續下一組凍結後 set2 rest_seconds=3。codex-review 1 P2 已修（commit 11bfbdf：凍結值改為確認保住後才清，非離線失敗/入列失敗重試不丟）。commits b581b3a + 11bfbdf。uv run pytest 139 passed、ruff clean。"
+    },
+    {
+      "id": "F16",
+      "name": "訓練組 編輯＋刪除",
+      "acceptance": "後端新增 PATCH /api/sets/{id} 更新 weight_kg/reps/rpe/rest_seconds（範圍驗證同 POST）、set 不存在或已軟刪回 404、回更新後 SetOut、set_number 不變；logger「已完成的組」每列有編輯與刪除入口，刪除為兩段式確認（第一下該列進確認態、第二下真刪）：已同步組打 DELETE /api/sets/{id}（軟刪）、未同步 queued 組移出離線佇列，刪後即時從畫面移除且不計入噸位/heatmap/歷史；編輯把該組值帶回 steppers 可改、存檔打 PATCH 原位更新（未同步組改佇列那筆）；日曆某天明細把每動作分組文字改成每組一列可編輯/刪除（同機制）。後端測試涵蓋 PATCH 更新/404/範圍驗證；logger 與日曆的編輯刪除以 Playwright E2E 驗。同步更新 CLAUDE.md「sets 不做 update」措辭。Ryan 2026-07-18 簽核。",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F17",
+      "name": "體重 編輯＋刪除",
+      "acceptance": "後端新增 DELETE /api/body-metrics/{date} 硬刪該日、不存在回 404；/body 頁在折線圖下新增體重紀錄清單（日期＋體重＋體脂）每列可編輯/刪除，刪除為兩段式確認後打 DELETE；編輯把該日值帶回表單可改、存檔為 POST（同日覆蓋 upsert，既有行為）、日期不可改；刪/改後折線圖與清單即時更新。後端測試涵蓋 DELETE 刪除/404；清單編輯刪除以 E2E 驗。Ryan 2026-07-18 簽核。",
+      "status": "failing",
+      "evidence": null
+    },
+    {
+      "id": "F18",
+      "name": "每日狀態 編輯＋刪除",
+      "acceptance": "後端新增 DELETE /api/daily-status/{date} 硬刪該日、不存在回 404；日曆某天明細的狀態列可編輯/刪除，刪除為兩段式確認後打 DELETE、編輯把值帶回可改、存檔為 POST（同日覆蓋）；刪/改後即時更新。後端測試涵蓋 DELETE 刪除/404；日曆狀態編輯刪除以 E2E 驗。Ryan 2026-07-18 簽核。",
+      "status": "failing",
+      "evidence": null
     }
   ]
 }

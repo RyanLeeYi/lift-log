@@ -190,6 +190,68 @@ class TestDeleteSet:
         assert resp.json() == {"error": "not found"}
 
 
+class TestUpdateSet:
+    """F16：PATCH /api/sets/{id} 原位修改（set_number 不變）。"""
+
+    def _make_set(self, client, exercise_id):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        created = client.post(
+            f"/api/workouts/{workout_id}/sets",
+            json=make_set_payload(exercise_id, weight_kg=100, rpe=8, rest_seconds=90),
+        ).json()
+        return workout_id, created
+
+    def test_patch_updates_values_in_place(self, client, exercise_id):
+        workout_id, created = self._make_set(client, exercise_id)
+        resp = client.patch(
+            f"/api/sets/{created['id']}",
+            json={"weight_kg": 105, "reps": 6, "rpe": 9, "rest_seconds": 120},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == created["id"]  # 同一筆
+        assert body["set_number"] == created["set_number"]  # 位置/編號不變
+        assert (body["weight_kg"], body["reps"], body["rpe"], body["rest_seconds"]) == (
+            105,
+            6,
+            9,
+            120,
+        )
+        # 明細也反映更新後的值
+        detail = client.get(f"/api/workouts/{workout_id}").json()
+        assert detail["sets"][0]["weight_kg"] == 105
+        assert detail["sets"][0]["reps"] == 6
+
+    def test_patch_can_clear_optional_fields(self, client, exercise_id):
+        _, created = self._make_set(client, exercise_id)
+        resp = client.patch(
+            f"/api/sets/{created['id']}", json={"weight_kg": 100, "reps": 8}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["rpe"] is None  # 未帶＝清掉，不沿用舊值
+
+    def test_patch_unknown_set_returns_404(self, client):
+        resp = client.patch("/api/sets/9999", json={"weight_kg": 100, "reps": 8})
+        assert resp.status_code == 404
+        assert resp.json() == {"error": "not found"}
+
+    def test_patch_soft_deleted_set_returns_404(self, client, exercise_id):
+        _, created = self._make_set(client, exercise_id)
+        assert client.delete(f"/api/sets/{created['id']}").status_code == 204
+        resp = client.patch(f"/api/sets/{created['id']}", json={"weight_kg": 100, "reps": 8})
+        assert resp.status_code == 404
+
+    @pytest.mark.parametrize(
+        ("field", "value"), [("weight_kg", -1), ("reps", 0), ("rpe", 11)]
+    )
+    def test_patch_out_of_range_returns_400(self, client, exercise_id, field, value):
+        _, created = self._make_set(client, exercise_id)
+        payload = {"weight_kg": 100, "reps": 8}
+        payload[field] = value
+        resp = client.patch(f"/api/sets/{created['id']}", json=payload)
+        assert resp.status_code == 400
+
+
 class TestQueryWorkouts:
     def test_list_workouts_filters_by_date_range(self, client):
         client.post("/api/workouts", json={"date": "2026-07-01"})

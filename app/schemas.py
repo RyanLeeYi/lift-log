@@ -65,6 +65,18 @@ class SetCreate(BaseModel):
     rest_seconds: int | None = Field(default=None, ge=0)
 
 
+class SetUpdate(BaseModel):
+    """F16 原位編輯一組：只改可修的量測欄位；set_number/exercise/client_uuid 不動。
+
+    未帶的選填欄位（rpe/rest_seconds）＝清掉，不沿用舊值（編輯表單所見即所存）。
+    """
+
+    weight_kg: float = Field(ge=0)
+    reps: int = Field(gt=0)
+    rpe: int | None = Field(default=None, ge=1, le=10)
+    rest_seconds: int | None = Field(default=None, ge=0)
+
+
 class LogSetIn(BaseModel):
     """MCP 代記錄的一組：動作以雙語名稱指定（非 id）。"""
 
