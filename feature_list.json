@@ -102,8 +102,8 @@
       "id": "F15",
       "name": "組間休息按鈕兩態切換（完成這組 ⇄ 繼續下一組）",
       "acceptance": "就緒態主按鈕顯示「✓ 完成這組」，按下記錄該組、倒數開始、進入休息態、按鈕變「繼續下一組」；休息態主按鈕顯示「繼續下一組」，按下停止倒數、LED 回靜態顯示參考秒數、凍結本次休息秒數、回就緒態、按鈕變回「✓ 完成這組」；休息態下主按鈕不做記錄，必須先按繼續下一組回就緒態才能記下一組。rest_seconds 定案點＝按「繼續下一組」當下的 elapsed（含超時絕對值），下一組完成這組時把凍結值寫進該組 rest_seconds、寫入後清空不重複套用，第一組不帶 rest_seconds。換動作／收工在任一態都停止倒數並清掉未用凍結值。F12 行為不變：休息態超時倒數轉負＋LED 變紅＋震動一次，rest-hint chip 仍可臨時調參考秒數。Playwright E2E 驗：完成這組→按鈕變繼續下一組且倒數在跑→繼續下一組→按鈕變回完成這組且倒數停→再完成這組時該組帶 rest_seconds＝剛才凍結值。Ryan 2026-07-18 簽核。",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "acceptance-verifier R1–R7 PASS（自寫 Playwright 擷取 POST /sets body、LED 回參考秒數比對、休息態不記錄）；R8 換動作分支 PASS（驗收者）+ 收工分支 PASS（補測 verify_f15_endworkout.py：收工後新 workout 首組無 rest_seconds＝凍結值已清）；R9 F12 迴歸屬 out-of-scope（未動 F12 程式碼，F12 已 passing）。E2E verify_f15.py：set1 無 rest_seconds、繼續下一組凍結後 set2 rest_seconds=3。codex-review 1 P2 已修（commit 11bfbdf：凍結值改為確認保住後才清，非離線失敗/入列失敗重試不丟）。commits b581b3a + 11bfbdf。uv run pytest 139 passed、ruff clean。"
     }
   ]
 }
