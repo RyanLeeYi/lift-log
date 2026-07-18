@@ -1,5 +1,12 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十場終：**F12 passing 並已部署正式**；F10/F11/F13 failing 待做）
+> 最後更新：2026-07-18（第十場再終：F13 passing、**F14 實作 GREEN 未驗證**（commit 8820688），撞第二個帳號的 Fable 週限額收工）
+
+## F14 現況（下場從這裡接）
+- **已完成（commit 8820688）**：feature_list 入列（acceptance Ryan 簽核）；RED→GREEN：sw.js install 改 `fetch(url?v=CACHE_NAME, {cache:"reload"})` + `cache.put(url)`（杜絕新 SW 裝舊資產的混版）、CACHE_NAME bump **v5**；app.js controllerchange 自動 reload（hadController 條件防首裝重載、旗標防循環）；兩條源碼模式測試。138 tests 全過、ruff 乾淨
+- **未做（依序）**：1) Playwright E2E 驗自動更新流（做法：copy app/static 到暫存目錄用 `python -m http.server` 隨機 port 服務→開頁等 SW ready→改暫存副本的 CACHE_NAME＋index.html 可辨識內容→page.reload() 一次→**不再手動操作**，等頁面自動變新內容；殺 server 記得樹殺）；2) `/codex-review`（只審 8820688）；3) acceptance-verifier（uv 專案不走 codex-verify，見 memory）；4) F14 → passing；5) mission-control 重啟 lift-log 部署；6) Ryan 桌機/手機開一次 app 確認自動到位
+- **F13 已收**（4/4 PASS，commit 4d81661）：sw.js no-cache 生效，公開 URL REVALIDATED。CF 快取是 per-colo——桌機同機房已新，手機 4G 機房的舊 sw.js 條目等 TTL 或 purge
+- 背景：Ryan 桌機 Ctrl+Shift+R 已見新版（F12 倒數確認 serve 正常）；手機待 F14 部署後自然解決
+- **用量**：兩個帳號的 Fable 週限額同日雙雙觸頂（usage-guard per-model 窗口攔的）——下場開工前先 `cswap list` 看額度
 
 ## 第十場最終快照
 - **F12 完成上線**：規格（a50e019）→ 後端（0c01278）→ 前端（62bb947）→ codex-review 4 P2 全修（bed347d）→ acceptance-verifier 8/8 PASS → passing。mission-control 已重啟 lift-log，**正式 DB 遷移自動完成**（templates API 已帶 rest_hint_seconds），本機 sw.js v4
