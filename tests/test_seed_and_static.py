@@ -90,7 +90,11 @@ class TestStatic:
         assert "cache.put(url" in install_block, "回應要以原始 URL 存入（fetch handler 才對得到）"
 
     def test_app_reloads_once_when_new_sw_takes_over(self) -> None:
-        """F14：新 SW 接管（controllerchange）後頁面自動 reload 一次，使用者不需手動強制重整。"""
+        """F14：新 SW 接管（controllerchange）後頁面自動 reload 一次，使用者不需手動強制重整。
+
+        且「首次安裝的初次接管」不重載（頁面本就最新），但只跳過那一次——之後任何一次
+        接管（部署新版）都要重載，否則首訪者不關頁面就更新不到下次部署（Codex P2①）。
+        """
         from pathlib import Path
 
         app_source = (
@@ -98,6 +102,8 @@ class TestStatic:
         ).read_text(encoding="utf-8")
         assert "controllerchange" in app_source
         assert "location.reload()" in app_source
+        # 只跳過首裝的「初次」接管，不是永久跳過首訪者——用一次性旗標而非永久 hadController 擋
+        assert "skippedInitialClaim" in app_source, "首裝只跳過初次接管，之後部署仍須重載"
 
     def test_sw_shell_list_matches_static_files(self) -> None:
         """F5 漂移防護：SHELL 清單的檔案要存在；新增的 js/css 檔要記得進 SHELL。

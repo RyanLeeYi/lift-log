@@ -697,13 +697,19 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {
     /* SW 註冊失敗不影響線上使用 */
   });
-  // F14 部署自動到位：新 SW 接管即自動重載一次，開 app 就是新版。
-  // 首次安裝不重載（啟動時尚無 controller）；旗標防 reload 循環
+  // F14 部署自動到位：新 SW 接管（controllerchange）就自動重載一次，開 app 即是新版。
+  // 「首次安裝」的初次接管不重載（頁面本來就已是最新，多刷一次多餘）——但只跳過那一次；
+  // 之後任何一次接管（部署新版）都要重載，否則首訪者若不關頁面，下次部署就更新不到。
   const hadController = Boolean(navigator.serviceWorker.controller);
-  let reloadedByTakeover = false;
+  let skippedInitialClaim = false;
+  let refreshing = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!hadController || reloadedByTakeover) return;
-    reloadedByTakeover = true;
+    if (refreshing) return; // 防 reload 循環：每次接管只 reload 一次
+    if (!hadController && !skippedInitialClaim) {
+      skippedInitialClaim = true; // 首裝的初次接管跳過，但下次部署的接管仍會重載
+      return;
+    }
+    refreshing = true;
     location.reload();
   });
 }
