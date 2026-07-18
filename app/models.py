@@ -42,6 +42,7 @@ class TemplateExercise(Base):
     position: Mapped[int] = mapped_column(primary_key=True)
     exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"))
     default_sets: Mapped[int] = mapped_column()
+    rest_hint_seconds: Mapped[int | None] = mapped_column(default=None)
 
     template: Mapped[Template] = relationship(back_populates="exercises")
     exercise: Mapped[Exercise] = relationship()

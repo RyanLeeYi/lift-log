@@ -10,6 +10,7 @@ from app.config import Settings
 from app.db import make_engine
 from app.errors import register_error_handlers
 from app.mcp import create_mcp
+from app.migrations import migrate_schema
 from app.models import Base
 from app.seed import seed_exercises
 
@@ -23,6 +24,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     engine = make_engine(settings.db_path)
     Base.metadata.create_all(engine)
+    migrate_schema(engine)
     session_factory = sessionmaker(bind=engine)
 
     # MCP 先建：FastAPI 必須接 mcp_app.lifespan，session manager 才會初始化

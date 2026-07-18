@@ -232,3 +232,52 @@ class TestDeleteTemplate:
         assert detail.status_code == 200
         assert detail.json()["template_id"] == template_id
         assert detail.json()["note"] == "練腿日"
+
+
+class TestRestHint:
+    """F12（PRD R10）：參考休息秒數存於課表動作——選填、範圍 15–600、未設回 null。"""
+
+    def test_create_persists_rest_hint_and_null_when_omitted(self, client, exercise_ids):
+        payload = make_template_payload(exercise_ids)
+        payload["exercises"][0]["rest_hint_seconds"] = 90
+        resp = client.post("/api/templates", json=payload)
+        assert resp.status_code == 201
+        got = resp.json()["exercises"]
+        assert got[0]["rest_hint_seconds"] == 90
+        assert got[1]["rest_hint_seconds"] is None  # 未設定→null，前端才知道要用預設 60
+
+    def test_rest_hint_survives_get_roundtrip(self, client, exercise_ids):
+        payload = make_template_payload(exercise_ids)
+        payload["exercises"][0]["rest_hint_seconds"] = 180
+        template_id = client.post("/api/templates", json=payload).json()["id"]
+        got = client.get(f"/api/templates/{template_id}").json()
+        assert got["exercises"][0]["rest_hint_seconds"] == 180
+
+    def test_update_can_set_and_clear_rest_hint(self, client, exercise_ids):
+        template_id = client.post(
+            "/api/templates", json=make_template_payload(exercise_ids)
+        ).json()["id"]
+        payload = make_template_payload(exercise_ids)
+        payload["exercises"][0]["rest_hint_seconds"] = 120
+        updated = client.put(f"/api/templates/{template_id}", json=payload)
+        assert updated.status_code == 200
+        assert updated.json()["exercises"][0]["rest_hint_seconds"] == 120
+
+        cleared = client.put(
+            f"/api/templates/{template_id}", json=make_template_payload(exercise_ids)
+        )
+        assert cleared.json()["exercises"][0]["rest_hint_seconds"] is None
+
+    @pytest.mark.parametrize("bad", [14, 601, 0, -30])
+    def test_rest_hint_out_of_range_rejected(self, client, exercise_ids, bad):
+        payload = make_template_payload(exercise_ids)
+        payload["exercises"][0]["rest_hint_seconds"] = bad
+        resp = client.post("/api/templates", json=payload)
+        assert resp.status_code == 400
+        assert "error" in resp.json()
+
+    @pytest.mark.parametrize("ok", [15, 600])
+    def test_rest_hint_boundaries_accepted(self, client, exercise_ids, ok):
+        payload = make_template_payload(exercise_ids)
+        payload["exercises"][0]["rest_hint_seconds"] = ok
+        assert client.post("/api/templates", json=payload).status_code == 201

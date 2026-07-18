@@ -200,6 +200,23 @@ async def test_mcp_list_templates(
     assert templates[0]["exercises"][0]["name_zh"] == "深蹲"
 
 
+@pytest.mark.asyncio
+async def test_mcp_list_templates_includes_rest_hint(
+    mcp_server: FastMCP, session_factory: sessionmaker
+) -> None:
+    """F12（PRD R10）：MCP 課表輸出帶 rest_hint_seconds，agent 才能討論休息配置。"""
+    with session_factory() as session:
+        exercise_id = session.query(Exercise).one().id
+        items = [
+            TemplateExerciseIn(exercise_id=exercise_id, default_sets=3, rest_hint_seconds=90)
+        ]
+        create_template(session, TemplateCreate(name="背日", exercises=items))
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("list_templates", {})
+    templates = _structured(result)["templates"]
+    assert templates[0]["exercises"][0]["rest_hint_seconds"] == 90
+
+
 def test_http_mcp_requires_token(anon_client: TestClient) -> None:
     resp = anon_client.post("/mcp/", json={})
     assert resp.status_code == 401

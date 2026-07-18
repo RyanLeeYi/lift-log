@@ -23,6 +23,8 @@ class ExerciseOut(BaseModel):
 class TemplateExerciseIn(BaseModel):
     exercise_id: int
     default_sets: int = Field(gt=0)
+    # R10 參考休息：選填；未設=null（前端以 60s 為預設倒數）
+    rest_hint_seconds: int | None = Field(default=None, ge=15, le=600)
 
 
 class TemplateCreate(BaseModel):
@@ -34,6 +36,7 @@ class TemplateExerciseOut(BaseModel):
     exercise_id: int
     position: int
     default_sets: int
+    rest_hint_seconds: int | None
     name_zh: str
     name_en: str
     muscle_group: str

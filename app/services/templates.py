@@ -31,6 +31,7 @@ def _build_items(data: TemplateCreate) -> list[TemplateExercise]:
             position=position,
             exercise_id=item.exercise_id,
             default_sets=item.default_sets,
+            rest_hint_seconds=item.rest_hint_seconds,
         )
         for position, item in enumerate(data.exercises, start=1)
     ]
@@ -45,6 +46,7 @@ def _to_out(template: Template) -> TemplateOut:
                 exercise_id=item.exercise_id,
                 position=item.position,
                 default_sets=item.default_sets,
+                rest_hint_seconds=item.rest_hint_seconds,
                 name_zh=item.exercise.name_zh,
                 name_en=item.exercise.name_en,
                 muscle_group=item.exercise.muscle_group,
