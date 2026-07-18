@@ -1,12 +1,14 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十場終：MVP 收齊後續作 F12，**後端完成、前端實作完成但未驗證**，撞 Fable 模型週限額收工）
+> 最後更新：2026-07-18（第十場終：**F12 passing 並已部署正式**；F10/F11/F13 failing 待做）
 
-## 第十場收工快照（F12 進行中）
-- **F12 規格已凍結**（PRD R10 + acceptance，commit a50e019）：倒數＋負數超時、未設一律預設 60s、臨時調整僅本次、Wake Lock、rest_seconds 量測不變
-- **後端完成（commit 0c01278）**：rest_hint_seconds 欄位（15–600 驗 400）、app/migrations.py 啟動遷移（舊 DB 補欄位，冪等）、MCP 帶出；134 tests 全過、ruff 乾淨
-- **前端實作完成、未驗證**（本 commit）：templates.js 課表每動作休息快選 60/90/120/180＋自訂輸入（onchange 防重繪失焦、clamp 15–600）；state.js restHintFor/restRemainingSeconds/restHintOverrides（進 sessionStorage 快照）；app.js 倒數顯示 fmtRest、到 0 LED .over 轉紅＋vibrate、rest-hint chip 點擊循環快選（cycleRestHint，自訂值留在循環）、syncWakeLock（render+visibilitychange）；app.css .over/.rest-hint-row；**sw.js 已 bump v4**
-- **下場開場動作（依序）**：1) `uv run pip install playwright` 不對——用 `uv add --dev playwright` + `uv run playwright install chromium`（本環境沒裝，歷次驗收的 Playwright 是 verifier 自備）；2) Playwright 390×844 實測：建課表設 15s 參考（最小值，等超時快）→開練→記一組→看倒數→過 0 轉紅負數→點 chip 循環→重整 override 還在；3) `codex exec review`（codex-review skill）→修 findings；4) acceptance-verifier 逐條驗 R10；5) F12 改 passing 附證據；6) mission-control 重啟 lift-log（正式 8137 還在跑舊 code，**重啟時 migrations 會自動補正式 DB 欄位**）＋手機實測
-- 未動的：F10 自訂動作、F11 體重補記（acceptance 已簽核在 feature_list）；vault DEVLOG 本場還沒記（MVP 收齊＋F12 半場，下場補）
+## 第十場最終快照
+- **F12 完成上線**：規格（a50e019）→ 後端（0c01278）→ 前端（62bb947）→ codex-review 4 P2 全修（bed347d）→ acceptance-verifier 8/8 PASS → passing。mission-control 已重啟 lift-log，**正式 DB 遷移自動完成**（templates API 已帶 rest_hint_seconds），本機 sw.js v4
+- **注意：Cloudflare 邊緣快取 sw.js 4 小時**（cf-cache-status HIT）——公開 URL 的新版最多延遲 ~4h 到手機；急件去 CF dashboard purge。通案已入列 **F13（sw.js no-cache 標頭）**
+- **Codex 驗收限制（記憶已存）**：workspace-write sandbox 跑不了 uv（寫不了 cache、讀不了 managed Python）——uv 專案驗收直接派 acceptance-verifier fallback，別燒 Codex 額度
+- **測試孤兒教訓**：`uv run uvicorn` 的 Popen 用 `terminate()` 只殺 uv 層，孤兒 uvicorn 佔 port 頂替下一輪（症狀：fresh DB 卻回 template name already exists）。一律 `taskkill /F /T /PID` 整樹殺＋隨機 port
+- **下場開場動作**：照順序做 **F10 自訂動作**（acceptance 已簽核；POST /api/exercises 已存在，主戰場前端 picker/加動作面板）→ F11 體重補記（body-metrics date 欄位已支援）→ F13 sw.js 標頭（小）。改 static 資產記得 bump sw.js CACHE_NAME（現為 v4）
+- Ryan 手機實測 F12 倒數（等 CF 快取過期或 purge 後）：課表設參考秒數→倒數→超時變紅震動→點 chip 臨時調
+- vault DEVLOG 本場已記（MVP 收官＋F12 全流程）
 
 ## 第十場（2026-07-18）
 - 開場撞 Session 98% 用量門檻一次（帳號輪替後續作；usage-guard 已另案改版成以 cswap per-account 判定，見 `~/.claude/scripts/usage-guard.sh`）

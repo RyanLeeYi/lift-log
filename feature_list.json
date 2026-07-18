@@ -81,6 +81,13 @@
       "id": "F12",
       "name": "組間休息倒數提醒（參考值）",
       "acceptance": "課表編輯每動作可設選填參考休息秒數（快選 60/90/120/180＋自訂，範圍 15–600，pytest 驗 API 範圍檢查）；未設定一律預設 60s（含臨時動作與自由訓練）。訓練中 REST 從參考值倒數（mm:ss），到 0 時 LED 變色＋navigator.vibrate（支援平台生效），超時顯示負數（如 -0:15）繼續計；下一組 rest_seconds 照舊寫入實際總經過秒數（量測邏輯不變，pytest 驗證）。訓練中點參考值可臨時調（僅本次、不寫回課表，Playwright 驗證）。logger 畫面持 Screen Wake Lock、離開釋放、不支援時靜默降級。詳見 PRD R10。來源：2026-07-18 Ryan 真機試用回饋 #4，經需求訪談定稿（倒數＋負數超時、預設 60s 均 Ryan 拍板）",
+      "status": "passing",
+      "evidence": "2026-07-18：134 tests 全過、ruff 乾淨。codex-review 4 P2 全修（Wake Lock 競態、調長目標重武裝提醒、原地換列保儲存點擊、零點門檻同步）。acceptance-verifier live 逐條 8/8 PASS（Codex sandbox 跑不了 uv 退回 fallback）：API 範圍 14/601→400、15/600→201、未帶 null；自由訓練與臨時動作預設 60s；倒數 mm:ss（15s 參考 2.2s 時顯示 00:13）；到 0 同刻 .over＋vibrate stub 呼叫 1 次；超時 -00:05 續計；第二組 rest_seconds=21≈實際經過（非參考值 15/臨時值 60）；chip 循環 15→60、重整保留、課表 SSOT 仍 15 不寫回；Wake Lock stub/真實 API/降級三法驗證。截圖 docs/evidence-f12-*.png"
+    },
+    {
+      "id": "F13",
+      "name": "靜態資產快取策略（sw.js no-cache）",
+      "acceptance": "origin 對 /sw.js 回應 Cache-Control: no-cache（或 max-age=0, must-revalidate），部署新版後公開 URL 的 sw.js 不再被 Cloudflare 邊緣快取延誤（cf-cache-status 不得為 HIT 舊版）；其餘 shell 資產快取策略不變（由 SW CACHE_NAME 版本管理）；pytest 驗 /sw.js 回應標頭。來源：2026-07-18 F12 部署時發現 CF 邊緣快取 sw.js 4 小時，更新最多延遲 4 小時才到手機",
       "status": "failing",
       "evidence": null
     }
