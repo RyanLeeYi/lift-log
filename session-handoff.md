@@ -1,5 +1,13 @@
 # Session Handoff
-> 最後更新：2026-07-18（第九場：開場即撞 Session 98% 用量門檻收工，零程式碼改動。**Ryan 已決定自己去 Cloudflare dashboard 加 hostname**）
+> 最後更新：2026-07-18（第十場：又是開場即撞 Session 98% 用量門檻收工，零程式碼改動）
+
+## 第十場（2026-07-18）
+- 開場確認：repo 乾淨、8137 `/health` ok（`{"status":"ok"}`）、F1–F6/F8/F9 passing 不變、F7 failing 不變
+- 開完場正要探公開 HTTPS（`curl https://lift-log.my-super-dev-server.work/health`）就被用量 hook 擋下，**hostname 加了沒尚未確認**
+- **下場開場動作**（承第九場，原樣有效）：先問 Ryan hostname 加了沒 → 加了就驗證公開 HTTPS ＋ 請 Ryan 手機 4G 記錄一組 → 兩者都過才把 F7 改 passing（附證據）→ 進 MVP 收官（vault PLAN.md checklist）
+- ⚠️ 連兩場開場即撞門檻：建議 Ryan 等 5h session 窗口重置後再開工，或先在別的 session 把用量花在刀口上
+
+## 第九場（2026-07-18）
 
 ## 第九場（2026-07-18）
 - 開場確認：repo 乾淨、8137 `/health` ok、F1–F6/F8/F9 passing 不變
