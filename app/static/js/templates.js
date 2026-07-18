@@ -5,6 +5,11 @@ import { api } from "./api.js";
 import { el } from "./dom.js";
 import { exerciseAlias, exerciseName, state } from "./state.js";
 
+// R10 參考休息：快選值與範圍（與後端 schema 的 15–600 一致）
+const REST_QUICK_PICKS = [60, 90, 120, 180];
+const REST_HINT_MIN = 15;
+const REST_HINT_MAX = 600;
+
 // 本模組自己的畫面狀態（不進全域 state：離開課表畫面即重置無妨）
 const tpl = {
   list: [], // GET /api/templates 結果
@@ -114,6 +119,13 @@ function itemRow(item, index, rerender) {
     tpl.editing = { ...tpl.editing, items: next };
     rerender();
   };
+  const setRest = (value) => {
+    const next = items.map((it, i) =>
+      i === index ? { ...it, rest_hint_seconds: value } : it,
+    );
+    tpl.editing = { ...tpl.editing, items: next };
+    rerender();
+  };
   return el("div", { class: "tpl-item" }, [
     el("div", { class: "tpl-item-name" }, [
       el("span", {}, [exerciseName(item)]),
@@ -149,6 +161,42 @@ function itemRow(item, index, rerender) {
         ["✕"],
       ),
     ]),
+    el("div", { class: "tpl-item-rest" }, [
+      el("span", { class: "sub" }, ["休息"]),
+      ...REST_QUICK_PICKS.map((s) =>
+        el(
+          "button",
+          {
+            // 再點一次已選中的快選＝清除（回到未設定，訓練時用預設 60s）
+            class: `btn chip${item.rest_hint_seconds === s ? " on" : ""}`,
+            onclick: () => setRest(item.rest_hint_seconds === s ? null : s),
+          },
+          [`${s}s`],
+        ),
+      ),
+      el("input", {
+        type: "number",
+        class: "rest-custom",
+        min: String(REST_HINT_MIN),
+        max: String(REST_HINT_MAX),
+        placeholder: "自訂",
+        value: item.rest_hint_seconds ?? "",
+        // onchange（blur/enter 才觸發）：oninput 會整頁重繪打斷輸入
+        onchange: (e) => {
+          const raw = e.target.value.trim();
+          if (raw === "") {
+            setRest(null);
+            return;
+          }
+          const n = Number.parseInt(raw, 10);
+          if (Number.isNaN(n)) {
+            setRest(null);
+            return;
+          }
+          setRest(Math.min(REST_HINT_MAX, Math.max(REST_HINT_MIN, n)));
+        },
+      }),
+    ]),
   ]);
 }
 
@@ -176,6 +224,7 @@ function addPanel(rerender, guard) {
                   muscle_group: exercise.muscle_group,
                   is_bodyweight: exercise.is_bodyweight,
                   default_sets: 3,
+                  rest_hint_seconds: null,
                 },
               ],
             };
@@ -229,9 +278,10 @@ export function renderTemplateEdit(rerender, guard) {
     if (tpl.busy) return; // 防雙擊：同一份課表不重複建立
     const payload = {
       name: tpl.editing.name.trim(),
-      exercises: tpl.editing.items.map(({ exercise_id, default_sets }) => ({
+      exercises: tpl.editing.items.map(({ exercise_id, default_sets, rest_hint_seconds }) => ({
         exercise_id,
         default_sets,
+        rest_hint_seconds: rest_hint_seconds ?? null,
       })),
     };
     if (!payload.name) throw new Error("課表要有名稱");

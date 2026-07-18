@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v3";
+const CACHE_NAME = "liftlog-shell-v4"; // R10：改了 app.js/state.js/templates.js/app.css 必須換版
 const SHELL = [
   "/",
   "/css/app.css",

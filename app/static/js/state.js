@@ -16,6 +16,7 @@ export const state = {
   doneSets: [], // 本回合該動作已完成的組（顯示用）
   setCounts: {}, // {exerciseId: 本次 workout 已記組數} —— 回頭選同動作時 set_number 接續
   restStartedAt: null, // ms timestamp；null = 計時器未啟動
+  restHintOverrides: {}, // {exerciseId: 秒}——R10 訓練中臨時調整，僅本次 workout、不寫回課表
   muscleFilter: null,
   searchQ: "",
   submitting: false,
@@ -47,6 +48,7 @@ export function saveActiveWorkout() {
       workoutId: state.workoutId,
       template: state.template,
       setCounts: state.setCounts, // 續接恢復：重新整理後 set_number 不得與已存組撞號
+      restHintOverrides: state.restHintOverrides, // 臨時調整跟著本次訓練走，重整不丟
     }),
   );
 }
@@ -58,6 +60,7 @@ export function restoreActiveWorkout() {
       state.workoutId = saved.workoutId;
       state.template = saved.template || null;
       state.setCounts = saved.setCounts || {};
+      state.restHintOverrides = saved.restHintOverrides || {};
     }
   } catch {
     /* 壞資料當沒存過 */
@@ -68,9 +71,28 @@ export function clearActiveWorkout() {
   sessionStorage.removeItem(WORKOUT_KEY);
   state.workoutId = null;
   state.template = null;
+  state.restHintOverrides = {};
 }
 
 export function restElapsedSeconds() {
   if (state.restStartedAt === null) return null;
   return Math.round((Date.now() - state.restStartedAt) / 1000);
+}
+
+// ---------- R10 參考休息：倒數的基準值 ----------
+
+export const DEFAULT_REST_HINT_SECONDS = 60; // 未設參考值一律預設 60（含臨時動作與自由訓練）
+
+export function restHintFor(exerciseId) {
+  const override = state.restHintOverrides[exerciseId];
+  if (override != null) return override;
+  const item = state.template?.exercises?.find((e) => e.exercise_id === exerciseId);
+  return item?.rest_hint_seconds ?? DEFAULT_REST_HINT_SECONDS;
+}
+
+export function restRemainingSeconds() {
+  // 剩餘秒數（可為負＝超時）；計時器未跑或不在動作內回 null
+  const elapsed = restElapsedSeconds();
+  if (elapsed === null || !state.exercise) return null;
+  return restHintFor(state.exercise.id) - elapsed;
 }

@@ -156,6 +156,14 @@ body {
   color: var(--led);
   text-shadow: 0 0 14px rgba(255, 176, 32, .45);
 }
+/* R10 倒數超時：LED 轉紅提示（配合震動；iOS 只有這個） */
+.rest-led.over { border-color: #ff5252; }
+.rest-led.over .digits {
+  color: #ff6b6b;
+  text-shadow: 0 0 14px rgba(255, 82, 82, .55);
+}
+/* R10 參考休息 chip：常駐可點，循環快選值（僅本次） */
+.rest-hint-row { display: flex; justify-content: flex-end; }
 
 /* 數字步進器：kg / reps */
 .steppers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: auto; }
@@ -273,6 +281,14 @@ body {
 .tpl-item-move { display: flex; gap: 6px; }
 .tpl-item .chip { padding: 6px 12px; font-size: 15px; border-radius: 10px; }
 .tpl-item .chip:disabled { opacity: .3; cursor: default; }
+/* R10 參考休息列：佔滿整行、換行排在名稱/組數之下 */
+.tpl-item-rest { flex-basis: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tpl-item-rest .rest-custom {
+  width: 72px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
 .tpl-add-panel { display: flex; flex-direction: column; gap: 10px; }
 .tpl-add-panel .exercise-list { max-height: 40dvh; }
 

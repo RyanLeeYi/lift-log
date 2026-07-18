@@ -13,6 +13,8 @@ import {
   exerciseName,
   getLang,
   restElapsedSeconds,
+  restHintFor,
+  restRemainingSeconds,
   restoreActiveWorkout,
   saveActiveWorkout,
   state,
@@ -21,6 +23,7 @@ import {
 
 const root = document.getElementById("app");
 let restTicker = null;
+let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
 
 // ---------- 小工具 ----------
 
@@ -33,6 +36,35 @@ function fmtClock(totalSeconds) {
   const m = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
   const s = String(totalSeconds % 60).padStart(2, "0");
   return `${m}:${s}`;
+}
+
+function fmtRest(remaining) {
+  // R10 倒數顯示：到 0 之後轉負數（-00:15＝超時 15 秒），實際量測照舊
+  return remaining < 0 ? `-${fmtClock(-remaining)}` : fmtClock(remaining);
+}
+
+// ---------- R10 Wake Lock：訓練畫面不鎖屏，倒數提醒才收得到 ----------
+
+async function syncWakeLock() {
+  const want = state.screen === "logger" && document.visibilityState === "visible";
+  if (want && wakeLock === null) {
+    try {
+      wakeLock = (await navigator.wakeLock?.request("screen")) ?? null;
+      wakeLock?.addEventListener("release", () => {
+        wakeLock = null; // 系統可能自行釋放（切頁、鎖屏）——回來時 visibilitychange 再要一次
+      });
+    } catch {
+      wakeLock = null; // 不支援或被拒：靜默降級，功能照常
+    }
+  } else if (!want && wakeLock !== null) {
+    const lock = wakeLock;
+    wakeLock = null;
+    try {
+      await lock.release();
+    } catch {
+      /* 已被系統釋放 */
+    }
+  }
 }
 
 function showError(message) {
@@ -419,9 +451,18 @@ function renderPicker() {
 function startRestTimer() {
   state.restStartedAt = Date.now();
   if (restTicker) clearInterval(restTicker);
+  let alerted = false; // 每段休息只提醒一次
   restTicker = setInterval(() => {
-    const digits = document.querySelector(".rest-led .digits");
-    if (digits) digits.textContent = fmtClock(restElapsedSeconds());
+    const led = document.querySelector(".rest-led");
+    if (!led) return;
+    const remaining = restRemainingSeconds();
+    if (remaining === null) return;
+    led.querySelector(".digits").textContent = fmtRest(remaining);
+    led.classList.toggle("over", remaining < 0);
+    if (!alerted && remaining <= 0) {
+      alerted = true;
+      navigator.vibrate?.([200, 100, 200]); // iOS Safari 不支援——只有視覺提示
+    }
   }, 1000);
 }
 
@@ -429,6 +470,15 @@ function stopRestTimer() {
   if (restTicker) clearInterval(restTicker);
   restTicker = null;
   state.restStartedAt = null;
+}
+
+function cycleRestHint(exerciseId) {
+  const picks = [60, 90, 120, 180];
+  const current = restHintFor(exerciseId);
+  if (!picks.includes(current)) picks.unshift(current); // 課表自訂值（如 100s）留在循環裡
+  const next = picks[(picks.indexOf(current) + 1) % picks.length];
+  state.restHintOverrides = { ...state.restHintOverrides, [exerciseId]: next };
+  saveActiveWorkout();
 }
 
 function stepper(name, value, steps, apply) {
@@ -503,12 +553,36 @@ function renderLogger() {
       el("span", { class: "alias" }, [exerciseAlias(exercise)]),
     ]),
     el("div", { class: "last-hint" }, [state.lastHint || "第一次做這個動作"]),
-    el("div", { class: `rest-led${state.restStartedAt ? " on" : ""}` }, [
-      el("span", { class: "label" }, ["REST"]),
-      el("span", { class: "digits" }, [
-        state.restStartedAt ? fmtClock(restElapsedSeconds()) : "00:00",
-      ]),
+    el("div", { class: "rest-hint-row" }, [
+      el(
+        "button",
+        {
+          class: "btn chip rest-hint",
+          // 點擊循環 60→90→120→180（課表自訂值也留在循環內）；僅本次訓練，不寫回課表
+          onclick: () => {
+            cycleRestHint(exercise.id);
+            render();
+          },
+        },
+        [`⏱ 休息 ${restHintFor(exercise.id)}s`],
+      ),
     ]),
+    el(
+      "div",
+      {
+        class: `rest-led${state.restStartedAt ? " on" : ""}${
+          (restRemainingSeconds() ?? 0) < 0 ? " over" : ""
+        }`,
+      },
+      [
+        el("span", { class: "label" }, ["REST"]),
+        el("span", { class: "digits" }, [
+          state.restStartedAt
+            ? fmtRest(restRemainingSeconds())
+            : fmtClock(restHintFor(exercise.id)),
+        ]),
+      ],
+    ),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...syncStatusLine(),
     el("div", { class: "done-list" },
@@ -603,6 +677,7 @@ function render() {
       ),
   };
   root.replaceChildren(screens[state.screen]());
+  syncWakeLock(); // fire-and-forget：logger 畫面取得、其他畫面釋放
 }
 
 // ---------- 啟動 ----------
@@ -613,6 +688,8 @@ if ("serviceWorker" in navigator) {
   });
 }
 window.addEventListener("online", () => guard(syncQueue)); // 恢復連線：自動補傳佇列
+// 切走再回來時系統會自動釋放 wake lock——回到可見就重新申請
+document.addEventListener("visibilitychange", () => syncWakeLock());
 
 restoreActiveWorkout();
 if (!getToken()) {

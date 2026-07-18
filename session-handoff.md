@@ -1,5 +1,12 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十場續：**F7 passing → MVP F1–F9 全數收齊**；Ryan 真機回饋轉 F10–F12 入列 failing）
+> 最後更新：2026-07-18（第十場終：MVP 收齊後續作 F12，**後端完成、前端實作完成但未驗證**，撞 Fable 模型週限額收工）
+
+## 第十場收工快照（F12 進行中）
+- **F12 規格已凍結**（PRD R10 + acceptance，commit a50e019）：倒數＋負數超時、未設一律預設 60s、臨時調整僅本次、Wake Lock、rest_seconds 量測不變
+- **後端完成（commit 0c01278）**：rest_hint_seconds 欄位（15–600 驗 400）、app/migrations.py 啟動遷移（舊 DB 補欄位，冪等）、MCP 帶出；134 tests 全過、ruff 乾淨
+- **前端實作完成、未驗證**（本 commit）：templates.js 課表每動作休息快選 60/90/120/180＋自訂輸入（onchange 防重繪失焦、clamp 15–600）；state.js restHintFor/restRemainingSeconds/restHintOverrides（進 sessionStorage 快照）；app.js 倒數顯示 fmtRest、到 0 LED .over 轉紅＋vibrate、rest-hint chip 點擊循環快選（cycleRestHint，自訂值留在循環）、syncWakeLock（render+visibilitychange）；app.css .over/.rest-hint-row；**sw.js 已 bump v4**
+- **下場開場動作（依序）**：1) `uv run pip install playwright` 不對——用 `uv add --dev playwright` + `uv run playwright install chromium`（本環境沒裝，歷次驗收的 Playwright 是 verifier 自備）；2) Playwright 390×844 實測：建課表設 15s 參考（最小值，等超時快）→開練→記一組→看倒數→過 0 轉紅負數→點 chip 循環→重整 override 還在；3) `codex exec review`（codex-review skill）→修 findings；4) acceptance-verifier 逐條驗 R10；5) F12 改 passing 附證據；6) mission-control 重啟 lift-log（正式 8137 還在跑舊 code，**重啟時 migrations 會自動補正式 DB 欄位**）＋手機實測
+- 未動的：F10 自訂動作、F11 體重補記（acceptance 已簽核在 feature_list）；vault DEVLOG 本場還沒記（MVP 收齊＋F12 半場，下場補）
 
 ## 第十場（2026-07-18）
 - 開場撞 Session 98% 用量門檻一次（帳號輪替後續作；usage-guard 已另案改版成以 cswap per-account 判定，見 `~/.claude/scripts/usage-guard.sh`）
