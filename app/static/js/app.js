@@ -521,7 +521,6 @@ function renderLogger() {
         // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）
         ...(state.pendingRestSeconds != null ? { rest_seconds: state.pendingRestSeconds } : {}),
       };
-      state.pendingRestSeconds = null; // 已寫進 payload，用掉即清（不重複套用到之後的組）
       let saved;
       try {
         saved = await api.logSet(state.workoutId, payload);
@@ -531,6 +530,9 @@ function renderLogger() {
         saved = payload; // 標示由 state.queueStatus 推導，不另存旗標
         await refreshQueueCounts();
       }
+      // 到這裡才代表這組已保住（線上成功 or 離線入列成功）——此時才清凍結休息值；
+      // 若上面丟錯（非離線錯誤或入列失敗），pendingRestSeconds 保留，重試的 payload 仍帶 rest_seconds
+      state.pendingRestSeconds = null;
       state.doneSets.push(saved);
       state.setCounts[exercise.id] = state.setNumber;
       state.setNumber += 1;
