@@ -15,8 +15,9 @@ export const state = {
   setNumber: 1,
   doneSets: [], // 本回合該動作已完成的組（顯示用）
   setCounts: {}, // {exerciseId: 本次 workout 已記組數} —— 回頭選同動作時 set_number 接續
-  restStartedAt: null, // ms timestamp；null = 計時器未啟動
+  restStartedAt: null, // ms timestamp；null = 計時器未啟動（＝就緒態，按鈕顯示「完成這組」）
   restHintOverrides: {}, // {exerciseId: 秒}——R10 訓練中臨時調整，僅本次 workout、不寫回課表
+  pendingRestSeconds: null, // F15：按「繼續下一組」凍結的休息秒數，寫進下一組後清空（transient，不持久化）
   muscleFilter: null,
   searchQ: "",
   submitting: false,

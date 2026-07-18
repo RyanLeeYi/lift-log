@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v5"; // F14：install 版本戳＋接管自動重載
+const CACHE_NAME = "liftlog-shell-v6"; // F15：休息按鈕兩態切換（改了 app.js）
 const SHELL = [
   "/",
   "/css/app.css",

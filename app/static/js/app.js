@@ -518,8 +518,10 @@ function renderLogger() {
         weight_kg: state.weightKg,
         reps: state.reps,
         ...(state.rpe ? { rpe: state.rpe } : {}),
-        ...(restElapsedSeconds() !== null ? { rest_seconds: restElapsedSeconds() } : {}),
+        // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）
+        ...(state.pendingRestSeconds != null ? { rest_seconds: state.pendingRestSeconds } : {}),
       };
+      state.pendingRestSeconds = null; // 已寫進 payload，用掉即清（不重複套用到之後的組）
       let saved;
       try {
         saved = await api.logSet(state.workoutId, payload);
@@ -541,8 +543,16 @@ function renderLogger() {
     render();
   };
 
+  // F15：休息態按「繼續下一組」——凍結本次休息（含超時的絕對值）給下一組、停倒數、回就緒態
+  const continueNext = () => {
+    state.pendingRestSeconds = restElapsedSeconds();
+    stopRestTimer();
+    render();
+  };
+
   const finish = () => {
     stopRestTimer();
+    state.pendingRestSeconds = null; // 換動作：未用的凍結休息值不跨動作帶
     state.exercise = null;
     state.screen = "picker";
     render();
@@ -551,6 +561,7 @@ function renderLogger() {
   const endWorkout = () => {
     // 收工只清 client 狀態；佇列裡未同步的組之後仍會補傳進這個 workout（server 是 SSOT）
     stopRestTimer();
+    state.pendingRestSeconds = null;
     clearActiveWorkout();
     state.setCounts = {};
     state.exercise = null;
@@ -636,11 +647,12 @@ function renderLogger() {
     el(
       "button",
       {
-        class: "btn btn-primary log-btn",
+        // F15 兩態切換：就緒態（未在休息）＝記錄；休息態＝繼續下一組（停倒數）
+        class: `btn btn-primary log-btn${state.restStartedAt ? " resting" : ""}`,
         ...(state.submitting ? { disabled: "" } : {}),
-        onclick: () => guard(logSet),
+        onclick: () => guard(state.restStartedAt ? continueNext : logSet),
       },
-      ["✓ 完成這組"],
+      [state.restStartedAt ? "繼續下一組" : "✓ 完成這組"],
     ),
     el("div", { class: "logger-foot" }, [
       el("button", { class: "btn", onclick: finish }, ["換動作"]),

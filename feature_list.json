@@ -97,6 +97,13 @@
       "acceptance": "sw.js install 以 ?v=CACHE_NAME 查詢字串抓取 SHELL 每個資產並以原始 URL 存入 cache（CDN/瀏覽器快取必失效，杜絕新 SW 裝舊內容的混版；pytest 驗 sw.js 源碼模式）；app.js 監聽 controllerchange 自動 reload（防循環：每次接管只 reload 一次；首次安裝不 reload——以啟動時已有 controller 為條件）；Playwright 驗證：已載入舊版的頁面在部署新 CACHE_NAME 後重新導航一次，無手動強制重整即自動顯示新版內容。來源：2026-07-18 F12 部署後 Ryan 桌機需 Ctrl+Shift+R、手機需重開兩次才見新版，Ryan 簽核根治",
       "status": "passing",
       "evidence": "acceptance-verifier 逐條 3/3 PASS（commits 8820688 + 8426a15）：R1 sw.js install 以 ?v=CACHE_NAME 版本戳逐檔抓取 + cache.put(url) 原始 URL 存入、無 cache.add；R2 app.js controllerchange 自動 reload、refreshing 防循環、skippedInitialClaim 只跳過首裝初次接管（修 Codex P2① 首訪者不更新，以 hadController 判首裝）；R3 驗收者自寫 Playwright 實測：部署新 CACHE_NAME 後重新導航一次即自動顯示新版（marker_seen=True，server log 見第二次未經腳本觸發的自動導航）。uv run pytest 138 passed、ruff clean。codex-review 3 條：P2① 已修；P1（首次 F14 部署對舊 app.js 頁面需手動刷一次的一次性 bootstrap）與 P2②（記錄中途被 reload 丟失正填的一組輸入）已揭露並接受。"
+    },
+    {
+      "id": "F15",
+      "name": "組間休息按鈕兩態切換（完成這組 ⇄ 繼續下一組）",
+      "acceptance": "就緒態主按鈕顯示「✓ 完成這組」，按下記錄該組、倒數開始、進入休息態、按鈕變「繼續下一組」；休息態主按鈕顯示「繼續下一組」，按下停止倒數、LED 回靜態顯示參考秒數、凍結本次休息秒數、回就緒態、按鈕變回「✓ 完成這組」；休息態下主按鈕不做記錄，必須先按繼續下一組回就緒態才能記下一組。rest_seconds 定案點＝按「繼續下一組」當下的 elapsed（含超時絕對值），下一組完成這組時把凍結值寫進該組 rest_seconds、寫入後清空不重複套用，第一組不帶 rest_seconds。換動作／收工在任一態都停止倒數並清掉未用凍結值。F12 行為不變：休息態超時倒數轉負＋LED 變紅＋震動一次，rest-hint chip 仍可臨時調參考秒數。Playwright E2E 驗：完成這組→按鈕變繼續下一組且倒數在跑→繼續下一組→按鈕變回完成這組且倒數停→再完成這組時該組帶 rest_seconds＝剛才凍結值。Ryan 2026-07-18 簽核。",
+      "status": "failing",
+      "evidence": null
     }
   ]
 }

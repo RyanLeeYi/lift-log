@@ -105,6 +105,21 @@ class TestStatic:
         # 只跳過首裝的「初次」接管，不是永久跳過首訪者——用一次性旗標而非永久 hadController 擋
         assert "skippedInitialClaim" in app_source, "首裝只跳過初次接管，之後部署仍須重載"
 
+    def test_logger_rest_button_has_two_states(self) -> None:
+        """F15：logger 主按鈕兩態切換——就緒態記錄、休息態「繼續下一組」（停倒數、凍結休息秒數）。
+
+        行為由 Playwright E2E 驗（scratchpad verify_f15.py）；這裡守源碼不被靜默改回單態。
+        """
+        from pathlib import Path
+
+        app_source = (
+            Path(__file__).parent.parent / "app" / "static" / "js" / "app.js"
+        ).read_text(encoding="utf-8")
+        assert "繼續下一組" in app_source, "休息態按鈕文案缺失"
+        assert "continueNext" in app_source, "缺少繼續下一組（凍結休息＋停倒數）處理"
+        # rest_seconds 來自凍結值而非即時 elapsed——確保按鈕切換前不會把資料入輸入的時間算進休息
+        assert "pendingRestSeconds" in app_source, "rest_seconds 應來自按繼續下一組凍結的值"
+
     def test_sw_shell_list_matches_static_files(self) -> None:
         """F5 漂移防護：SHELL 清單的檔案要存在；新增的 js/css 檔要記得進 SHELL。
 
