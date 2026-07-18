@@ -1,5 +1,10 @@
 # Session Handoff
-> 最後更新：2026-07-18（第八場：F6→passing、F7 本機部分、F8→passing、F9→passing。**只剩 F7 等 Ryan 兩個動作**）
+> 最後更新：2026-07-18（第九場：開場即撞 Session 98% 用量門檻收工，零程式碼改動。**Ryan 已決定自己去 Cloudflare dashboard 加 hostname**）
+
+## 第九場（2026-07-18）
+- 開場確認：repo 乾淨、8137 `/health` ok、F1–F6/F8/F9 passing 不變
+- Ryan 決定：Cloudflare hostname **他自己去 dashboard 加**（建議值不變：`lift-log.my-super-dev-server.work` → `http://localhost:8137`）
+- **下場開場動作**：先問 Ryan hostname 加了沒 → 加了就驗證公開 HTTPS（`curl https://<hostname>/health`）＋請 Ryan 手機 4G 記錄一組 → 兩者都過才把 F7 改 passing（附證據）。F7 過後進 MVP 收官（見 vault PLAN.md checklist）
 
 ## 進度總覽
 F1–F6、F8、F9 全部 passing（各自附 acceptance-verifier 證據於 feature_list.json）。**F7 failing**，本機部分已完成，剩餘兩步只有 Ryan 能做：
