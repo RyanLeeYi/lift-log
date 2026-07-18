@@ -13,6 +13,8 @@ const cal = {
   detail: [], // [{workout, sets}]
   status: null, // 當日狀態 {energy, sleep_quality, note}（F9；沒記就是 null）
   exerciseById: null, // 進日曆時載一次，點日不重抓
+  editSetId: null, // F16：日曆明細正在行內編輯的 set id
+  confirmDelSetId: null, // F16：兩段式刪除中的 set id
 };
 
 async function loadMonth() {
@@ -53,6 +55,8 @@ function shiftMonth(delta) {
 
 async function selectDay(dateStr) {
   cal.selected = dateStr;
+  cal.editSetId = null; // 換日/重載時清掉行內編輯與刪除確認的殘留態
+  cal.confirmDelSetId = null;
   const [workouts, statuses] = await Promise.all([
     api.listWorkouts(dateStr, dateStr),
     api.listDailyStatus(dateStr, dateStr),
@@ -79,7 +83,83 @@ function statusRow() {
   ];
 }
 
-function detailRows() {
+// F16：刪/改後重載當月熱力圖（噸位會變）＋當日明細，且不丟目前選中的日
+async function refreshMonthAndDay() {
+  cal.days = (await api.calendarStats(cal.year, cal.month)).days;
+  await selectDay(cal.selected);
+}
+
+async function deleteSet(s, rerender) {
+  await api.deleteSet(s.id); // 日曆的組都來自 server，一律走軟刪 API（無離線佇列）
+  cal.confirmDelSetId = null;
+  await refreshMonthAndDay();
+  rerender();
+}
+
+async function saveEditSet(s, rerender) {
+  const w = Math.round(Number(document.querySelector(".cal-edit-weight").value) * 10) / 10;
+  const r = Math.trunc(Number(document.querySelector(".cal-edit-reps").value));
+  const rpeRaw = document.querySelector(".cal-edit-rpe").value.trim();
+  const rpe = rpeRaw ? Math.trunc(Number(rpeRaw)) : null;
+  if (!(w >= 0) || !(r >= 1) || (rpe !== null && (rpe < 1 || rpe > 10))) {
+    state.error = "重量/次數/RPE 不正確";
+    rerender();
+    return;
+  }
+  await api.updateSet(s.id, {
+    weight_kg: w,
+    reps: r,
+    ...(rpe ? { rpe } : {}),
+    ...(s.rest_seconds != null ? { rest_seconds: s.rest_seconds } : {}),
+  });
+  cal.editSetId = null;
+  state.error = null;
+  await refreshMonthAndDay();
+  rerender();
+}
+
+function calSetRow(s, guard, rerender) {
+  if (cal.editSetId === s.id) {
+    return el("div", { class: "cal-detail-row editing" }, [
+      el("input", {
+        type: "number", class: "cal-edit-weight", step: "0.5",
+        inputmode: "decimal", value: String(s.weight_kg),
+      }),
+      el("input", {
+        type: "number", class: "cal-edit-reps", step: "1",
+        inputmode: "numeric", value: String(s.reps),
+      }),
+      el("input", {
+        type: "number", class: "cal-edit-rpe", step: "1", min: "1", max: "10",
+        inputmode: "numeric", placeholder: "RPE", value: s.rpe ? String(s.rpe) : "",
+      }),
+      el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditSet(s, rerender)) }, ["儲存"]),
+      el("button", { class: "btn btn-ghost sm", onclick: () => { cal.editSetId = null; state.error = null; rerender(); } }, ["取消"]),
+    ]);
+  }
+  if (cal.confirmDelSetId === s.id) {
+    return el("div", { class: "cal-detail-row confirm-del" }, [
+      el("span", { class: "setno" }, [`#${s.set_number}`]),
+      el("span", { class: "n" }, ["確定刪除？"]),
+      el("button", { class: "btn btn-danger sm", onclick: () => guard(() => deleteSet(s, rerender)) }, ["刪除"]),
+      el("button", { class: "btn btn-ghost sm", onclick: () => { cal.confirmDelSetId = null; rerender(); } }, ["取消"]),
+    ]);
+  }
+  return el("div", { class: "cal-detail-row set" }, [
+    el("span", { class: "setno" }, [`#${s.set_number}`]),
+    el("span", { class: "n" }, [`${s.weight_kg}×${s.reps}${s.rpe ? `@${s.rpe}` : ""}`]),
+    el("button", {
+      class: "btn icon-btn edit-set",
+      onclick: () => { cal.editSetId = s.id; cal.confirmDelSetId = null; state.error = null; rerender(); },
+    }, ["✎"]),
+    el("button", {
+      class: "btn icon-btn del-set",
+      onclick: () => { cal.confirmDelSetId = s.id; cal.editSetId = null; rerender(); },
+    }, ["🗑"]),
+  ]);
+}
+
+function detailRows(guard, rerender) {
   if (!cal.selected) return [];
   if (cal.detail.length === 0) {
     // 休息日也可能記了當日狀態（R9：不依附 workout）
@@ -97,7 +177,7 @@ function detailRows() {
     ...statusRow(),
   ];
   for (const { sets } of cal.detail) {
-    // 依動作分組顯示：深蹲 80×8 80×8 85×6
+    // F16：每個動作一個標題列，其下每組獨立一列可編輯/刪除
     const grouped = new Map();
     for (const s of sets) {
       if (!grouped.has(s.exercise_id)) grouped.set(s.exercise_id, []);
@@ -106,15 +186,9 @@ function detailRows() {
     for (const [exerciseId, groupSets] of grouped) {
       const exercise = cal.exerciseById?.[exerciseId];
       rows.push(
-        el("div", { class: "cal-detail-row" }, [
-          el("span", {}, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
-          el("span", { class: "n" }, [
-            groupSets
-              .map((s) => `${s.weight_kg}×${s.reps}${s.rpe ? `@${s.rpe}` : ""}`)
-              .join("  "),
-          ]),
-        ]),
+        el("div", { class: "cal-detail-ex" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
       );
+      for (const s of groupSets) rows.push(calSetRow(s, guard, rerender));
     }
   }
   return rows;
@@ -175,7 +249,7 @@ export function renderCalendar(rerender, goHome, guard) {
       ...[0, 1, 2, 3, 4].map((lv) => el("span", { class: `cal-swatch lv${lv}` })),
       el("span", {}, ["多"]),
     ]),
-    el("div", { class: "cal-detail" }, detailRows()),
+    el("div", { class: "cal-detail" }, detailRows(guard, rerender)),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
   ]);
 }

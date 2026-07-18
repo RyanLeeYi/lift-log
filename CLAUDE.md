@@ -25,5 +25,5 @@
 ## 專案特有約束
 
 - 單人系統：全站單一 Bearer token（`.env` 的 `LIFTLOG_TOKEN`），缺少即拒絕啟動
-- `sets` append-only：不做 update API，記錯用軟刪除
+- `sets` 刪除用軟刪（`deleted_at`，查詢一律濾掉）；編輯用 `PATCH /api/sets/{id}` 原位修改量測欄位（weight/reps/rpe/rest_seconds），set_number/exercise/client_uuid 不動（F16 起放寬原本的 append-only「不做 update」）
 - 動作名稱雙語（name_zh/name_en），查詢與 MCP 參數兩者皆匹配
