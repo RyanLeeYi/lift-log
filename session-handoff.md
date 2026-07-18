@@ -1,5 +1,11 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十一場續：**F14 → passing 並已部署上線**。acceptance-verifier 3/3 PASS、mission-control 重啟後正式站 serve 新 sw.js/app.js 驗過。MVP F1–F9＋F12–F14 全 passing，剩 F10/F11）
+> 最後更新：2026-07-18（第十一場續：**F14＋F15 皆 → passing 並部署上線**。各自 acceptance-verifier 驗過、mission-control 重啟後正式站 serve 新碼驗過。MVP F1–F9＋F12–F15 全 passing，剩 F10/F11。sw.js 現 **v6**）
+
+## F15 收尾紀錄（已完成）
+- **組間休息按鈕兩態切換**（Ryan 真機回饋：倒數沒有停止鈕）。就緒態「✓ 完成這組」記錄該組＋開始倒數＋進休息態；休息態「繼續下一組」停倒數＋LED 回靜態參考秒數＋凍結本次休息秒數＋回就緒態。rest_seconds 定案點＝按「繼續下一組」當下 elapsed（Ryan 選的），寫進下一組、用掉即清；第一組不帶。換動作/收工清掉未用凍結值
+- commits：`b581b3a`（實作）+ `11bfbdf`（codex-review P2 修正：凍結值改成「確認保住後才清」，非離線失敗/入列失敗重試不丟）+ `a6070d0`（passing）
+- 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
+- **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
 ## 下場開場動作
 - **從 F10 自訂動作開始**（acceptance 已簽核：中文名必填、英文/部位選填、自體重勾選；POST /api/exercises 已存在，主戰場前端 picker/加動作面板）→ 再 F11 體重補記過去日期（API date 欄位已支援，純 UI）。一次一個 feature、TDD、改 static 記得 bump `sw.js` CACHE_NAME（現 v5）
