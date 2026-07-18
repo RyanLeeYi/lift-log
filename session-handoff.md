@@ -1,12 +1,19 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十場再終：F13 passing、**F14 實作 GREEN 未驗證**（commit 8820688），撞第二個帳號的 Fable 週限額收工）
+> 最後更新：2026-07-18（第十一場：F14 實作＋codex-review 修正＋E2E 雙情境 PASS，**尚未跑獨立驗收者、未標 passing、未部署**；Opus session 的 5h 窗破 90% 收工）
 
 ## F14 現況（下場從這裡接）
-- **已完成（commit 8820688）**：feature_list 入列（acceptance Ryan 簽核）；RED→GREEN：sw.js install 改 `fetch(url?v=CACHE_NAME, {cache:"reload"})` + `cache.put(url)`（杜絕新 SW 裝舊資產的混版）、CACHE_NAME bump **v5**；app.js controllerchange 自動 reload（hadController 條件防首裝重載、旗標防循環）；兩條源碼模式測試。138 tests 全過、ruff 乾淨
-- **未做（依序）**：1) Playwright E2E 驗自動更新流（做法：copy app/static 到暫存目錄用 `python -m http.server` 隨機 port 服務→開頁等 SW ready→改暫存副本的 CACHE_NAME＋index.html 可辨識內容→page.reload() 一次→**不再手動操作**，等頁面自動變新內容；殺 server 記得樹殺）；2) `/codex-review`（只審 8820688）；3) acceptance-verifier（uv 專案不走 codex-verify，見 memory）；4) F14 → passing；5) mission-control 重啟 lift-log 部署；6) Ryan 桌機/手機開一次 app 確認自動到位
-- **F13 已收**（4/4 PASS，commit 4d81661）：sw.js no-cache 生效，公開 URL REVALIDATED。CF 快取是 per-colo——桌機同機房已新，手機 4G 機房的舊 sw.js 條目等 TTL 或 purge
-- 背景：Ryan 桌機 Ctrl+Shift+R 已見新版（F12 倒數確認 serve 正常）；手機待 F14 部署後自然解決
-- **用量**：兩個帳號的 Fable 週限額同日雙雙觸頂（usage-guard per-model 窗口攔的）——下場開工前先 `cswap list` 看額度
+- **程式碼完成＋自我驗證充分**（commits 8820688 原始 + **8426a15** review 修正）：
+  - sw.js install：`fetch(url?v=CACHE_NAME, {cache:"reload"})` + `cache.put(url)`（版本戳杜絕新 SW 裝舊資產混版）、CACHE_NAME **v5**、activate 清舊快取 + claim（與 8820688 一致）
+  - app.js：controllerchange 自動 reload。**Codex P2① 修正**：原本 `hadController` 永久 false 會讓「首訪者頁面開著、之後部署」永遠不更新；改為一次性 `skippedInitialClaim`——只跳過首裝的**初次**接管，之後任何一次接管（部署新版）都 reload 一次（`refreshing` 旗標防循環）
+  - 138 tests 全過、ruff 乾淨
+- **驗證證據**（下場給驗收者/寫進 feature_list evidence）：
+  - `/codex-review`（審 8820688）回 3 條：**P2① 已修**（見上）；**P1 已知一次性 bootstrap 限制**（見下，接受並揭露）；**P2② 已知**（記錄中途被 reload 丟失正填的那組輸入＋計時；訓練情境已持久化課表/動作，只丟正在填的一組，接受）
+  - Playwright E2E 兩情境皆 PASS（scratchpad `verify_f14.py`＝暖升級 acceptance 情境；`verify_f14_p21.py`＝P2① 首訪者不導航自動更新）。E2E 教訓：(a) marker 要埋 `<head>`，埋 body 內會被 app.js render 洗掉；(b) 導航進行中 evaluate/content 會噴 "context destroyed"，要 try/except 重試；(c) http.server 用 `allow_reuse_address` 避免前輪殘留 socket 撞 port；跑前 `taskkill //F //IM headless_shell.exe` 清孤兒
+- **⚠ 偏離凍結 acceptance 需 Ryan 確認**：acceptance 原文寫「首次安裝不 reload——以啟動時已有 controller 為條件」。實作改用一次性 skippedInitialClaim（可觀察行為相同＝首裝不 reload，且修掉 P2① 邊界）。若 Ryan 認可，把 acceptance 該括號更新為「首裝的初次接管不 reload、之後接管都 reload」
+- **⚠ P1 一次性 bootstrap 限制（已揭露，非缺陷）**：F14 是第一個有自動重載的版本。Ryan 手機現在跑 F14 之前的 app.js（沒有這個 listener），**F14 部署當次它不會自動到位、仍需手動刷一次**才拿到 F14；從 F14 之後的每次部署才會自動更新。SW 端 `client.navigate()` 試過想根治 bootstrap，但對舊 SW 載入的既有 client 不觸發（實測 0 次自動導航），且偏離 acceptance，已放棄
+- **未做（依序，下場額度重置後）**：1) acceptance-verifier agent 逐條驗收（uv 專案不走 codex-verify，見 memory）；2) F14 → passing（evidence 引本場 E2E＋codex-review）；3) mission-control 重啟 lift-log 部署；4) 告知 Ryan：這次部署後手機**要手動刷一次**（bootstrap），之後才自動；桌機同理一次
+- **F13 已收**（4/4 PASS，commit 4d81661）：sw.js no-cache 生效，公開 URL REVALIDATED
+- **用量**：本場切 Opus 4.8 續作（Fable 週限額兩帳號都 ~91%）。收工原因：現用帳號 ian4567x 的 **5h 窗到 93%**（Opus 真正燒的窗，破 90%），15:00 重置。下場開工前 `cswap list` 看額度
 
 ## 第十場最終快照
 - **F12 完成上線**：規格（a50e019）→ 後端（0c01278）→ 前端（62bb947）→ codex-review 4 P2 全修（bed347d）→ acceptance-verifier 8/8 PASS → passing。mission-control 已重啟 lift-log，**正式 DB 遷移自動完成**（templates API 已帶 rest_hint_seconds），本機 sw.js v4
