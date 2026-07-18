@@ -139,9 +139,15 @@ function renderUnlessTyping() {
 async function syncQueue() {
   const before = state.queue;
   const synced = await flushQueue(api.logSet);
+  // 補傳成功者把含 server id 的回應寫回 doneSets——否則使用者仍停在 logger 時，
+  // 該筆缺 id 會被誤判未同步，之後在畫面上刪/改會打不到伺服器（Codex P1）
+  if (synced.length > 0) {
+    const byUuid = new Map(synced.map((x) => [x.client_uuid, x.saved]));
+    state.doneSets = state.doneSets.map((s) => byUuid.get(s.client_uuid) ?? s);
+  }
   await refreshQueueCounts();
   const changed =
-    synced > 0 ||
+    synced.length > 0 ||
     before.pending !== state.queue.pending ||
     before.failed !== state.queue.failed;
   if (changed) renderUnlessTyping();
@@ -598,6 +604,10 @@ function renderLogger() {
       await refreshQueueCounts();
     }
     state.doneSets = state.doneSets.filter((x) => x !== s);
+    // 同步本動作完成組數（否則課表選單仍顯示 3/3、menu-done 誤標）＋續接編號避開缺口（Codex P2）
+    state.setCounts = { ...state.setCounts, [state.exercise.id]: state.doneSets.length };
+    state.setNumber = state.doneSets.reduce((m, x) => Math.max(m, x.set_number), 0) + 1;
+    saveActiveWorkout();
     confirmDeleteSetKey = null;
     render();
   };

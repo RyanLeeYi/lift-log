@@ -70,18 +70,20 @@ async function markFailed(entry) {
   await asPromise((await store("readwrite")).put({ ...entry, status: "failed" }));
 }
 
-/** 重放 pending 佇列。logSet = api.logSet。回傳成功補傳筆數。
+/** 重放 pending 佇列。logSet = api.logSet。回傳成功補傳的 [{client_uuid, saved}] 清單
+ *  （saved＝server 回的 SetOut，含 id）——呼叫端要用它把 id 寫回畫面上的組，
+ *  否則同步後那筆仍缺 id 會被當「未同步」，之後刪/改打不到伺服器。
  *  網路仍斷（status 0）或 server 暫時故障（5xx）→ 中止保留，之後再試；
  *  token 失效（401）→ 上拋讓 guard() 導回 setup 重新輸入，佇列原封保留；
  *  永久性 4xx（404/400/409 = workout 被刪、資料壞）→ 標 failed 供手動捨棄，不無限重試。 */
 export async function flushQueue(logSet) {
   const entries = (await listQueued()).filter((e) => e.status === "pending");
-  let synced = 0;
+  const synced = [];
   for (const entry of entries) {
     try {
-      await logSet(entry.workout_id, entry.payload);
+      const saved = await logSet(entry.workout_id, entry.payload);
       await removeEntry(entry.client_uuid);
-      synced += 1;
+      synced.push({ client_uuid: entry.client_uuid, saved });
     } catch (err) {
       if (err && err.status === 401) throw err;
       if (err && (err.status === 0 || err.status >= 500)) break;
