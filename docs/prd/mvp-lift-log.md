@@ -71,6 +71,26 @@ vault 對應：`projects/2026-07-健身紀錄系統/PLAN.md`。
 - When `POST /api/body-metrics`（`date, weight_kg, body_fat_pct?`）；或在 UI 輸入
 - Then 同日重複送出為**覆蓋更新**（一天一筆）；`/body` 頁顯示體重／體脂折線趨勢；heatmap 的自體重噸位改用最新體重
 
+#### R10：作為使用者，我想要組間休息倒數提醒，以便掌握休息節奏（2026-07-18 真機試用回饋 #4，需求訪談定稿）
+
+- **定位**：參考值是提醒、不是嚴格目標——倒數不阻擋任何操作，實際休息秒數照舊量測寫入
+- Given 課表編輯畫面
+- When 編輯課表內的動作
+- Then 每個動作可設選填「參考休息秒數」（快選 60/90/120/180＋自訂，範圍 15–600）；存於課表、開練帶出
+- Given 訓練中送出一組（REST 計時開始），該動作參考值 = 課表設定值，未設定（含臨時加的動作、不用課表的自由訓練）一律預設 60 秒
+- When 經過秒數 < 參考值
+- Then REST 顯示**倒數**（參考值 − 經過，mm:ss）
+- When 到達參考值
+- Then LED 變色＋`navigator.vibrate` 震動（支援的平台生效；iOS Safari 不支援震動，僅視覺）
+- When 超過參考值
+- Then 顯示**負數**（如 `-0:15`）繼續計，直到下一組送出
+- Then 下一組的 `rest_seconds` 照舊寫入**實際總經過秒數**（= 參考值 + 超時絕對值；R2 的量測與寫入邏輯完全不變）
+- Given 訓練中
+- When 點擊參考值顯示處
+- Then 可臨時修改參考秒數，僅影響本次訓練的該動作，不寫回課表
+- Given logger（訓練）畫面開啟
+- Then 申請 Screen Wake Lock 保持螢幕常亮，離開畫面／收工時釋放；API 不支援或被拒時靜默降級，不影響其他功能
+
 ### AI agent（Claude／ChatGPT／Gemini，經 connector）
 
 #### R7：作為 AI agent，我想查詢訓練歷史與進步曲線，以便回答主人關於訓練的問題
@@ -113,7 +133,7 @@ vault 對應：`projects/2026-07-健身紀錄系統/PLAN.md`。
 ```
 exercises      id, name_zh, name_en, muscle_group, is_bodyweight(bool), created_at
 templates      id, name, created_at
-template_exercises  template_id, exercise_id, position, default_sets
+template_exercises  template_id, exercise_id, position, default_sets, rest_hint_seconds?(R10 參考休息)
 workouts       id, date, template_id?, note?, created_at
 sets           id, client_uuid(UNIQUE), workout_id, exercise_id, set_number,
                weight_kg(REAL, 自體重動作=額外負重), reps, rpe?,
