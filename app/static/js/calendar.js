@@ -1,7 +1,7 @@
 // 日曆 heatmap：CSS grid 月視圖、5 級深淺（依當月最大噸位分四檔）、點日看明細。
 
 import { api } from "./api.js";
-import { el } from "./dom.js";
+import { el, rpePicker, stepper } from "./dom.js";
 import { exerciseName, getLang, state } from "./state.js";
 
 // 本模組自己的畫面狀態（不進全域 state：換畫面即重置無妨）
@@ -14,6 +14,7 @@ const cal = {
   status: null, // 當日狀態 {energy, sleep_quality, note}（F9；沒記就是 null）
   exerciseById: null, // 進日曆時載一次，點日不重抓
   editSetId: null, // F16：日曆明細正在行內編輯的 set id
+  editDraft: null, // {weight, reps, rpe} 編輯草稿（steppers 就地維護）
   confirmDelSetId: null, // F16：兩段式刪除中的 set id
 };
 
@@ -56,6 +57,7 @@ function shiftMonth(delta) {
 async function selectDay(dateStr) {
   cal.selected = dateStr;
   cal.editSetId = null; // 換日/重載時清掉行內編輯與刪除確認的殘留態
+  cal.editDraft = null;
   cal.confirmDelSetId = null;
   const [workouts, statuses] = await Promise.all([
     api.listWorkouts(dateStr, dateStr),
@@ -97,15 +99,7 @@ async function deleteSet(s, rerender) {
 }
 
 async function saveEditSet(s, rerender) {
-  const w = Math.round(Number(document.querySelector(".cal-edit-weight").value) * 10) / 10;
-  const r = Math.trunc(Number(document.querySelector(".cal-edit-reps").value));
-  const rpeRaw = document.querySelector(".cal-edit-rpe").value.trim();
-  const rpe = rpeRaw ? Math.trunc(Number(rpeRaw)) : null;
-  if (!(w >= 0) || !(r >= 1) || (rpe !== null && (rpe < 1 || rpe > 10))) {
-    state.error = "重量/次數/RPE 不正確";
-    rerender();
-    return;
-  }
+  const { weight: w, reps: r, rpe } = cal.editDraft; // 值由 steppers 就地維護，邊界已保證
   await api.updateSet(s.id, {
     weight_kg: w,
     reps: r,
@@ -113,28 +107,27 @@ async function saveEditSet(s, rerender) {
     ...(s.rest_seconds != null ? { rest_seconds: s.rest_seconds } : {}),
   });
   cal.editSetId = null;
-  state.error = null;
+  cal.editDraft = null;
   await refreshMonthAndDay();
   rerender();
 }
 
 function calSetRow(s, guard, rerender) {
   if (cal.editSetId === s.id) {
+    const d = cal.editDraft;
     return el("div", { class: "cal-detail-row editing" }, [
-      el("input", {
-        type: "number", class: "cal-edit-weight", step: "0.5",
-        inputmode: "decimal", value: String(s.weight_kg),
-      }),
-      el("input", {
-        type: "number", class: "cal-edit-reps", step: "1",
-        inputmode: "numeric", value: String(s.reps),
-      }),
-      el("input", {
-        type: "number", class: "cal-edit-rpe", step: "1", min: "1", max: "10",
-        inputmode: "numeric", placeholder: "RPE", value: s.rpe ? String(s.rpe) : "",
-      }),
-      el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditSet(s, rerender)) }, ["儲存"]),
-      el("button", { class: "btn btn-ghost sm", onclick: () => { cal.editSetId = null; state.error = null; rerender(); } }, ["取消"]),
+      el("div", { class: "edit-head" }, [`編輯 #${s.set_number}`]),
+      el("div", { class: "steppers" }, [
+        stepper("KG", d.weight, [["−2.5", -2.5], ["+2.5", +2.5]],
+          (delta) => { d.weight = Math.max(0, Math.round((d.weight + delta) * 10) / 10); }, rerender),
+        stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
+          (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
+      ]),
+      rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
+      el("div", { class: "edit-actions" }, [
+        el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditSet(s, rerender)) }, ["儲存"]),
+        el("button", { class: "btn btn-ghost sm", onclick: () => { cal.editSetId = null; cal.editDraft = null; rerender(); } }, ["取消"]),
+      ]),
     ]);
   }
   if (cal.confirmDelSetId === s.id) {
@@ -150,7 +143,12 @@ function calSetRow(s, guard, rerender) {
     el("span", { class: "n" }, [`${s.weight_kg}×${s.reps}${s.rpe ? `@${s.rpe}` : ""}`]),
     el("button", {
       class: "btn icon-btn edit-set",
-      onclick: () => { cal.editSetId = s.id; cal.confirmDelSetId = null; state.error = null; rerender(); },
+      onclick: () => {
+        cal.editSetId = s.id;
+        cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? null };
+        cal.confirmDelSetId = null;
+        rerender();
+      },
     }, ["✎"]),
     el("button", {
       class: "btn icon-btn del-set",

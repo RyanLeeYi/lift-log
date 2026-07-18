@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v7"; // F16：done-list 行內編輯/刪除（改了 app.js/css）
+const CACHE_NAME = "liftlog-shell-v8"; // F16：編輯改用 steppers（dom/app/calendar/css）
 const SHELL = [
   "/",
   "/css/app.css",

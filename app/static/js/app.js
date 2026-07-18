@@ -4,7 +4,7 @@
 import { api, ApiError, getToken, setToken } from "./api.js";
 import { openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
-import { el } from "./dom.js";
+import { el, rpePicker, stepper } from "./dom.js";
 import {
   discardFailed,
   enqueueSet,
@@ -512,18 +512,6 @@ function cycleRestHint(exerciseId) {
   if ((restRemainingSeconds() ?? -1) > 0) restAlerted = false; // 目標調長回到未到點：重新武裝提醒
 }
 
-function stepper(name, value, steps, apply) {
-  return el("div", { class: "stepper" }, [
-    el("span", { class: "name" }, [name]),
-    el("output", {}, [String(value)]),
-    el("div", { class: "pair" },
-      steps.map(([label, delta]) =>
-        el("button", { class: "btn", onclick: () => { apply(delta); render(); } }, [label]),
-      ),
-    ),
-  ]);
-}
-
 function renderLogger() {
   const exercise = state.exercise;
 
@@ -613,15 +601,7 @@ function renderLogger() {
   };
 
   const saveEditDoneSet = async (s) => {
-    const w = Math.round(Number(root.querySelector(".edit-weight").value) * 10) / 10;
-    const r = Math.trunc(Number(root.querySelector(".edit-reps").value));
-    const rpeRaw = root.querySelector(".edit-rpe").value.trim();
-    const rpe = rpeRaw ? Math.trunc(Number(rpeRaw)) : null;
-    if (!(w >= 0) || !(r >= 1) || (rpe !== null && (rpe < 1 || rpe > 10))) {
-      state.error = "重量/次數/RPE 不正確";
-      render();
-      return;
-    }
+    const { weight: w, reps: r, rpe } = editDraft; // 值由 steppers 就地維護，邊界已保證
     if (s.id != null) {
       const updated = await api.updateSet(s.id, {
         weight_kg: w,
@@ -635,7 +615,6 @@ function renderLogger() {
       await enqueueSet(state.workoutId, payload);
       replaceInDone(s, payload);
     }
-    state.error = null;
     editDraft = null;
     render();
   };
@@ -644,21 +623,22 @@ function renderLogger() {
     const key = setRowKey(s);
     if (editDraft && editDraft.key === key) {
       return el("div", { class: "done-row editing" }, [
-        el("span", {}, [`#${s.set_number}`]),
-        el("input", {
-          type: "number", class: "edit-weight", step: "0.5",
-          inputmode: "decimal", value: String(s.weight_kg),
-        }),
-        el("input", {
-          type: "number", class: "edit-reps", step: "1",
-          inputmode: "numeric", value: String(s.reps),
-        }),
-        el("input", {
-          type: "number", class: "edit-rpe", step: "1", min: "1", max: "10",
-          inputmode: "numeric", placeholder: "RPE", value: s.rpe ? String(s.rpe) : "",
-        }),
-        el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditDoneSet(s)) }, ["儲存"]),
-        el("button", { class: "btn btn-ghost sm", onclick: () => { editDraft = null; state.error = null; render(); } }, ["取消"]),
+        el("div", { class: "edit-head" }, [`編輯 #${s.set_number}`]),
+        el("div", { class: "steppers" }, [
+          stepper(exercise.is_bodyweight ? "負重 KG" : "KG", editDraft.weight, [
+            ["−2.5", -2.5],
+            ["+2.5", +2.5],
+          ], (d) => { editDraft.weight = Math.max(0, Math.round((editDraft.weight + d) * 10) / 10); }, render),
+          stepper("REPS", editDraft.reps, [
+            ["−1", -1],
+            ["+1", +1],
+          ], (d) => { editDraft.reps = Math.max(1, editDraft.reps + d); }, render),
+        ]),
+        rpePicker(editDraft.rpe, (v) => { editDraft.rpe = v; }, render),
+        el("div", { class: "edit-actions" }, [
+          el("button", { class: "btn btn-primary sm save-edit", onclick: () => guard(() => saveEditDoneSet(s)) }, ["儲存"]),
+          el("button", { class: "btn btn-ghost sm", onclick: () => { editDraft = null; render(); } }, ["取消"]),
+        ]),
       ]);
     }
     if (confirmDeleteSetKey === key) {
@@ -678,7 +658,11 @@ function renderLogger() {
       ]),
       el("button", {
         class: "btn icon-btn edit-set",
-        onclick: () => { editDraft = { key }; confirmDeleteSetKey = null; state.error = null; render(); },
+        onclick: () => {
+          editDraft = { key, weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? null };
+          confirmDeleteSetKey = null;
+          render();
+        },
       }, ["✎"]),
       el("button", {
         class: "btn icon-btn del-set",
@@ -730,27 +714,13 @@ function renderLogger() {
       stepper(exercise.is_bodyweight ? "負重 KG" : "KG", state.weightKg, [
         ["−2.5", -2.5],
         ["+2.5", +2.5],
-      ], (d) => { state.weightKg = Math.max(0, Math.round((state.weightKg + d) * 10) / 10); }),
+      ], (d) => { state.weightKg = Math.max(0, Math.round((state.weightKg + d) * 10) / 10); }, render),
       stepper("REPS", state.reps, [
         ["−1", -1],
         ["+1", +1],
-      ], (d) => { state.reps = Math.max(1, state.reps + d); }),
+      ], (d) => { state.reps = Math.max(1, state.reps + d); }, render),
     ]),
-    el("div", { class: "rpe-row" }, [
-      el("span", { class: "name" }, ["RPE"]),
-      el("div", { class: "rpe" },
-        [6, 7, 8, 9, 10].map((n) =>
-          el(
-            "button",
-            {
-              class: state.rpe === n ? "on" : "",
-              onclick: () => { state.rpe = state.rpe === n ? null : n; render(); },
-            },
-            [String(n)],
-          ),
-        ),
-      ),
-    ]),
+    rpePicker(state.rpe, (v) => { state.rpe = v; }, render),
     el(
       "button",
       {

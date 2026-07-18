@@ -238,14 +238,12 @@ body {
   background: transparent; border: 1px solid var(--card-edge);
 }
 .done-row.confirm-del { color: var(--danger, #e5484d); }
-.done-row.editing { flex-wrap: wrap; }
-.done-row.editing input {
-  width: 64px; flex: 1 1 56px; min-width: 48px;
-  font-family: var(--mono); font-size: 14px; padding: 6px;
-  background: var(--bg); color: var(--text);
-  border: 1px solid var(--card-edge); border-radius: 6px;
-}
-.done-row .btn.sm { flex: none; padding: 4px 10px; min-height: 32px; font-size: 13px; }
+/* 編輯態：展開成 steppers 迷你表單（與記錄新組同款控制項，觸控友善） */
+.done-row.editing { flex-direction: column; align-items: stretch; gap: 10px; }
+.done-row.editing .edit-head { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
+.done-row.editing .edit-actions { display: flex; gap: 10px; }
+.done-row.editing .edit-actions .btn { flex: 1; }
+.done-row .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
 
 .logger-foot { display: flex; gap: 10px; }
 .logger-foot .btn { flex: 1; }
@@ -373,14 +371,11 @@ body {
   flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
   background: transparent; border: 1px solid var(--card-edge);
 }
-.cal-detail-row.editing { flex-wrap: wrap; padding-left: 12px; }
-.cal-detail-row.editing input {
-  width: 60px; flex: 1 1 52px; min-width: 44px;
-  font-family: var(--mono); font-size: 14px; padding: 6px;
-  background: var(--bg); color: var(--text);
-  border: 1px solid var(--card-edge); border-radius: 6px;
-}
-.cal-detail-row .btn.sm { flex: none; padding: 4px 10px; min-height: 32px; font-size: 13px; }
+.cal-detail-row.editing { flex-direction: column; align-items: stretch; gap: 10px; padding-left: 12px; }
+.cal-detail-row.editing .edit-head { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
+.cal-detail-row.editing .edit-actions { display: flex; gap: 10px; }
+.cal-detail-row.editing .edit-actions .btn { flex: 1; }
+.cal-detail-row .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
 .cal-empty { color: var(--text-dim); font-size: 14px; padding: 8px 4px; }
 .cal-status {
   display: flex; flex-direction: column; gap: 2px;
