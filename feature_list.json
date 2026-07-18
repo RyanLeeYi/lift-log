@@ -109,8 +109,8 @@
       "id": "F16",
       "name": "訓練組 編輯＋刪除",
       "acceptance": "後端新增 PATCH /api/sets/{id} 更新 weight_kg/reps/rpe/rest_seconds（範圍驗證同 POST）、set 不存在或已軟刪回 404、回更新後 SetOut、set_number 不變；logger「已完成的組」每列有編輯與刪除入口，刪除為兩段式確認（第一下該列進確認態、第二下真刪）：已同步組打 DELETE /api/sets/{id}（軟刪）、未同步 queued 組移出離線佇列，刪後即時從畫面移除且不計入噸位/heatmap/歷史；編輯把該組值帶回 steppers 可改、存檔打 PATCH 原位更新（未同步組改佇列那筆）；日曆某天明細把每動作分組文字改成每組一列可編輯/刪除（同機制）。後端測試涵蓋 PATCH 更新/404/範圍驗證；logger 與日曆的編輯刪除以 Playwright E2E 驗。同步更新 CLAUDE.md「sets 不做 update」措辭。Ryan 2026-07-18 簽核。",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "acceptance-verifier R1–R14 全 pass（含 R9 複驗）：後端 PATCH /api/sets/{id} 原位更新、set_number 不變/404 未知+已軟刪/範圍 400（TestUpdateSet 7 測）；logger done-list 與日曆明細每組可用 stepper +/- 編輯（驗收者實測編輯態 0 個 input、2 個 stepper，PATCH server 生效、set_number 不變）＋兩段式刪除（軟刪、明細少一筆）；離線 queued 組刪除移出佇列、同步後回填 server id。codex-review 3 條已修：P1（flushQueue 回填 id 至 doneSets）、P2（刪除更新 setCounts）、R9（編輯改用 steppers 非 number input）。CLAUDE.md sets 規則已更新。commits 4cad81d/eceb448/6f8babe/6e39f97/5bb518d。E2E verify_f16_logger/calendar/p1（scratchpad）。uv run pytest 146 passed、ruff clean。"
     },
     {
       "id": "F17",
