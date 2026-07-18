@@ -1,6 +1,6 @@
 ---
-updated: 2026-07-17
-feature: F1–F8
+updated: 2026-07-18
+feature: F1–F8（F9 起的驗收依據以 feature_list.json 的 acceptance 為準）
 ---
 
 # lift-log 健身紀錄系統 MVP — PRD

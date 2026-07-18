@@ -1,7 +1,13 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十一場：F14 實作＋codex-review 修正＋E2E 雙情境 PASS，**尚未跑獨立驗收者、未標 passing、未部署**；Opus session 的 5h 窗破 90% 收工）
+> 最後更新：2026-07-18（第十一場續：**F14 → passing 並已部署上線**。acceptance-verifier 3/3 PASS、mission-control 重啟後正式站 serve 新 sw.js/app.js 驗過。MVP F1–F9＋F12–F14 全 passing，剩 F10/F11）
 
-## F14 現況（下場從這裡接）
+## 下場開場動作
+- **從 F10 自訂動作開始**（acceptance 已簽核：中文名必填、英文/部位選填、自體重勾選；POST /api/exercises 已存在，主戰場前端 picker/加動作面板）→ 再 F11 體重補記過去日期（API date 欄位已支援，純 UI）。一次一個 feature、TDD、改 static 記得 bump `sw.js` CACHE_NAME（現 v5）
+- **提醒 Ryan（F14 部署後一次性動作）**：桌機/手機各**手動刷一次**（手機關掉 app 重開或下拉重整）才會拿到 F14 這版；**從此之後每次部署都自動到位、不用再手動**。這是引入自動更新功能的一次性 bootstrap 成本（舊版 app.js 沒有 listener），非 bug
+- **F14 待 Ryan 確認的小事**：實作用一次性 `skippedInitialClaim` 取代 acceptance 原文的「hadController 條件」（可觀察行為相同＋修掉 P2① 首訪者不更新的邊界；驗收者判定符合）。若認可，acceptance 括號可更新措辭——不改也不影響
+- **PRD 缺口（驗收者回饋，非阻擋）**：`docs/prd/mvp-lift-log.md` 標頭已補註「F9 起以 feature_list.json 為準」
+
+## F14 收尾紀錄（已完成）
 - **程式碼完成＋自我驗證充分**（commits 8820688 原始 + **8426a15** review 修正）：
   - sw.js install：`fetch(url?v=CACHE_NAME, {cache:"reload"})` + `cache.put(url)`（版本戳杜絕新 SW 裝舊資產混版）、CACHE_NAME **v5**、activate 清舊快取 + claim（與 8820688 一致）
   - app.js：controllerchange 自動 reload。**Codex P2① 修正**：原本 `hadController` 永久 false 會讓「首訪者頁面開著、之後部署」永遠不更新；改為一次性 `skippedInitialClaim`——只跳過首裝的**初次**接管，之後任何一次接管（部署新版）都 reload 一次（`refreshing` 旗標防循環）
