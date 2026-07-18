@@ -1,6 +1,6 @@
 // 日曆 heatmap：CSS grid 月視圖、5 級深淺（依當月最大噸位分四檔）、點日看明細。
 
-import { api } from "./api.js";
+import { api, ApiError } from "./api.js";
 import { el, rpePicker, stepper } from "./dom.js";
 import { exerciseName, getLang, state } from "./state.js";
 
@@ -94,20 +94,32 @@ async function refreshMonthAndDay() {
 }
 
 async function deleteSet(s, rerender) {
-  await api.deleteSet(s.id); // 日曆的組都來自 server，一律走軟刪 API（無離線佇列）
+  try {
+    await api.deleteSet(s.id); // 日曆的組都來自 server，一律走軟刪 API（無離線佇列）
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status === 404)) throw err; // 404＝已刪，視為成功（防連點）
+  }
   await refreshMonthAndDay();
   rerender();
 }
 
 // F19：批次刪除已勾選的組——後端無批次端點，逐筆軟刪
 async function batchDeleteSelected(rerender) {
-  for (const id of cal.selectedIds) {
-    await api.deleteSet(id);
+  try {
+    for (const id of cal.selectedIds) {
+      try {
+        await api.deleteSet(id);
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 404)) throw err; // 已刪的跳過；真錯誤上拋
+      }
+    }
+  } finally {
+    // 不論中途成功幾筆或遇錯，都以 server 現況重載——避免畫面與伺服器不一致
+    cal.selectMode = false;
+    cal.selectedIds = [];
+    await refreshMonthAndDay();
+    rerender();
   }
-  cal.selectMode = false;
-  cal.selectedIds = [];
-  await refreshMonthAndDay();
-  rerender();
 }
 
 async function saveEditSet(s, rerender) {

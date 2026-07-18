@@ -585,7 +585,11 @@ function renderLogger() {
 
   const deleteDoneSet = async (s) => {
     if (s.id != null) {
-      await api.deleteSet(s.id); // 已同步：軟刪
+      try {
+        await api.deleteSet(s.id); // 已同步：軟刪
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 404)) throw err; // 404＝已刪，視為成功（防連點重送）
+      }
     } else {
       await removeQueued(s.client_uuid); // 未同步：移出佇列
       await refreshQueueCounts();
