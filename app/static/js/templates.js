@@ -119,14 +119,19 @@ function itemRow(item, index, rerender) {
     tpl.editing = { ...tpl.editing, items: next };
     rerender();
   };
-  const setRest = (value) => {
+  const setRest = (value, { inPlace = false } = {}) => {
     const next = items.map((it, i) =>
       i === index ? { ...it, rest_hint_seconds: value } : it,
     );
     tpl.editing = { ...tpl.editing, items: next };
-    rerender();
+    if (inPlace) {
+      // blur 觸發的 change 不整頁重繪：重繪會換掉「儲存課表」按鈕，吃掉同一下點擊
+      row.replaceWith(itemRow(next[index], index, rerender));
+    } else {
+      rerender();
+    }
   };
-  return el("div", { class: "tpl-item" }, [
+  const row = el("div", { class: "tpl-item" }, [
     el("div", { class: "tpl-item-name" }, [
       el("span", {}, [exerciseName(item)]),
       el("span", { class: "sub" }, [exerciseAlias(item)]),
@@ -184,20 +189,17 @@ function itemRow(item, index, rerender) {
         // onchange（blur/enter 才觸發）：oninput 會整頁重繪打斷輸入
         onchange: (e) => {
           const raw = e.target.value.trim();
-          if (raw === "") {
-            setRest(null);
-            return;
-          }
           const n = Number.parseInt(raw, 10);
-          if (Number.isNaN(n)) {
-            setRest(null);
-            return;
-          }
-          setRest(Math.min(REST_HINT_MAX, Math.max(REST_HINT_MIN, n)));
+          const value =
+            raw === "" || Number.isNaN(n)
+              ? null
+              : Math.min(REST_HINT_MAX, Math.max(REST_HINT_MIN, n));
+          setRest(value, { inPlace: true });
         },
       }),
     ]),
   ]);
+  return row;
 }
 
 function addPanel(rerender, guard) {

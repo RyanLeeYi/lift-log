@@ -24,6 +24,8 @@ import {
 const root = document.getElementById("app");
 let restTicker = null;
 let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
+let wakeLockPending = false; // request 進行中——完成時要重驗畫面狀態，避免離開後鎖洩漏
+let restAlerted = false; // 本段休息是否已提醒過；調長目標後重新武裝
 
 // ---------- 小工具 ----------
 
@@ -46,17 +48,25 @@ function fmtRest(remaining) {
 // ---------- R10 Wake Lock：訓練畫面不鎖屏，倒數提醒才收得到 ----------
 
 async function syncWakeLock() {
-  const want = state.screen === "logger" && document.visibilityState === "visible";
-  if (want && wakeLock === null) {
+  const wanted = () => state.screen === "logger" && document.visibilityState === "visible";
+  if (wanted() && wakeLock === null && !wakeLockPending) {
+    wakeLockPending = true; // 防並行申請
     try {
-      wakeLock = (await navigator.wakeLock?.request("screen")) ?? null;
-      wakeLock?.addEventListener("release", () => {
-        wakeLock = null; // 系統可能自行釋放（切頁、鎖屏）——回來時 visibilitychange 再要一次
+      const lock = (await navigator.wakeLock?.request("screen")) ?? null;
+      lock?.addEventListener("release", () => {
+        if (wakeLock === lock) wakeLock = null; // 系統自行釋放（切頁）——回來時再要一次
       });
+      if (wanted()) {
+        wakeLock = lock;
+      } else {
+        lock?.release().catch(() => {}); // 申請期間已離開 logger：就地釋放，不留孤兒鎖
+      }
     } catch {
-      wakeLock = null; // 不支援或被拒：靜默降級，功能照常
+      /* 不支援或被拒：靜默降級，功能照常 */
+    } finally {
+      wakeLockPending = false;
     }
-  } else if (!want && wakeLock !== null) {
+  } else if (!wanted() && wakeLock !== null) {
     const lock = wakeLock;
     wakeLock = null;
     try {
@@ -450,17 +460,17 @@ function renderPicker() {
 
 function startRestTimer() {
   state.restStartedAt = Date.now();
+  restAlerted = false;
   if (restTicker) clearInterval(restTicker);
-  let alerted = false; // 每段休息只提醒一次
   restTicker = setInterval(() => {
     const led = document.querySelector(".rest-led");
     if (!led) return;
     const remaining = restRemainingSeconds();
     if (remaining === null) return;
     led.querySelector(".digits").textContent = fmtRest(remaining);
-    led.classList.toggle("over", remaining < 0);
-    if (!alerted && remaining <= 0) {
-      alerted = true;
+    led.classList.toggle("over", remaining <= 0); // 與震動同門檻：到 0 那一刻就變色
+    if (!restAlerted && remaining <= 0) {
+      restAlerted = true;
       navigator.vibrate?.([200, 100, 200]); // iOS Safari 不支援——只有視覺提示
     }
   }, 1000);
@@ -479,6 +489,7 @@ function cycleRestHint(exerciseId) {
   const next = picks[(picks.indexOf(current) + 1) % picks.length];
   state.restHintOverrides = { ...state.restHintOverrides, [exerciseId]: next };
   saveActiveWorkout();
+  if ((restRemainingSeconds() ?? -1) > 0) restAlerted = false; // 目標調長回到未到點：重新武裝提醒
 }
 
 function stepper(name, value, steps, apply) {
@@ -571,7 +582,7 @@ function renderLogger() {
       "div",
       {
         class: `rest-led${state.restStartedAt ? " on" : ""}${
-          (restRemainingSeconds() ?? 0) < 0 ? " over" : ""
+          (restRemainingSeconds() ?? 1) <= 0 ? " over" : ""
         }`,
       },
       [
