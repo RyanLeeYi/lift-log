@@ -1,10 +1,5 @@
 # Session Handoff
-> 最後更新：2026-07-19（**F10 自訂動作 + F24 版本號 + F25 自訂動作進課表加動作視窗 → passing**。sw.js 現 **v20**、APP_VERSION v20。⚠ F25 的 codex-review 收工時仍背景執行未回，下場先讀 `scratchpad/codex-review-f25.md`。剩 **F11 體重補記過去日期**）
-
-## ⚠ 下場第一件事：檢視 F25 的 codex-review
-- 本場因用量門檻（Fable 98%）收工，F25 的 `codex exec review --uncommitted` 背景跑但**未回結果**就收工。
-- 結果檔（若已產出）：`C:\Users\user\AppData\Local\Temp\claude\C--Users-user\fbc09e8e-2dbb-4a07-8cfe-3d8f19cd8872\scratchpad\codex-review-f25.md`（本 session scratchpad，跨 session 可能已清；若不在，對 `2f5b...` 之後的 commit 重跑 `codex exec review --commit <F25 sha>`）。
-- F25 已 flip passing（E2E R1–R5 全綬佐證 acceptance），但**尚未經 review 把關**——讀結果後 P0/P1 必修、P2 評估，修完補一個 fix commit。
+> 最後更新：2026-07-19（**F10 自訂動作 + F24 版本號 + F25 自訂動作進課表加動作視窗 → passing**。F25 codex-review 已完成、1 條 P2 已修。sw.js 現 **v21**、APP_VERSION v21。剩 **F11 體重補記過去日期**）
 
 ## F25 自訂動作進課表「加動作」視窗 → passing（2026-07-19，本場）
 - **需求**：Ryan 要自訂動作入口也放到課表編輯的「＋加動作」懸浮視窗（picker 現有的**保留**，兩處都有）。

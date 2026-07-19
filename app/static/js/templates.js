@@ -361,7 +361,12 @@ function templateCustomModal(rerender, guard) {
       tpl.muscleFilter = null;
       tpl.searchQ = "";
       guard(async () => {
-        await loadPickable(""); // 重載讓新動作進可選清單
+        try {
+          await loadPickable(""); // 重載讓新動作進可選清單
+        } catch {
+          // 刷新失敗 fallback：動作已建立成功，用回傳值補進清單，避免清單沒它、重試撞重複（Codex P2，同 picker）
+          tpl.exercises = [...tpl.exercises, created];
+        }
         tpl.selectedAdd = created; // 預選剛建立的，使用者可直接「確定加入」
         rerender();
       });

@@ -173,7 +173,7 @@
       "name": "自訂動作入口進課表加動作視窗",
       "acceptance": "課表編輯的「＋加動作」懸浮視窗內新增「＋自訂動作」入口，點開建立自訂動作的視窗（疊在加動作視窗上層）；picker（選動作）現有的自訂動作入口保留（兩處都能建）。建立成功後新動作立即出現在加動作視窗的可選清單並被預選，可直接「確定加入」課表；取消則回到加動作視窗。建立視窗行為與 picker 一致（中文名必填、英文名/部位選填、自體重、重複就地提示、走 POST /api/exercises）。實作上兩處共用同一元件（custom-exercise.js），不重複表單邏輯。來源：2026-07-19 Ryan 要求自訂動作也放到課表加動作視窗。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。抽出共用元件 app/static/js/custom-exercise.js（自我包含：錯誤就地顯示、不動父層重繪），picker（app.js pickerCustomModal）與課表編輯（templates.js templateCustomModal）共用；課表「加動作」視窗內加「＋自訂動作」入口，開建立視窗疊在上層，建立成功重載可選清單並預選新動作可直接「確定加入」。picker 入口保留（兩處都有）。sw.js SHELL 加 /js/custom-exercise.js、CACHE_NAME v19→v20、APP_VERSION 同步 v20。E2E scratchpad verify_f25.py R1–R5 全 PASS（入口+疊層、建立後預選+確認鈕啟用、加入課表、後端建立、picker 入口仍在）；F10 picker 回歸 ALL PASS、F24 版本號回歸 v20；全套 161 passed、ruff clean。⚠ codex-review 本場背景執行但收工時尚未回結果（用量門檻收工）——下場須讀 scratchpad/codex-review-f25.md 檢視並修 P0/P1、評估 P2。"
+      "evidence": "2026-07-19 完成。抽出共用元件 app/static/js/custom-exercise.js（自我包含：錯誤就地顯示、不動父層重繪），picker（app.js pickerCustomModal）與課表編輯（templates.js templateCustomModal）共用；課表「加動作」視窗內加「＋自訂動作」入口，開建立視窗疊在上層，建立成功重載可選清單並預選新動作可直接「確定加入」。picker 入口保留（兩處都有）。sw.js SHELL 加 /js/custom-exercise.js、CACHE_NAME v19→v20、APP_VERSION 同步 v20。E2E scratchpad verify_f25.py R1–R5 全 PASS（入口+疊層、建立後預選+確認鈕啟用、加入課表、後端建立、picker 入口仍在）；F10 picker 回歸 ALL PASS、F24 版本號回歸 v20；全套 161 passed、ruff clean。codex-review 完成：1 條 P2（templateCustomModal 刷新失敗未 fallback，同 picker 舊 P2）已修（loadPickable 失敗改用建立回傳值補進清單）；無 P0/P1。修後 F25 E2E 仍 ALL PASS、ruff clean。sw.js v20→v21、APP_VERSION v21。"
     }
   ]
 }
