@@ -194,7 +194,7 @@
       "name": "刪除課表確認視窗",
       "acceptance": "課表列表點某課表的「刪除」→ 跳自訂確認視窗（顯示該課表名稱、提示無法復原、刪除／取消兩鈕），取代原本易誤觸的兩段式紅鍵。取消→關視窗、課表保留；刪除→呼叫 DELETE、重載列表、該課表消失。沿用 app 深色 modal 慣例、不用瀏覽器 confirm。防雙擊（tpl.busy）。來源：2026-07-19 Ryan 要求刪除課表多一層確認。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。templates.js：templateRow 的刪除鍵改為開確認視窗（tpl.confirmDeleteId 記目標）；deleteTemplateModal 顯示課表名稱＋無法復原提示，刪除/取消兩鈕，防雙擊 tpl.busy，刪除後 openTemplates 重載並清旗標。移除原兩段式紅鍵邏輯。sw.js v25→v26、APP_VERSION v26。E2E verify_f28.py 3/3 PASS（確認視窗含名稱且課表未消失、取消保留、刪除移除且後端消失）；F26 回歸 ALL PASS、ruff clean。⚠ codex-review 背景執行中、收工未回——下場讀 scratchpad/codex-review-f28.md。"
+      "evidence": "2026-07-19 完成。templates.js：templateRow 的刪除鍵改為開確認視窗（tpl.confirmDeleteId 記目標）；deleteTemplateModal 顯示課表名稱＋無法復原提示，刪除/取消兩鈕，防雙擊 tpl.busy，刪除後 openTemplates 重載並清旗標。移除原兩段式紅鍵邏輯。sw.js v25→v26、APP_VERSION v26。E2E verify_f28.py 3/3 PASS（確認視窗含名稱且課表未消失、取消保留、刪除移除且後端消失）；F26 回歸 ALL PASS、ruff clean。codex-review 完成：無問題（未發現本次新增的功能性問題，符合驗收）。"
     }
   ]
 }
