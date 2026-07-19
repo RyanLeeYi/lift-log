@@ -378,7 +378,8 @@ export function renderTemplateEdit(rerender, guard) {
   };
 
   // 整頁重繪會重置捲動位置——存/還原 scrollTop，讓下方動作的組數/休息/排序可連續編輯不跳頂（Codex P2）
-  const scrollable = editing.items.length > 1;
+  // F21（2026-07-19 調整）：清單約 3 個動作高，超過 3 個才固定高度捲動
+  const scrollable = editing.items.length > 3;
   const itemsNode = el(
     "div",
     {
