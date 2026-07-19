@@ -7,7 +7,9 @@
 - 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
 - **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
-## 課表編輯（F21 ✅ 完成上線，sw v13）
+## 課表編輯（F21、F22 ✅ 完成上線，sw v14）
+- **F22 課表加動作視窗：部位篩選**：Ryan 回饋要跟 logger picker 一樣有部位。addModal 加 `.chips` 部位按鈕（groups 取自 tpl.exercises），`tpl.muscleFilter` 篩選、與搜尋並用、開窗重置。codex-review P2 已修（chip 改就地更新不整頁重繪，避免與進行中搜尋 callback 競態——同 F21 選取/搜尋的 in-place 原則）。acceptance-verifier 8/8 pass。E2E `verify_f22.py`
+
 - **F21 課表編輯：動作清單捲動＋加動作懸浮視窗**：Ryan 回饋。編輯課表的 `.tpl-items` 固定約 1 動作高＋捲動（`>1` 時加 scrollable）；「＋加動作」改成 `.modal-overlay` 懸浮視窗（搜尋＋可捲動清單＋確定加入/取消），**單選、按確定加入才進課表**。codex-review 3 P2 已修（modal 選取就地更新不重繪防跳頂、搜尋排除選取即清＋停用確認、tpl-items 保存/還原 scrollTop——因 cap 只 1 動作高，不還原會每次編輯跳頂）＋開窗重置搜尋。acceptance-verifier 10/10 pass。E2E `verify_f21.py`。**新增共用樣式 `.modal-overlay`/`.modal` 可給未來其他 modal 用**
 
 ## 開練頁版面（F20 ✅ 完成上線，sw v12）
