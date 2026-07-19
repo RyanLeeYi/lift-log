@@ -266,12 +266,35 @@ body {
 .tpl-row {
   background: var(--card);
   border: 1px solid var(--card-edge);
+  border-left: 3px solid var(--led); /* 琥珀 accent：一眼識別這是一份訓練計畫 */
   border-radius: 14px;
   padding: 12px 14px;
   display: flex; flex-direction: column; gap: 10px;
 }
-.tpl-info { display: flex; flex-direction: column; gap: 4px; }
-.tpl-name { font-size: 17px; font-weight: 600; }
+.tpl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tpl-name { font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+.tpl-meta {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tpl-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tpl-tag {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  background: var(--bg); /* 比卡片更暗＝內嵌感 */
+  border: 1px solid var(--card-edge);
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 13px;
+}
+.tpl-tag .t-sets {
+  color: var(--led);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
 .tpl-row .sub, .tpl-item .sub { color: var(--text-dim); font-size: 13px; }
 .tpl-actions { display: flex; gap: 8px; }
 .tpl-empty { color: var(--text-dim); font-size: 14px; line-height: 1.6; }

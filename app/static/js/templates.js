@@ -68,13 +68,24 @@ function templateRow(template, rerender, guard, openEditor) {
     }
     rerender();
   };
+  const totalSets = template.exercises.reduce((sum, e) => sum + (e.default_sets || 0), 0);
   return el("div", { class: "tpl-row" }, [
-    el("div", { class: "tpl-info" }, [
+    el("div", { class: "tpl-head" }, [
       el("span", { class: "tpl-name" }, [template.name]),
-      el("span", { class: "sub" }, [
-        template.exercises.map((e) => exerciseName(e)).join(" · "),
-      ]),
+      // 份量摘要：動作數＋總組數，一眼看出這份課表的量（mono 對齊數字）
+      el("span", { class: "tpl-meta" }, [`${template.exercises.length} 動作 · ${totalSets} 組`]),
     ]),
+    // 動作以 tag 呈現（帶 ×組數），比「·」串接更好掃視
+    el(
+      "div",
+      { class: "tpl-tags" },
+      template.exercises.map((e) =>
+        el("span", { class: "tpl-tag" }, [
+          el("span", { class: "t-name" }, [exerciseName(e)]),
+          el("span", { class: "t-sets" }, [`×${e.default_sets}`]),
+        ]),
+      ),
+    ),
     el("div", { class: "tpl-actions" }, [
       el("button", { class: "btn chip", onclick: () => openEditor(template) }, ["編輯"]),
       el(
