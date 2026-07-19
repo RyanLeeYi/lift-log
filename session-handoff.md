@@ -14,6 +14,9 @@
 
 - **F21 課表編輯：動作清單捲動＋加動作懸浮視窗**：Ryan 回饋。編輯課表的 `.tpl-items` 固定約 1 動作高＋捲動（`>1` 時加 scrollable）；「＋加動作」改成 `.modal-overlay` 懸浮視窗（搜尋＋可捲動清單＋確定加入/取消），**單選、按確定加入才進課表**。codex-review 3 P2 已修（modal 選取就地更新不重繪防跳頂、搜尋排除選取即清＋停用確認、tpl-items 保存/還原 scrollTop——因 cap 只 1 動作高，不還原會每次編輯跳頂）＋開窗重置搜尋。acceptance-verifier 10/10 pass。E2E `verify_f21.py`。**新增共用樣式 `.modal-overlay`/`.modal` 可給未來其他 modal 用**
 
+## 選動作畫面（F23 ✅ 完成上線，sw v17）
+- **F23 臨時加動作清單固定高度捲動**：Ryan 回饋。picker 的一般動作庫清單加 `.pick-list` class、**固定 height 248px（約 4 個動作高）＋捲動**（用固定 height 非 max-height，篩選少項時不收縮、回首頁鈕不上移——Codex P2）；今日菜單 `.menu-list` 不受影響（CSS 選擇器保證）。E2E `verify_f23.py`（含篩選後高度不縮）＋codex-review；純 CSS cap 未另跑跨模型驗收
+
 ## 開練頁版面（F20 ✅ 完成上線，sw v12）
 - **F20 done-list 新→舊排序＋固定高度可捲動**：Ryan 回饋記多組時版面被推走。done-list 改最新在最上（`[...doneSets].reverse()`）；組數 > 2 時加 `.scrollable`（max-height 88px overflow-y auto），下方 steppers/主按鈕位置穩住；編輯某列時解除限高（`!editDraft` 條件）。codex-review P2 已修（finish/endWorkout 清 editDraft）。acceptance-verifier 7/7 pass。E2E `verify_f20.py`。**注意：F16/F19 的舊 logger/calendar E2E 已因 F19 單擊刪除＋F20 反轉順序過時並刪除，現行 logger E2E 是 `verify_f19_logger.py` + `verify_f20.py`**
 
