@@ -201,7 +201,7 @@
       "name": "選動作/今日菜單加結束訓練按鈕",
       "acceptance": "picker（選動作／今日菜單）底部新增「結束訓練」按鈕，可直接結束當前訓練回首頁，不必先挑動作進 logger 才能收工。行為與 logger 的「收工」相同（只清 client 狀態、已記錄的組留在 server）。與「← 回首頁」並列且語意不同：回首頁保留訓練可續、結束訓練則清掉。實作上抽出共用的 endWorkout（logger 收工與此共用）。來源：2026-07-19 Ryan 要求今日菜單加結束訓練按鈕。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。app.js 把 endWorkout 從 renderLogger 抽到 module 級（function 宣告 hoist），logger「收工」與 picker「結束訓練」共用；renderPicker 底部加 .picker-foot（← 回首頁＋結束訓練 btn-danger 並排），app.css 加 .picker-foot 樣式（同 .logger-foot）。sw.js v26→v27、APP_VERSION v27。E2E verify_f29.py 3/3 PASS（今日菜單有結束訓練鈕、按下回首頁且訓練清空＝首頁鈕變「開練」、對照回首頁不結束＝「繼續訓練」）；logger 收工回歸 PASS（記一組→收工→首頁「開練」）；ruff clean。⚠ codex-review 背景執行中——下場讀 scratchpad/codex-review-f29.md。"
+      "evidence": "2026-07-19 完成。app.js 把 endWorkout 從 renderLogger 抽到 module 級（function 宣告 hoist），logger「收工」與 picker「結束訓練」共用；renderPicker 底部加 .picker-foot（← 回首頁＋結束訓練 btn-danger 並排），app.css 加 .picker-foot 樣式（同 .logger-foot）。sw.js v26→v27、APP_VERSION v27。E2E verify_f29.py 3/3 PASS（今日菜單有結束訓練鈕、按下回首頁且訓練清空＝首頁鈕變「開練」、對照回首頁不結束＝「繼續訓練」）；logger 收工回歸 PASS（記一組→收工→首頁「開練」）；ruff clean。codex-review 完成：無問題（共用 endWorkout 行為與原 logger 一致）。"
     }
   ]
 }
