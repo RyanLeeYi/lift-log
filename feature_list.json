@@ -116,8 +116,8 @@
       "id": "F17",
       "name": "體重 編輯＋刪除",
       "acceptance": "後端新增 DELETE /api/body-metrics/{date} 硬刪該日、不存在回 404；/body 頁在折線圖下新增體重紀錄清單（日期＋體重＋體脂，最新在上）每列可編輯/刪除；刪除為單擊即刪（打 DELETE、硬刪，跟 F19 範式一致、無兩段式確認）；編輯把該日值帶回表單可改（數字輸入，日期顯示但不可改）、存檔為 POST（同日覆蓋 upsert，既有行為）；刪/改後折線圖與清單即時更新。後端測試涵蓋 DELETE 刪除/404；清單編輯刪除以 Playwright E2E 驗。Ryan 2026-07-18 簽核（刪除 UX 依 F19 定調由兩段式改單擊即刪）。",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "acceptance-verifier R1–R7 全 pass（Playwright + httpx 實測）：DELETE /api/body-metrics/{date} 硬刪/404/硬刪後可重記同日 201（3 後端測試）；/body 折線圖下體重紀錄清單（最新在上、日期+體重+體脂）；編輯把該日值帶回數字輸入表單（日期顯示不可改）、POST 同日覆蓋、他日不受影響；單擊即刪硬刪（無確認態、server 端該日消失）；刪/改後折線圖與清單即時更新。codex-review 1 P2 已修（編輯草稿存 body.editDraft、驗證失敗不丟輸入——驗收者實測「5」超範圍時輸入保留）。sw v10。commits 5512c3e/a7d6888/5cb6b3c。uv run pytest 149、ruff clean。E2E verify_f17.py。"
     },
     {
       "id": "F18",
