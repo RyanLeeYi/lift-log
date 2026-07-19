@@ -350,6 +350,19 @@ function openCustomForm() {
   render();
 }
 
+// 收工／結束訓練：只清 client 狀態回首頁；已記錄的組在 server（SSOT），佇列未同步的之後仍補傳進這個 workout。
+// logger 的「收工」與 picker 的「結束訓練」共用（module 級 function 宣告會 hoist，logger 內引用不受順序影響）。
+function endWorkout() {
+  stopRestTimer();
+  state.pendingRestSeconds = null;
+  editDraft = null;
+  clearActiveWorkout();
+  state.setCounts = {};
+  state.exercise = null;
+  state.screen = "home";
+  render();
+}
+
 // F10 picker 的自訂動作視窗（共用 customExerciseModal）。建立成功 → reload 動作庫並關窗，
 // 新動作即出現在清單可直接記錄；離線刷新失敗用建立回傳值補進清單當 fallback（Codex P2）。
 function pickerCustomModal() {
@@ -517,7 +530,11 @@ function renderPicker() {
     ),
     list,
     el("button", { class: "btn add-custom-ex", onclick: openCustomForm }, ["＋ 自訂動作"]),
-    el("button", { class: "btn btn-ghost", onclick: () => { state.screen = "home"; render(); } }, ["← 回首頁"]),
+    el("div", { class: "picker-foot" }, [
+      el("button", { class: "btn btn-ghost", onclick: () => { state.screen = "home"; render(); } }, ["← 回首頁"]),
+      // F29：直接從今日菜單結束訓練，不必先進 logger 才收工（與 logger「收工」同一動作）
+      el("button", { class: "btn btn-danger", onclick: endWorkout }, ["結束訓練"]),
+    ]),
     // F10：自訂動作懸浮視窗（overlay，蓋在整個選動作畫面上）
     ...(customFormOpen ? [pickerCustomModal()] : []),
   ]);
@@ -613,18 +630,6 @@ function renderLogger() {
     editDraft = null; // 離開 logger 清編輯草稿，否則殘留會讓下個動作的 scrollable 失效（F20/Codex P2）
     state.exercise = null;
     state.screen = "picker";
-    render();
-  };
-
-  const endWorkout = () => {
-    // 收工只清 client 狀態；佇列裡未同步的組之後仍會補傳進這個 workout（server 是 SSOT）
-    stopRestTimer();
-    state.pendingRestSeconds = null;
-    editDraft = null;
-    clearActiveWorkout();
-    state.setCounts = {};
-    state.exercise = null;
-    state.screen = "home";
     render();
   };
 

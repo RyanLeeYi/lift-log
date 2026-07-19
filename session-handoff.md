@@ -1,5 +1,11 @@
 # Session Handoff
-> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26 / F27 / F28 → passing**，各自 codex-review 完成。sw.js 現 **v26**、APP_VERSION v26。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26 / F27 / F28 / F29（今日菜單結束訓練鈕）→ passing**。sw.js 現 **v27**、APP_VERSION v27。⚠ F29 codex-review 背景未回，下場讀 `scratchpad/codex-review-f29.md`。剩 **F11 體重補記過去日期**）
+
+## F29 選動作/今日菜單「結束訓練」鈕 → passing（2026-07-19，本場）
+- **需求**：Ryan 要能直接從今日菜單結束訓練（原本得先挑動作進 logger 才有「收工」）。
+- **實作**：`app.js` 把 `endWorkout` 從 renderLogger 閉包**抽到 module 級**（function 宣告 hoist；logger「收工」與 picker「結束訓練」共用同一動作＝清 client 狀態回首頁、已記錄組留 server）。renderPicker 底部改 `.picker-foot`（← 回首頁＋結束訓練 btn-danger 並排）。app.css 加 `.picker-foot`。sw.js v26→v27、APP_VERSION v27。
+- **語意區分**：回首頁＝保留訓練可續（首頁顯示「繼續訓練」）；結束訓練＝清掉（首頁「開練」）。與 logger「收工」無確認一致（不破壞資料，已記錄組都在 server）。
+- **驗證**：`verify_f29.py` 3/3 PASS＋logger 收工回歸 PASS、ruff clean。⚠ codex-review 背景執行、收工未回——下場檢視。
 
 ## F28 刪除課表確認視窗 → passing（2026-07-19，本場）
 - **需求**：Ryan 要刪除課表多一層確認（原兩段式紅鍵手機易誤觸連點刪掉）。

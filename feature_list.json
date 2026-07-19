@@ -195,6 +195,13 @@
       "acceptance": "課表列表點某課表的「刪除」→ 跳自訂確認視窗（顯示該課表名稱、提示無法復原、刪除／取消兩鈕），取代原本易誤觸的兩段式紅鍵。取消→關視窗、課表保留；刪除→呼叫 DELETE、重載列表、該課表消失。沿用 app 深色 modal 慣例、不用瀏覽器 confirm。防雙擊（tpl.busy）。來源：2026-07-19 Ryan 要求刪除課表多一層確認。",
       "status": "passing",
       "evidence": "2026-07-19 完成。templates.js：templateRow 的刪除鍵改為開確認視窗（tpl.confirmDeleteId 記目標）；deleteTemplateModal 顯示課表名稱＋無法復原提示，刪除/取消兩鈕，防雙擊 tpl.busy，刪除後 openTemplates 重載並清旗標。移除原兩段式紅鍵邏輯。sw.js v25→v26、APP_VERSION v26。E2E verify_f28.py 3/3 PASS（確認視窗含名稱且課表未消失、取消保留、刪除移除且後端消失）；F26 回歸 ALL PASS、ruff clean。codex-review 完成：無問題（未發現本次新增的功能性問題，符合驗收）。"
+    },
+    {
+      "id": "F29",
+      "name": "選動作/今日菜單加結束訓練按鈕",
+      "acceptance": "picker（選動作／今日菜單）底部新增「結束訓練」按鈕，可直接結束當前訓練回首頁，不必先挑動作進 logger 才能收工。行為與 logger 的「收工」相同（只清 client 狀態、已記錄的組留在 server）。與「← 回首頁」並列且語意不同：回首頁保留訓練可續、結束訓練則清掉。實作上抽出共用的 endWorkout（logger 收工與此共用）。來源：2026-07-19 Ryan 要求今日菜單加結束訓練按鈕。",
+      "status": "passing",
+      "evidence": "2026-07-19 完成。app.js 把 endWorkout 從 renderLogger 抽到 module 級（function 宣告 hoist），logger「收工」與 picker「結束訓練」共用；renderPicker 底部加 .picker-foot（← 回首頁＋結束訓練 btn-danger 並排），app.css 加 .picker-foot 樣式（同 .logger-foot）。sw.js v26→v27、APP_VERSION v27。E2E verify_f29.py 3/3 PASS（今日菜單有結束訓練鈕、按下回首頁且訓練清空＝首頁鈕變「開練」、對照回首頁不結束＝「繼續訓練」）；logger 收工回歸 PASS（記一組→收工→首頁「開練」）；ruff clean。⚠ codex-review 背景執行中——下場讀 scratchpad/codex-review-f29.md。"
     }
   ]
 }

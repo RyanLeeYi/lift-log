@@ -251,6 +251,9 @@ body {
 
 .logger-foot { display: flex; gap: 10px; }
 .logger-foot .btn { flex: 1; }
+/* F29：picker 底部（回首頁＋結束訓練）並排 */
+.picker-foot { display: flex; gap: 10px; }
+.picker-foot .btn { flex: 1; }
 
 /* ---------- 課表（今日菜單、管理、編輯器） ---------- */
 .menu-head {
