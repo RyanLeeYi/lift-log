@@ -7,7 +7,9 @@
 - 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
 - **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
-## 紀錄「編輯＋刪除」進度（F16、F19 ✅ 完成上線；F17/F18 待做）
+## 紀錄「編輯＋刪除」進度（F16、F17、F19 ✅ 完成上線；F18 待做）
+- **F17 體重 編輯＋刪除 → passing 並部署（sw v10）**：後端 `DELETE /api/body-metrics/{date}` 硬刪/404（`delete_body_metric` service）；/body 折線圖下體重紀錄清單，每列數字輸入編輯（POST 覆蓋、日期不可改）＋單擊即刪。codex-review P2 已修（編輯草稿存 `body.editDraft` 不丟輸入）。acceptance-verifier R1–R7 pass。E2E scratchpad `verify_f17.py`
+
 - **F19 訓練組刪除 UX 改版 → passing 並部署（sw v9）**：Ryan 回饋兩段式確認多餘＋要多選。改為 logger 與日曆**單擊即刪**（拿掉兩段式）；**多選批次刪除只在日曆**（「選取」→勾選→「刪除選取 (N)」，`cal.selectMode`/`selectedIds`）。刪除 404 當成功（防連點）、批次 finally 重載（部分失敗一致性）。acceptance-verifier 12/12 pass。codex-review 2 P2 已修。**F17/F18 的刪除跟這個範式走（單擊即刪、不做多選、無確認）**，不要再做兩段式確認
 
 - **F16 訓練組 編輯＋刪除 → passing 並部署（sw v8）**：後端 `PATCH /api/sets/{id}`（原位、set_number 不變、404/範圍驗證，`SetUpdate` schema + `update_set` service）；logger done-list 與日曆明細每組可**用 stepper +/- 編輯**（`stepper`/`rpePicker` 已抽到 `dom.js` 共用）＋兩段式刪除；離線 queued 組刪除移出佇列、`flushQueue` 同步後回填 server id 到 doneSets。acceptance-verifier R1–R14 全 pass。codex-review 3 條已修（P1 回填 id、P2 刪除更新 setCounts、R9 改用 steppers）。CLAUDE.md sets 規則已改。E2E：scratchpad `verify_f16_logger/calendar/p1.py`
