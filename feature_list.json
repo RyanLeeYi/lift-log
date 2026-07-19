@@ -158,8 +158,8 @@
       "id": "F23",
       "name": "選動作畫面：臨時加動作清單固定高度捲動（約 4 個）",
       "acceptance": "logger 選動作（picker）畫面的臨時加動作清單（一般動作庫挑選清單 .exercise-list.pick-list，非今日菜單 .menu-list）固定高度（約 4 個動作高）＋內部 overflow-y 捲動，使頁面版面不因動作庫長而被往下推、下方『← 回首頁』按鈕位置穩定；今日菜單清單不受此影響。搜尋/部位篩選仍作用於此清單。E2E 驗：picker 一般動作清單可捲動（scrollHeight>clientHeight）、回首頁按鈕在畫面內、今日菜單清單不被套用固定高度。Ryan 2026-07-19 簽核（約 4 個）。",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "E2E verify_f23.py PASS：picker 一般動作清單 .pick-list 固定高度可捲動（scrollHeight>clientHeight）、回首頁鈕在畫面內、部位篩選後清單高度不收縮（clientHeight 維持 248px，按鈕不上移）；pick-list class 只套一般清單故今日菜單 .menu-list 不受影響（CSS 選擇器保證）。codex-review 1 P2 已修（max-height→固定 height，篩選少項時不收縮）。sw v17。純 CSS 捲動 cap（機制同 F20/F21）：以 E2E＋codex-review 為證，未另跑跨模型驗收（提比例）。uv run pytest 152、ruff clean。"
     }
   ]
 }
