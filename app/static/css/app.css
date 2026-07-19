@@ -304,8 +304,8 @@ body {
 }
 .tpl-add-panel { display: flex; flex-direction: column; gap: 10px; }
 .tpl-add-panel .exercise-list { max-height: 40dvh; }
-/* F21：編輯課表動作清單固定高度（約 3 個動作高，超過再捲動）＋內部捲動 */
-.tpl-items.scrollable { max-height: 460px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* F21：編輯課表動作清單固定高度（約 2 個動作高，超過再捲動）＋內部捲動 */
+.tpl-items.scrollable { max-height: 310px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* F21：加動作懸浮視窗 */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 100;
