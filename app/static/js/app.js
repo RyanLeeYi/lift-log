@@ -562,6 +562,7 @@ function renderLogger() {
   const finish = () => {
     stopRestTimer();
     state.pendingRestSeconds = null; // 換動作：未用的凍結休息值不跨動作帶
+    editDraft = null; // 離開 logger 清編輯草稿，否則殘留會讓下個動作的 scrollable 失效（F20/Codex P2）
     state.exercise = null;
     state.screen = "picker";
     render();
@@ -571,6 +572,7 @@ function renderLogger() {
     // 收工只清 client 狀態；佇列裡未同步的組之後仍會補傳進這個 workout（server 是 SSOT）
     stopRestTimer();
     state.pendingRestSeconds = null;
+    editDraft = null;
     clearActiveWorkout();
     state.setCounts = {};
     state.exercise = null;
