@@ -371,7 +371,8 @@ export function renderTemplateEdit(rerender, guard) {
         class: "btn",
         onclick: () =>
           guard(async () => {
-            await loadPickable(tpl.searchQ);
+            tpl.searchQ = ""; // 每次開窗都從完整清單開始（免得上次無結果的搜尋字讓重開變空白）
+            await loadPickable("");
             tpl.selectedAdd = null;
             tpl.adding = true;
             rerender();
