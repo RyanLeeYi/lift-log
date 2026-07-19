@@ -138,6 +138,28 @@ class TestBodyMetricsApi:
         assert client.post("/api/body-metrics", json={"weight_kg": 29.9}).status_code == 400
         assert client.post("/api/body-metrics", json={}).status_code == 400
 
+    def test_delete_removes_the_day_hard(self, client: TestClient) -> None:
+        """F17：DELETE 某日體重＝硬刪，之後 GET 不再有那天。"""
+        client.post("/api/body-metrics", json={"date": "2026-07-10", "weight_kg": 100.0})
+        client.post("/api/body-metrics", json={"date": "2026-07-11", "weight_kg": 99.0})
+        resp = client.delete("/api/body-metrics/2026-07-10")
+        assert resp.status_code == 204
+        dates = [r["date"] for r in client.get("/api/body-metrics").json()]
+        assert dates == ["2026-07-11"]  # 只刪那天，其餘不動
+
+    def test_delete_then_re_add_same_date_ok(self, client: TestClient) -> None:
+        """F17：硬刪後可重記同一天（硬刪不會像軟刪撞 UNIQUE(date)）。"""
+        client.post("/api/body-metrics", json={"date": "2026-07-10", "weight_kg": 100.0})
+        assert client.delete("/api/body-metrics/2026-07-10").status_code == 204
+        again = client.post("/api/body-metrics", json={"date": "2026-07-10", "weight_kg": 88.0})
+        assert again.status_code == 201  # 視為全新一筆
+        assert client.get("/api/body-metrics").json()[0]["weight_kg"] == 88.0
+
+    def test_delete_nonexistent_returns_404(self, client: TestClient) -> None:
+        resp = client.delete("/api/body-metrics/2099-01-01")
+        assert resp.status_code == 404
+        assert resp.json() == {"error": "not found"}
+
     def test_calendar_bodyweight_tonnage_uses_latest_weight(self, client: TestClient) -> None:
         """F8 接線：heatmap 的自體重噸位改用最新體重（F3 只計負重的行為在此升級）。"""
         exercise = client.post(

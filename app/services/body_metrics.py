@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.errors import NotFoundError
 from app.models import BodyMetric
 from app.schemas import BodyMetricIn
 
@@ -46,6 +47,15 @@ def list_body_metrics(
     if end is not None:
         query = query.where(BodyMetric.date <= end)
     return list(session.scalars(query))
+
+
+def delete_body_metric(session: Session, day: date_type) -> None:
+    """F17：硬刪某日體重（一天一筆、date UNIQUE、POST 本就覆蓋，硬刪最乾淨；不存在回 404）。"""
+    row = session.scalar(select(BodyMetric).where(BodyMetric.date == day))
+    if row is None:
+        raise NotFoundError()
+    session.delete(row)
+    session.commit()
 
 
 def latest_weight(session: Session) -> float | None:

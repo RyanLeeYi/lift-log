@@ -27,3 +27,9 @@ def upsert_body_metric(
     row, created = svc.upsert_body_metric(session, data)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return BodyMetricOut.model_validate(row)
+
+
+@router.delete("/body-metrics/{day}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_body_metric(day: date_type, session: DbSession) -> None:
+    """F17：硬刪某日體重（不存在回 404）。"""
+    svc.delete_body_metric(session, day)
