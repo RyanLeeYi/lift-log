@@ -7,8 +7,8 @@
 - 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
 - **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
-## 課表編輯（F21、F22 ✅ 完成上線，sw v15）
-- **F21 清單高度二次調整（2026-07-19）**：Ryan 看實際後把清單高度由「約 1 個」改「約 3 個動作高」（`.tpl-items.scrollable` max-height 460px、threshold `>3`）。屬已驗收 F21 的參數微調，E2E 重驗（3 個不捲、4 個捲），未另跑跨模型驗收。sw v15
+## 課表編輯（F21、F22 ✅ 完成上線，sw v16）
+- **F21 清單高度調整（2026-07-19）**：Ryan 看實際後幾次調整，定案「約 2 個動作高」（`.tpl-items.scrollable` max-height 310px、threshold `>2`）。屬已驗收 F21 的參數微調，E2E 重驗（2 個不捲、3 個捲），未另跑跨模型驗收。sw v16
 
 - **F22 課表加動作視窗：部位篩選**：Ryan 回饋要跟 logger picker 一樣有部位。addModal 加 `.chips` 部位按鈕（groups 取自 tpl.exercises），`tpl.muscleFilter` 篩選、與搜尋並用、開窗重置。codex-review P2 已修（chip 改就地更新不整頁重繪，避免與進行中搜尋 callback 競態——同 F21 選取/搜尋的 in-place 原則）。acceptance-verifier 8/8 pass。E2E `verify_f22.py`
 
