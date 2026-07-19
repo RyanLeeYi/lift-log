@@ -284,13 +284,17 @@ function addModal(rerender, guard) {
         "button",
         {
           class: `chip${tpl.muscleFilter === g ? " on" : ""}`,
-          // 部位切換改變清單內容——整頁重繪（modal 續開）；選取項若被新部位排除就清掉（同搜尋，免得加入看不到的動作）
+          // 就地更新 chip 高亮＋清單，不整頁重繪——否則會與進行中的搜尋 callback（更新舊 list 節點）競態（Codex P2）
           onclick: () => {
             tpl.muscleFilter = tpl.muscleFilter === g ? null : g;
             if (tpl.selectedAdd && !pickable().some((x) => x.id === tpl.selectedAdd.id)) {
               tpl.selectedAdd = null;
+              confirmBtn.disabled = true;
             }
-            rerender();
+            chips
+              .querySelectorAll(".chip")
+              .forEach((c) => c.classList.toggle("on", c.textContent === tpl.muscleFilter));
+            list.replaceChildren(...buttons());
           },
         },
         [g],
