@@ -123,8 +123,8 @@
       "id": "F18",
       "name": "每日狀態 編輯＋刪除",
       "acceptance": "後端新增 DELETE /api/daily-status/{date} 硬刪該日、不存在回 404；日曆某天明細的狀態列可編輯/刪除；刪除為單擊即刪（打 DELETE、硬刪，跟 F19 範式一致、無兩段式確認）；編輯把當日狀態帶回 inline 控制項可改（精力 1–5、睡眠 1–5 可清空、note 文字；前端原無記錄 UI，故新建）、存檔為 POST /api/daily-status（同日覆蓋 upsert）；刪/改後日曆明細即時更新。後端測試涵蓋 DELETE 刪除/404；日曆狀態編輯刪除以 Playwright E2E 驗。Ryan 2026-07-18 簽核（刪除 UX 依 F19 定調由兩段式改單擊即刪）。",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "acceptance-verifier 全條 pass（Playwright + httpx 實測）：DELETE /api/daily-status/{date} 硬刪/404/硬刪後可重記同日 201（3 後端測試）；日曆狀態列有編輯/刪除入口；編輯出現 inline 控制項（精力/睡眠 1–5 量表——睡眠可清空、精力必填不可清；備註輸入）、POST 同日覆蓋（energy=5+note 存入、同 id）；單擊即刪硬刪（無確認態、server 回空）；刪/改後日曆明細即時更新。codex-review 1 P2 已修（refreshMonthAndDay 守衛 selectDay(null) 切月競態、避免 start=null&end=null 的 400，影響 F16/F18/F19）。sw v11。commits 2d1e260/88a067a/682790c。uv run pytest 152、ruff clean。E2E verify_f18.py。"
     },
     {
       "id": "F19",
