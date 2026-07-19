@@ -1,5 +1,10 @@
 # Session Handoff
-> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26（課表列表＋編輯頁）/ F27（未儲存：beforeunload＋返回確認）→ passing**。F27 codex-review 完成、2 P2 已修。sw.js 現 **v25**、APP_VERSION v25。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26 / F27 / F28（刪除課表確認視窗）→ passing**。sw.js 現 **v26**、APP_VERSION v26。⚠ F28 codex-review 背景未回，下場讀 `scratchpad/codex-review-f28.md`。剩 **F11 體重補記過去日期**）
+
+## F28 刪除課表確認視窗 → passing（2026-07-19，本場）
+- **需求**：Ryan 要刪除課表多一層確認（原兩段式紅鍵手機易誤觸連點刪掉）。
+- **實作**：`templates.js` templateRow 刪除鍵改開 `deleteTemplateModal`（`tpl.confirmDeleteId` 記目標；顯示課表名稱＋無法復原提示；刪除/取消；防雙擊 `tpl.busy`；刪除後 `openTemplates` 重載並清旗標）。移除原 confirming 兩段式邏輯。沿用 `.confirm-modal`（F27）。sw.js v25→v26、APP_VERSION v26。
+- **驗證**：`verify_f28.py` 3/3 PASS、F26 回歸 ALL PASS、ruff clean。⚠ codex-review 背景執行、收工未回——下場檢視。
 
 ## F27 課表編輯未儲存離開警告 → passing（2026-07-19，本場）
 - **需求**：Ryan 要在課表編輯有未儲存變更時、重整/離開視窗跳警告。

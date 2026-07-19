@@ -188,6 +188,13 @@
       "acceptance": "在課表編輯畫面有未儲存變更（草稿與進場時不同：名稱、動作、組數、休息任一改動）時，重整頁面／關閉分頁／離開網站前，透過瀏覽器原生 beforeunload 跳出確認警告，避免手滑丟失未儲存編輯。無變更、或已離開編輯畫面（含儲存後返回列表）時不攔截；其他畫面（記錄每組即時寫入、體重/狀態表單 POST 即存）無未儲存資料，不受影響。註：行動瀏覽器（尤其 iOS Safari）對 beforeunload 原生提示支援有限，可能不顯示。另：app 內點「← 課表列表」返回時，若有未儲存變更先跳自訂確認視窗（沿用 app 慣例，不用瀏覽器 confirm），可選「捨棄並離開」或「繼續編輯」。來源：2026-07-19 Ryan 要求離開/重整未儲存時跳警告。",
       "status": "passing",
       "evidence": "2026-07-19 完成。①beforeunload（window 級，重整/關閉）：hasUnsavedTemplate() 比對草稿快照 vs 進場基準，未儲存時 preventDefault。②app 內返回確認：點「← 課表列表」若未儲存 → 自訂 .confirm-modal（捨棄並離開／繼續編輯），非瀏覽器 confirm。codex-review 完成、2 P2 已修：P2①休息欄位加 oninput 即時寫草稿（Chrome 先 beforeunload 後 change，否則打字未失焦重整會漏警告）；P2②controllerchange 設 refreshing 後加 setTimeout 復原，避免 beforeunload 取消重載後 latch 卡住讓 F14 自動更新永久失效。sw.js v25、APP_VERSION v25。E2E：verify_f27.py（beforeunload＋休息打字回歸）、verify_f27b.py（返回確認 4/4）皆 ALL PASS；F25/F26 回歸 ALL PASS、pytest 161、ruff clean。註：行動瀏覽器（尤其 iOS Safari）beforeunload 支援有限；app 內返回確認不受此限、各平台皆有效。"
+    },
+    {
+      "id": "F28",
+      "name": "刪除課表確認視窗",
+      "acceptance": "課表列表點某課表的「刪除」→ 跳自訂確認視窗（顯示該課表名稱、提示無法復原、刪除／取消兩鈕），取代原本易誤觸的兩段式紅鍵。取消→關視窗、課表保留；刪除→呼叫 DELETE、重載列表、該課表消失。沿用 app 深色 modal 慣例、不用瀏覽器 confirm。防雙擊（tpl.busy）。來源：2026-07-19 Ryan 要求刪除課表多一層確認。",
+      "status": "passing",
+      "evidence": "2026-07-19 完成。templates.js：templateRow 的刪除鍵改為開確認視窗（tpl.confirmDeleteId 記目標）；deleteTemplateModal 顯示課表名稱＋無法復原提示，刪除/取消兩鈕，防雙擊 tpl.busy，刪除後 openTemplates 重載並清旗標。移除原兩段式紅鍵邏輯。sw.js v25→v26、APP_VERSION v26。E2E verify_f28.py 3/3 PASS（確認視窗含名稱且課表未消失、取消保留、刪除移除且後端消失）；F26 回歸 ALL PASS、ruff clean。⚠ codex-review 背景執行中、收工未回——下場讀 scratchpad/codex-review-f28.md。"
     }
   ]
 }

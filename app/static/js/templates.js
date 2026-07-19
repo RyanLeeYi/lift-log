@@ -74,23 +74,6 @@ export function hasUnsavedTemplate() {
 // ---------- 列表畫面 ----------
 
 function templateRow(template, rerender, guard, openEditor) {
-  const confirming = tpl.confirmDeleteId === template.id;
-  const remove = async () => {
-    if (!confirming) {
-      tpl.confirmDeleteId = template.id;
-      rerender();
-      return;
-    }
-    if (tpl.busy) return; // 防雙擊：第一發刪除完成前不再送
-    tpl.busy = true;
-    try {
-      await api.deleteTemplate(template.id);
-      await openTemplates();
-    } finally {
-      tpl.busy = false;
-    }
-    rerender();
-  };
   const totalSets = template.exercises.reduce((sum, e) => sum + (e.default_sets || 0), 0);
   return el("div", { class: "tpl-row" }, [
     el("div", { class: "tpl-head" }, [
@@ -111,13 +94,46 @@ function templateRow(template, rerender, guard, openEditor) {
     ),
     el("div", { class: "tpl-actions" }, [
       el("button", { class: "btn chip", onclick: () => openEditor(template) }, ["編輯"]),
+      // F28：點刪除跳確認視窗（顯示課表名稱），取代原本易誤觸的兩段式紅鍵
       el(
         "button",
-        { class: `btn chip${confirming ? " btn-danger" : ""}`, onclick: () => guard(remove) },
-        [confirming ? "確認刪除" : "刪除"],
+        { class: "btn chip", onclick: () => { tpl.confirmDeleteId = template.id; rerender(); } },
+        ["刪除"],
       ),
     ]),
   ]);
+}
+
+// F28：刪除課表的確認視窗（自訂 modal、顯示課表名稱，不用瀏覽器 confirm）
+function deleteTemplateModal(rerender, guard) {
+  const template = tpl.list.find((t) => t.id === tpl.confirmDeleteId);
+  const close = () => { tpl.confirmDeleteId = null; rerender(); };
+  if (!template) { tpl.confirmDeleteId = null; return el("div", { style: "display:none" }); }
+  const doDelete = async () => {
+    if (tpl.busy) return; // 防雙擊
+    tpl.busy = true;
+    try {
+      await api.deleteTemplate(template.id);
+      await openTemplates(); // 重載列表（同時清 confirmDeleteId）
+    } finally {
+      tpl.busy = false;
+    }
+    rerender();
+  };
+  return el(
+    "div",
+    { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) close(); } },
+    [
+      el("div", { class: "modal confirm-modal" }, [
+        el("div", { class: "modal-head" }, ["刪除課表"]),
+        el("p", { class: "confirm-text" }, [`確定刪除「${template.name}」？刪除後無法復原。`]),
+        el("div", { class: "modal-actions" }, [
+          el("button", { class: "btn btn-danger", onclick: () => guard(doDelete) }, ["刪除"]),
+          el("button", { class: "btn btn-ghost", onclick: close }, ["取消"]),
+        ]),
+      ]),
+    ],
+  );
 }
 
 export function renderTemplates(rerender, goHome, guard) {
@@ -134,6 +150,8 @@ export function renderTemplates(rerender, goHome, guard) {
       : tpl.list.map((t) => templateRow(t, rerender, guard, openEditor))),
     el("button", { class: "btn btn-primary", onclick: () => openEditor(null) }, ["＋ 新課表"]),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
+    // F28：刪除確認視窗
+    ...(tpl.confirmDeleteId != null ? [deleteTemplateModal(rerender, guard)] : []),
   ]);
 }
 
