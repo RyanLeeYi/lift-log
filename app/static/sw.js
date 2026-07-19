@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v13"; // F21：課表加動作懸浮視窗＋動作清單捲動
+const CACHE_NAME = "liftlog-shell-v14"; // F22：課表加動作視窗部位篩選
 const SHELL = [
   "/",
   "/css/app.css",

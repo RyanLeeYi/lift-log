@@ -17,6 +17,7 @@ const tpl = {
   confirmDeleteId: null, // 兩段刪除：第一下記 id、第二下才真刪
   adding: false, // 編輯器內是否開啟「加動作」懸浮視窗
   selectedAdd: null, // F21：懸浮視窗內單選中的動作物件（null＝未選）
+  muscleFilter: null, // F22：加動作視窗的部位篩選（null＝全部）
   itemsScrollTop: 0, // F21：編輯課表動作清單的捲動位置（整頁重繪後還原，避免每次編輯跳回頂端）
   exercises: [], // 加動作面板的動作庫清單
   searchQ: "",
@@ -39,6 +40,7 @@ function startEditor(template) {
     : { id: null, name: "", items: [] };
   tpl.adding = false;
   tpl.selectedAdd = null;
+  tpl.muscleFilter = null;
   tpl.itemsScrollTop = 0;
   tpl.searchQ = "";
 }
@@ -207,10 +209,14 @@ function itemRow(item, index, rerender) {
 }
 
 function addModal(rerender, guard) {
-  // 已在課表裡的動作不再列出——一個動作只出現一次（進度以 exercise_id 計數）
+  // 已在課表裡的動作不再列出——一個動作只出現一次（進度以 exercise_id 計數）；F22 再依部位篩選
   const pickable = () => {
     const added = new Set(tpl.editing.items.map((it) => it.exercise_id));
-    return tpl.exercises.filter((e) => !added.has(e.id));
+    return tpl.exercises.filter(
+      (e) =>
+        !added.has(e.id) &&
+        (tpl.muscleFilter === null || e.muscle_group === tpl.muscleFilter),
+    );
   };
   const close = () => { tpl.adding = false; tpl.selectedAdd = null; rerender(); };
   const confirmAdd = () => {
@@ -268,6 +274,29 @@ function addModal(rerender, guard) {
       ),
     );
   const list = el("div", { class: "exercise-list scrollable" }, buttons());
+  // F22：部位篩選 chips（同 logger picker）——部位取自目前搜尋結果的動作庫
+  const groups = [...new Set(tpl.exercises.map((e) => e.muscle_group))];
+  const chips = el(
+    "div",
+    { class: "chips" },
+    groups.map((g) =>
+      el(
+        "button",
+        {
+          class: `chip${tpl.muscleFilter === g ? " on" : ""}`,
+          // 部位切換改變清單內容——整頁重繪（modal 續開）；選取項若被新部位排除就清掉（同搜尋，免得加入看不到的動作）
+          onclick: () => {
+            tpl.muscleFilter = tpl.muscleFilter === g ? null : g;
+            if (tpl.selectedAdd && !pickable().some((x) => x.id === tpl.selectedAdd.id)) {
+              tpl.selectedAdd = null;
+            }
+            rerender();
+          },
+        },
+        [g],
+      ),
+    ),
+  );
   return el(
     "div",
     // 點遮罩空白處＝取消（不加入）
@@ -294,6 +323,7 @@ function addModal(rerender, guard) {
             });
           },
         }),
+        chips,
         list,
         el("div", { class: "modal-actions" }, [
           confirmBtn,
@@ -372,6 +402,7 @@ export function renderTemplateEdit(rerender, guard) {
         onclick: () =>
           guard(async () => {
             tpl.searchQ = ""; // 每次開窗都從完整清單開始（免得上次無結果的搜尋字讓重開變空白）
+            tpl.muscleFilter = null;
             await loadPickable("");
             tpl.selectedAdd = null;
             tpl.adding = true;
