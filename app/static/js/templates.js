@@ -76,8 +76,12 @@ export function hasUnsavedTemplate() {
 const DRAFT_KEY = "liftlog.templateDraft";
 
 export function saveTemplateDraft() {
-  // 只在編輯畫面且真的有未儲存變更時寫入（乾淨的編輯/非編輯畫面不留垃圾草稿）
-  if (!hasUnsavedTemplate()) return;
+  if (state.screen !== "templateEdit" || tpl.editing == null) return; // 非編輯畫面不動草稿
+  if (!hasUnsavedTemplate()) {
+    // 改動又改回基準＝沒有要恢復的內容，清掉先前存的草稿，否則重整會復活已撤銷的改動（Codex P2）
+    clearTemplateDraft();
+    return;
+  }
   try {
     localStorage.setItem(
       DRAFT_KEY,
@@ -107,7 +111,23 @@ export function restoreTemplateDraft() {
   if (!raw) return false;
   try {
     const { editing, savedSnapshot } = JSON.parse(raw);
-    if (!editing || !Array.isArray(editing.items)) throw new Error("bad draft");
+    // 嚴格驗證：欄位型別要能安全撐過 templateSnapshot/itemRow 首次 render，否則寧可丟棄也不要卡住啟動（Codex P2）
+    const okItem = (it) =>
+      it != null &&
+      typeof it === "object" &&
+      typeof it.exercise_id === "number" &&
+      typeof it.default_sets === "number" &&
+      typeof it.name_zh === "string" &&
+      typeof it.name_en === "string" &&
+      typeof it.muscle_group === "string";
+    if (
+      !editing ||
+      typeof editing.name !== "string" ||
+      !Array.isArray(editing.items) ||
+      !editing.items.every(okItem)
+    ) {
+      throw new Error("bad draft");
+    }
     tpl.editing = editing;
     tpl.savedSnapshot = savedSnapshot ?? templateSnapshot({ name: "", items: [] });
     tpl.adding = false;
