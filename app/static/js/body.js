@@ -12,6 +12,7 @@ const body = {
   savedFlash: null, // 剛存成功的訊息（一次性）
   saving: false, // 防雙擊：送出中不再受理（教訓同 logSet／課表儲存）
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
+  editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
 };
 
 function todayIso() {
@@ -140,13 +141,13 @@ export function renderBody(rerender, goHome, guard) {
   };
 
   const saveEditMetric = async (m) => {
-    const w = Number(document.querySelector(".bm-edit-weight").value);
+    const w = Number(body.editDraft.weight);
     if (!Number.isFinite(w) || w < 30 || w > 300) {
       state.error = "體重要在 30–300 kg 之間";
-      rerender();
+      rerender(); // 草稿在 body.editDraft，重繪不丟使用者輸入
       return;
     }
-    const fatRaw = document.querySelector(".bm-edit-fat").value.trim();
+    const fatRaw = body.editDraft.fat.trim();
     const payload = { date: m.date, weight_kg: w }; // date 固定＝同日覆蓋（不可改日期）
     if (fatRaw !== "") {
       const fat = Number(fatRaw);
@@ -166,15 +167,19 @@ export function renderBody(rerender, goHome, guard) {
 
   const metricRow = (m) => {
     if (body.editDate === m.date) {
+      // 輸入值以 body.editDraft 為準（oninput 靜默更新草稿，不 rerender 以免失焦）；
+      // 驗證/網路失敗重繪時草稿仍在，使用者只需改錯的欄位（Codex P2）
       return el("div", { class: "bm-row editing" }, [
         el("span", { class: "bm-date" }, [m.date]),
         el("input", {
-          type: "number", class: "bm-edit-weight", step: "0.1",
-          inputmode: "decimal", value: String(m.weight_kg), placeholder: "kg",
+          type: "number", class: "bm-edit-weight", step: "0.1", inputmode: "decimal",
+          placeholder: "kg", value: body.editDraft.weight,
+          oninput: (e) => { body.editDraft.weight = e.target.value; },
         }),
         el("input", {
           type: "number", class: "bm-edit-fat", step: "0.1", inputmode: "decimal",
-          value: m.body_fat_pct != null ? String(m.body_fat_pct) : "", placeholder: "體脂%",
+          placeholder: "體脂%", value: body.editDraft.fat,
+          oninput: (e) => { body.editDraft.fat = e.target.value; },
         }),
         el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditMetric(m)) }, ["儲存"]),
         el("button", { class: "btn btn-ghost sm", onclick: () => { body.editDate = null; state.error = null; rerender(); } }, ["取消"]),
@@ -187,7 +192,15 @@ export function renderBody(rerender, goHome, guard) {
       ]),
       el("button", {
         class: "btn icon-btn bm-edit",
-        onclick: () => { body.editDate = m.date; state.error = null; rerender(); },
+        onclick: () => {
+          body.editDate = m.date;
+          body.editDraft = {
+            weight: String(m.weight_kg),
+            fat: m.body_fat_pct != null ? String(m.body_fat_pct) : "",
+          };
+          state.error = null;
+          rerender();
+        },
       }, ["✎"]),
       el("button", {
         // F17：單擊即刪（硬刪），跟 F19 範式一致、無兩段式確認
