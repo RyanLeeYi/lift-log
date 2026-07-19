@@ -139,6 +139,13 @@
       "acceptance": "logger（開練）頁的「已完成的組」清單一律新→舊排序（最新一組在最上面、最舊在最下）；當組數 > 2 時該清單區塊改固定高度（約 2 列）＋內部 overflow-y 上下捲動，使下方 steppers 與主按鈕不因組數增加被往下推走；編輯某列時該清單不受高度限制（展開的 steppers 編輯表單完整可見）；組數 ≤ 2 時照常完整顯示、不捲動。E2E 驗：記 3 組後最新組（#3）在清單最上、done-list 內部可捲動（scrollHeight > clientHeight）、編輯時清單不再受高度限制。Ryan 2026-07-19 簽核。",
       "status": "passing",
       "evidence": "acceptance-verifier 7/7 全 pass（Playwright 實測）：done-list 新→舊排序（#3 在最上、#1 在最下）；組數>2 加 scrollable class 且 scrollHeight>clientHeight（max-height 88px overflow-y auto）、主按鈕仍在畫面；≤2 組不捲動；編輯某列時解除 scrollable（編輯表單完整可見）；跨動作草稿清除（換動作後 scrollable 恢復）。codex-review 1 P2 已修（finish/endWorkout 清 editDraft，避免殘留使 scrollable 永久失效）。sw v12。commit 1fdcf0d + P2 fix。uv run pytest 152、ruff clean。E2E verify_f20.py。"
+    },
+    {
+      "id": "F21",
+      "name": "課表編輯：動作清單捲動＋加動作懸浮視窗（單選確定加入）",
+      "acceptance": "編輯課表畫面的動作清單（.tpl-items）固定高度（約 1 個動作高）＋內部 overflow-y 捲動，使「儲存課表／加動作」等按鈕不因動作數增加被推走；「＋ 加動作」改為開啟懸浮視窗（CSS overlay modal，非瀏覽器原生彈窗）：內含搜尋輸入、可捲動的動作清單、「確定加入」與「取消」；視窗內單選——點一個動作標為選中（再點別的換選中），按「確定加入」才把選中的動作加進課表並關閉視窗，未選中時「確定加入」停用；「取消」或關閉視窗不加入任何動作；已在課表裡的動作不列出（維持一動作一次）；搜尋即時過濾清單不打斷輸入。E2E 驗：開視窗→搜尋→選一個→確定加入→動作進課表且視窗關閉、未選時確定加入無效、取消不加入、清單可捲動。Ryan 2026-07-19 簽核（清單約 1 個高、單選確定加入）。",
+      "status": "failing",
+      "evidence": null
     }
   ]
 }

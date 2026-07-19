@@ -15,7 +15,8 @@ const tpl = {
   list: [], // GET /api/templates 結果
   editing: null, // {id|null, name, items: [{exercise_id, name_zh, name_en, muscle_group, is_bodyweight, default_sets}]}
   confirmDeleteId: null, // 兩段刪除：第一下記 id、第二下才真刪
-  adding: false, // 編輯器內是否展開「加動作」面板
+  adding: false, // 編輯器內是否開啟「加動作」懸浮視窗
+  selectedAdd: null, // F21：懸浮視窗內單選中的動作物件（null＝未選）
   exercises: [], // 加動作面板的動作庫清單
   searchQ: "",
   searchSeq: 0, // 搜尋回應排序：舊回應晚到不得覆蓋新結果
@@ -36,6 +37,7 @@ function startEditor(template) {
       }
     : { id: null, name: "", items: [] };
   tpl.adding = false;
+  tpl.selectedAdd = null;
   tpl.searchQ = "";
 }
 
@@ -202,7 +204,7 @@ function itemRow(item, index, rerender) {
   return row;
 }
 
-function addPanel(rerender, guard) {
+function addModal(rerender, guard) {
   // 已在課表裡的動作不再列出——一個動作只出現一次（進度以 exercise_id 計數）
   const pickable = () => {
     const added = new Set(tpl.editing.items.map((it) => it.exercise_id));
@@ -213,26 +215,9 @@ function addPanel(rerender, guard) {
       el(
         "button",
         {
-          class: "btn exercise-item",
-          onclick: () => {
-            tpl.editing = {
-              ...tpl.editing,
-              items: [
-                ...tpl.editing.items,
-                {
-                  exercise_id: exercise.id,
-                  name_zh: exercise.name_zh,
-                  name_en: exercise.name_en,
-                  muscle_group: exercise.muscle_group,
-                  is_bodyweight: exercise.is_bodyweight,
-                  default_sets: 3,
-                  rest_hint_seconds: null,
-                },
-              ],
-            };
-            tpl.adding = false;
-            rerender();
-          },
+          // F21：點動作只「選中」（單選，再點別的換選中），按「確定加入」才真的加進課表
+          class: `btn exercise-item${tpl.selectedAdd?.id === exercise.id ? " selected" : ""}`,
+          onclick: () => { tpl.selectedAdd = exercise; rerender(); },
         },
         [
           el("span", {}, [exerciseName(exercise)]),
@@ -240,23 +225,66 @@ function addPanel(rerender, guard) {
         ],
       ),
     );
-  const list = el("div", { class: "exercise-list" }, buttons());
-  return el("div", { class: "tpl-add-panel" }, [
-    el("input", {
-      type: "search",
-      placeholder: "搜尋動作（中英皆可）",
-      value: tpl.searchQ,
-      // 只更新清單、不整頁重繪——重繪會清空輸入框並讓鍵盤失焦
-      oninput: (e) => {
-        tpl.searchQ = e.target.value;
-        guard(async () => {
-          const fresh = await loadPickable(tpl.searchQ);
-          if (fresh) list.replaceChildren(...buttons());
-        });
-      },
-    }),
-    list,
-  ]);
+  const list = el("div", { class: "exercise-list scrollable" }, buttons());
+  const close = () => { tpl.adding = false; tpl.selectedAdd = null; rerender(); };
+  const confirmAdd = () => {
+    const ex = tpl.selectedAdd;
+    if (!ex) return;
+    tpl.editing = {
+      ...tpl.editing,
+      items: [
+        ...tpl.editing.items,
+        {
+          exercise_id: ex.id,
+          name_zh: ex.name_zh,
+          name_en: ex.name_en,
+          muscle_group: ex.muscle_group,
+          is_bodyweight: ex.is_bodyweight,
+          default_sets: 3,
+          rest_hint_seconds: null,
+        },
+      ],
+    };
+    tpl.adding = false;
+    tpl.selectedAdd = null;
+    rerender();
+  };
+  return el(
+    "div",
+    // 點遮罩空白處＝取消（不加入）
+    { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) close(); } },
+    [
+      el("div", { class: "modal tpl-add-modal" }, [
+        el("div", { class: "modal-head" }, ["加動作"]),
+        el("input", {
+          type: "search",
+          placeholder: "搜尋動作（中英皆可）",
+          value: tpl.searchQ,
+          // 只更新清單、不整頁重繪——重繪會清空輸入框並讓鍵盤失焦
+          oninput: (e) => {
+            tpl.searchQ = e.target.value;
+            guard(async () => {
+              const fresh = await loadPickable(tpl.searchQ);
+              if (fresh) list.replaceChildren(...buttons());
+            });
+          },
+        }),
+        list,
+        el("div", { class: "modal-actions" }, [
+          el(
+            "button",
+            {
+              class: "btn btn-primary modal-confirm",
+              ...(tpl.selectedAdd == null ? { disabled: "" } : {}),
+              onclick: () => guard(confirmAdd),
+            },
+            ["確定加入"],
+          ),
+          el("button", { class: "btn btn-ghost modal-cancel", onclick: close }, ["取消"]),
+        ]),
+      ]),
+    ],
+  );
 }
 
 export function renderTemplateEdit(rerender, guard) {
@@ -304,25 +332,29 @@ export function renderTemplateEdit(rerender, guard) {
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     nameInput,
-    el("div", { class: "tpl-items" }, editing.items.map((item, i) => itemRow(item, i, rerender))),
-    ...(tpl.adding
-      ? [addPanel(rerender, guard)]
-      : [
-          el(
-            "button",
-            {
-              class: "btn",
-              onclick: () =>
-                guard(async () => {
-                  await loadPickable(tpl.searchQ);
-                  tpl.adding = true;
-                  rerender();
-                }),
-            },
-            ["＋ 加動作"],
-          ),
-        ]),
+    // F21：動作清單固定高度（約 1 個動作高）＋內部捲動，儲存/加動作按鈕不被推走
+    el(
+      "div",
+      { class: `tpl-items${editing.items.length > 1 ? " scrollable" : ""}` },
+      editing.items.map((item, i) => itemRow(item, i, rerender)),
+    ),
+    el(
+      "button",
+      {
+        class: "btn",
+        onclick: () =>
+          guard(async () => {
+            await loadPickable(tpl.searchQ);
+            tpl.selectedAdd = null;
+            tpl.adding = true;
+            rerender();
+          }),
+      },
+      ["＋ 加動作"],
+    ),
     el("button", { class: "btn btn-primary", onclick: () => guard(save) }, ["儲存課表"]),
     el("button", { class: "btn btn-ghost", onclick: () => guard(backToList) }, ["← 課表列表"]),
+    // F21：加動作懸浮視窗（overlay，蓋在整個編輯畫面上）
+    ...(tpl.adding ? [addModal(rerender, guard)] : []),
   ]);
 }
