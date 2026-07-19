@@ -93,6 +93,28 @@ class TestDailyStatusApi:
         )
         assert client.post("/api/daily-status", json={}).status_code == 400
 
+    def test_delete_removes_the_day_hard(self, client: TestClient) -> None:
+        """F18：DELETE 某日狀態＝硬刪，之後 GET 不再有那天。"""
+        client.post("/api/daily-status", json={"date": "2026-07-10", "energy": 3})
+        client.post("/api/daily-status", json={"date": "2026-07-11", "energy": 4})
+        resp = client.delete("/api/daily-status/2026-07-10")
+        assert resp.status_code == 204
+        dates = [r["date"] for r in client.get("/api/daily-status").json()]
+        assert dates == ["2026-07-11"]  # 只刪那天
+
+    def test_delete_then_re_add_same_date_ok(self, client: TestClient) -> None:
+        """F18：硬刪後可重記同一天（硬刪不會像軟刪撞 UNIQUE(date)）。"""
+        client.post("/api/daily-status", json={"date": "2026-07-10", "energy": 3})
+        assert client.delete("/api/daily-status/2026-07-10").status_code == 204
+        again = client.post("/api/daily-status", json={"date": "2026-07-10", "energy": 5})
+        assert again.status_code == 201
+        assert client.get("/api/daily-status").json()[0]["energy"] == 5
+
+    def test_delete_nonexistent_returns_404(self, client: TestClient) -> None:
+        resp = client.delete("/api/daily-status/2099-01-01")
+        assert resp.status_code == 404
+        assert resp.json() == {"error": "not found"}
+
 
 # ---------- MCP ----------
 

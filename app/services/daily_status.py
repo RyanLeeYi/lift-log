@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.errors import NotFoundError
 from app.models import DailyStatus
 from app.schemas import DailyStatusIn
 
@@ -50,3 +51,12 @@ def list_daily_status(
     if end is not None:
         query = query.where(DailyStatus.date <= end)
     return list(session.scalars(query))
+
+
+def delete_daily_status(session: Session, day: date_type) -> None:
+    """F18：硬刪某日狀態（一天一筆、date UNIQUE、POST 本就覆蓋，硬刪最乾淨；不存在回 404）。"""
+    row = session.scalar(select(DailyStatus).where(DailyStatus.date == day))
+    if row is None:
+        raise NotFoundError()
+    session.delete(row)
+    session.commit()

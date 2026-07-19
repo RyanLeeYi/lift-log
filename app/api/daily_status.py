@@ -27,3 +27,9 @@ def upsert_daily_status(
     row, created = svc.upsert_daily_status(session, data)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return DailyStatusOut.model_validate(row)
+
+
+@router.delete("/daily-status/{day}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_daily_status(day: date_type, session: DbSession) -> None:
+    """F18：硬刪某日狀態（不存在回 404）。"""
+    svc.delete_daily_status(session, day)
