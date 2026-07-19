@@ -7,6 +7,9 @@
 - 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
 - **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
+## 開練頁版面（F20 ✅ 完成上線，sw v12）
+- **F20 done-list 新→舊排序＋固定高度可捲動**：Ryan 回饋記多組時版面被推走。done-list 改最新在最上（`[...doneSets].reverse()`）；組數 > 2 時加 `.scrollable`（max-height 88px overflow-y auto），下方 steppers/主按鈕位置穩住；編輯某列時解除限高（`!editDraft` 條件）。codex-review P2 已修（finish/endWorkout 清 editDraft）。acceptance-verifier 7/7 pass。E2E `verify_f20.py`。**注意：F16/F19 的舊 logger/calendar E2E 已因 F19 單擊刪除＋F20 反轉順序過時並刪除，現行 logger E2E 是 `verify_f19_logger.py` + `verify_f20.py`**
+
 ## 紀錄「編輯＋刪除」✅ 全部完成上線（F16 訓練組、F17 體重、F18 每日狀態、F19 刪除 UX）
 - **F18 每日狀態 編輯＋刪除 → passing 並部署（sw v11）**：後端 `DELETE /api/daily-status/{date}` 硬刪/404；日曆狀態列可編輯（精力/睡眠 1–5 量表 + 備註 inline 控制項、POST 覆蓋）＋單擊即刪。codex-review P2 已修（`refreshMonthAndDay` 守衛切月競態 selectDay(null) → 400；此修正惠及 F16/F18/F19 所有日曆變更）。acceptance-verifier 全 pass。E2E scratchpad `verify_f18.py`
 - **剩餘 feature：F10 自訂動作、F11 體重補記過去日期**（Ryan 早前真機回饋，與本刪除/編輯串無關）。注意：F11 的 /body 表單目前只記今天；F17 已為過去日期做了編輯清單，F11 是讓表單能「新增」過去日期
