@@ -71,6 +71,60 @@ export function hasUnsavedTemplate() {
   );
 }
 
+// F30 自動存草稿＋還原：編輯課表未存的內容存 localStorage（比 sessionStorage 多撐「關閉分頁/被 OS 殺掉再開」），
+// 開 app 時還原回編輯畫面；存檔成功或離開編輯即清。只有「被中斷」才會留著草稿。
+const DRAFT_KEY = "liftlog.templateDraft";
+
+export function saveTemplateDraft() {
+  // 只在編輯畫面且真的有未儲存變更時寫入（乾淨的編輯/非編輯畫面不留垃圾草稿）
+  if (!hasUnsavedTemplate()) return;
+  try {
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({ editing: tpl.editing, savedSnapshot: tpl.savedSnapshot }),
+    );
+  } catch {
+    /* localStorage 滿/停用：略過，草稿存不了不影響正常編輯 */
+  }
+}
+
+function clearTemplateDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* 略過 */
+  }
+}
+
+// 開 app 時呼叫：有草稿就還原進編輯畫面並回 true；否則 false。壞資料一律清掉不擋啟動。
+export function restoreTemplateDraft() {
+  let raw;
+  try {
+    raw = localStorage.getItem(DRAFT_KEY);
+  } catch {
+    return false;
+  }
+  if (!raw) return false;
+  try {
+    const { editing, savedSnapshot } = JSON.parse(raw);
+    if (!editing || !Array.isArray(editing.items)) throw new Error("bad draft");
+    tpl.editing = editing;
+    tpl.savedSnapshot = savedSnapshot ?? templateSnapshot({ name: "", items: [] });
+    tpl.adding = false;
+    tpl.addingCustom = false;
+    tpl.confirmLeave = false;
+    tpl.selectedAdd = null;
+    tpl.muscleFilter = null;
+    tpl.itemsScrollTop = 0;
+    tpl.searchQ = "";
+    state.screen = "templateEdit";
+    return true;
+  } catch {
+    clearTemplateDraft();
+    return false;
+  }
+}
+
 // ---------- 列表畫面 ----------
 
 function templateRow(template, rerender, guard, openEditor) {
@@ -457,6 +511,7 @@ export function renderTemplateEdit(rerender, guard) {
   });
 
   const backToList = async () => {
+    clearTemplateDraft(); // 離開編輯＝草稿階段結束（存檔成功也走這裡）
     await openTemplates();
     state.screen = "templates";
     rerender();
@@ -498,6 +553,8 @@ export function renderTemplateEdit(rerender, guard) {
   if (scrollable) {
     requestAnimationFrame(() => { itemsNode.scrollTop = tpl.itemsScrollTop; });
   }
+
+  saveTemplateDraft(); // F30：每次重繪（結構性變更後）自動存草稿；即時輸入的名稱/休息由 app.js 的 visibility/beforeunload 補存
 
   return el("section", { class: "screen template-edit" }, [
     el("header", { class: "topbar" }, [

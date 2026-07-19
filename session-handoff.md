@@ -1,5 +1,11 @@
 # Session Handoff
-> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26 / F27 / F28 / F29（今日菜單結束訓練鈕）→ passing**。sw.js 現 **v27**、APP_VERSION v27，各自 codex-review 完成。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26 / F27 / F28 / F29 / F30（課表草稿自動存＋還原）→ passing**。sw.js 現 **v28**、APP_VERSION v28。⚠ F30 codex-review 背景未回，下場讀 `scratchpad/codex-review-f30.md`。剩 **F11 體重補記過去日期**）
+
+## F30 課表編輯草稿自動存與還原 → passing（2026-07-19，本場）
+- **需求**：Ryan 選「自動存草稿＋還原」方向（比 F27 手機上不可靠的 beforeunload 更穩）。
+- **實作**：`templates.js` `saveTemplateDraft/restoreTemplateDraft/clearTemplateDraft`（**localStorage** key `liftlog.templateDraft`，存 `{editing, savedSnapshot}`——比 workout 的 sessionStorage 多撐關閉分頁/OS 殺再開）。renderTemplateEdit 每次重繪存草稿；backToList 清草稿（存檔成功也走 backToList）。`app.js`：啟動 `restoreActiveWorkout` 後呼叫 `restoreTemplateDraft`（有草稿→靜默還原進編輯畫面，優先於 workout 的 home）；`visibilitychange(hidden)`＋`beforeunload` 補存即時輸入的名稱/休息。只在 `hasUnsavedTemplate` 才存、壞資料清掉不擋啟動。sw.js v27→v28、APP_VERSION v28。
+- **與 F27 並存**：F27＝桌機 beforeunload 攔截＋app 內返回確認；F30＝手機還原（各平台皆有效）。
+- **驗證**：`verify_f30.py` 4/4 PASS（改動→reload→還原；存檔/捨棄/乾淨→reload→不還原）；F27/F27b/F28/F26 回歸 PASS、pytest 161、ruff clean。⚠ codex-review 背景執行、收工未回——下場檢視。
 
 ## F29 選動作/今日菜單「結束訓練」鈕 → passing（2026-07-19，本場）
 - **需求**：Ryan 要能直接從今日菜單結束訓練（原本得先挑動作進 logger 才有「收工」）。

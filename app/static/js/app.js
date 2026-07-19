@@ -19,6 +19,8 @@ import {
   openTemplates,
   renderTemplateEdit,
   renderTemplates,
+  restoreTemplateDraft,
+  saveTemplateDraft,
 } from "./templates.js";
 import {
   APP_VERSION,
@@ -860,20 +862,24 @@ if ("serviceWorker" in navigator) {
 // 課表編輯有未儲存變更時，重整/關閉分頁/離開前跳瀏覽器原生警告，避免手滑丟失編輯。
 // 只在編輯畫面且草稿與進場基準不同才攔截——其他畫面（記錄每組即時寫入、表單 POST 即存）無未存資料。
 window.addEventListener("beforeunload", (e) => {
+  saveTemplateDraft(); // F30：卸載前先存草稿（手機上 beforeunload 提示常不顯示，但這行仍會執行）
   if (hasUnsavedTemplate()) {
     e.preventDefault();
     e.returnValue = ""; // Chrome 需設 returnValue 才觸發原生確認框
   }
 });
 window.addEventListener("online", () => guard(syncQueue)); // 恢復連線：自動補傳佇列
-// 切走再回來時系統會自動釋放 wake lock——回到可見就重新申請
-document.addEventListener("visibilitychange", () => syncWakeLock());
+document.addEventListener("visibilitychange", () => {
+  syncWakeLock();
+  if (document.hidden) saveTemplateDraft(); // F30：切背景/OS 準備殺分頁前存草稿（手機最可靠的存檔時機）
+});
 
 restoreActiveWorkout();
 if (!getToken()) {
   state.screen = "setup";
   render();
 } else {
+  restoreTemplateDraft(); // F30：有未存的課表草稿就還原進編輯畫面（比 beforeunload 提示可靠）
   render();
   guard(loadExercises); // 預載動作庫，token 失效會導回 setup
   guard(syncQueue); // 開站補傳上次離線留下的佇列
