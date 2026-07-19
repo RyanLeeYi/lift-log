@@ -46,6 +46,7 @@ function startEditor(template) {
   tpl.muscleFilter = null;
   tpl.itemsScrollTop = 0;
   tpl.searchQ = "";
+  tpl.confirmLeave = false;
   tpl.savedSnapshot = templateSnapshot(tpl.editing); // 進編輯當下的基準，用來判斷未儲存變更
 }
 
@@ -232,7 +233,20 @@ function itemRow(item, index, rerender) {
         max: String(REST_HINT_MAX),
         placeholder: "自訂",
         value: item.rest_hint_seconds ?? "",
-        // onchange（blur/enter 才觸發）：oninput 會整頁重繪打斷輸入
+        // oninput：即時把值寫進草稿（不重繪、不 clamp），讓「未儲存判斷」涵蓋尚未失焦的輸入——
+        // 否則 Chrome 先觸發 beforeunload 才 change，打了值直接重整會漏警告、值遺失（Codex P2）
+        oninput: (e) => {
+          const raw = e.target.value.trim();
+          const n = Number.parseInt(raw, 10);
+          const value = raw === "" || Number.isNaN(n) ? null : n;
+          tpl.editing = {
+            ...tpl.editing,
+            items: tpl.editing.items.map((it, i) =>
+              i === index ? { ...it, rest_hint_seconds: value } : it,
+            ),
+          };
+        },
+        // onchange（blur/enter）：最終 clamp 到合法範圍＋就地重繪（chip 高亮同步）
         onchange: (e) => {
           const raw = e.target.value.trim();
           const n = Number.parseInt(raw, 10);
@@ -492,10 +506,49 @@ export function renderTemplateEdit(rerender, guard) {
       ["＋ 加動作"],
     ),
     el("button", { class: "btn btn-primary", onclick: () => guard(save) }, ["儲存課表"]),
-    el("button", { class: "btn btn-ghost", onclick: () => guard(backToList) }, ["← 課表列表"]),
+    el(
+      "button",
+      {
+        class: "btn btn-ghost",
+        // F27：有未儲存變更時先跳自訂確認視窗（不用瀏覽器 confirm，沿用 app 慣例）
+        onclick: () => {
+          if (hasUnsavedTemplate()) { tpl.confirmLeave = true; rerender(); }
+          else guard(backToList);
+        },
+      },
+      ["← 課表列表"],
+    ),
     // F21：加動作懸浮視窗（overlay，蓋在整個編輯畫面上）
     ...(tpl.adding ? [addModal(rerender, guard)] : []),
     // F25：自訂動作視窗疊在加動作視窗上層
     ...(tpl.addingCustom ? [templateCustomModal(rerender, guard)] : []),
+    // F27：未儲存變更時點「← 課表列表」的離開確認視窗
+    ...(tpl.confirmLeave ? [leaveConfirmModal(rerender, guard, backToList)] : []),
   ]);
+}
+
+// F27：離開課表編輯的未儲存確認視窗（自訂 modal，不用瀏覽器 confirm）
+function leaveConfirmModal(rerender, guard, backToList) {
+  const stay = () => { tpl.confirmLeave = false; rerender(); };
+  return el(
+    "div",
+    { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) stay(); } },
+    [
+      el("div", { class: "modal confirm-modal" }, [
+        el("div", { class: "modal-head" }, ["有未儲存的變更"]),
+        el("p", { class: "confirm-text" }, ["離開會捨棄這次編輯，確定嗎？"]),
+        el("div", { class: "modal-actions" }, [
+          el(
+            "button",
+            {
+              class: "btn btn-danger",
+              onclick: () => { tpl.confirmLeave = false; guard(backToList); },
+            },
+            ["捨棄並離開"],
+          ),
+          el("button", { class: "btn btn-ghost", onclick: stay }, ["繼續編輯"]),
+        ]),
+      ]),
+    ],
+  );
 }

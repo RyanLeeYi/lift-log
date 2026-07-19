@@ -184,10 +184,10 @@
     },
     {
       "id": "F27",
-      "name": "課表編輯未儲存離開警告",
-      "acceptance": "在課表編輯畫面有未儲存變更（草稿與進場時不同：名稱、動作、組數、休息任一改動）時，重整頁面／關閉分頁／離開網站前，透過瀏覽器原生 beforeunload 跳出確認警告，避免手滑丟失未儲存編輯。無變更、或已離開編輯畫面（含儲存後返回列表）時不攔截；其他畫面（記錄每組即時寫入、體重/狀態表單 POST 即存）無未儲存資料，不受影響。註：行動瀏覽器（尤其 iOS Safari）對 beforeunload 原生提示支援有限，可能不顯示。來源：2026-07-19 Ryan 要求離開/重整未儲存時跳警告。",
+      "name": "課表編輯未儲存離開提醒（beforeunload＋返回確認）",
+      "acceptance": "在課表編輯畫面有未儲存變更（草稿與進場時不同：名稱、動作、組數、休息任一改動）時，重整頁面／關閉分頁／離開網站前，透過瀏覽器原生 beforeunload 跳出確認警告，避免手滑丟失未儲存編輯。無變更、或已離開編輯畫面（含儲存後返回列表）時不攔截；其他畫面（記錄每組即時寫入、體重/狀態表單 POST 即存）無未儲存資料，不受影響。註：行動瀏覽器（尤其 iOS Safari）對 beforeunload 原生提示支援有限，可能不顯示。另：app 內點「← 課表列表」返回時，若有未儲存變更先跳自訂確認視窗（沿用 app 慣例，不用瀏覽器 confirm），可選「捨棄並離開」或「繼續編輯」。來源：2026-07-19 Ryan 要求離開/重整未儲存時跳警告。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。templates.js 匯出 hasUnsavedTemplate()（state.screen==templateEdit 且草稿快照≠進場基準 tpl.savedSnapshot；startEditor 設基準，快照只取 name/items 的 exercise_id/default_sets/rest_hint_seconds）；app.js 加 window beforeunload 監聽，未儲存時 preventDefault+returnValue 觸發原生確認。sw.js v23→v24、APP_VERSION v24。E2E verify_f27.py 6/6 PASS（首頁/剛進編輯/返回列表/新課表空白＝不攔截；改組數/新課表打名稱＝攔截，以 beforeunload 事件 defaultPrevented 判定）；F25/F26 回歸 ALL PASS、ruff clean。註：行動瀏覽器（尤其 iOS Safari）beforeunload 原生提示支援有限，可能不顯示。⚠ codex-review 背景執行中、收工時未回——下場讀 scratchpad/codex-review-f27.md 檢視 P0/P1、評估 P2。"
+      "evidence": "2026-07-19 完成。①beforeunload（window 級，重整/關閉）：hasUnsavedTemplate() 比對草稿快照 vs 進場基準，未儲存時 preventDefault。②app 內返回確認：點「← 課表列表」若未儲存 → 自訂 .confirm-modal（捨棄並離開／繼續編輯），非瀏覽器 confirm。codex-review 完成、2 P2 已修：P2①休息欄位加 oninput 即時寫草稿（Chrome 先 beforeunload 後 change，否則打字未失焦重整會漏警告）；P2②controllerchange 設 refreshing 後加 setTimeout 復原，避免 beforeunload 取消重載後 latch 卡住讓 F14 自動更新永久失效。sw.js v25、APP_VERSION v25。E2E：verify_f27.py（beforeunload＋休息打字回歸）、verify_f27b.py（返回確認 4/4）皆 ALL PASS；F25/F26 回歸 ALL PASS、pytest 161、ruff clean。註：行動瀏覽器（尤其 iOS Safari）beforeunload 支援有限；app 內返回確認不受此限、各平台皆有效。"
     }
   ]
 }

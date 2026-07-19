@@ -846,6 +846,9 @@ if ("serviceWorker" in navigator) {
       return;
     }
     refreshing = true;
+    // 若課表未儲存，beforeunload 提示可能讓使用者取消重載、頁面存活——復原 latch，
+    // 否則之後的接管都被忽略、F14 自動更新永久失效（Codex P2）。reload 成功時頁面已卸載，此計時器不會執行
+    setTimeout(() => { refreshing = false; }, 3000);
     location.reload();
   });
 }

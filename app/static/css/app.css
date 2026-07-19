@@ -367,6 +367,8 @@ body {
 }
 .modal-actions { display: flex; gap: 10px; }
 .modal-actions .btn { flex: 1; }
+/* F27 離開確認視窗 */
+.confirm-text { color: var(--text-dim); font-size: 14px; line-height: 1.5; }
 /* F24 版本標記：小字、低調、置中，不干擾操作 */
 .version-tag {
   text-align: center;
