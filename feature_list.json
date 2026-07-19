@@ -137,8 +137,8 @@
       "id": "F20",
       "name": "開練頁 done-list 新→舊排序＋固定高度可捲動",
       "acceptance": "logger（開練）頁的「已完成的組」清單一律新→舊排序（最新一組在最上面、最舊在最下）；當組數 > 2 時該清單區塊改固定高度（約 2 列）＋內部 overflow-y 上下捲動，使下方 steppers 與主按鈕不因組數增加被往下推走；編輯某列時該清單不受高度限制（展開的 steppers 編輯表單完整可見）；組數 ≤ 2 時照常完整顯示、不捲動。E2E 驗：記 3 組後最新組（#3）在清單最上、done-list 內部可捲動（scrollHeight > clientHeight）、編輯時清單不再受高度限制。Ryan 2026-07-19 簽核。",
-      "status": "failing",
-      "evidence": null
+      "status": "passing",
+      "evidence": "acceptance-verifier 7/7 全 pass（Playwright 實測）：done-list 新→舊排序（#3 在最上、#1 在最下）；組數>2 加 scrollable class 且 scrollHeight>clientHeight（max-height 88px overflow-y auto）、主按鈕仍在畫面；≤2 組不捲動；編輯某列時解除 scrollable（編輯表單完整可見）；跨動作草稿清除（換動作後 scrollable 恢復）。codex-review 1 P2 已修（finish/endWorkout 清 editDraft，避免殘留使 scrollable 永久失效）。sw v12。commit 1fdcf0d + P2 fix。uv run pytest 152、ruff clean。E2E verify_f20.py。"
     }
   ]
 }
