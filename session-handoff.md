@@ -1,5 +1,18 @@
 # Session Handoff
-> 最後更新：2026-07-19（**F10 自訂動作 + F24 版本號顯示 → passing**。sw.js 現 **v19**、state.js APP_VERSION 同步 v19。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-19（**F10 自訂動作 + F24 版本號 + F25 自訂動作進課表加動作視窗 → passing**。sw.js 現 **v20**、APP_VERSION v20。⚠ F25 的 codex-review 收工時仍背景執行未回，下場先讀 `scratchpad/codex-review-f25.md`。剩 **F11 體重補記過去日期**）
+
+## ⚠ 下場第一件事：檢視 F25 的 codex-review
+- 本場因用量門檻（Fable 98%）收工，F25 的 `codex exec review --uncommitted` 背景跑但**未回結果**就收工。
+- 結果檔（若已產出）：`C:\Users\user\AppData\Local\Temp\claude\C--Users-user\fbc09e8e-2dbb-4a07-8cfe-3d8f19cd8872\scratchpad\codex-review-f25.md`（本 session scratchpad，跨 session 可能已清；若不在，對 `2f5b...` 之後的 commit 重跑 `codex exec review --commit <F25 sha>`）。
+- F25 已 flip passing（E2E R1–R5 全綬佐證 acceptance），但**尚未經 review 把關**——讀結果後 P0/P1 必修、P2 評估，修完補一個 fix commit。
+
+## F25 自訂動作進課表「加動作」視窗 → passing（2026-07-19，本場）
+- **需求**：Ryan 要自訂動作入口也放到課表編輯的「＋加動作」懸浮視窗（picker 現有的**保留**，兩處都有）。
+- **重構**：把 picker 的自訂動作視窗抽成共用元件 **`app/static/js/custom-exercise.js`**（`customExerciseModal({groups,onCreated,onCancel,onFatal})`，自我包含：輸入讀 DOM、錯誤就地顯示、**不觸發父層重繪**——比原本 picker 版更簡潔，免了 syncFormFromDom）。picker（`app.js` `pickerCustomModal`）與課表編輯（`templates.js` `templateCustomModal`）共用它。
+- **課表側**：`tpl.addingCustom` 狀態；`addModal` 內清單下方加 `.add-custom-ex`「＋自訂動作」→ 開自訂視窗**疊在加動作視窗上層**（兩層 modal-overlay，後者在上）。建立成功 → `loadPickable("")` 重載、`tpl.selectedAdd=created` 預選、清 muscleFilter/searchQ → 回加動作視窗可直接「確定加入」。
+- **版本**：sw.js SHELL **加 `/js/custom-exercise.js`**（新模組務必進 SHELL 否則離線漏快取）、CACHE_NAME **v19→v20**、APP_VERSION 同步 **v20**。
+- **驗證**：`verify_f25.py` R1–R5 全 PASS；`verify_f10.py`（picker 重構回歸）ALL PASS；`verify_f24.py`（v20）PASS；全套 **161 passed**、ruff clean。
+- **共用元件維護**：改自訂動作表單邏輯只需改 `custom-exercise.js` 一處，picker 與課表兩邊同時生效。
 
 ## F24 畫面顯示版本號 → passing（2026-07-19，本場）
 - **緣由**：Ryan 手機看不到 F10 新按鈕，排查後確認是**手機 service worker 舊快取**（正式站 public app.js/sw.js 已是新版，用無快取瀏覽器實測公開網址按鈕存在）。為了以後一眼判斷手機更到哪版，加版本號顯示。

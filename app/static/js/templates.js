@@ -2,6 +2,7 @@
 // 課表 = 名稱＋動作順序＋每動作預設組數；刪除採兩段確認（避免 modal）。
 
 import { api } from "./api.js";
+import { customExerciseModal } from "./custom-exercise.js";
 import { el } from "./dom.js";
 import { exerciseAlias, exerciseName, state } from "./state.js";
 
@@ -16,6 +17,7 @@ const tpl = {
   editing: null, // {id|null, name, items: [{exercise_id, name_zh, name_en, muscle_group, is_bodyweight, default_sets}]}
   confirmDeleteId: null, // 兩段刪除：第一下記 id、第二下才真刪
   adding: false, // 編輯器內是否開啟「加動作」懸浮視窗
+  addingCustom: false, // F25：加動作視窗內是否再開「自訂動作」建立視窗（疊在上層）
   selectedAdd: null, // F21：懸浮視窗內單選中的動作物件（null＝未選）
   muscleFilter: null, // F22：加動作視窗的部位篩選（null＝全部）
   itemsScrollTop: 0, // F21：編輯課表動作清單的捲動位置（整頁重繪後還原，避免每次編輯跳回頂端）
@@ -39,6 +41,7 @@ function startEditor(template) {
       }
     : { id: null, name: "", items: [] };
   tpl.adding = false;
+  tpl.addingCustom = false;
   tpl.selectedAdd = null;
   tpl.muscleFilter = null;
   tpl.itemsScrollTop = 0;
@@ -329,6 +332,15 @@ function addModal(rerender, guard) {
         }),
         chips,
         list,
+        // F25：找不到動作時就地建自訂動作（疊一層自訂視窗在加動作視窗上）
+        el(
+          "button",
+          {
+            class: "btn add-custom-ex",
+            onclick: () => { tpl.addingCustom = true; rerender(); },
+          },
+          ["＋ 自訂動作"],
+        ),
         el("div", { class: "modal-actions" }, [
           confirmBtn,
           el("button", { class: "btn btn-ghost modal-cancel", onclick: close }, ["取消"]),
@@ -336,6 +348,27 @@ function addModal(rerender, guard) {
       ]),
     ],
   );
+}
+
+// F25：課表編輯內的自訂動作視窗（共用 customExerciseModal，疊在加動作視窗上）。
+// 建立成功 → 重載可選清單、預選剛建立的動作（清部位/搜尋篩選確保它可見），回到加動作視窗。
+function templateCustomModal(rerender, guard) {
+  const groups = [...new Set(tpl.exercises.map((e) => e.muscle_group))];
+  return customExerciseModal({
+    groups,
+    onCreated: (created) => {
+      tpl.addingCustom = false;
+      tpl.muscleFilter = null;
+      tpl.searchQ = "";
+      guard(async () => {
+        await loadPickable(""); // 重載讓新動作進可選清單
+        tpl.selectedAdd = created; // 預選剛建立的，使用者可直接「確定加入」
+        rerender();
+      });
+    },
+    onCancel: () => { tpl.addingCustom = false; rerender(); },
+    onFatal: (err) => guard(() => Promise.reject(err)),
+  });
 }
 
 export function renderTemplateEdit(rerender, guard) {
@@ -420,5 +453,7 @@ export function renderTemplateEdit(rerender, guard) {
     el("button", { class: "btn btn-ghost", onclick: () => guard(backToList) }, ["← 課表列表"]),
     // F21：加動作懸浮視窗（overlay，蓋在整個編輯畫面上）
     ...(tpl.adding ? [addModal(rerender, guard)] : []),
+    // F25：自訂動作視窗疊在加動作視窗上層
+    ...(tpl.addingCustom ? [templateCustomModal(rerender, guard)] : []),
   ]);
 }
