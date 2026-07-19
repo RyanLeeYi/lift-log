@@ -329,6 +329,13 @@ body {
 }
 .modal-actions { display: flex; gap: 10px; }
 .modal-actions .btn { flex: 1; }
+/* F10 自訂動作視窗 */
+/* chips 多行或手機鍵盤縮小視窗高度時內容可垂直捲動，建立/取消鈕不落到可視範圍外（Codex P2） */
+.custom-ex-modal { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.field-label { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+.checkbox-row { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.checkbox-row input[type="checkbox"] { width: 20px; height: 20px; }
+.add-custom-ex { border-style: dashed; }
 
 /* ---------- calendar（heatmap） ---------- */
 .cal-nav { display: flex; align-items: center; gap: 8px; }

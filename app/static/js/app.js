@@ -325,9 +325,137 @@ function renderTemplateSelect() {
 // ---------- picker ----------
 
 let pickerExercises = [];
+// F10 自訂動作表單草稿：null＝視窗關閉；否則 {name_zh, name_en, muscle_group, customGroup, is_bodyweight, error}
+let customForm = null;
 
 async function loadExercises(q) {
   pickerExercises = await api.searchExercises(q || "");
+}
+
+function openCustomForm() {
+  customForm = {
+    name_zh: "",
+    name_en: "",
+    muscle_group: null, // 從現有部位 chip 選；null＝未選
+    customGroup: "", // 「其他」自訂部位文字，優先於 chip
+    is_bodyweight: false,
+    error: null,
+  };
+  render();
+}
+
+// F10 自訂動作視窗：中文名必填、英文名選填、部位（現有 chip＋可自訂）、自體重勾選。
+// 建立成功 → reload 動作庫並關窗，新動作即出現在清單可直接記錄；重複等錯誤就地顯示、不丟輸入。
+function renderCustomExerciseModal() {
+  const f = customForm;
+  const groups = [...new Set(pickerExercises.map((e) => e.muscle_group))];
+
+  const nameZh = el("input", { type: "text", placeholder: "中文名（必填）", value: f.name_zh });
+  const nameEn = el("input", { type: "text", placeholder: "英文名（選填）", value: f.name_en });
+  const customGroup = el("input", {
+    type: "text",
+    placeholder: "其他部位（自訂，選填）",
+    value: f.customGroup,
+  });
+  const bodyweight = el("input", {
+    type: "checkbox",
+    ...(f.is_bodyweight ? { checked: "" } : {}),
+  });
+
+  const chips = el(
+    "div",
+    { class: "chips" },
+    groups.map((g) =>
+      el(
+        "button",
+        {
+          class: `chip${f.muscle_group === g ? " on" : ""}`,
+          // 就地切換高亮＋更新選取，不整頁重繪——否則會清空正在填的文字輸入
+          onclick: () => {
+            f.muscle_group = f.muscle_group === g ? null : g;
+            chips
+              .querySelectorAll(".chip")
+              .forEach((c) => c.classList.toggle("on", c.textContent === f.muscle_group));
+          },
+        },
+        [g],
+      ),
+    ),
+  );
+
+  const close = () => {
+    customForm = null;
+    render();
+  };
+
+  const submit = async () => {
+    const name_zh = nameZh.value.trim();
+    if (!name_zh) {
+      f.error = "中文名必填";
+      syncFormFromDom();
+      render();
+      return;
+    }
+    const payload = { name_zh, is_bodyweight: bodyweight.checked };
+    const en = nameEn.value.trim();
+    if (en) payload.name_en = en;
+    const grp = customGroup.value.trim() || f.muscle_group; // 自訂文字優先，否則用選中的 chip
+    if (grp) payload.muscle_group = grp;
+    try {
+      const created = await api.createExercise(payload);
+      // 建立已成功＝事實來源，先關窗；再刷新完整動作庫。若刷新（二次 GET）因離線失敗，
+      // 用建立回傳值補進清單當 fallback——避免「已建立卻視窗消失、清單沒它、重試撞重複」（Codex P2）
+      customForm = null;
+      state.searchQ = "";
+      state.muscleFilter = null;
+      try {
+        await loadExercises("");
+      } catch {
+        pickerExercises = [...pickerExercises, created];
+      }
+      render();
+    } catch (err) {
+      // 401（token 失效/輪替）重拋交全域 guard 清狀態導回 setup，否則使用者卡 modal 重試永遠失敗（Codex P2）
+      if (err instanceof ApiError && err.status !== 401) {
+        f.error = err.status === 0 ? "連不上伺服器——稍後再試" : err.message;
+        syncFormFromDom(); // 失敗保住已填內容，重繪不丟
+        render();
+        return;
+      }
+      throw err;
+    }
+  };
+
+  // 重繪前把 DOM 現值寫回草稿（chip 已即時同步，文字/勾選需手動回收）
+  function syncFormFromDom() {
+    f.name_zh = nameZh.value;
+    f.name_en = nameEn.value;
+    f.customGroup = customGroup.value;
+    f.is_bodyweight = bodyweight.checked;
+  }
+
+  return el(
+    "div",
+    { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) close(); } },
+    [
+      el("div", { class: "modal custom-ex-modal" }, [
+        el("div", { class: "modal-head" }, ["新增自訂動作"]),
+        ...(f.error ? [el("div", { class: "error-banner" }, [f.error])] : []),
+        nameZh,
+        nameEn,
+        el("div", { class: "field-label" }, ["部位（選填）"]),
+        chips,
+        customGroup,
+        el("label", { class: "checkbox-row" }, [bodyweight, el("span", {}, ["自體重動作"])]),
+        el("div", { class: "modal-actions" }, [
+          el("button", { class: "btn btn-primary modal-confirm", onclick: () => guard(submit) }, [
+            "建立",
+          ]),
+          el("button", { class: "btn btn-ghost modal-cancel", onclick: close }, ["取消"]),
+        ]),
+      ]),
+    ],
+  );
 }
 
 async function pickExercise(exercise) {
@@ -472,7 +600,10 @@ function renderPicker() {
       ),
     ),
     list,
+    el("button", { class: "btn add-custom-ex", onclick: openCustomForm }, ["＋ 自訂動作"]),
     el("button", { class: "btn btn-ghost", onclick: () => { state.screen = "home"; render(); } }, ["← 回首頁"]),
+    // F10：自訂動作懸浮視窗（overlay，蓋在整個選動作畫面上）
+    ...(customForm ? [renderCustomExerciseModal()] : []),
   ]);
 }
 

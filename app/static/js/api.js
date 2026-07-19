@@ -40,6 +40,7 @@ async function request(method, path, body) {
 export const api = {
   searchExercises: (q) =>
     request("GET", q ? `/api/exercises?q=${encodeURIComponent(q)}` : "/api/exercises"),
+  createExercise: (payload) => request("POST", "/api/exercises", payload), // F10 自訂動作
   lastSets: (exerciseId) => request("GET", `/api/exercises/${exerciseId}/last-sets`),
   createWorkout: (payload = {}) => request("POST", "/api/workouts", payload),
   listTemplates: () => request("GET", "/api/templates"),

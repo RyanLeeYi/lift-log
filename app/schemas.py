@@ -4,10 +4,27 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ExerciseCreate(BaseModel):
+    # F10 自訂動作：中文名必填；英文名、部位選填（留空由 service 補齊：en 鏡射 zh、部位預設其他）
     name_zh: str = Field(min_length=1)
-    name_en: str = Field(min_length=1)
-    muscle_group: str = Field(min_length=1)
+    name_en: str | None = None
+    muscle_group: str | None = None
     is_bodyweight: bool = False
+
+    @field_validator("name_zh")
+    @classmethod
+    def _name_zh_not_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("name_zh required")
+        return stripped
+
+    @field_validator("name_en", "muscle_group")
+    @classmethod
+    def _blank_to_none(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        stripped = v.strip()
+        return stripped or None
 
 
 class ExerciseOut(BaseModel):

@@ -1,5 +1,15 @@
 # Session Handoff
-> 最後更新：2026-07-18（第十一場續：**F14＋F15 皆 → passing 並部署上線**。各自 acceptance-verifier 驗過、mission-control 重啟後正式站 serve 新碼驗過。MVP F1–F9＋F12–F15 全 passing，剩 F10/F11。sw.js 現 **v6**）
+> 最後更新：2026-07-19（**F10 自訂動作 → passing**。後端 schema/service 支援選填英文名+部位、正規化重複擋下；前端 picker「＋自訂動作」懸浮視窗。codex-review 3 P2 全修、acceptance-verifier R1–R10 全 pass。sw.js 現 **v18**。剩 **F11 體重補記過去日期**）
+
+## F10 自訂動作 → passing（2026-07-19，本場）
+- **後端缺口比 handoff 記載多**（原記「主戰場前端」，實際 schema 對不上 acceptance）：`ExerciseCreate` 原本 name_en/muscle_group 必填，改為選填（`app/schemas.py`：`str | None`；name_zh 加 field_validator 去空白+擋空）。`create_exercise`（`app/services/exercises.py`）：**英文名留空→鏡射中文名**（避開 name_en unique 非空欄位的 nullable 重建、EN 檢視不空白）、**部位留空→預設「其他」**（`DEFAULT_MUSCLE_GROUP`）、**正規化重複前置檢查**（對 zh/en 各跑 `find_by_name` 命中即 DomainError 400，擋大小寫/空白變體+防 log_workout 名稱解析歧義），DB unique 當後盾。POST /api/exercises 端點未改、仍經 services。
+- **設計決策（Ryan 選）**：部位＝現有 chips＋可自訂「其他」；留空歸「其他」。
+- **前端**（`app/static/js/app.js`）：picker 加 `.add-custom-ex` 鈕 → `openCustomForm` → `renderCustomExerciseModal`（共用 `.modal-overlay`）。中文名/英文名 input、部位既有 chips（就地切換不重繪）＋「其他」自訂文字（優先於 chip）、自體重 checkbox、建立/取消。`api.js` 加 `createExercise`。`app.css` 加 `.custom-ex-modal`/`.field-label`/`.checkbox-row`/`.add-custom-ex`。sw.js **v18**。
+- **codex-review 3 P2 全修**：①POST 成功後才關窗，二次 GET 失敗用建立回傳值 fallback 補進清單（不再「已建立卻視窗消失+重試撞重複」）；②401 重拋交全域 guard（原本吞掉所有 ApiError，token 失效會卡 modal）；③`.custom-ex-modal` overflow-y auto（chips 多行/鍵盤縮高時建立鈕不落到可視外）。
+- **驗證**：tests/test_exercises.py 9 條 + 全套 **161 passed**、ruff clean。E2E scratchpad `verify_f10.py` R1–R6 全 PASS（P2 修後重跑仍 ALL PASS）。acceptance-verifier **R1–R10 全 pass**（獨立重跑 pytest+E2E）。
+- **驗收者非阻擋建議**：未來可補一條自體重噸位整合測試（記體重→建自訂自體重動作→記負重組→驗噸位=最新體重+負重）釘更死；本次靠「stats.py 零改動+既有回歸走同一 API 路徑仍綠」佐證。
+- **E2E 教訓**：app_factory 起的 server **有 seed**（`app/seed.py` 36 個預設動作，含「保加利亞分腿蹲」「面拉」等）——E2E 自訂名要避開 seed 才不會誤判重複；conftest 的 `client` fixture 用 `create_app` 無 seed，後端單元測試不受影響。playwright 用 `uv run --with playwright python <script>`（uv env 沒裝 playwright，臨時環境+沿用 ms-playwright 快取瀏覽器）。
+- **下一個：F11 體重補記過去日期**（/body 表單目前只記今天；API date 欄位已支援，純 UI 讓表單能新增過去日期）。改 static 記得 bump sw.js（現 v18）。
 
 ## F15 收尾紀錄（已完成）
 - **組間休息按鈕兩態切換**（Ryan 真機回饋：倒數沒有停止鈕）。就緒態「✓ 完成這組」記錄該組＋開始倒數＋進休息態；休息態「繼續下一組」停倒數＋LED 回靜態參考秒數＋凍結本次休息秒數＋回就緒態。rest_seconds 定案點＝按「繼續下一組」當下 elapsed（Ryan 選的），寫進下一組、用掉即清；第一組不帶。換動作/收工清掉未用凍結值

@@ -6,13 +6,31 @@ from app.errors import DomainError, NotFoundError
 from app.models import Exercise, Workout, WorkoutSet
 from app.schemas import ExerciseCreate
 
+DEFAULT_MUSCLE_GROUP = "其他"  # F10：自訂動作未填部位時的歸類
+
 
 def create_exercise(session: Session, data: ExerciseCreate) -> Exercise:
-    exercise = Exercise(**data.model_dump())
+    # F10 選填欄位補齊：英文名留空 → 鏡射中文名（避開 name_en unique 非空欄位的 nullable 重建、
+    # 且 EN 檢視不會顯示空白）；部位留空 → 預設「其他」
+    name_en = data.name_en or data.name_zh
+    muscle_group = data.muscle_group or DEFAULT_MUSCLE_GROUP
+
+    # 正規化重複前置檢查（zh 或 en 任一衝突擋下），與 find_by_name/log_workout 名稱解析同語意——
+    # 純靠 DB unique 只擋精確字串，會放行大小寫/空白變體並造成之後名稱解析歧義
+    for candidate in (data.name_zh, name_en):
+        if find_by_name(session, candidate) is not None:
+            raise DomainError("exercise name already exists")
+
+    exercise = Exercise(
+        name_zh=data.name_zh,
+        name_en=name_en,
+        muscle_group=muscle_group,
+        is_bodyweight=data.is_bodyweight,
+    )
     session.add(exercise)
     try:
         session.commit()
-    except IntegrityError as exc:
+    except IntegrityError as exc:  # DB unique 當後盾（並發或非正規化漏網）
         session.rollback()
         raise DomainError("exercise name already exists") from exc
     session.refresh(exercise)
