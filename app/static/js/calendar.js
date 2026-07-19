@@ -165,7 +165,9 @@ function statusRow(guard, rerender) {
 // F16：刪/改後重載當月熱力圖（噸位會變）＋當日明細，且不丟目前選中的日
 async function refreshMonthAndDay() {
   cal.days = (await api.calendarStats(cal.year, cal.month)).days;
-  await selectDay(cal.selected);
+  // 寫入傳輸中使用者可能已切月（loadMonth 把 selected 設 null）——別讓 selectDay(null)
+  // 打出 start=null&end=null 的 400；沒選日就只更新熱力圖（Codex P2）
+  if (cal.selected) await selectDay(cal.selected);
 }
 
 async function deleteSet(s, rerender) {
