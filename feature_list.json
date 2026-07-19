@@ -177,10 +177,10 @@
     },
     {
       "id": "F26",
-      "name": "課表列表顯示格式優化",
+      "name": "課表列表與編輯頁顯示格式優化",
       "acceptance": "課表列表每張卡片：左側琥珀 accent 條；標題列右側顯示份量摘要「N 動作 · M 組」（M＝各動作 default_sets 總和，等寬數字）；動作以 tag 呈現，每個 tag 帶琥珀色「×組數」，取代原本「·」串接的純文字。沿用既有深色/琥珀設計語言，不引入新字體或框架。編輯/刪除功能與兩段刪除確認不變。來源：2026-07-19 Ryan 要求改課表顯示格式。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。templates.js templateRow 改版：左側琥珀 accent、標題列右側「N 動作·M 組」份量摘要（mono）、動作改 tag 帶琥珀「×組數」；app.css 對應 .tpl-head/.tpl-meta/.tpl-tags/.tpl-tag。編輯/刪除與兩段確認不變。sw.js v21→v22、APP_VERSION v22。E2E verify_f26.py 4/4 PASS（份量摘要、tag×組數、t-sets 數、編輯導航）；F25 回歸 ALL PASS；ruff clean。純顯示改動（markup+CSS 無邏輯），未跑 codex-review。"
+      "evidence": "2026-07-19 完成。templates.js templateRow 改版：左側琥珀 accent、標題列右側「N 動作·M 組」份量摘要（mono）、動作改 tag 帶琥珀「×組數」；app.css 對應 .tpl-head/.tpl-meta/.tpl-tags/.tpl-tag。編輯/刪除與兩段確認不變。sw.js v21→v22、APP_VERSION v22。E2E verify_f26.py 4/4 PASS（份量摘要、tag×組數、t-sets 數、編輯導航）；F25 回歸 ALL PASS；ruff clean。純顯示改動（markup+CSS 無邏輯），未跑 codex-review。 ｜ 追加：編輯頁 itemRow 同語言化——琥珀 accent、名稱獨立一行（中英並列、別名省略號不換行）、控制列組數 stepper 靠左＋↑↓✕ 靠右（刪除拉開防誤觸）、自訂休息 number input 白底改深色。sw.js v22→v23、APP_VERSION v23。F25/F26 回歸 ALL PASS、ruff clean。純顯示改動。"
     }
   ]
 }

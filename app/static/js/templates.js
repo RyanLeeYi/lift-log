@@ -152,39 +152,43 @@ function itemRow(item, index, rerender) {
     }
   };
   const row = el("div", { class: "tpl-item" }, [
+    // 名稱獨立一行（中英並列，別名不再被擠到換行）
     el("div", { class: "tpl-item-name" }, [
-      el("span", {}, [exerciseName(item)]),
-      el("span", { class: "sub" }, [exerciseAlias(item)]),
+      el("span", { class: "n-zh" }, [exerciseName(item)]),
+      el("span", { class: "n-alias" }, [exerciseAlias(item)]),
     ]),
-    el("div", { class: "tpl-item-sets" }, [
-      el("button", { class: "btn chip", onclick: () => setSets(-1) }, ["−"]),
-      el("span", { class: "n" }, [`${item.default_sets} 組`]),
-      el("button", { class: "btn chip", onclick: () => setSets(+1) }, ["＋"]),
-    ]),
-    el("div", { class: "tpl-item-move" }, [
-      el(
-        "button",
-        { class: "btn chip", ...(index === 0 ? { disabled: "" } : {}),
-          onclick: () => swap(index, index - 1) },
-        ["↑"],
-      ),
-      el(
-        "button",
-        { class: "btn chip", ...(index === items.length - 1 ? { disabled: "" } : {}),
-          onclick: () => swap(index, index + 1) },
-        ["↓"],
-      ),
-      el(
-        "button",
-        {
-          class: "btn chip btn-danger",
-          onclick: () => {
-            tpl.editing = { ...tpl.editing, items: items.filter((_, i) => i !== index) };
-            rerender();
+    // 控制列：組數 stepper 靠左、排序/刪除靠右（刪除遠離 stepper，不易誤觸）
+    el("div", { class: "tpl-item-controls" }, [
+      el("div", { class: "tpl-item-sets" }, [
+        el("button", { class: "btn chip", onclick: () => setSets(-1) }, ["−"]),
+        el("span", { class: "n" }, [`${item.default_sets} 組`]),
+        el("button", { class: "btn chip", onclick: () => setSets(+1) }, ["＋"]),
+      ]),
+      el("div", { class: "tpl-item-move" }, [
+        el(
+          "button",
+          { class: "btn chip", ...(index === 0 ? { disabled: "" } : {}),
+            onclick: () => swap(index, index - 1) },
+          ["↑"],
+        ),
+        el(
+          "button",
+          { class: "btn chip", ...(index === items.length - 1 ? { disabled: "" } : {}),
+            onclick: () => swap(index, index + 1) },
+          ["↓"],
+        ),
+        el(
+          "button",
+          {
+            class: "btn chip btn-danger tpl-item-del",
+            onclick: () => {
+              tpl.editing = { ...tpl.editing, items: items.filter((_, i) => i !== index) };
+              rerender();
+            },
           },
-        },
-        ["✕"],
-      ),
+          ["✕"],
+        ),
+      ]),
     ]),
     el("div", { class: "tpl-item-rest" }, [
       el("span", { class: "sub" }, ["休息"]),

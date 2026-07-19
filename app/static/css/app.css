@@ -304,12 +304,21 @@ body {
 .tpl-item {
   background: var(--card);
   border: 1px solid var(--card-edge);
+  border-left: 3px solid var(--led); /* 與課表列表卡片同一設計語言 */
   border-radius: 14px;
-  padding: 10px 12px;
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  flex-wrap: wrap;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
 }
-.tpl-item-name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+/* 名稱獨立一行：中文名＋英文別名並列，別名以省略號收尾不換行 */
+.tpl-item-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.tpl-item-name .n-zh { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.tpl-item-name .n-alias {
+  color: var(--text-dim);
+  font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+/* 控制列：組數靠左、排序/刪除靠右 */
+.tpl-item-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tpl-item-sets { display: flex; align-items: center; gap: 6px; }
 .tpl-item-sets .n {
   font-family: var(--mono);
@@ -318,16 +327,22 @@ body {
   text-align: center;
 }
 .tpl-item-move { display: flex; gap: 6px; }
+.tpl-item-move .tpl-item-del { margin-left: 6px; } /* 刪除與 ↑↓ 拉開，避免誤觸 */
 .tpl-item .chip { padding: 6px 12px; font-size: 15px; border-radius: 10px; }
 .tpl-item .chip:disabled { opacity: .3; cursor: default; }
-/* R10 參考休息列：佔滿整行、換行排在名稱/組數之下 */
-.tpl-item-rest { flex-basis: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* R10 參考休息列：佔滿整行 */
+.tpl-item-rest { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tpl-item-rest .rest-custom {
   width: 72px;
   padding: 6px 8px;
+  background: var(--bg); /* 深色化：原本 number input 是刺眼白底 */
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  color: var(--text);
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
+.tpl-item-rest .rest-custom:focus-visible { outline: 2px solid var(--led); }
 .tpl-add-panel { display: flex; flex-direction: column; gap: 10px; }
 .tpl-add-panel .exercise-list { max-height: 40dvh; }
 /* F21：編輯課表動作清單固定高度（約 2 個動作高，超過再捲動）＋內部捲動 */

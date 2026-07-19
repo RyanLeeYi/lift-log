@@ -1,11 +1,12 @@
 # Session Handoff
-> 最後更新：2026-07-19（本場連收 **F10 自訂動作 / F24 版本號 / F25 自訂動作進課表加動作視窗 / F26 課表列表顯示格式優化 → passing**。sw.js 現 **v22**、APP_VERSION v22。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26（課表列表＋編輯頁顯示格式）→ passing**。sw.js 現 **v23**、APP_VERSION v23。剩 **F11 體重補記過去日期**）
 
 ## F26 課表列表顯示格式優化 → passing（2026-07-19，本場）
 - **需求**：Ryan 覺得課表列表顯示太平（只有名字＋「·」串接動作名）。用 frontend-design skill 在既有深色/琥珀工業風內重做卡片（不引入新字體/框架）。
 - **改動**：`templates.js` `templateRow` → 左側琥珀 accent 條、標題列右側份量摘要「N 動作·M 組」（M＝default_sets 總和，mono）、動作改 tag 帶琥珀「×組數」。`app.css` 加 `.tpl-head/.tpl-meta/.tpl-tags/.tpl-tag`。編輯/刪除與兩段確認不變。sw.js v21→v22、APP_VERSION v22。
 - **驗證**：`verify_f26.py` 4/4 PASS、F25 回歸 ALL PASS、ruff clean。純顯示（markup+CSS 無邏輯），未跑 codex-review。
-- **後續可選（Ryan 待回）**：①tag 多動作時收合「＋N」②份量摘要加預估時間 ③課表**編輯頁**的 tpl-item 排版是否也調成同語言（本次只改列表）。
+- **追加（同場，編輯頁）**：itemRow 同語言化——琥珀 accent、名稱獨立一行、控制列（組數靠左＋↑↓✕ 靠右，刪除拉開防誤觸）、自訂休息 number input 白底改深色（原本只有 `input[type=text]` 有深色樣式，`type=number` 漏掉）。sw.js v22→v23、APP_VERSION v23。
+- **後續可選（Ryan 待回）**：①tag 多動作時收合「＋N」②份量摘要加預估時間。
 
 ## F25 自訂動作進課表「加動作」視窗 → passing（2026-07-19，本場）
 - **需求**：Ryan 要自訂動作入口也放到課表編輯的「＋加動作」懸浮視窗（picker 現有的**保留**，兩處都有）。
