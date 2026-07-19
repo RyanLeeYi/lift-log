@@ -14,7 +14,12 @@ import {
   queueCounts,
   removeQueued,
 } from "./queue.js";
-import { openTemplates, renderTemplateEdit, renderTemplates } from "./templates.js";
+import {
+  hasUnsavedTemplate,
+  openTemplates,
+  renderTemplateEdit,
+  renderTemplates,
+} from "./templates.js";
 import {
   APP_VERSION,
   clearActiveWorkout,
@@ -844,6 +849,14 @@ if ("serviceWorker" in navigator) {
     location.reload();
   });
 }
+// 課表編輯有未儲存變更時，重整/關閉分頁/離開前跳瀏覽器原生警告，避免手滑丟失編輯。
+// 只在編輯畫面且草稿與進場基準不同才攔截——其他畫面（記錄每組即時寫入、表單 POST 即存）無未存資料。
+window.addEventListener("beforeunload", (e) => {
+  if (hasUnsavedTemplate()) {
+    e.preventDefault();
+    e.returnValue = ""; // Chrome 需設 returnValue 才觸發原生確認框
+  }
+});
 window.addEventListener("online", () => guard(syncQueue)); // 恢復連線：自動補傳佇列
 // 切走再回來時系統會自動釋放 wake lock——回到可見就重新申請
 document.addEventListener("visibilitychange", () => syncWakeLock());

@@ -46,6 +46,28 @@ function startEditor(template) {
   tpl.muscleFilter = null;
   tpl.itemsScrollTop = 0;
   tpl.searchQ = "";
+  tpl.savedSnapshot = templateSnapshot(tpl.editing); // 進編輯當下的基準，用來判斷未儲存變更
+}
+
+// 課表草稿的可比較快照（只取會存進後端的欄位）——判斷「未儲存變更」用
+function templateSnapshot(editing) {
+  return JSON.stringify({
+    name: (editing.name || "").trim(),
+    items: editing.items.map((i) => ({
+      exercise_id: i.exercise_id,
+      default_sets: i.default_sets,
+      rest_hint_seconds: i.rest_hint_seconds ?? null,
+    })),
+  });
+}
+
+// 目前是否在課表編輯畫面且草稿與進場基準不同（供 beforeunload 判斷是否攔截）
+export function hasUnsavedTemplate() {
+  return (
+    state.screen === "templateEdit" &&
+    tpl.editing != null &&
+    templateSnapshot(tpl.editing) !== tpl.savedSnapshot
+  );
 }
 
 // ---------- 列表畫面 ----------

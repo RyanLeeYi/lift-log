@@ -1,5 +1,12 @@
 # Session Handoff
-> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26（課表列表＋編輯頁顯示格式）→ passing**。sw.js 現 **v23**、APP_VERSION v23。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-19（本場連收 **F10 / F24 / F25 / F26（課表列表＋編輯頁）/ F27（未儲存離開警告）→ passing**。sw.js 現 **v24**、APP_VERSION v24。⚠ F27 codex-review 背景未回，下場讀 `scratchpad/codex-review-f27.md`。剩 **F11 體重補記過去日期**）
+
+## F27 課表編輯未儲存離開警告 → passing（2026-07-19，本場）
+- **需求**：Ryan 要在課表編輯有未儲存變更時、重整/離開視窗跳警告。
+- **實作**：`templates.js` 匯出 `hasUnsavedTemplate()`（`state.screen==="templateEdit"` 且 `templateSnapshot(editing) !== tpl.savedSnapshot`；`startEditor` 設基準；快照只取 name＋items 的 exercise_id/default_sets/rest_hint_seconds）。`app.js` 加 `window beforeunload`：未儲存時 `preventDefault()+returnValue=""` 觸發原生確認。sw.js v23→v24、APP_VERSION v24。
+- **驗證**：`verify_f27.py` 6/6 PASS（以派發 beforeunload 事件的 `defaultPrevented` 判定攔截與否）、F25/F26 回歸 ALL PASS、ruff clean。
+- **⚠ 已知限制**：行動瀏覽器（尤其 **iOS Safari**）對 beforeunload 原生提示支援有限、可能不顯示。若 Ryan 手機是 iOS 且需可靠防護，改用「草稿存 sessionStorage、返回時還原」更穩（如 workout 的 restoreActiveWorkout 範式）——可另開 feature。
+- **⚠ 與 F14 自動重載互動**：SW 接管的 `location.reload()` 也會觸發 beforeunload；編輯未儲存時遇到部署自動更新會跳確認（保護編輯，可接受）。codex-review 待檢。
 
 ## F26 課表列表顯示格式優化 → passing（2026-07-19，本場）
 - **需求**：Ryan 覺得課表列表顯示太平（只有名字＋「·」串接動作名）。用 frontend-design skill 在既有深色/琥珀工業風內重做卡片（不引入新字體/框架）。

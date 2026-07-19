@@ -181,6 +181,13 @@
       "acceptance": "課表列表每張卡片：左側琥珀 accent 條；標題列右側顯示份量摘要「N 動作 · M 組」（M＝各動作 default_sets 總和，等寬數字）；動作以 tag 呈現，每個 tag 帶琥珀色「×組數」，取代原本「·」串接的純文字。沿用既有深色/琥珀設計語言，不引入新字體或框架。編輯/刪除功能與兩段刪除確認不變。來源：2026-07-19 Ryan 要求改課表顯示格式。",
       "status": "passing",
       "evidence": "2026-07-19 完成。templates.js templateRow 改版：左側琥珀 accent、標題列右側「N 動作·M 組」份量摘要（mono）、動作改 tag 帶琥珀「×組數」；app.css 對應 .tpl-head/.tpl-meta/.tpl-tags/.tpl-tag。編輯/刪除與兩段確認不變。sw.js v21→v22、APP_VERSION v22。E2E verify_f26.py 4/4 PASS（份量摘要、tag×組數、t-sets 數、編輯導航）；F25 回歸 ALL PASS；ruff clean。純顯示改動（markup+CSS 無邏輯），未跑 codex-review。 ｜ 追加：編輯頁 itemRow 同語言化——琥珀 accent、名稱獨立一行（中英並列、別名省略號不換行）、控制列組數 stepper 靠左＋↑↓✕ 靠右（刪除拉開防誤觸）、自訂休息 number input 白底改深色。sw.js v22→v23、APP_VERSION v23。F25/F26 回歸 ALL PASS、ruff clean。純顯示改動。"
+    },
+    {
+      "id": "F27",
+      "name": "課表編輯未儲存離開警告",
+      "acceptance": "在課表編輯畫面有未儲存變更（草稿與進場時不同：名稱、動作、組數、休息任一改動）時，重整頁面／關閉分頁／離開網站前，透過瀏覽器原生 beforeunload 跳出確認警告，避免手滑丟失未儲存編輯。無變更、或已離開編輯畫面（含儲存後返回列表）時不攔截；其他畫面（記錄每組即時寫入、體重/狀態表單 POST 即存）無未儲存資料，不受影響。註：行動瀏覽器（尤其 iOS Safari）對 beforeunload 原生提示支援有限，可能不顯示。來源：2026-07-19 Ryan 要求離開/重整未儲存時跳警告。",
+      "status": "passing",
+      "evidence": "2026-07-19 完成。templates.js 匯出 hasUnsavedTemplate()（state.screen==templateEdit 且草稿快照≠進場基準 tpl.savedSnapshot；startEditor 設基準，快照只取 name/items 的 exercise_id/default_sets/rest_hint_seconds）；app.js 加 window beforeunload 監聽，未儲存時 preventDefault+returnValue 觸發原生確認。sw.js v23→v24、APP_VERSION v24。E2E verify_f27.py 6/6 PASS（首頁/剛進編輯/返回列表/新課表空白＝不攔截；改組數/新課表打名稱＝攔截，以 beforeunload 事件 defaultPrevented 判定）；F25/F26 回歸 ALL PASS、ruff clean。註：行動瀏覽器（尤其 iOS Safari）beforeunload 原生提示支援有限，可能不顯示。⚠ codex-review 背景執行中、收工時未回——下場讀 scratchpad/codex-review-f27.md 檢視 P0/P1、評估 P2。"
     }
   ]
 }
