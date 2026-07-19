@@ -703,7 +703,10 @@ function renderLogger() {
     ),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...syncStatusLine(),
-    el("div", { class: "done-list" }, state.doneSets.map(doneRow)),
+    // F20：新→舊排序（最新在最上）；組數 > 2 時固定高度內部捲動（編輯中不限高，讓編輯表單完整可見）
+    el("div", {
+      class: `done-list${state.doneSets.length > 2 && !editDraft ? " scrollable" : ""}`,
+    }, [...state.doneSets].reverse().map(doneRow)),
     el("div", { class: "steppers" }, [
       stepper(exercise.is_bodyweight ? "負重 KG" : "KG", state.weightKg, [
         ["−2.5", -2.5],

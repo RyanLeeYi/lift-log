@@ -223,6 +223,8 @@ body {
 .done-row.pending { opacity: .75; }
 
 .done-list { display: flex; flex-direction: column; gap: 6px; }
+/* F20：組數 > 2 時固定約 2 列高度、內部上下捲動——下方 steppers/主按鈕位置不被推走 */
+.done-list.scrollable { max-height: 88px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .done-row {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
   color: var(--text-dim);
