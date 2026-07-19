@@ -15,6 +15,7 @@ import {
 } from "./queue.js";
 import { openTemplates, renderTemplateEdit, renderTemplates } from "./templates.js";
 import {
+  APP_VERSION,
   clearActiveWorkout,
   exerciseAlias,
   exerciseName,
@@ -56,6 +57,11 @@ function fmtClock(totalSeconds) {
 function fmtRest(remaining) {
   // R10 倒數顯示：到 0 之後轉負數（-00:15＝超時 15 秒），實際量測照舊
   return remaining < 0 ? `-${fmtClock(-remaining)}` : fmtClock(remaining);
+}
+
+// F24：畫面角落的版本標記——手機載入哪版一眼可辨（快取過期會顯示舊版號）
+function versionTag() {
+  return el("div", { class: "version-tag" }, [APP_VERSION]);
 }
 
 // ---------- R10 Wake Lock：訓練畫面不鎖屏，倒數提醒才收得到 ----------
@@ -200,6 +206,7 @@ function renderSetup() {
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     input,
     el("button", { class: "btn btn-primary", onclick: () => guard(save) }, ["連線"]),
+    versionTag(),
   ]);
 }
 
@@ -287,6 +294,7 @@ function renderHome() {
       },
       ["⚖️ 體重"],
     ),
+    versionTag(),
   ]);
 }
 

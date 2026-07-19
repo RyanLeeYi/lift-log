@@ -160,6 +160,13 @@
       "acceptance": "logger 選動作（picker）畫面的臨時加動作清單（一般動作庫挑選清單 .exercise-list.pick-list，非今日菜單 .menu-list）固定高度（約 4 個動作高）＋內部 overflow-y 捲動，使頁面版面不因動作庫長而被往下推、下方『← 回首頁』按鈕位置穩定；今日菜單清單不受此影響。搜尋/部位篩選仍作用於此清單。E2E 驗：picker 一般動作清單可捲動（scrollHeight>clientHeight）、回首頁按鈕在畫面內、今日菜單清單不被套用固定高度。Ryan 2026-07-19 簽核（約 4 個）。",
       "status": "passing",
       "evidence": "E2E verify_f23.py PASS：picker 一般動作清單 .pick-list 固定高度可捲動（scrollHeight>clientHeight）、回首頁鈕在畫面內、部位篩選後清單高度不收縮（clientHeight 維持 248px，按鈕不上移）；pick-list class 只套一般清單故今日菜單 .menu-list 不受影響（CSS 選擇器保證）。codex-review 1 P2 已修（max-height→固定 height，篩選少項時不收縮）。sw v17。純 CSS 捲動 cap（機制同 F20/F21）：以 E2E＋codex-review 為證，未另跑跨模型驗收（提比例）。uv run pytest 152、ruff clean。"
+    },
+    {
+      "id": "F24",
+      "name": "畫面顯示版本號",
+      "acceptance": "畫面上顯示目前 app 版本號（與 sw.js shell 版本一致），讓使用者辨識手機載入的是哪一版、判斷快取是否過期。顯示於首頁與 setup 頁角落，小字不干擾操作。版本字串來源為前端 shell 內常數（隨 shell 一起被 service worker 快取，因此過期快取會顯示舊版號——正是用來偵測未更新的機制）。改版時此常數與 sw.js CACHE_NAME 一起遞增。來源：2026-07-19 Ryan 反映手機看不到新功能、需要能判斷版本。",
+      "status": "passing",
+      "evidence": "2026-07-19 完成。state.js 匯出 APP_VERSION 常數（隨 shell 被 SW 快取，過期會顯示舊版號）；app.js versionTag() 顯示於 setup 與 home 頁角落（小字低調 .version-tag）；app.css 加樣式；sw.js CACHE_NAME v18→v19、APP_VERSION 同步 v19。E2E scratchpad verify_f24.py：setup 與 home 皆顯示 v19（ALL PASS）；全套 161 passed、ruff clean；F10 E2E 回歸 ALL PASS。"
     }
   ]
 }

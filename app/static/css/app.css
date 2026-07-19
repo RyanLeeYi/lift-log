@@ -329,6 +329,16 @@ body {
 }
 .modal-actions { display: flex; gap: 10px; }
 .modal-actions .btn { flex: 1; }
+/* F24 版本標記：小字、低調、置中，不干擾操作 */
+.version-tag {
+  text-align: center;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 8px;
+  opacity: 0.6;
+}
+
 /* F10 自訂動作視窗 */
 /* chips 多行或手機鍵盤縮小視窗高度時內容可垂直捲動，建立/取消鈕不落到可視範圍外（Codex P2） */
 .custom-ex-modal { overflow-y: auto; -webkit-overflow-scrolling: touch; }

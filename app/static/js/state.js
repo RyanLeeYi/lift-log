@@ -1,6 +1,10 @@
 // 單頁狀態：目前畫面、進行中的 workout、選中的動作、計時器。
 // 重新整理後 workout 從 sessionStorage 續接（同一天的訓練不因手滑斷掉）。
 
+// F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
+// ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
+export const APP_VERSION = "v19";
+
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
 

@@ -1,5 +1,12 @@
 # Session Handoff
-> 最後更新：2026-07-19（**F10 自訂動作 → passing**。後端 schema/service 支援選填英文名+部位、正規化重複擋下；前端 picker「＋自訂動作」懸浮視窗。codex-review 3 P2 全修、acceptance-verifier R1–R10 全 pass。sw.js 現 **v18**。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-19（**F10 自訂動作 + F24 版本號顯示 → passing**。sw.js 現 **v19**、state.js APP_VERSION 同步 v19。剩 **F11 體重補記過去日期**）
+
+## F24 畫面顯示版本號 → passing（2026-07-19，本場）
+- **緣由**：Ryan 手機看不到 F10 新按鈕，排查後確認是**手機 service worker 舊快取**（正式站 public app.js/sw.js 已是新版，用無快取瀏覽器實測公開網址按鈕存在）。為了以後一眼判斷手機更到哪版，加版本號顯示。
+- **實作**：`state.js` 匯出 `APP_VERSION` 常數（隨 shell 被 SW 快取 → 過期快取會顯示舊版號，正是偵測未更新的機制）；`app.js` `versionTag()` 顯示於 **setup 與 home** 頁角落（`.version-tag` 小字低調）；`app.css` 加樣式。**sw.js CACHE_NAME v18→v19，APP_VERSION 同步 v19**。
+- **⚠ 維護鐵則**：改任何 static 資產 → sw.js `CACHE_NAME` 與 state.js `APP_VERSION` **兩處一起遞增**（兩邊都有註解釘住）。
+- **驗證**：E2E `verify_f24.py` setup+home 皆顯示 v19（ALL PASS）；全套 **161 passed**、ruff clean；F10 E2E 回歸 ALL PASS。純顯示性小 feature，未另跑 codex-review/acceptance-verifier。
+- **給 Ryan 的排查用途**：手機打開看角落版本號——若不是最新（現 v19）就是快取沒更新，照下面「強制更新」清一次即可。F14 之前裝的版本無自動重載，需手動清一次 bootstrap。
 
 ## F10 自訂動作 → passing（2026-07-19，本場）
 - **後端缺口比 handoff 記載多**（原記「主戰場前端」，實際 schema 對不上 acceptance）：`ExerciseCreate` 原本 name_en/muscle_group 必填，改為選填（`app/schemas.py`：`str | None`；name_zh 加 field_validator 去空白+擋空）。`create_exercise`（`app/services/exercises.py`）：**英文名留空→鏡射中文名**（避開 name_en unique 非空欄位的 nullable 重建、EN 檢視不空白）、**部位留空→預設「其他」**（`DEFAULT_MUSCLE_GROUP`）、**正規化重複前置檢查**（對 zh/en 各跑 `find_by_name` 命中即 DomainError 400，擋大小寫/空白變體+防 log_workout 名稱解析歧義），DB unique 當後盾。POST /api/exercises 端點未改、仍經 services。
