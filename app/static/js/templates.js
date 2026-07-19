@@ -17,6 +17,7 @@ const tpl = {
   confirmDeleteId: null, // 兩段刪除：第一下記 id、第二下才真刪
   adding: false, // 編輯器內是否開啟「加動作」懸浮視窗
   selectedAdd: null, // F21：懸浮視窗內單選中的動作物件（null＝未選）
+  itemsScrollTop: 0, // F21：編輯課表動作清單的捲動位置（整頁重繪後還原，避免每次編輯跳回頂端）
   exercises: [], // 加動作面板的動作庫清單
   searchQ: "",
   searchSeq: 0, // 搜尋回應排序：舊回應晚到不得覆蓋新結果
@@ -38,6 +39,7 @@ function startEditor(template) {
     : { id: null, name: "", items: [] };
   tpl.adding = false;
   tpl.selectedAdd = null;
+  tpl.itemsScrollTop = 0;
   tpl.searchQ = "";
 }
 
@@ -210,22 +212,6 @@ function addModal(rerender, guard) {
     const added = new Set(tpl.editing.items.map((it) => it.exercise_id));
     return tpl.exercises.filter((e) => !added.has(e.id));
   };
-  const buttons = () =>
-    pickable().map((exercise) =>
-      el(
-        "button",
-        {
-          // F21：點動作只「選中」（單選，再點別的換選中），按「確定加入」才真的加進課表
-          class: `btn exercise-item${tpl.selectedAdd?.id === exercise.id ? " selected" : ""}`,
-          onclick: () => { tpl.selectedAdd = exercise; rerender(); },
-        },
-        [
-          el("span", {}, [exerciseName(exercise)]),
-          el("span", { class: "sub" }, [exerciseAlias(exercise)]),
-        ],
-      ),
-    );
-  const list = el("div", { class: "exercise-list scrollable" }, buttons());
   const close = () => { tpl.adding = false; tpl.selectedAdd = null; rerender(); };
   const confirmAdd = () => {
     const ex = tpl.selectedAdd;
@@ -249,6 +235,39 @@ function addModal(rerender, guard) {
     tpl.selectedAdd = null;
     rerender();
   };
+  const confirmBtn = el(
+    "button",
+    {
+      class: "btn btn-primary modal-confirm",
+      ...(tpl.selectedAdd == null ? { disabled: "" } : {}),
+      onclick: () => guard(confirmAdd),
+    },
+    ["確定加入"],
+  );
+  const buttons = () =>
+    pickable().map((exercise) =>
+      el(
+        "button",
+        {
+          // F21：點動作只「選中」（單選，再點別的換選中），按「確定加入」才真的加進課表。
+          // 就地切換 .selected＋啟用確認鈕，不整頁重繪——否則長清單捲到下面選取後會跳回頂端（Codex P2）
+          class: `btn exercise-item${tpl.selectedAdd?.id === exercise.id ? " selected" : ""}`,
+          onclick: (e) => {
+            tpl.selectedAdd = exercise;
+            list.querySelectorAll(".exercise-item.selected").forEach((b) =>
+              b.classList.remove("selected"),
+            );
+            e.currentTarget.classList.add("selected");
+            confirmBtn.disabled = false;
+          },
+        },
+        [
+          el("span", {}, [exerciseName(exercise)]),
+          el("span", { class: "sub" }, [exerciseAlias(exercise)]),
+        ],
+      ),
+    );
+  const list = el("div", { class: "exercise-list scrollable" }, buttons());
   return el(
     "div",
     // 點遮罩空白處＝取消（不加入）
@@ -265,21 +284,19 @@ function addModal(rerender, guard) {
             tpl.searchQ = e.target.value;
             guard(async () => {
               const fresh = await loadPickable(tpl.searchQ);
-              if (fresh) list.replaceChildren(...buttons());
+              if (!fresh) return;
+              // 選取項目若被新搜尋結果排除，清掉選取並停用確認鈕（否則會加入畫面看不到的動作，Codex P2）
+              if (tpl.selectedAdd && !pickable().some((x) => x.id === tpl.selectedAdd.id)) {
+                tpl.selectedAdd = null;
+                confirmBtn.disabled = true;
+              }
+              list.replaceChildren(...buttons());
             });
           },
         }),
         list,
         el("div", { class: "modal-actions" }, [
-          el(
-            "button",
-            {
-              class: "btn btn-primary modal-confirm",
-              ...(tpl.selectedAdd == null ? { disabled: "" } : {}),
-              onclick: () => guard(confirmAdd),
-            },
-            ["確定加入"],
-          ),
+          confirmBtn,
           el("button", { class: "btn btn-ghost modal-cancel", onclick: close }, ["取消"]),
         ]),
       ]),
@@ -326,6 +343,20 @@ export function renderTemplateEdit(rerender, guard) {
     await backToList();
   };
 
+  // 整頁重繪會重置捲動位置——存/還原 scrollTop，讓下方動作的組數/休息/排序可連續編輯不跳頂（Codex P2）
+  const scrollable = editing.items.length > 1;
+  const itemsNode = el(
+    "div",
+    {
+      class: `tpl-items${scrollable ? " scrollable" : ""}`,
+      onscroll: (e) => { tpl.itemsScrollTop = e.target.scrollTop; },
+    },
+    editing.items.map((item, i) => itemRow(item, i, rerender)),
+  );
+  if (scrollable) {
+    requestAnimationFrame(() => { itemsNode.scrollTop = tpl.itemsScrollTop; });
+  }
+
   return el("section", { class: "screen template-edit" }, [
     el("header", { class: "topbar" }, [
       el("h1", {}, [editing.id === null ? "新課表" : "編輯課表"]),
@@ -333,11 +364,7 @@ export function renderTemplateEdit(rerender, guard) {
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     nameInput,
     // F21：動作清單固定高度（約 1 個動作高）＋內部捲動，儲存/加動作按鈕不被推走
-    el(
-      "div",
-      { class: `tpl-items${editing.items.length > 1 ? " scrollable" : ""}` },
-      editing.items.map((item, i) => itemRow(item, i, rerender)),
-    ),
+    itemsNode,
     el(
       "button",
       {
