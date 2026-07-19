@@ -7,7 +7,10 @@
 - 驗收：acceptance-verifier R1–R7 PASS（自寫 Playwright 擷 POST /sets body、LED 回參考值比對）；R8 換動作分支（驗收者）＋收工分支（補測 `verify_f15_endworkout.py`）雙 PASS；R9 F12 迴歸 out-of-scope（未動 F12 碼）。E2E `verify_f15.py`（scratchpad）。139 tests、ruff clean
 - **Ryan 手機更新**：若他先前已手動刷一次拿到 F14（v5，有自動重載 listener），這次 F15（v6）會**自動到位**、不用再手動；若還沒拿到 F14，手動刷一次會直接到 v6，之後每次部署都自動
 
-## 紀錄「編輯＋刪除」進度（F16、F17、F19 ✅ 完成上線；F18 待做）
+## 紀錄「編輯＋刪除」✅ 全部完成上線（F16 訓練組、F17 體重、F18 每日狀態、F19 刪除 UX）
+- **F18 每日狀態 編輯＋刪除 → passing 並部署（sw v11）**：後端 `DELETE /api/daily-status/{date}` 硬刪/404；日曆狀態列可編輯（精力/睡眠 1–5 量表 + 備註 inline 控制項、POST 覆蓋）＋單擊即刪。codex-review P2 已修（`refreshMonthAndDay` 守衛切月競態 selectDay(null) → 400；此修正惠及 F16/F18/F19 所有日曆變更）。acceptance-verifier 全 pass。E2E scratchpad `verify_f18.py`
+- **剩餘 feature：F10 自訂動作、F11 體重補記過去日期**（Ryan 早前真機回饋，與本刪除/編輯串無關）。注意：F11 的 /body 表單目前只記今天；F17 已為過去日期做了編輯清單，F11 是讓表單能「新增」過去日期
+
 - **F17 體重 編輯＋刪除 → passing 並部署（sw v10）**：後端 `DELETE /api/body-metrics/{date}` 硬刪/404（`delete_body_metric` service）；/body 折線圖下體重紀錄清單，每列數字輸入編輯（POST 覆蓋、日期不可改）＋單擊即刪。codex-review P2 已修（編輯草稿存 `body.editDraft` 不丟輸入）。acceptance-verifier R1–R7 pass。E2E scratchpad `verify_f17.py`
 
 - **F19 訓練組刪除 UX 改版 → passing 並部署（sw v9）**：Ryan 回饋兩段式確認多餘＋要多選。改為 logger 與日曆**單擊即刪**（拿掉兩段式）；**多選批次刪除只在日曆**（「選取」→勾選→「刪除選取 (N)」，`cal.selectMode`/`selectedIds`）。刪除 404 當成功（防連點）、批次 finally 重載（部分失敗一致性）。acceptance-verifier 12/12 pass。codex-review 2 P2 已修。**F17/F18 的刪除跟這個範式走（單擊即刪、不做多選、無確認）**，不要再做兩段式確認
