@@ -17,6 +17,8 @@ const cal = {
   editDraft: null, // {weight, reps, rpe} 編輯草稿（steppers 就地維護）
   selectMode: false, // F19：多選批次刪除模式
   selectedIds: [], // F19：多選模式下已勾選的 set id
+  statusEdit: false, // F18：當日狀態行內編輯中
+  statusDraft: null, // F18：{energy, sleep_quality, note} 狀態編輯草稿
 };
 
 async function loadMonth() {
@@ -61,6 +63,8 @@ async function selectDay(dateStr) {
   cal.editDraft = null;
   cal.selectMode = false;
   cal.selectedIds = [];
+  cal.statusEdit = false;
+  cal.statusDraft = null;
   const [workouts, statuses] = await Promise.all([
     api.listWorkouts(dateStr, dateStr),
     api.listDailyStatus(dateStr, dateStr),
@@ -74,15 +78,86 @@ async function selectDay(dateStr) {
   );
 }
 
-function statusRow() {
+// F18：當日狀態存檔（同日覆蓋）／硬刪
+async function saveStatus(rerender) {
+  const d = cal.statusDraft;
+  const payload = { date: cal.selected, energy: d.energy };
+  if (d.sleep_quality != null) payload.sleep_quality = d.sleep_quality;
+  const note = (d.note || "").trim();
+  if (note) payload.note = note;
+  await api.logDailyStatus(payload); // POST 同日覆蓋（既有 upsert）
+  cal.statusEdit = false;
+  await refreshMonthAndDay(); // selectDay 會重載當日 status
+  rerender();
+}
+
+async function deleteStatus(rerender) {
+  try {
+    await api.deleteDailyStatus(cal.selected); // 硬刪
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status === 404)) throw err; // 404＝已刪，視為成功（防連點）
+  }
+  await refreshMonthAndDay();
+  rerender();
+}
+
+// 1–5 量表按鈕；clearable 時再點同值＝清為 null
+function scaleButtons(value, apply, rerender, clearable = false) {
+  return el("div", { class: "scale-pick" },
+    [1, 2, 3, 4, 5].map((n) =>
+      el("button", {
+        class: value === n ? "on" : "",
+        onclick: () => { apply(clearable && value === n ? null : n); rerender(); },
+      }, [String(n)]),
+    ),
+  );
+}
+
+function statusRow(guard, rerender) {
   if (!cal.status) return [];
   const s = cal.status;
+  if (cal.statusEdit) {
+    const d = cal.statusDraft;
+    return [
+      el("div", { class: "cal-status editing" }, [
+        el("div", { class: "status-field" }, [
+          el("span", { class: "lbl" }, ["精力"]),
+          scaleButtons(d.energy, (v) => { if (v != null) d.energy = v; }, rerender), // 必填不可清
+        ]),
+        el("div", { class: "status-field" }, [
+          el("span", { class: "lbl" }, ["睡眠"]),
+          scaleButtons(d.sleep_quality, (v) => { d.sleep_quality = v; }, rerender, true),
+        ]),
+        el("input", {
+          class: "status-note", placeholder: "備註（選填）", value: d.note || "",
+          oninput: (e) => { d.note = e.target.value; },
+        }),
+        el("div", { class: "edit-actions" }, [
+          el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveStatus(rerender)) }, ["儲存"]),
+          el("button", { class: "btn btn-ghost sm", onclick: () => { cal.statusEdit = false; rerender(); } }, ["取消"]),
+        ]),
+      ]),
+    ];
+  }
   const parts = [`精力 ${s.energy}/5`];
   if (s.sleep_quality != null) parts.push(`睡眠 ${s.sleep_quality}/5`);
   return [
     el("div", { class: "cal-status" }, [
-      el("span", {}, [parts.join("  ")]),
+      el("span", { class: "txt" }, [parts.join("  ")]),
       ...(s.note ? [el("span", { class: "note" }, [s.note])] : []),
+      el("button", {
+        class: "btn icon-btn status-edit",
+        onclick: () => {
+          cal.statusEdit = true;
+          cal.statusDraft = { energy: s.energy, sleep_quality: s.sleep_quality, note: s.note };
+          rerender();
+        },
+      }, ["✎"]),
+      el("button", {
+        // F18：單擊即刪（硬刪），無兩段式確認
+        class: "btn icon-btn status-del",
+        onclick: () => guard(() => deleteStatus(rerender)),
+      }, ["🗑"]),
     ]),
   ];
 }
@@ -194,7 +269,7 @@ function detailRows(guard, rerender) {
   if (!cal.selected) return [];
   if (cal.detail.length === 0) {
     // 休息日也可能記了當日狀態（R9：不依附 workout）
-    return [el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]), ...statusRow()];
+    return [el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]), ...statusRow(guard, rerender)];
   }
   const tonnage = cal.days[cal.selected];
   const rows = [
@@ -205,7 +280,7 @@ function detailRows(guard, rerender) {
         tonnage !== undefined ? `噸位 ${Math.round(tonnage).toLocaleString()} kg` : "",
       ]),
     ]),
-    ...statusRow(),
+    ...statusRow(guard, rerender),
   ];
   // F19：有組才顯示「選取」入口（進多選批次刪除）
   const hasSets = cal.detail.some((d) => d.sets.length > 0);

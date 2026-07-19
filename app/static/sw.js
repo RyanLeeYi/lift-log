@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v10"; // F17：/body 體重紀錄清單 編輯/刪除
+const CACHE_NAME = "liftlog-shell-v11"; // F18：日曆當日狀態 編輯/刪除
 const SHELL = [
   "/",
   "/css/app.css",

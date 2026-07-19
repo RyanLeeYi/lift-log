@@ -383,12 +383,34 @@ body {
 .cal-batch-bar .cal-batch-del { width: 100%; }
 .cal-empty { color: var(--text-dim); font-size: 14px; padding: 8px 4px; }
 .cal-status {
-  display: flex; flex-direction: column; gap: 2px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
   font-size: 13px; color: var(--text-dim);
   padding: 4px 4px 6px;
   border-bottom: 1px solid var(--card-edge);
 }
-.cal-status .note { color: var(--text); }
+.cal-status .txt { flex: none; }
+.cal-status .note { color: var(--text); flex: 1; }
+/* F18 狀態行內編輯 */
+.cal-status .icon-btn {
+  flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
+  background: transparent; border: 1px solid var(--card-edge);
+}
+.cal-status.editing { flex-direction: column; align-items: stretch; gap: 10px; }
+.status-field { display: flex; align-items: center; gap: 10px; }
+.status-field .lbl { flex: none; width: 32px; color: var(--text-dim); }
+.scale-pick { display: flex; gap: 6px; flex: 1; }
+.scale-pick button {
+  flex: 1; min-height: 36px; border-radius: 6px;
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--card-edge);
+}
+.scale-pick button.on { background: var(--led-dim, #2a6); color: var(--text); border-color: var(--led-dim, #2a6); }
+.status-note {
+  font-size: 14px; padding: 8px; border-radius: 6px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--card-edge);
+}
+.cal-status.editing .edit-actions { display: flex; gap: 10px; }
+.cal-status.editing .edit-actions .btn { flex: 1; }
+.cal-status .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
 
 /* ---------- 體重體脂（F8） ---------- */
 .body-form { display: flex; flex-direction: column; gap: 10px; }

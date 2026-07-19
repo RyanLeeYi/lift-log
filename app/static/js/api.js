@@ -59,4 +59,6 @@ export const api = {
   logBodyMetric: (payload) => request("POST", "/api/body-metrics", payload),
   deleteBodyMetric: (dateIso) => request("DELETE", `/api/body-metrics/${dateIso}`), // F17 硬刪
   listDailyStatus: (start, end) => request("GET", `/api/daily-status?start=${start}&end=${end}`),
+  logDailyStatus: (payload) => request("POST", "/api/daily-status", payload), // F18 編輯＝同日覆蓋
+  deleteDailyStatus: (dateIso) => request("DELETE", `/api/daily-status/${dateIso}`), // F18 硬刪
 };
