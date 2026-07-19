@@ -127,6 +127,8 @@ body {
   text-align: left;
 }
 .exercise-item .sub { color: var(--text-dim); font-size: 13px; }
+/* F23：選動作畫面的臨時加動作清單固定約 4 個動作高＋內部捲動（今日菜單 .menu-list 不受影響） */
+.exercise-list.pick-list { max-height: 248px; -webkit-overflow-scrolling: touch; }
 
 /* ---------- logger（記錄一組） ---------- */
 .logger { gap: 10px; }

@@ -429,7 +429,8 @@ function templateMenu() {
 
 function renderPicker() {
   const groups = [...new Set(pickerExercises.map((e) => e.muscle_group))];
-  const list = el("div", { class: "exercise-list" }, exerciseButtons());
+  // F23：pick-list＝臨時加動作清單，固定高度可捲動（不含今日菜單 .menu-list）
+  const list = el("div", { class: "exercise-list pick-list" }, exerciseButtons());
 
   return el("section", { class: "screen picker" }, [
     el("header", { class: "topbar" }, [

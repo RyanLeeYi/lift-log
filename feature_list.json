@@ -153,6 +153,13 @@
       "acceptance": "課表編輯的加動作懸浮視窗（F21）新增部位（muscle_group）篩選 chips，行為同 logger picker（臨時加動作）：視窗內顯示動作庫的部位 chips，點某部位只列該部位的動作、再點同一個取消篩選（回全部）；部位篩選與搜尋可並用（兩者同時套用）；每次開窗重置部位篩選（同搜尋重置）；部位篩選只縮清單、不影響已在課表的動作去重與單選確定加入流程。E2E 驗：開窗→點某部位→清單只剩該部位動作→再點回全部；部位篩選下仍可選動作按確定加入、加進課表。Ryan 2026-07-19 簽核。",
       "status": "passing",
       "evidence": "acceptance-verifier 8/8 全 pass（Playwright + httpx 實測）：加動作視窗有部位 chips（6 部位）；點部位縮清單（total 35→9、chip .on 唯一）；再點同部位取消回全部；部位＋搜尋可並用且搜尋框不失焦；篩選下可選動作按確定加入、存檔課表含該動作；開窗重置部位篩選；去重仍生效。codex-review 1 P2 已修（部位 chip 改就地更新不整頁重繪，避免與進行中搜尋 callback 競態）。sw v14。commit 串含 F22 impl + P2 fix。uv run pytest 152、ruff clean。E2E verify_f22.py。"
+    },
+    {
+      "id": "F23",
+      "name": "選動作畫面：臨時加動作清單固定高度捲動（約 4 個）",
+      "acceptance": "logger 選動作（picker）畫面的臨時加動作清單（一般動作庫挑選清單 .exercise-list.pick-list，非今日菜單 .menu-list）固定高度（約 4 個動作高）＋內部 overflow-y 捲動，使頁面版面不因動作庫長而被往下推、下方『← 回首頁』按鈕位置穩定；今日菜單清單不受此影響。搜尋/部位篩選仍作用於此清單。E2E 驗：picker 一般動作清單可捲動（scrollHeight>clientHeight）、回首頁按鈕在畫面內、今日菜單清單不被套用固定高度。Ryan 2026-07-19 簽核（約 4 個）。",
+      "status": "failing",
+      "evidence": null
     }
   ]
 }
