@@ -57,5 +57,6 @@ export const api = {
     request("GET", `/api/stats/calendar?year=${year}&month=${month}`),
   listBodyMetrics: () => request("GET", "/api/body-metrics"),
   logBodyMetric: (payload) => request("POST", "/api/body-metrics", payload),
+  deleteBodyMetric: (dateIso) => request("DELETE", `/api/body-metrics/${dateIso}`), // F17 硬刪
   listDailyStatus: (start, end) => request("GET", `/api/daily-status?start=${start}&end=${end}`),
 };

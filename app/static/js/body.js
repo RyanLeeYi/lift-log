@@ -1,6 +1,6 @@
 // 體重體脂趨勢（F8）：輸入同日覆蓋（server 為 SSOT）、SVG 折線自繪（無圖表庫）。
 
-import { api } from "./api.js";
+import { api, ApiError } from "./api.js";
 import { el } from "./dom.js";
 import { state } from "./state.js";
 
@@ -11,6 +11,7 @@ const body = {
   metrics: [], // 升冪 [{date, weight_kg, body_fat_pct}]
   savedFlash: null, // 剛存成功的訊息（一次性）
   saving: false, // 防雙擊：送出中不再受理（教訓同 logSet／課表儲存）
+  editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
 };
 
 function todayIso() {
@@ -23,6 +24,7 @@ function todayIso() {
 export async function openBody() {
   body.metrics = await api.listBodyMetrics();
   body.savedFlash = null;
+  body.editDate = null;
 }
 
 function latestMetric() {
@@ -126,6 +128,75 @@ export function renderBody(rerender, goHome, guard) {
     rerender();
   };
 
+  // ---------- F17 紀錄清單：每筆可編輯/單擊刪除 ----------
+  const deleteMetric = async (m) => {
+    try {
+      await api.deleteBodyMetric(m.date); // 硬刪
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 404)) throw err; // 404＝已刪，視為成功（防連點）
+    }
+    body.metrics = await api.listBodyMetrics();
+    rerender();
+  };
+
+  const saveEditMetric = async (m) => {
+    const w = Number(document.querySelector(".bm-edit-weight").value);
+    if (!Number.isFinite(w) || w < 30 || w > 300) {
+      state.error = "體重要在 30–300 kg 之間";
+      rerender();
+      return;
+    }
+    const fatRaw = document.querySelector(".bm-edit-fat").value.trim();
+    const payload = { date: m.date, weight_kg: w }; // date 固定＝同日覆蓋（不可改日期）
+    if (fatRaw !== "") {
+      const fat = Number(fatRaw);
+      if (!Number.isFinite(fat) || fat <= 0 || fat >= 100) {
+        state.error = "體脂要在 0–100% 之間";
+        rerender();
+        return;
+      }
+      payload.body_fat_pct = fat;
+    }
+    await api.logBodyMetric(payload); // POST 同日覆蓋（既有 upsert）
+    body.editDate = null;
+    state.error = null;
+    body.metrics = await api.listBodyMetrics();
+    rerender();
+  };
+
+  const metricRow = (m) => {
+    if (body.editDate === m.date) {
+      return el("div", { class: "bm-row editing" }, [
+        el("span", { class: "bm-date" }, [m.date]),
+        el("input", {
+          type: "number", class: "bm-edit-weight", step: "0.1",
+          inputmode: "decimal", value: String(m.weight_kg), placeholder: "kg",
+        }),
+        el("input", {
+          type: "number", class: "bm-edit-fat", step: "0.1", inputmode: "decimal",
+          value: m.body_fat_pct != null ? String(m.body_fat_pct) : "", placeholder: "體脂%",
+        }),
+        el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditMetric(m)) }, ["儲存"]),
+        el("button", { class: "btn btn-ghost sm", onclick: () => { body.editDate = null; state.error = null; rerender(); } }, ["取消"]),
+      ]);
+    }
+    return el("div", { class: "bm-row" }, [
+      el("span", { class: "bm-date" }, [m.date]),
+      el("span", { class: "bm-val" }, [
+        `${m.weight_kg} kg${m.body_fat_pct != null ? `　${m.body_fat_pct}%` : ""}`,
+      ]),
+      el("button", {
+        class: "btn icon-btn bm-edit",
+        onclick: () => { body.editDate = m.date; state.error = null; rerender(); },
+      }, ["✎"]),
+      el("button", {
+        // F17：單擊即刪（硬刪），跟 F19 範式一致、無兩段式確認
+        class: "btn icon-btn bm-del",
+        onclick: () => guard(() => deleteMetric(m)),
+      }, ["🗑"]),
+    ]);
+  };
+
   // 兩序列各自先篩選再取最後 N 點——體脂記得稀疏時，先切再篩會丟掉仍屬最近的體脂點
   const weightPoints = body.metrics
     .map((m) => ({ date: m.date, value: m.weight_kg }))
@@ -154,6 +225,15 @@ export function renderBody(rerender, goHome, guard) {
     ]),
     chartCard("體重", weightPoints, "kg"),
     chartCard("體脂", fatPoints, "%"),
+    ...(body.metrics.length > 0
+      ? [
+          el("div", { class: "body-list" }, [
+            el("div", { class: "body-list-head" }, ["紀錄"]),
+            // 最新在上
+            ...[...body.metrics].reverse().map(metricRow),
+          ]),
+        ]
+      : []),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
   ]);
 }

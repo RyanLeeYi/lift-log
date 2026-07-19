@@ -422,6 +422,28 @@ body {
   font-family: var(--mono); font-size: 11px; color: var(--text-dim);
 }
 .body-empty { color: var(--text-dim); font-size: 14px; padding: 4px 0 8px; }
+/* F17 體重紀錄清單：每列可編輯/單擊刪除 */
+.body-list { display: flex; flex-direction: column; gap: 6px; }
+.body-list-head { color: var(--text-dim); font-size: 13px; font-weight: 600; padding: 2px 4px; }
+.bm-row {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 14px;
+  padding: 6px 4px; border-bottom: 1px solid var(--card-edge);
+}
+.bm-row .bm-date { color: var(--text-dim); flex: none; }
+.bm-row .bm-val { color: var(--text); flex: 1; }
+.bm-row .icon-btn {
+  flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
+  background: transparent; border: 1px solid var(--card-edge);
+}
+.bm-row.editing { flex-wrap: wrap; }
+.bm-row.editing input {
+  width: 76px; flex: 1 1 64px; min-width: 56px;
+  font-family: var(--mono); font-size: 14px; padding: 6px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--card-edge); border-radius: 6px;
+}
+.bm-row .btn.sm { flex: none; padding: 6px 10px; min-height: 34px; font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; }
