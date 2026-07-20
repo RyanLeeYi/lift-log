@@ -41,7 +41,14 @@ export const api = {
   searchExercises: (q) =>
     request("GET", q ? `/api/exercises?q=${encodeURIComponent(q)}` : "/api/exercises"),
   createExercise: (payload) => request("POST", "/api/exercises", payload), // F10 自訂動作
-  lastSets: (exerciseId) => request("GET", `/api/exercises/${exerciseId}/last-sets`),
+  // excludeWorkoutId：排除進行中的 workout → 「上次」看前一次訓練而非本次（F32）
+  lastSets: (exerciseId, excludeWorkoutId) =>
+    request(
+      "GET",
+      excludeWorkoutId != null
+        ? `/api/exercises/${exerciseId}/last-sets?exclude_workout=${excludeWorkoutId}`
+        : `/api/exercises/${exerciseId}/last-sets`,
+    ),
   createWorkout: (payload = {}) => request("POST", "/api/workouts", payload),
   listTemplates: () => request("GET", "/api/templates"),
   createTemplate: (payload) => request("POST", "/api/templates", payload),

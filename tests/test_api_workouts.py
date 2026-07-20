@@ -315,3 +315,32 @@ class TestExercises:
         resp = client.get(f"/api/exercises/{exercise_id}/last-sets")
         assert resp.status_code == 200
         assert resp.json() == []
+
+    def test_last_sets_exclude_workout_skips_in_progress(self, client, exercise_id):
+        # F32：進行中的 workout 也已有本動作的組時，「上次」要看前一次 workout，不是進行中這次
+        w1 = client.post("/api/workouts", json={"date": "2026-07-01"}).json()["id"]
+        w2 = client.post("/api/workouts", json={"date": "2026-07-10"}).json()["id"]
+        client.post(
+            f"/api/workouts/{w1}/sets",
+            json=make_set_payload(exercise_id, client_uuid="c" * 32, weight_kg=75),
+        )
+        client.post(
+            f"/api/workouts/{w2}/sets",
+            json=make_set_payload(exercise_id, client_uuid="d" * 32, weight_kg=80),
+        )
+        resp = client.get(f"/api/exercises/{exercise_id}/last-sets?exclude_workout={w2}")
+        assert resp.status_code == 200
+        sets = resp.json()
+        assert len(sets) == 1
+        assert sets[0]["weight_kg"] == 75  # 排除進行中 w2 → 回前一次 w1 的組
+
+    def test_last_sets_exclude_workout_empty_when_only_in_progress(self, client, exercise_id):
+        # 只有進行中這次做過 → 排除後沒有前一次，回空（前端據此顯示「本次」摘要，不謊稱上次）
+        w = client.post("/api/workouts", json={"date": "2026-07-10"}).json()["id"]
+        client.post(
+            f"/api/workouts/{w}/sets",
+            json=make_set_payload(exercise_id, client_uuid="e" * 32, weight_kg=60),
+        )
+        resp = client.get(f"/api/exercises/{exercise_id}/last-sets?exclude_workout={w}")
+        assert resp.status_code == 200
+        assert resp.json() == []

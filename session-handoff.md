@@ -1,12 +1,13 @@
 # Session Handoff
-> 最後更新：2026-07-20（**F32 換動作後保留本次已做組數 → passing**）。前面 F10/F24/F25/F26/F27/F28/F29/F30/F31 皆已上線。sw.js 現 **v32**、APP_VERSION v32。剩 **F11 體重補記過去日期**；F31 仍待 Ryan Android 真機確認通知送達。
+> 最後更新：2026-07-20（**F32 換動作後保留本次已做組數 → passing**，含「上次查前一次」refinement）。前面 F10/F24/F25/F26/F27/F28/F29/F30/F31 皆已上線。sw.js 現 **v33**、APP_VERSION v33。剩 **F11 體重補記過去日期**；F31 仍待 Ryan Android 真機確認通知送達。
 
 ## F32 換動作後保留本次已做組數 → passing（2026-07-20，本場）
 - **需求**：Ryan 反映「換動作在沒按收工/結束訓練時，原本訓練內組數都變成上次動作」。即同一次訓練換動作後回到該動作，先前做的組要留在 done-list，不能被誤標「上次」。
 - **根因**：`pickExercise()` 每次 `state.doneSets=[]` 再打 `api.lastSets(id)`；`last-sets` 取「該動作最近一次 workout」＝今天這次，回傳本次的組卻被標成「上次」、done-list 空掉。
 - **實作**：`state.js` 加 `doneByExercise:{exerciseId:[sets]}`（納入 save/restore/clearActiveWorkout，收工清空）。`app.js` `rememberDoneSets()` 在 logSet/deleteDoneSet/saveEditDoneSet 後鏡射；`pickExercise` 若鏡射有組→還原、weight/reps 取最後一組、hint 標「本次」並**跳過 lastSets**；無組維持原行為。sw.js v31→v32、APP_VERSION 同步 v32。
 - **codex-review 1 P1＋1 P2 已修**：①**P1 離線佇列生命週期**——`syncQueue` 補傳成功換得 server id、`discardFailed` 捨棄失敗組，原本只改 `doneSets` 沒同步鏡射；新增 `reconcileDoneSets({replace,remove})` 掃**全部** doneByExercise 項目（離線組可能屬非當前動作）依 client_uuid 改寫並持久化，否則換動作復活無 id 舊 payload→刪除不刪 server、編輯撞冪等。②**P2 升級回填**——v31→v32 時舊 session 無鏡射，`pickExercise` 偵測 `setCounts[id]>0` 但鏡射空→`workoutDetail` 回填（既有鏡射優先，保留未上 server 的離線組）。
-- **驗證**：`verify_f32.py` **7/7**（T1 換回保留 2 組、T2 hint 非上次、T3 續接第 3 組、T4 全新動作維持「第一次」、T5 升級回填 done-row 3、T6 離線記錄→補傳→換回→刪除真的刪到 server server_remaining=0）；全套 **pytest 173 過**、ruff clean、F31 logger 回歸 4/4。
+- **追加 refinement（Ryan 要求）**：換回已做過的動作時，「上次」提示**仍要顯示，但查前一次訓練**（不是把本次組誤標成上次）。作法：`last-sets` 端點加 `exclude_workout` 參數（service `last_sets(exclude_workout_id)` 過濾掉進行中 workout），`api.lastSets(id, workoutId)` 一律帶本次 workoutId；resume 分支 done-list 顯示本次組、hint 查 `exclude=本次` 顯示前一次值（查無前一次才退回「本次」摘要）。後端 TDD 2 條、sw.js v32→v33、APP_VERSION v33。refinement 再跑 codex-review、**2 P2 已修**：①resume 的 lastSets catch 只吞離線、401/5xx 重拋交 guard；②pickExercise 兩處 await 後加 `state.exercise!==exercise` 過期守衛（防 await 期間換動作/結束訓練後過期結果把畫面拉回 logger）。
+- **驗證**：`verify_f32.py` **8/8**（A0 首選顯示上次 50、T1 換回保留 2 組 60kg、T2 上次顯示前一次 50 非本次 60、T3 續接第 3 組、T4 全新動作維持「第一次」、T5 升級回填 done-row 3＋上次 50、T6 離線記錄→補傳→換回→刪除真的刪到 server server_remaining=0）；全套 **pytest 175 過**、ruff clean、F31 logger 回歸 4/4。
 
 ## F31 休息結束 Web Push 通知 → passing（2026-07-20，本場）
 - **需求**：Ryan 要休息倒數能離開網頁去別 app 操作、時間到通知。**真正浮動視窗手機網頁做不到**（原生專屬），改以 Web Push 達成「離開網頁也被通知」。Ryan 選 Android＋伺服器推播（可靠）。

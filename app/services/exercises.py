@@ -77,14 +77,23 @@ def search_exercises(session: Session, q: str | None) -> list[Exercise]:
     return list(session.scalars(query))
 
 
-def last_sets(session: Session, exercise_id: int) -> list[WorkoutSet]:
-    """該動作最近一次 workout 的各組（帶入預設值用）；exercise 不存在 → 404。"""
+def last_sets(
+    session: Session, exercise_id: int, exclude_workout_id: int | None = None
+) -> list[WorkoutSet]:
+    """該動作最近一次 workout 的各組（帶入預設值用）；exercise 不存在 → 404。
+
+    exclude_workout_id：排除進行中的 workout，讓「上次」看的是**前一次**訓練而非本次
+    （F32——本次已做過同動作時，last-sets 原會回本次那筆並被誤標成上次）。
+    """
     if session.get(Exercise, exercise_id) is None:
         raise NotFoundError()
+    latest_filters = [WorkoutSet.exercise_id == exercise_id, WorkoutSet.deleted_at.is_(None)]
+    if exclude_workout_id is not None:
+        latest_filters.append(WorkoutSet.workout_id != exclude_workout_id)
     latest_workout_id = (
         select(WorkoutSet.workout_id)
         .join(Workout, Workout.id == WorkoutSet.workout_id)
-        .where(WorkoutSet.exercise_id == exercise_id, WorkoutSet.deleted_at.is_(None))
+        .where(*latest_filters)
         .order_by(Workout.date.desc(), Workout.id.desc())
         .limit(1)
         .scalar_subquery()

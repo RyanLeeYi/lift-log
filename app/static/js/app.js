@@ -469,9 +469,22 @@ async function pickExercise(exercise) {
   if (Array.isArray(resumed) && resumed.length > 0) {
     state.doneSets = resumed.map((s) => ({ ...s }));
     const lastSet = state.doneSets[state.doneSets.length - 1];
-    state.weightKg = lastSet.weight_kg;
+    state.weightKg = lastSet.weight_kg; // 續接本次：預設帶本次最後一組
     state.reps = lastSet.reps;
-    state.lastHint = `本次  ${state.doneSets.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
+    // 「上次」仍要顯示——但查的是**前一次** workout（排除本次），不是把本次組誤標成上次。
+    // 查不到前一次（第一次做這個動作）才退回顯示本次摘要。離線就略過參考。
+    let prev = [];
+    try {
+      prev = await api.lastSets(exercise.id, state.workoutId);
+    } catch (err) {
+      if (!isOffline(err)) throw err; // 401/5xx 交給 guard（導回 setup／顯示錯誤），不當成查無上次
+      /* 離線：略過上次參考，done-list 仍是本次的組 */
+    }
+    if (state.exercise !== exercise) return; // await 期間已換動作/結束訓練：丟棄過期結果，別把畫面拉回 logger
+    state.lastHint =
+      prev.length > 0
+        ? `上次  ${prev.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`
+        : `本次  ${state.doneSets.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
     state.screen = "logger";
     render();
     return;
@@ -480,7 +493,8 @@ async function pickExercise(exercise) {
   let last = [];
   let offline = false;
   try {
-    last = await api.lastSets(exercise.id);
+    // 排除進行中的 workout：即使本次剛做過，「上次」也指前一次訓練（F32）
+    last = await api.lastSets(exercise.id, state.workoutId);
   } catch (err) {
     if (!isOffline(err)) throw err; // 離線拿不到「上次」——退而求其次，不擋記錄
     offline = true;
@@ -514,6 +528,7 @@ async function pickExercise(exercise) {
     state.reps = 8;
     state.lastHint = null;
   }
+  if (state.exercise !== exercise) return; // await（lastSets/listQueued）期間已離開/換動作：丟棄過期結果
   state.screen = "logger";
   render();
 }
