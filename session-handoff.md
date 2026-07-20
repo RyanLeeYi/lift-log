@@ -1,12 +1,12 @@
 # Session Handoff
-> 最後更新：2026-07-20（**F31 休息結束 Web Push 通知 → passing**）。前面 F10/F24/F25/F26/F27/F28/F29/F30 皆已上線。sw.js 現 **v31**、APP_VERSION v31。F31 codex-review 完成（1 P1+2 P2 已修）；**待 Ryan Android 真機確認通知送達**。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-20（**F32 換動作後保留本次已做組數 → passing**）。前面 F10/F24/F25/F26/F27/F28/F29/F30/F31 皆已上線。sw.js 現 **v32**、APP_VERSION v32。剩 **F11 體重補記過去日期**；F31 仍待 Ryan Android 真機確認通知送達。
 
-## ⏭ 下一步（已診斷、未實作）：F32 換動作後保留本次已做組數
-- **Ryan 需求（2026-07-20）**：「換動作按鈕，在沒按收工/結束訓練時，原本訓練內組數都不要變成上次動作」。即**同一次訓練中，換動作後再回到該動作，之前做的組要留在 done-list，不能被當成『上次』**。
-- **根因（已查證）**：`app.js` `pickExercise()` 每次都 `state.doneSets = []` 再打 `api.lastSets(id)`。而 `last-sets`（`services/exercises.py:80`）取的是**該動作最近一次 workout**——若今天這次訓練剛做過，回傳的就是**本次的組**，卻被 `state.lastHint = "上次 …"` 標成上次，done-list 也空掉。
-- **修法計畫**：state 加 `doneByExercise: {exerciseId:[sets]}`（隨本次 workout 走，納入 `saveActiveWorkout`/`restoreActiveWorkout`/`clearActiveWorkout`，`endWorkout` 清空）。`logSet`/`deleteDoneSet`/`saveEditDoneSet` 更新後鏡射進該 map。`pickExercise`：若 `doneByExercise[id]` 有組 → 還原成 `state.doneSets`、預設 weight/reps 取最後一組、hint 標「本次 …」而非「上次」，並**跳過 lastSets**（避免錯標＋省一次請求）；無組時維持原行為。此法同時涵蓋離線佇列組（本就 push 進 doneSets）與重整（map 持久化）。
-- **流程**：先加 F32 進 `feature_list.json` 標 failing＋acceptance → TDD（Playwright E2E：做 2 組 A→換動作→做 1 組 B→換回 A，斷言 done-list 顯示 2 組且 hint 非「上次」）→ codex-review → 翻 passing＋證據 → **sw.js CACHE_NAME 與 state.js APP_VERSION 同步 v31→v32** → 部署 → 驗證公開站。
-- **收工原因**：本輪開工前 Weekly 用量達 90% 門檻，僅完成診斷即停，尚未動任何程式碼。
+## F32 換動作後保留本次已做組數 → passing（2026-07-20，本場）
+- **需求**：Ryan 反映「換動作在沒按收工/結束訓練時，原本訓練內組數都變成上次動作」。即同一次訓練換動作後回到該動作，先前做的組要留在 done-list，不能被誤標「上次」。
+- **根因**：`pickExercise()` 每次 `state.doneSets=[]` 再打 `api.lastSets(id)`；`last-sets` 取「該動作最近一次 workout」＝今天這次，回傳本次的組卻被標成「上次」、done-list 空掉。
+- **實作**：`state.js` 加 `doneByExercise:{exerciseId:[sets]}`（納入 save/restore/clearActiveWorkout，收工清空）。`app.js` `rememberDoneSets()` 在 logSet/deleteDoneSet/saveEditDoneSet 後鏡射；`pickExercise` 若鏡射有組→還原、weight/reps 取最後一組、hint 標「本次」並**跳過 lastSets**；無組維持原行為。sw.js v31→v32、APP_VERSION 同步 v32。
+- **codex-review 1 P1＋1 P2 已修**：①**P1 離線佇列生命週期**——`syncQueue` 補傳成功換得 server id、`discardFailed` 捨棄失敗組，原本只改 `doneSets` 沒同步鏡射；新增 `reconcileDoneSets({replace,remove})` 掃**全部** doneByExercise 項目（離線組可能屬非當前動作）依 client_uuid 改寫並持久化，否則換動作復活無 id 舊 payload→刪除不刪 server、編輯撞冪等。②**P2 升級回填**——v31→v32 時舊 session 無鏡射，`pickExercise` 偵測 `setCounts[id]>0` 但鏡射空→`workoutDetail` 回填（既有鏡射優先，保留未上 server 的離線組）。
+- **驗證**：`verify_f32.py` **7/7**（T1 換回保留 2 組、T2 hint 非上次、T3 續接第 3 組、T4 全新動作維持「第一次」、T5 升級回填 done-row 3、T6 離線記錄→補傳→換回→刪除真的刪到 server server_remaining=0）；全套 **pytest 173 過**、ruff clean、F31 logger 回歸 4/4。
 
 ## F31 休息結束 Web Push 通知 → passing（2026-07-20，本場）
 - **需求**：Ryan 要休息倒數能離開網頁去別 app 操作、時間到通知。**真正浮動視窗手機網頁做不到**（原生專屬），改以 Web Push 達成「離開網頁也被通知」。Ryan 選 Android＋伺服器推播（可靠）。

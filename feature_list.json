@@ -216,6 +216,13 @@
       "acceptance": "休息開始時排定「休息結束」推播；到點手機跳通知＋震動，人在別的 app 也收得到，不用回網頁看時間。首頁「🔔 休息提醒」開關要權限＋訂閱（Android Chrome；iPhone 需加主畫面）。繼續下一組/換動作/收工會取消未觸發的通知。未開啟或伺服器未設金鑰＝完全 no-op、不影響訓練。註：真正的浮動視窗手機網頁做不到，改以推播達成「離開網頁也被通知」的目的。來源：2026-07-20 Ryan 要倒數能離開網頁在別 app 操作、時間到通知。",
       "status": "failing",
       "evidence": "2026-07-20 完成。後端 pywebpush＋VAPID（金鑰在 .env、gitignore）＋PushSubscription＋in-process asyncio 排程器＋4 endpoints；前端 sw.js push/notificationclick、push.js（權限/訂閱/排程 best-effort）、首頁「🔔 休息提醒」開關、startRestTimer 排程/stopRestTimer 取消。sw.js v31、APP_VERSION v31。codex-review 完成、1 P1＋2 P2 全修：P1 pywebpush 的 vapid_private_key 直接傳 DER b64url（原本轉 PEM 會 ValueError、真實送出全掛——mock 掉 _send_one 才漏測；已補格式回歸測試）；P2 push.js 把 schedule/cancel 串成 promise 鏈序列化（防慢網亂序誤推）；P2 cycleRestHint 休息中改秒數依新剩餘時間重排推播。test_push.py 12 條＋全套 pytest 過、ruff clean。E2E verify_f31.py 4/4、logger/F29 回歸 PASS。⚠ 真機送達待 Ryan Android 確認（headless 測不了訂閱＋送達）。"
+    },
+    {
+      "id": "F32",
+      "name": "換動作後保留本次已做組數",
+      "acceptance": "同一次訓練（未按收工/結束訓練）中，換動作離開某動作後再回到它，先前做的組要仍留在 done-list（可續刪/續編、編號接續），不得被清空、也不得被 last-sets 誤標成「上次」。切到全新（本次未做過）的動作維持原行為：done-list 空、顯示「第一次做這個動作」或真正的上次。收工/結束訓練後清除本次鏡射。來源：2026-07-20 Ryan 反映換動作會把原本訓練內組數變成上次動作。",
+      "status": "passing",
+      "evidence": "2026-07-20 完成。state 加 doneByExercise:{exerciseId:[sets]}（納入 saveActiveWorkout/restoreActiveWorkout/clearActiveWorkout，收工清空）；pickExercise 若鏡射有組→還原本次組、hint 標「本次」而非「上次」並跳過 lastSets；logSet/deleteDoneSet/saveEditDoneSet 後 rememberDoneSets 鏡射同步。sw.js v32、APP_VERSION v32。codex-review 1 P1+1 P2 皆修：P1 syncQueue 補傳成功換 server id、discardFailed 捨棄失敗組都經 reconcileDoneSets 掃全鏡射同步並持久化（否則換動作復活無 id 舊 payload，刪除不刪 server、編輯撞 client_uuid 冪等）；P2 pickExercise 偵測 setCounts>0 但鏡射空（v31→v32 升級）→ workoutDetail 回填。E2E verify_f32.py 7/7：T1 換動作回來保留 2 組、T2 hint 非上次、T3 續接第 3 組、T4 全新動作維持第一次、T5 升級回填 done-row 3、T6 離線記錄→補傳→換回→刪除真的刪到 server（server_remaining=0）。全套 pytest 173 過、ruff clean、F31 logger 回歸 4/4。"
     }
   ]
 }

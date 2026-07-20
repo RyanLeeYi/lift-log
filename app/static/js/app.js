@@ -157,14 +157,29 @@ function renderUnlessTyping() {
   render();
 }
 
+// F32：把佇列生命週期（補傳成功換得 server id、捨棄失敗組）同步到 doneSets 與各動作鏡射並持久化。
+// doneByExercise 可能含非當前動作的離線組，故要掃全部項目——否則換動作回來會復活無 id 的舊 payload，
+// 之後刪除只移出佇列不刪 server、編輯撞 client_uuid 冪等失效（Codex P1）。
+function reconcileDoneSets({ replace, remove } = {}) {
+  const mapArr = (arr) =>
+    arr
+      .map((s) => (replace && replace.has(s.client_uuid) ? replace.get(s.client_uuid) : s))
+      .filter((s) => !(remove && remove.has(s.client_uuid)));
+  state.doneSets = mapArr(state.doneSets);
+  state.doneByExercise = Object.fromEntries(
+    Object.entries(state.doneByExercise).map(([id, arr]) => [id, mapArr(arr)]),
+  );
+  saveActiveWorkout();
+}
+
 async function syncQueue() {
   const before = state.queue;
   const synced = await flushQueue(api.logSet);
-  // 補傳成功者把含 server id 的回應寫回 doneSets——否則使用者仍停在 logger 時，
+  // 補傳成功者把含 server id 的回應寫回 doneSets 與鏡射——否則使用者仍停在 logger 時，
   // 該筆缺 id 會被誤判未同步，之後在畫面上刪/改會打不到伺服器（Codex P1）
   if (synced.length > 0) {
     const byUuid = new Map(synced.map((x) => [x.client_uuid, x.saved]));
-    state.doneSets = state.doneSets.map((s) => byUuid.get(s.client_uuid) ?? s);
+    reconcileDoneSets({ replace: byUuid });
   }
   await refreshQueueCounts();
   const changed =
@@ -188,8 +203,8 @@ function syncStatusLine() {
           onclick: () =>
             guard(async () => {
               const discarded = new Set(await discardFailed());
-              // 捨棄＝這些組沒進 server——從清單移除，不能讓它們看起來像已同步
-              state.doneSets = state.doneSets.filter((s) => !discarded.has(s.client_uuid));
+              // 捨棄＝這些組沒進 server——從清單與鏡射一併移除（F32 P1），不能讓它們看起來像已同步
+              reconcileDoneSets({ remove: discarded });
               await refreshQueueCounts();
               render();
             }),
@@ -420,11 +435,48 @@ function pickerCustomModal() {
   });
 }
 
+// F32：把目前動作的完成組鏡射進 doneByExercise，換動作後回到該動作可原樣還原（同一次訓練內）。
+function rememberDoneSets() {
+  if (!state.exercise) return;
+  state.doneByExercise = { ...state.doneByExercise, [state.exercise.id]: state.doneSets };
+}
+
 async function pickExercise(exercise) {
   state.exercise = exercise;
   state.rpe = null;
   state.doneSets = [];
   state.setNumber = (state.setCounts[exercise.id] || 0) + 1; // 回頭選同動作時接續編號
+
+  // F32：同一次訓練已做過這個動作 → 還原本次的組，不重抓「上次」
+  //（last-sets 取「最近一次 workout」＝今天這次，會把本次的組誤標成上次、done-list 也空掉）
+  let resumed = state.doneByExercise[exercise.id];
+  // P2：v31→v32 升級時舊 session 無鏡射，但 setCounts>0 代表本次做過 → 從伺服器回填一次，
+  // 否則跨部署的進行中訓練仍會把本次組誤標成「上次」（Codex P2）。離線回填失敗就退回原流程。
+  const missingMirror = !Array.isArray(resumed) || resumed.length === 0;
+  if (missingMirror && (state.setCounts[exercise.id] || 0) > 0 && state.workoutId) {
+    try {
+      const detail = await api.workoutDetail(state.workoutId);
+      const grouped = {};
+      for (const s of detail.sets) (grouped[s.exercise_id] ??= []).push(s);
+      // 既有鏡射優先（可能含尚未上 server 的離線組），只補伺服器有、鏡射缺的動作
+      state.doneByExercise = { ...grouped, ...state.doneByExercise };
+      saveActiveWorkout();
+      resumed = state.doneByExercise[exercise.id];
+    } catch {
+      /* 離線/失敗：退回下方 lastSets 流程 */
+    }
+  }
+  if (Array.isArray(resumed) && resumed.length > 0) {
+    state.doneSets = resumed.map((s) => ({ ...s }));
+    const lastSet = state.doneSets[state.doneSets.length - 1];
+    state.weightKg = lastSet.weight_kg;
+    state.reps = lastSet.reps;
+    state.lastHint = `本次  ${state.doneSets.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
+    state.screen = "logger";
+    render();
+    return;
+  }
+
   let last = [];
   let offline = false;
   try {
@@ -651,7 +703,8 @@ function renderLogger() {
       state.setCounts[exercise.id] = state.setNumber;
       state.setNumber += 1;
       state.rpe = null;
-      saveActiveWorkout(); // setCounts 持久化：重新整理後編號續接
+      rememberDoneSets(); // F32：換動作後回到此動作可還原本次組
+      saveActiveWorkout(); // setCounts/doneByExercise 持久化：重新整理後編號續接、組不丟
       startRestTimer(); // 招牌時刻：LED 亮起＝已記錄
     } finally {
       state.submitting = false;
@@ -695,6 +748,7 @@ function renderLogger() {
     // 同步本動作完成組數（否則課表選單仍顯示 3/3、menu-done 誤標）＋續接編號避開缺口（Codex P2）
     state.setCounts = { ...state.setCounts, [state.exercise.id]: state.doneSets.length };
     state.setNumber = state.doneSets.reduce((m, x) => Math.max(m, x.set_number), 0) + 1;
+    rememberDoneSets(); // F32：刪組後鏡射同步，換動作後還原不含已刪組
     saveActiveWorkout();
     render();
   };
@@ -715,6 +769,8 @@ function renderLogger() {
       replaceInDone(s, payload);
     }
     editDraft = null;
+    rememberDoneSets(); // F32：編輯後鏡射同步，換動作後還原帶回修改值
+    saveActiveWorkout();
     render();
   };
 

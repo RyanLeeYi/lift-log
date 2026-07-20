@@ -3,7 +3,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v31";
+export const APP_VERSION = "v32";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -18,6 +18,7 @@ export const state = {
   rpe: null,
   setNumber: 1,
   doneSets: [], // 本回合該動作已完成的組（顯示用）
+  doneByExercise: {}, // F32 {exerciseId:[sets]}——本次 workout 各動作已做組的鏡射；換動作後回到該動作原樣還原，不被誤標成「上次」
   setCounts: {}, // {exerciseId: 本次 workout 已記組數} —— 回頭選同動作時 set_number 接續
   restStartedAt: null, // ms timestamp；null = 計時器未啟動（＝就緒態，按鈕顯示「完成這組」）
   restHintOverrides: {}, // {exerciseId: 秒}——R10 訓練中臨時調整，僅本次 workout、不寫回課表
@@ -53,6 +54,7 @@ export function saveActiveWorkout() {
       workoutId: state.workoutId,
       template: state.template,
       setCounts: state.setCounts, // 續接恢復：重新整理後 set_number 不得與已存組撞號
+      doneByExercise: state.doneByExercise, // F32：本次各動作已做組，換動作/重整後還原不丟
       restHintOverrides: state.restHintOverrides, // 臨時調整跟著本次訓練走，重整不丟
     }),
   );
@@ -65,6 +67,7 @@ export function restoreActiveWorkout() {
       state.workoutId = saved.workoutId;
       state.template = saved.template || null;
       state.setCounts = saved.setCounts || {};
+      state.doneByExercise = saved.doneByExercise || {};
       state.restHintOverrides = saved.restHintOverrides || {};
     }
   } catch {
@@ -76,6 +79,7 @@ export function clearActiveWorkout() {
   sessionStorage.removeItem(WORKOUT_KEY);
   state.workoutId = null;
   state.template = null;
+  state.doneByExercise = {}; // F32：收工/結束訓練清掉本次各動作組的鏡射
   state.restHintOverrides = {};
 }
 
