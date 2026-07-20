@@ -1,6 +1,13 @@
 # Session Handoff
 > 最後更新：2026-07-20（**F31 休息結束 Web Push 通知 → passing**）。前面 F10/F24/F25/F26/F27/F28/F29/F30 皆已上線。sw.js 現 **v31**、APP_VERSION v31。F31 codex-review 完成（1 P1+2 P2 已修）；**待 Ryan Android 真機確認通知送達**。剩 **F11 體重補記過去日期**）
 
+## ⏭ 下一步（已診斷、未實作）：F32 換動作後保留本次已做組數
+- **Ryan 需求（2026-07-20）**：「換動作按鈕，在沒按收工/結束訓練時，原本訓練內組數都不要變成上次動作」。即**同一次訓練中，換動作後再回到該動作，之前做的組要留在 done-list，不能被當成『上次』**。
+- **根因（已查證）**：`app.js` `pickExercise()` 每次都 `state.doneSets = []` 再打 `api.lastSets(id)`。而 `last-sets`（`services/exercises.py:80`）取的是**該動作最近一次 workout**——若今天這次訓練剛做過，回傳的就是**本次的組**，卻被 `state.lastHint = "上次 …"` 標成上次，done-list 也空掉。
+- **修法計畫**：state 加 `doneByExercise: {exerciseId:[sets]}`（隨本次 workout 走，納入 `saveActiveWorkout`/`restoreActiveWorkout`/`clearActiveWorkout`，`endWorkout` 清空）。`logSet`/`deleteDoneSet`/`saveEditDoneSet` 更新後鏡射進該 map。`pickExercise`：若 `doneByExercise[id]` 有組 → 還原成 `state.doneSets`、預設 weight/reps 取最後一組、hint 標「本次 …」而非「上次」，並**跳過 lastSets**（避免錯標＋省一次請求）；無組時維持原行為。此法同時涵蓋離線佇列組（本就 push 進 doneSets）與重整（map 持久化）。
+- **流程**：先加 F32 進 `feature_list.json` 標 failing＋acceptance → TDD（Playwright E2E：做 2 組 A→換動作→做 1 組 B→換回 A，斷言 done-list 顯示 2 組且 hint 非「上次」）→ codex-review → 翻 passing＋證據 → **sw.js CACHE_NAME 與 state.js APP_VERSION 同步 v31→v32** → 部署 → 驗證公開站。
+- **收工原因**：本輪開工前 Weekly 用量達 90% 門檻，僅完成診斷即停，尚未動任何程式碼。
+
 ## F31 休息結束 Web Push 通知 → passing（2026-07-20，本場）
 - **需求**：Ryan 要休息倒數能離開網頁去別 app 操作、時間到通知。**真正浮動視窗手機網頁做不到**（原生專屬），改以 Web Push 達成「離開網頁也被通知」。Ryan 選 Android＋伺服器推播（可靠）。
 - **後端**：`pywebpush` 依賴；`config.py` 加 VAPID 三欄（private=PKCS8 DER b64url、public=未壓縮點 b64url＝applicationServerKey、subject）；金鑰已產生寫進 **`.env`**（gitignore，不進 git）；`models.py` `PushSubscription`（endpoint 唯一，`create_all` 自動建表）；`services/push.py`（upsert 訂閱、`send_to_all` 用 pywebpush＋410/404 清失效、**in-process asyncio 排程器** schedule/cancel 單一 task）；`api/push.py`（GET /api/push/public-key、POST subscribe、POST rest-timer、POST rest-timer/cancel）；掛進 main。`tests/test_push.py` 11 條（webpush 全 mock）。
