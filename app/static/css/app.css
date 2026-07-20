@@ -513,6 +513,10 @@ body {
   padding: 12px 14px;
 }
 .body-form input:focus { outline: none; border-color: var(--led-dim); }
+/* F11 補記過去日期：label 一行 + 原生日曆在深色可讀 */
+.bm-date-field { display: flex; align-items: center; gap: 10px; }
+.bm-date-label { color: var(--text-dim); font-size: 13px; font-family: var(--mono); min-width: 2.5em; }
+.bm-date-picker { flex: 1; color-scheme: dark; }
 .body-saved { color: var(--led); font-size: 13px; padding: 2px 4px; }
 .body-card {
   background: var(--card);

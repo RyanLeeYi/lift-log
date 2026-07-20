@@ -74,8 +74,8 @@
    "id": "F11",
    "name": "體重補記過去日期",
    "acceptance": "/body 頁可選日期補記過去的體重／體脂（預設今天、不可選未來日期）；同日覆蓋語意與 F8 一致（重送覆蓋該日紀錄）；補記後趨勢折線正確反映；heatmap 自體重噸位規則維持 F8 現狀（最新體重）不變；前端走既有 POST /api/body-metrics 的 date 欄位。來源：2026-07-18 Ryan 真機試用回饋 #3",
-   "status": "failing",
-   "evidence": null
+   "status": "passing",
+   "evidence": "2026-07-20 完成。純前端：/body 頂部表單加日期選擇器（type=date、預設今天、max=今天擋未來，save 再驗 dateSel>today 防手打），送出走既有 POST /api/body-metrics 的 date 欄位；換日期把該日既有紀錄帶進表單（同日覆蓋看得見、避免把今天的值誤存過去日）。sw.js v33→v34、APP_VERSION v34。codex-review 兩輪：P1（失敗重繪日期被重設今天→重試誤寫/覆蓋今天資料）已修——表單草稿 body.form 跨重繪保留目標日期與輸入；P2a（onchange 只改 DOM、編輯清單列 rerender 丟日期）＋P2b（跨午夜 value/max 停在昨天）已修——date=null 表示未明示選日、提交時取當下 todayIso()（跨午夜正確落今天），明示選日才鎖該日；weight/fat 加 oninput 同步草稿。E2E verify_f11.py R1–R7 全 PASS（預設今天+max、補記入清單+折線最早點=補記日、未來日擋下無新增、同日覆蓋不新增列值更新、選既有日回填、失敗重繪保留補記日、未選日只打體重落今天）；全套 pytest 175 過、ruff clean。"
   },
   {
    "id": "F12",

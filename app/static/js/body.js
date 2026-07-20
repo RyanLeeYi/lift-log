@@ -13,6 +13,8 @@ const body = {
   saving: false, // 防雙擊：送出中不再受理（教訓同 logSet／課表儲存）
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
   editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
+  form: null, // F11：頂部補記表單草稿 {date,weight,fat}——失敗重繪時保留（尤其目標日期，
+  // 否則重試會誤寫今天／覆蓋既有資料，Codex P1）；成功儲存後清空 → 回預設今天
 };
 
 function todayIso() {
@@ -26,6 +28,7 @@ export async function openBody() {
   body.metrics = await api.listBodyMetrics();
   body.savedFlash = null;
   body.editDate = null;
+  body.form = null; // 進畫面回到預設今天
 }
 
 function latestMetric() {
@@ -84,6 +87,10 @@ export function renderBody(rerender, goHome, guard) {
   // 體脂只在「今天已有紀錄」時回填（編輯今天的值）；回填舊日期的體脂會把
   // 沒量測的數字寫成今天的資料。體重是必填欄，帶上次值當快速記錄的起點無妨。
   const editingToday = latest !== null && latest.date === todayIso();
+  // body.form 草稿 { date, weight, fat }：使用者一動表單就存、跨任何 rerender 保留（失敗重試、
+  // 或編輯清單列觸發重繪都不丟目標日期與輸入——Codex P1＋P2a）。date=null 表示未明示選日
+  // →提交時取「當下」todayIso()，跨午夜也正確落今天（Codex P2b）。成功儲存/進畫面時清空。
+  const draft = body.form;
   const weightInput = el("input", {
     type: "number",
     inputmode: "decimal",
@@ -91,7 +98,7 @@ export function renderBody(rerender, goHome, guard) {
     min: "30",
     max: "300",
     placeholder: "體重 kg",
-    value: latest ? String(latest.weight_kg) : "",
+    value: draft ? draft.weight : latest ? String(latest.weight_kg) : "",
   });
   const fatInput = el("input", {
     type: "number",
@@ -100,11 +107,49 @@ export function renderBody(rerender, goHome, guard) {
     min: "1",
     max: "99",
     placeholder: "體脂 %（選填）",
-    value: editingToday && latest.body_fat_pct != null ? String(latest.body_fat_pct) : "",
+    value: draft
+      ? draft.fat
+      : editingToday && latest.body_fat_pct != null
+        ? String(latest.body_fat_pct)
+        : "",
   });
+  // F11：可補記過去日期。預設今天、max=今天擋未來（picker 選不到，save 再驗一次防手打）。
+  const dateInput = el("input", {
+    type: "date",
+    class: "bm-date-picker",
+    value: draft && draft.date ? draft.date : todayIso(),
+    max: todayIso(),
+  });
+  // 任何輸入都同步進 body.form，跨重繪保留。weight/fat 改動不動 date（維持「未明示選日」語意）。
+  const syncDraft = (patch) => {
+    const cur = body.form || { date: null, weight: weightInput.value, fat: fatInput.value };
+    body.form = { ...cur, ...patch };
+  };
+  weightInput.oninput = () => syncDraft({ weight: weightInput.value });
+  fatInput.oninput = () => syncDraft({ fat: fatInput.value });
+  // 換日期時把該日既有紀錄帶進表單——讓「同日覆蓋」看得見，避免把今天的值誤存到過去日。
+  // 該日無紀錄：體重維持最近值當起點、體脂清空（不把舊體脂寫到沒量的日子，同 F8 原則）。明示選日→存 date。
+  dateInput.onchange = () => {
+    const existing = body.metrics.find((m) => m.date === dateInput.value);
+    if (existing) {
+      weightInput.value = String(existing.weight_kg);
+      fatInput.value = existing.body_fat_pct != null ? String(existing.body_fat_pct) : "";
+    } else {
+      weightInput.value = latest ? String(latest.weight_kg) : "";
+      fatInput.value = "";
+    }
+    body.form = { date: dateInput.value, weight: weightInput.value, fat: fatInput.value };
+  };
 
   const save = async () => {
     if (body.saving) return;
+    // 未明示選日→用提交當下 todayIso()（跨午夜正確落今天）；明示選過某日→用該日
+    const explicitDate = body.form && body.form.date;
+    const dateSel = explicitDate || todayIso();
+    // 先快照當前輸入 → 任何驗證/網路失敗 guard 重繪時，目標日期與值都留著（Codex P1）
+    body.form = { date: explicitDate || null, weight: weightInput.value, fat: fatInput.value };
+    if (!dateSel) throw new Error("請選擇日期");
+    if (dateSel > todayIso()) throw new Error("不能記錄未來日期"); // ISO 字串可字典序比較
     const weight = Number(weightInput.value);
     if (!Number.isFinite(weight) || weight < 30 || weight > 300) {
       throw new Error("體重要在 30–300 kg 之間");
@@ -118,11 +163,16 @@ export function renderBody(rerender, goHome, guard) {
       }
       payload.body_fat_pct = fat;
     }
+    payload.date = dateSel; // F11：帶所選日期（預設今天）；同日重送為覆蓋
     body.saving = true;
     try {
-      await api.logBodyMetric(payload); // 不帶 date＝今天；同日重送為覆蓋
+      await api.logBodyMetric(payload);
       body.metrics = await api.listBodyMetrics();
-      body.savedFlash = "已記錄——同日重送會覆蓋更新";
+      body.savedFlash =
+        dateSel === todayIso()
+          ? "已記錄——同日重送會覆蓋更新"
+          : `已補記 ${dateSel}——同日重送會覆蓋更新`;
+      body.form = null; // 成功後清草稿 → 下次回到預設今天
     } finally {
       body.saving = false;
     }
@@ -224,6 +274,10 @@ export function renderBody(rerender, goHome, guard) {
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(body.savedFlash ? [el("div", { class: "body-saved" }, [body.savedFlash])] : []),
     el("div", { class: "body-form" }, [
+      el("label", { class: "bm-date-field" }, [
+        el("span", { class: "bm-date-label" }, ["日期"]),
+        dateInput,
+      ]),
       weightInput,
       fatInput,
       el(
@@ -233,7 +287,7 @@ export function renderBody(rerender, goHome, guard) {
           ...(body.saving ? { disabled: "" } : {}),
           onclick: () => guard(save),
         },
-        ["✓ 記錄今天"],
+        ["✓ 記錄"],
       ),
     ]),
     chartCard("體重", weightPoints, "kg"),

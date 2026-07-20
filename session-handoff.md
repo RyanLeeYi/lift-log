@@ -1,13 +1,14 @@
 # Session Handoff
-> 最後更新：2026-07-20（**F31 Ryan Android 真機確認送達 → passing**；feature_list 現 **31 passing / 1 failing**）。前面 F10/F24–F32 皆已上線。sw.js 現 **v33**、APP_VERSION v33。**唯一剩餘：F11 體重補記過去日期（尚未動工）**。
+> 最後更新：2026-07-20（**F11 體重補記過去日期 → passing**；F31 亦於本日真機確認 passing）。**feature_list 現 32/32 全 passing —— MVP 全數完成。** sw.js 現 **v34**、APP_VERSION v34。
 >
-> ⏸ **本場因 Session 5h 用量達 90% 於 F11 動工前收工**——乾淨邊界，F11 一行都還沒寫。
+> 🎯 **下一步：MVP 收官**（走 vault PLAN 收官 checklist + `sop/after-action.md`）——成功指標對答案、harness 消融檢討、README（先讀 `identity/voice-and-tone.md`）、成就故事、歸檔。或處理 Ryan 真機試用累積的新回饋（有的話先加進 feature_list 標 failing 再做）。
 >
-> ### 下一場：F11 體重補記過去日期（純前端，無後端改動）
-> - **驗收**：/body 頁可選日期補記過去體重／體脂（預設今天、**擋未來日期**）；同日覆蓋語意同 F8（重送覆蓋該日）；補記後趨勢折線正確反映；heatmap 自體重噸位規則維持 F8 現狀（最新體重）不變；前端走既有 `POST /api/body-metrics` 的 **date 欄位**（後端早已支援）。
-> - **改哪**：主戰場 `app/static/js/body.js`（/body 頁表單）；`api.js` 的 body-metrics 送出加帶 date；F17 已在 /body 做過「過去日期編輯清單」，可參照它讀寫 date 的範式。
-> - **鐵則**：改任何 static 資產 → `sw.js` `CACHE_NAME` 與 `state.js` `APP_VERSION` **兩處一起 v33→v34**。
-> - **驗證**：TDD／E2E 用 `verify_f11.py`（選過去日期送出→折線含該點、擋未來日期）；跑 `uv run pytest`＋`uv run ruff check .`；完成跑 `/codex-review`，改 passing 前跑 `/codex-verify`。
+> ## F11 體重補記過去日期 → passing（2026-07-20，本場）
+> - **需求（2026-07-18 真機回饋 #3）**：/body 表單原本只能記今天，要能補記過去日期的體重／體脂。
+> - **實作（純前端，後端 `BodyMetricIn.date` 早支援）**：`body.js` 頂部表單加 `type=date` 選擇器（class `.bm-date-picker`、預設今天、`max=今天` picker 擋未來）；save 帶所選日期進 payload、`dateSel > todayIso()` 再驗一次擋手打未來；換日期時把該日既有紀錄帶進表單（同日覆蓋看得見）。`app.css` 加 `.bm-date-field/.bm-date-label/.bm-date-picker`（`color-scheme:dark` 讓原生日曆在深色可讀）。按鈕「✓ 記錄今天」→「✓ 記錄」。sw.js v33→v34、APP_VERSION v34。
+> - **codex-review 兩輪、全修**：①**P1** 失敗重繪把日期重設今天→修正後重試會誤寫/覆蓋今天資料：改用 `body.form` 草稿跨重繪保留目標日期與輸入。②**P2a** onchange 只改 DOM、編輯清單列 rerender 丟日期：草稿在 date 變更/weight-fat `oninput` 都同步。③**P2b** 跨午夜 value/max 停在昨天：`body.form.date=null` 表「未明示選日」，提交時取當下 `todayIso()`（跨午夜正確落今天），只有明示選過日才鎖該日。
+> - **驗證**：`verify_f11.py` **R1–R7 全 PASS**（預設今天+max、補記入清單+折線最早點=補記日、未來日擋下無新增、同日覆蓋不新增列值更新、選既有日回填、失敗重繪保留補記日、未選日只打體重落今天）；全套 **pytest 175 過**、ruff clean。
+> - **⚠ 用量備註**：本場全程在 Session 5h 用量 90% guard 之上進行（Ryan 明示繼續）；**未跑 `/codex-verify` 跨模型驗收**——codex-review 已兩輪清乾淨＋E2E 逐條對應 acceptance，若要最終跨模型驗收簽章可下次補跑。
 
 ## F32 換動作後保留本次已做組數 → passing（2026-07-20，本場）
 - **需求**：Ryan 反映「換動作在沒按收工/結束訓練時，原本訓練內組數都變成上次動作」。即同一次訓練換動作後回到該動作，先前做的組要留在 done-list，不能被誤標「上次」。
