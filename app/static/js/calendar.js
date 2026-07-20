@@ -310,10 +310,13 @@ function detailRows(guard, rerender) {
     }
     for (const [exerciseId, groupSets] of grouped) {
       const exercise = cal.exerciseById?.[exerciseId];
+      // F33：動作標頭＋其組收進一個琥珀脊區塊（取代舊的帳本橫線分隔）
       rows.push(
-        el("div", { class: "cal-detail-ex" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
+        el("div", { class: "cal-ex-block" }, [
+          el("div", { class: "cal-detail-ex" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
+          ...groupSets.map((s) => calSetRow(s, guard, rerender)),
+        ]),
       );
-      for (const s of groupSets) rows.push(calSetRow(s, guard, rerender));
     }
   }
   if (cal.selectMode) {

@@ -294,7 +294,8 @@ export function renderBody(rerender, goHome, guard) {
     chartCard("體脂", fatPoints, "%"),
     ...(body.metrics.length > 0
       ? [
-          el("div", { class: "body-list" }, [
+          // F33：紀錄清單收進卡片（與上方圖表卡一致），列間不再用帳本橫線
+          el("div", { class: "body-card body-list" }, [
             el("div", { class: "body-list-head" }, ["紀錄"]),
             // 最新在上
             ...[...body.metrics].reverse().map(metricRow),

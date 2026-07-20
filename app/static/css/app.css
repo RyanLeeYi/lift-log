@@ -445,13 +445,19 @@ body {
   color: var(--text-dim);
   font-size: 14px;
   padding: 6px 4px;
-  border-bottom: 1px solid var(--card-edge);
 }
 .cal-detail-row .n { font-family: var(--mono); color: var(--text); text-align: right; }
 /* F16：動作標題列 + 每組一列可編輯/刪除 */
-.cal-detail-ex { color: var(--text-dim); font-size: 13px; padding: 6px 4px 2px; font-weight: 600; }
+.cal-detail-ex { color: var(--text-dim); font-size: 13px; padding: 4px 4px 2px; font-weight: 600; }
+/* F33：動作區塊——左緣琥珀脊取代舊的帳本橫線，做動作與動作的分界 */
+.cal-ex-block {
+  display: flex; flex-direction: column; gap: 2px;
+  border-left: 2px solid var(--led-dim);
+  padding-left: 10px;
+  margin-top: 2px;
+}
 .cal-detail-row { align-items: center; }
-.cal-detail-row.set { padding-left: 12px; }
+.cal-detail-row.set { padding-left: 4px; }
 .cal-detail-row .setno { color: var(--text-dim); font-family: var(--mono); flex: none; }
 .cal-detail-row.set .n { flex: 1; }
 .cal-detail-row .icon-btn {
@@ -543,7 +549,7 @@ body {
 .bm-row {
   display: flex; align-items: center; gap: 10px;
   font-family: var(--mono); font-size: 14px;
-  padding: 6px 4px; border-bottom: 1px solid var(--card-edge);
+  padding: 6px 4px; /* F33：列間不再用帳本橫線，靠卡片容器＋間距分隔 */
 }
 .bm-row .bm-date { color: var(--text-dim); flex: none; }
 .bm-row .bm-val { color: var(--text); flex: 1; }

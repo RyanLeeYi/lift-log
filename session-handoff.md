@@ -3,7 +3,13 @@
 >
 > 🎯 **下一步（二選一）**：(a) **F33 日曆明細＋體重清單卡片化**（已進 feature_list 標 failing，見下方計畫，Ryan 已選方向 A）；(b) **MVP 收官**（vault PLAN 收官 checklist + `sop/after-action.md`：成功指標對答案、harness 消融檢討、README〔先讀 `identity/voice-and-tone.md`〕、成就故事、歸檔）。
 
-## F33 日曆明細＋體重清單卡片化 → failing（待動工，2026-07-20 定方向 A）
+## F33 日曆明細＋體重清單卡片化 → 已實作，status 仍 failing（待 codex-review→passing）
+> **2026-07-20 本場已實作方向 A、E2E＋截圖確認乾淨，但因用量 guard（Fable 週限額 98%）收工，未跑 `/codex-review`＋未 flip passing。** 下場最小步驟：跑 `/codex-review`（F11 證明「純 CSS」也會被抓 P1，必跑）→ 修 P0/P1 →（可選 `/codex-verify`）→ 標 passing。程式已 commit＋push。
+> - **已改**：`calendar.js` `detailRows` 每動作包 `.cal-ex-block`（標頭＋組）；`app.css` 加 `.cal-ex-block`（2px 琥珀脊 `--led-dim`＋padding-left:10px）、`.cal-detail-row` 移除 `border-bottom`、`.cal-detail-row.set` padding-left 12→4px、`.cal-detail-ex` padding 微調。`body.js` 紀錄清單容器改 `class:"body-card body-list"`；`app.css` `.bm-row` 移除 `border-bottom`。sw.js/APP_VERSION **v34→v35**。
+> - **驗證**：`verify_f33.py` **R1–R6 全 PASS**（脊區塊=2 塊/2px 左框/含標頭+組、組列 border-bottom=0、刪一組互動存活 3→2、清單 body-card+底色 rgb(26,28,33)、bm-row border-bottom=0、刪一筆體重 2→1）；pytest 175 過、ruff clean。截圖 `scratchpad/f33_calendar.png`＋`f33_body.png`（Ryan 已目視 OK）。
+> - **可選細節（Ryan 沒提，動工/review 時可問）**：日曆組列間距偏寬（set row padding），要更緊湊可縮 `.cal-detail-row.set` 的 padding。
+
+<!-- 原方向 A 計畫（已落地，保留備查）：failing（待動工，2026-07-20 定方向 A） -->
 > Ryan 覺得日曆／體重頁下方的堆疊顯示（`cal-detail-*`、`bm-row`）太「帳本感」。根因＝每列全寬 `border-bottom` hairline＋動作與其組沒有容器歸屬感。決定收斂到 **F26 課表已確立的「琥珀 accent 條＋卡片」語言**（一致性，非新風格）。**只動 markup 外層 wrapper＋CSS，互動邏輯零改動**（F16–F19 的每組編輯/刪除、多選批次、狀態行內編輯全部照舊）。
 >
 > **方向 A 實作重點**：
