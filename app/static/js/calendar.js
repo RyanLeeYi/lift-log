@@ -301,23 +301,25 @@ function detailRows(guard, rerender) {
       ]),
     );
   }
+  // F16：每個動作一個標題列，其下每組獨立一列可編輯/刪除
+  // F33（Codex P2）：跨當日所有 workouts 先彙整同動作的組，再一個動作一個區塊——
+  // 否則同日多 workout 含相同動作會產生多個同名區塊，違反「一個動作一個視覺區塊」
+  const grouped = new Map();
   for (const { sets } of cal.detail) {
-    // F16：每個動作一個標題列，其下每組獨立一列可編輯/刪除
-    const grouped = new Map();
     for (const s of sets) {
       if (!grouped.has(s.exercise_id)) grouped.set(s.exercise_id, []);
       grouped.get(s.exercise_id).push(s);
     }
-    for (const [exerciseId, groupSets] of grouped) {
-      const exercise = cal.exerciseById?.[exerciseId];
-      // F33：動作標頭＋其組收進一個琥珀脊區塊（取代舊的帳本橫線分隔）
-      rows.push(
-        el("div", { class: "cal-ex-block" }, [
-          el("div", { class: "cal-detail-ex" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
-          ...groupSets.map((s) => calSetRow(s, guard, rerender)),
-        ]),
-      );
-    }
+  }
+  for (const [exerciseId, groupSets] of grouped) {
+    const exercise = cal.exerciseById?.[exerciseId];
+    // F33：動作標頭＋其組收進一個琥珀脊區塊（取代舊的帳本橫線分隔）
+    rows.push(
+      el("div", { class: "cal-ex-block" }, [
+        el("div", { class: "cal-detail-ex" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
+        ...groupSets.map((s) => calSetRow(s, guard, rerender)),
+      ]),
+    );
   }
   if (cal.selectMode) {
     rows.push(

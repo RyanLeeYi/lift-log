@@ -228,6 +228,13 @@
    "id": "F33",
    "name": "日曆明細＋體重清單卡片化（收斂到 F26 琥珀 accent 語言）",
    "acceptance": "把兩處舊的 hairline 帳本式堆疊收斂到 F26 已確立的「琥珀 accent 條＋卡片」語言，只動 markup 外層 wrapper 與 CSS、不改任何互動邏輯。【日曆當日明細】① 同一動作的組收進一個視覺區塊：左緣琥珀脊（--led-dim）＋動作名為標頭，其下每組為一列；② 移除每列全寬 border-bottom 的帳本橫線，改以間距/區塊分界（動作與動作之間靠新的脊塊自然分界）；③ 每組列的編輯（✎ stepper）／刪除（🗑 單擊）與 F19 多選批次刪除、F18 狀態行內編輯全部照舊可用（行為零改動）。【體重頁紀錄清單】④ .body-list 收進一張 .body-card（與上方兩張圖表卡片語言一致）、移除 bm-row 的帳本橫線；⑤ 每列的編輯（POST 覆蓋）／單擊刪除照舊可用。【共通】⑥ 數字維持 mono 主角色（--text）、脊與標頭為暗色配角（--text-dim / --led-dim），不新增字體、不引入框架或圖表庫；⑦ 深色對比可讀（沿用既有 tokens）；⑧ 改 static 資產→ sw.js CACHE_NAME 與 state.js APP_VERSION 同步遞增（v34→v35）；⑨ 既有 E2E 回歸不破：logger（verify_f19_logger/f20/f32）、日曆刪除/編輯（F16/F18/F19 對應）、體重（F11/F17）跑過為綠。來源：2026-07-20 Ryan 覺得日曆／體重頁下方堆疊顯示可以更乾淨；選定方向 A（動作卡＋琥珀脊、拿掉帳本橫線）。",
+   "status": "passing",
+   "evidence": "2026-07-20 完成。方向 A：日曆明細每動作收進 .cal-ex-block（2px 琥珀脊 --led-dim），移除 .cal-detail-row 帳本 border-bottom、動作間靠脊塊分界；體重紀錄清單容器改 .body-card body-list、移除 .bm-row 橫線（與上方圖表卡一致）。sw.js/APP_VERSION v34→v35。codex-review 1 P2 已修：跨當日所有 workouts 先彙整同動作的組再建區塊（原 per-workout 迴圈會讓同日多 workout 含相同動作產生重複同名區塊，違反『一個動作一個視覺區塊』）。E2E verify_f33.py R1–R6 全 PASS（脊區塊=2 塊即使橫跨 2 個同日 workout＝驗到 P2 修正、組列 border-bottom=0、刪一組互動存活 4→3、清單 body-card+底色 rgb(26,28,33)、bm-row border-bottom=0、刪一筆體重 2→1）；pytest 175 過、ruff clean；截圖 Ryan 目視 OK。"
+  },
+  {
+   "id": "F34",
+   "name": "日曆明細動作收合/展開＋選取鈕收進 head",
+   "acceptance": "在 F33 的琥珀脊區塊上加收合/展開，並把多選入口收進當日明細 head，純前端 markup＋CSS、互動邏輯沿用。【動作收合/展開】① 每個 .cal-ex-block 預設收合，只顯示動作名＋摘要（組數 · 最重組，最重組＝weight_kg 最大的一組、平手取 reps 多者，顯示 weight×reps）＋展開指示（收合 ▸／展開 ▾）；② 點該塊標頭切換展開/收合；展開才顯示各組 .cal-detail-row.set（含既有 ✎ 編輯／🗑 刪除）；③ 進「選取」多選模式時所有塊自動展開（否則無組可勾），退出多選恢復先前收合狀態；④ 收合/展開＝純前端畫面狀態（存在 cal 內，切日/切月重置無妨）。【選取鈕收進 head】⑤ 「選取」入口從獨立 .cal-select-bar 移到當日明細 head（日期／噸位那列）右側，低調 icon-text（如「☑ 選取」）、不再獨占一列；進多選模式時 head 顯示「取消」，底部保留琥珀批次刪除條（現狀不變）。【共通】⑥ 不新增字體/框架；深色對比可讀；F16–F19 的每組編輯/刪除、多選批次刪除、F18 狀態行內編輯行為全部不變；⑦ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v35→v36；⑧ 回歸：verify_f33 的脊區塊/卡片結構仍成立（收合後展開可見組列）、logger／日曆刪除編輯／體重 E2E 綠、pytest＋ruff 綠。來源：2026-07-20 Ryan 要同動作先收合、點了再展開，且多選『選取』鈕更好看；拍板：預設全收合、收合帶摘要（組數·最重組）、選取鈕併進 head。",
    "status": "failing",
    "evidence": ""
   }
