@@ -5,11 +5,9 @@
 """
 
 import asyncio
-import base64
 import json
 from collections.abc import Awaitable, Callable
 
-from cryptography.hazmat.primitives import serialization
 from pywebpush import WebPushException, webpush
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -36,26 +34,16 @@ def upsert_subscription(session: Session, data: PushSubscriptionIn) -> None:
     session.commit()
 
 
-def _private_key_pem(settings: Settings) -> str:
-    """.env 存的是 PKCS8 DER 的 base64url；pywebpush 收 PEM 字串。"""
-    raw = settings.vapid_private_key
-    der = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
-    key = serialization.load_der_private_key(der, password=None)
-    return key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode()
-
-
 def _send_one(settings: Settings, sub: PushSubscription, payload: str) -> None:
+    # pywebpush 2.x 收字串時交給 Vapid.from_string 當 base64url raw/DER 解析；
+    # .env 存的就是 PKCS8 DER 的 base64url，直接傳。傳 PEM 會 ValueError、送出全掛（Codex P1）。
     webpush(
         subscription_info={
             "endpoint": sub.endpoint,
             "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
         },
         data=payload,
-        vapid_private_key=_private_key_pem(settings),
+        vapid_private_key=settings.vapid_private_key,
         vapid_claims={"sub": settings.vapid_subject},
         ttl=60,  # 休息通知過時無意義：60 秒送不到就丟
     )

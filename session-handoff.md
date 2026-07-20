@@ -1,5 +1,5 @@
 # Session Handoff
-> 最後更新：2026-07-20（**F31 休息結束 Web Push 通知 → passing**）。前面 F10/F24/F25/F26/F27/F28/F29/F30 皆已上線。sw.js 現 **v30**、APP_VERSION v30。⚠ F31 codex-review 背景未回，下場讀 `scratchpad/codex-review-f31.md`；**待 Ryan Android 真機確認通知送達**。剩 **F11 體重補記過去日期**）
+> 最後更新：2026-07-20（**F31 休息結束 Web Push 通知 → passing**）。前面 F10/F24/F25/F26/F27/F28/F29/F30 皆已上線。sw.js 現 **v31**、APP_VERSION v31。F31 codex-review 完成（1 P1+2 P2 已修）；**待 Ryan Android 真機確認通知送達**。剩 **F11 體重補記過去日期**）
 
 ## F31 休息結束 Web Push 通知 → passing（2026-07-20，本場）
 - **需求**：Ryan 要休息倒數能離開網頁去別 app 操作、時間到通知。**真正浮動視窗手機網頁做不到**（原生專屬），改以 Web Push 達成「離開網頁也被通知」。Ryan 選 Android＋伺服器推播（可靠）。
@@ -7,7 +7,7 @@
 - **前端**：`sw.js` 加 push/notificationclick、SHELL 加 `/js/push.js`、CACHE_NAME v29→v30；`push.js`（enablePush 要權限+訂閱+送後端、pushEnabled 檢查旗標+權限、scheduleRestPush/cancelRestPush best-effort）；`api.js` 4 個方法；首頁「🔔 休息提醒」開關；`startRestTimer`→排程（restHintFor 秒數）、`stopRestTimer`→取消。APP_VERSION v30。
 - **⚠ 限制**：①伺服器重啟會漏掉當下未觸發的通知（休息窗 60~180 秒，風險低）；②iPhone 需把 PWA 加到主畫面才有通知（本次以 Android 為主）；③排程器單人單 task（多裝置同時休息會互相覆蓋——單人 app 可接受）。
 - **驗證**：`test_push.py` 11 條 + 全套 pytest 過、ruff clean。E2E `verify_f31.py` 4/4（記錄→排程、繼續→取消、開關顯示開、未開啟不排程；headless 用 init script 固定 Notification.permission=granted，因 headless grant 不生效）。logger 收工/F29 回歸 PASS。
-- **⚠ 待辦**：codex-review 背景執行、收工未回——下場讀 `scratchpad/codex-review-f31.md` 檢視 P0/P1；**請 Ryan 用 Android Chrome 開站、按「🔔 休息提醒」授權，訓練記一組後切到別的 app，確認休息到點有跳通知**（真機才驗得了訂閱＋送達）。
+- **codex-review 完成、1 P1（金鑰格式，真實送出全掛）＋2 P2（排程序列化、改秒數重排）全修，補格式回歸測試。**待 Ryan Android 真機確認送達**（headless 測不了）。
 
 ## F30 課表編輯草稿自動存與還原 → passing（2026-07-19，本場）
 - **需求**：Ryan 選「自動存草稿＋還原」方向（比 F27 手機上不可靠的 beforeunload 更穩）。

@@ -59,14 +59,23 @@ export async function disablePush() {
   }
 }
 
+// 排程/取消序列化：各自 fire-and-forget 在慢網下可能亂序（cancel 先到、schedule 後到 → 誤推）。
+// 串成一條 promise 鏈、依呼叫順序逐一送達，後端就照正確順序處理（Codex P2）。
+let _pushChain = Promise.resolve();
+
+function _enqueue(run) {
+  _pushChain = _pushChain.then(run, run); // 前一個失敗也繼續下一個
+  return _pushChain;
+}
+
 // 休息開始：排定 seconds 後推「休息結束」。未開通知＝no-op。
 export function scheduleRestPush(seconds) {
   if (!pushEnabled()) return;
-  api.scheduleRest(seconds).catch(() => {});
+  _enqueue(() => api.scheduleRest(seconds).catch(() => {}));
 }
 
-// 提早繼續/換動作/收工：取消未觸發的休息通知。
+// 提早繼續/換動作/收工/改秒數：取消未觸發的休息通知。
 export function cancelRestPush() {
   if (!pushEnabled()) return;
-  api.cancelRest().catch(() => {});
+  _enqueue(() => api.cancelRest().catch(() => {}));
 }

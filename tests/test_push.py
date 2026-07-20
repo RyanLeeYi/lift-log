@@ -75,6 +75,36 @@ def test_send_to_all_sends_and_prunes_expired(
     assert remaining == ["e1"]  # e2 已清除
 
 
+def test_vapid_private_key_format_is_parseable() -> None:
+    """回歸鎖 Codex P1：送 pywebpush 的 key 是 DER b64url（原本傳 PEM 會 ValueError、送出全掛）。"""
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from py_vapid import Vapid02
+
+    k = ec.generate_private_key(ec.SECP256R1())
+    der = k.private_bytes(
+        serialization.Encoding.DER,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    der_b64 = base64.urlsafe_b64encode(der).rstrip(b"=").decode()  # ＝.env 與送出時的格式
+    assert Vapid02.from_string(der_b64) is not None  # pywebpush 收得下去
+
+    pem = k.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    pem_failed = False
+    try:
+        Vapid02.from_string(pem)  # 舊的 PEM 格式：pywebpush 解析不了（原 bug）
+    except Exception:
+        pem_failed = True
+    assert pem_failed, "PEM 應無法被 pywebpush 解析——這正是原本送不出去的原因"
+
+
 def test_scheduler_fires() -> None:
     async def run() -> list:
         fired: list = []

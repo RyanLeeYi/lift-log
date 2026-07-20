@@ -609,7 +609,13 @@ function cycleRestHint(exerciseId) {
   const next = picks[(picks.indexOf(current) + 1) % picks.length];
   state.restHintOverrides = { ...state.restHintOverrides, [exerciseId]: next };
   saveActiveWorkout();
-  if ((restRemainingSeconds() ?? -1) > 0) restAlerted = false; // 目標調長回到未到點：重新武裝提醒
+  const remaining = restRemainingSeconds();
+  if ((remaining ?? -1) > 0) restAlerted = false; // 目標調長回到未到點：重新武裝提醒
+  // F31：休息進行中改秒數 → 依新剩餘時間重排推播，否則後端仍照舊秒數推（Codex P2）
+  if (state.restStartedAt !== null) {
+    if (remaining !== null && remaining > 0) scheduleRestPush(remaining);
+    else cancelRestPush();
+  }
 }
 
 function renderLogger() {
