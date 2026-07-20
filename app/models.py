@@ -103,3 +103,15 @@ class WorkoutSet(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     workout: Mapped[Workout] = relationship(back_populates="sets")
+
+
+class PushSubscription(Base):
+    """F31 Web Push 訂閱：一台裝置一筆，以 endpoint 唯一。單人 app 但可多裝置。"""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    endpoint: Mapped[str] = mapped_column(String, unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String)  # 訂閱公鑰
+    auth: Mapped[str] = mapped_column(String)  # 驗證秘密
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

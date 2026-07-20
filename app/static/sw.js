@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v29"; // F30 codex-review P2 修正（改此處務必同步 state.js 的 APP_VERSION）
+const CACHE_NAME = "liftlog-shell-v30"; // F31 Web Push 休息結束通知（改此處務必同步 state.js 的 APP_VERSION）
 const SHELL = [
   "/",
   "/css/app.css",
@@ -13,6 +13,7 @@ const SHELL = [
   "/js/calendar.js",
   "/js/custom-exercise.js",
   "/js/dom.js",
+  "/js/push.js",
   "/js/queue.js",
   "/js/state.js",
   "/js/templates.js",
@@ -72,6 +73,37 @@ self.addEventListener("fetch", (event) => {
         return cached;
       }
       return refresh;
+    }),
+  );
+});
+
+// F31 Web Push：後端在休息到點時推來，顯示通知（可在其他 app 時收到）
+self.addEventListener("push", (event) => {
+  let data = { title: "休息結束", body: "時間到，繼續下一組！" };
+  try {
+    if (event.data) data = event.data.json();
+  } catch {
+    /* payload 壞掉：用預設文字 */
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      tag: "liftlog-rest", // 同 tag 取代舊的休息通知，不堆疊
+      renotify: true,
+      vibrate: [200, 100, 200],
+      icon: "/icon.svg",
+      badge: "/icon.svg",
+    }),
+  );
+});
+
+// 點通知：聚焦已開的分頁，否則開新視窗
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      const open = clients.find((c) => "focus" in c);
+      return open ? open.focus() : self.clients.openWindow("/");
     }),
   );
 });

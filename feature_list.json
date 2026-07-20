@@ -209,6 +209,13 @@
       "acceptance": "編輯課表時未儲存的內容自動存進 localStorage（改動即存、切背景與卸載前補存）；重新開啟 app（重整/關閉分頁/被 OS 殺掉再開）若有草稿則靜默還原進課表編輯畫面、帶回未存內容（沿用 workout 靜默還原範式）。存檔成功或離開編輯（含捨棄離開）即清草稿——只有被中斷才留。壞草稿資料不擋啟動。此為手機上比 beforeunload 更可靠的防丟失機制（與 F27 並存：F27 桌機攔截、返回確認；F30 手機還原）。來源：2026-07-19 Ryan 選擇自動存草稿＋還原方向。",
       "status": "passing",
       "evidence": "2026-07-19 完成。templates.js：saveTemplateDraft/restoreTemplateDraft/clearTemplateDraft（localStorage key liftlog.templateDraft，存 {editing, savedSnapshot}）；renderTemplateEdit 每次重繪存草稿、backToList 清草稿。app.js：啟動 restoreActiveWorkout 後 restoreTemplateDraft（有草稿→靜默還原進編輯）；visibilitychange(hidden)＋beforeunload 補存（手機最可靠時機）。只在 hasUnsavedTemplate 才存、壞資料清掉不擋啟動。sw.js v27→v28、APP_VERSION v28。E2E verify_f30.py 4/4 PASS（改組數→reload→還原 5 組；存檔/捨棄離開/乾淨編輯→reload→不還原）；F27/F27b/F28/F26 回歸 PASS、pytest 161、ruff clean。與 F27 並存：F27 桌機 beforeunload 攔截＋返回確認，F30 手機還原。codex-review 完成、2 P2 已修：①saveTemplateDraft 在編輯畫面回到基準時清草稿（否則撤銷的改動重整會復活）；②restoreTemplateDraft 嚴格驗證欄位型別（name 為 string、items 每筆 exercise_id/default_sets 為 number 且 name_zh/name_en/muscle_group 為 string），壞草稿丟棄不卡啟動。E2E 加 R5/R6 覆蓋，全 6 條 PASS。sw.js v28→v29、APP_VERSION v29。"
+    },
+    {
+      "id": "F31",
+      "name": "休息結束 Web Push 通知",
+      "acceptance": "休息開始時排定「休息結束」推播；到點手機跳通知＋震動，人在別的 app 也收得到，不用回網頁看時間。首頁「🔔 休息提醒」開關要權限＋訂閱（Android Chrome；iPhone 需加主畫面）。繼續下一組/換動作/收工會取消未觸發的通知。未開啟或伺服器未設金鑰＝完全 no-op、不影響訓練。註：真正的浮動視窗手機網頁做不到，改以推播達成「離開網頁也被通知」的目的。來源：2026-07-20 Ryan 要倒數能離開網頁在別 app 操作、時間到通知。",
+      "status": "failing",
+      "evidence": null
     }
   ]
 }

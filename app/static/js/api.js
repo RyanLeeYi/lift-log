@@ -62,4 +62,9 @@ export const api = {
   listDailyStatus: (start, end) => request("GET", `/api/daily-status?start=${start}&end=${end}`),
   logDailyStatus: (payload) => request("POST", "/api/daily-status", payload), // F18 編輯＝同日覆蓋
   deleteDailyStatus: (dateIso) => request("DELETE", `/api/daily-status/${dateIso}`), // F18 硬刪
+  // F31 Web Push（休息結束通知）
+  pushPublicKey: () => request("GET", "/api/push/public-key"),
+  pushSubscribe: (sub) => request("POST", "/api/push/subscribe", sub),
+  scheduleRest: (seconds) => request("POST", "/api/push/rest-timer", { seconds }),
+  cancelRest: () => request("POST", "/api/push/rest-timer/cancel"),
 };

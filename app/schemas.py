@@ -203,3 +203,19 @@ class WorkoutOut(BaseModel):
 
 class WorkoutDetailOut(WorkoutOut):
     sets: list[SetOut]
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=1)
+    auth: str = Field(min_length=1)
+
+
+class PushSubscriptionIn(BaseModel):
+    """瀏覽器 PushSubscription.toJSON() 的形狀：{endpoint, keys:{p256dh, auth}}。"""
+
+    endpoint: str = Field(min_length=1)
+    keys: PushKeys
+
+
+class RestTimerIn(BaseModel):
+    seconds: int = Field(ge=1, le=3600)  # 休息秒數，到點推「休息結束」通知

@@ -372,6 +372,8 @@ body {
 .modal-actions .btn { flex: 1; }
 /* F27 離開確認視窗 */
 .confirm-text { color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+/* F31 休息提醒開關：開啟時琥珀邊框點出狀態 */
+.push-toggle.on { border-color: var(--led); color: var(--led); }
 /* F24 版本標記：小字、低調、置中，不干擾操作 */
 .version-tag {
   text-align: center;

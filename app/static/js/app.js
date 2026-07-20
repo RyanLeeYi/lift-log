@@ -7,6 +7,14 @@ import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
 import { el, rpePicker, stepper } from "./dom.js";
 import {
+  cancelRestPush,
+  disablePush,
+  enablePush,
+  pushEnabled,
+  pushSupported,
+  scheduleRestPush,
+} from "./push.js";
+import {
   discardFailed,
   enqueueSet,
   flushQueue,
@@ -302,6 +310,29 @@ function renderHome() {
       },
       ["⚖️ 體重"],
     ),
+    // F31：休息結束推播開關（不支援的瀏覽器不顯示）
+    ...(pushSupported()
+      ? [
+          el(
+            "button",
+            {
+              class: `btn push-toggle${pushEnabled() ? " on" : ""}`,
+              onclick: () =>
+                guard(async () => {
+                  if (pushEnabled()) {
+                    await disablePush();
+                    render();
+                    return;
+                  }
+                  const res = await enablePush();
+                  if (res.ok) render();
+                  else showError(res.reason);
+                }),
+            },
+            [pushEnabled() ? "🔔 休息提醒：開" : "🔔 休息提醒：關"],
+          ),
+        ]
+      : []),
     versionTag(),
   ]);
 }
@@ -547,6 +578,8 @@ function renderPicker() {
 function startRestTimer() {
   state.restStartedAt = Date.now();
   restAlerted = false;
+  // F31：排定「休息結束」推播（切到別的 app 也收得到）；未開通知＝no-op
+  if (state.exercise) scheduleRestPush(restHintFor(state.exercise.id));
   if (restTicker) clearInterval(restTicker);
   restTicker = setInterval(() => {
     const led = document.querySelector(".rest-led");
@@ -566,6 +599,7 @@ function stopRestTimer() {
   if (restTicker) clearInterval(restTicker);
   restTicker = null;
   state.restStartedAt = null;
+  cancelRestPush(); // F31：休息被使用者結束（繼續下一組/換動作/收工）→ 取消未觸發的推播
 }
 
 function cycleRestHint(exerciseId) {

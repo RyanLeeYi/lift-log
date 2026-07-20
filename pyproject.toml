@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "fastmcp>=2.0",
+    "pywebpush>=2.3.0",
 ]
 
 [dependency-groups]
