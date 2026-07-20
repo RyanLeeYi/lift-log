@@ -1,10 +1,21 @@
 # Session Handoff
-> 最後更新：2026-07-20（**F11 體重補記過去日期 → passing**；F31 亦於本日真機確認 passing）。**feature_list 現 32/32 全 passing —— MVP 全數完成。** sw.js 現 **v34**、APP_VERSION v34。
+> 最後更新：2026-07-20（**F33 卡片化 → passing**；MVP 32/32＋UI 打磨 F33 共 **33 passing / 1 failing（F34 未動工）**）。sw.js 現 **v35**、APP_VERSION v35。
 >
-> 🎯 **下一步（二選一）**：(a) **F33 日曆明細＋體重清單卡片化**（已進 feature_list 標 failing，見下方計畫，Ryan 已選方向 A）；(b) **MVP 收官**（vault PLAN 收官 checklist + `sop/after-action.md`：成功指標對答案、harness 消融檢討、README〔先讀 `identity/voice-and-tone.md`〕、成就故事、歸檔）。
+> 🎯 **下一步**：**F34 日曆明細收合/展開＋選取鈕收進 head**（規格已凍、實作設計筆記見下，Ryan 已拍板；因 Weekly 用量 98% 硬天花板在動工前收工，一行未寫）。之後仍有 **MVP 收官**（vault PLAN checklist + `sop/after-action.md`：成功指標對答案、harness 消融、README〔先讀 `identity/voice-and-tone.md`〕、成就故事、歸檔）。
 
-## F33 日曆明細＋體重清單卡片化 → 已實作，status 仍 failing（待 codex-review→passing）
-> **2026-07-20 本場已實作方向 A、E2E＋截圖確認乾淨，但因用量 guard（Fable 週限額 98%）收工，未跑 `/codex-review`＋未 flip passing。** 下場最小步驟：跑 `/codex-review`（F11 證明「純 CSS」也會被抓 P1，必跑）→ 修 P0/P1 →（可選 `/codex-verify`）→ 標 passing。程式已 commit＋push。
+## F34 日曆明細動作收合/展開＋選取鈕收進 head → failing（規格凍結，未動工）
+> **2026-07-20 定案、規格進 feature_list（acceptance 已凍），因 Weekly 用量 98% 硬天花板在動工前收工——一行未寫，乾淨邊界。** Ryan 拍板三決定：①預設全收合、②收合帶摘要（組數·最重組）、③選取鈕併進 head。
+>
+> **實作設計筆記（已想過，下場照做）：**
+> - **收合狀態**：`cal` 加 `expandedEx: new Set()`（存「目前展開的 exercise_id」，預設空＝全收合）；`selectDay` 內重置為新 Set。render 時 `const showSets = cal.selectMode || cal.expandedEx.has(exerciseId)`——**選取模式強制全展開但不動 expandedEx**，退出多選自然恢復（滿足 acceptance ③）。
+> - **collapse header**：`.cal-ex-block` 的 `.cal-detail-ex` 標頭改成可點按（toggle `expandedEx` 該 id ＋ rerender），右側放摘要＋指示符（收合 ▸／展開 ▾）。摘要＝`${groupSets.length}組 · 最重 ${top.weight_kg}×${top.reps}`，top＝weight_kg 最大（平手取 reps 多）：`groupSets.reduce((a,b)=> b.weight_kg>a.weight_kg||(b.weight_kg===a.weight_kg&&b.reps>a.reps)?b:a)`。展開才 `...groupSets.map(calSetRow)`。
+> - **選取鈕進 head**：把現有 `.cal-select-bar`（`detailRows` 約 line 287–303）的「選取／取消」鈕移到 `.cal-detail-head`（line 278 那個 date＋噸位列）右側，樣式降級為安靜 icon-text（如「☑ 選取」）。底部 `.cal-batch-bar` 琥珀刪除條不動。
+> - **鐵則**：改 static → sw.js/APP_VERSION **v35→v36**。
+> - **驗證**：新 `verify_f34.py`——預設塊收合（無 `.cal-detail-row.set` 可見、有摘要文字）、點標頭展開見組列、進「選取」模式全塊自動展開、退出恢復收合、選取鈕在 head 內；回歸 `verify_f33`（脊區塊/卡片仍在）＋logger/體重 E2E；pytest＋ruff。完成跑 `/codex-review` → 標 passing。
+> - **可選細節**：日曆組列間距偏寬（`.cal-detail-row.set` padding），要更緊湊可一併縮。
+
+## F33 日曆明細＋體重清單卡片化 → passing（2026-07-20）
+> 已 flip passing（commit `77871d7`）。codex-review 1 P2 已修（跨當日多 workout 先彙整同動作再建區塊）。E2E `verify_f33.py` R1–R6 全 PASS、pytest 175、ruff clean、截圖 Ryan 目視 OK。詳見 feature_list F33 evidence。
 > - **已改**：`calendar.js` `detailRows` 每動作包 `.cal-ex-block`（標頭＋組）；`app.css` 加 `.cal-ex-block`（2px 琥珀脊 `--led-dim`＋padding-left:10px）、`.cal-detail-row` 移除 `border-bottom`、`.cal-detail-row.set` padding-left 12→4px、`.cal-detail-ex` padding 微調。`body.js` 紀錄清單容器改 `class:"body-card body-list"`；`app.css` `.bm-row` 移除 `border-bottom`。sw.js/APP_VERSION **v34→v35**。
 > - **驗證**：`verify_f33.py` **R1–R6 全 PASS**（脊區塊=2 塊/2px 左框/含標頭+組、組列 border-bottom=0、刪一組互動存活 3→2、清單 body-card+底色 rgb(26,28,33)、bm-row border-bottom=0、刪一筆體重 2→1）；pytest 175 過、ruff clean。截圖 `scratchpad/f33_calendar.png`＋`f33_body.png`（Ryan 已目視 OK）。
 > - **可選細節（Ryan 沒提，動工/review 時可問）**：日曆組列間距偏寬（set row padding），要更緊湊可縮 `.cal-detail-row.set` 的 padding。
