@@ -223,6 +223,13 @@
    "acceptance": "同一次訓練（未按收工/結束訓練）中，換動作離開某動作後再回到它，先前做的組要仍留在 done-list（可續刪/續編、編號接續），不得被清空、也不得被 last-sets 誤標成「上次」。回到已做過的動作時，「上次」提示仍要顯示，但查的是**前一次**訓練（排除進行中的 workout），不是把本次的組誤標成上次；查不到前一次才退回顯示本次摘要。切到全新（本次未做過）的動作維持原行為：done-list 空、顯示「第一次做這個動作」。收工/結束訓練後清除本次鏡射。來源：2026-07-20 Ryan 反映換動作會把原本訓練內組數變成上次動作。",
    "status": "passing",
    "evidence": "2026-07-20 完成。state 加 doneByExercise:{exerciseId:[sets]}（納入 saveActiveWorkout/restoreActiveWorkout/clearActiveWorkout，收工清空）；pickExercise 若鏡射有組→還原本次組、hint 標「本次」而非「上次」並跳過 lastSets；logSet/deleteDoneSet/saveEditDoneSet 後 rememberDoneSets 鏡射同步。「上次」提示改查前一次訓練：last-sets 加 exclude_workout 參數（service last_sets(exclude_workout_id) 過濾掉進行中 workout），pickExercise 一律帶 state.workoutId → done-list 顯示本次組、hint 顯示前一次訓練值（查無前一次才退回本次摘要）。sw.js v33、APP_VERSION v33。codex-review 1 P1+1 P2 皆修：P1 syncQueue 補傳成功換 server id、discardFailed 捨棄失敗組都經 reconcileDoneSets 掃全鏡射同步並持久化（否則換動作復活無 id 舊 payload，刪除不刪 server、編輯撞 client_uuid 冪等）；P2 pickExercise 偵測 setCounts>0 但鏡射空（v31→v32 升級）→ workoutDetail 回填。後端 test_api_workouts 加 2 條（exclude_workout 回前一次、只有本次時回空）。E2E verify_f32.py 8/8：A0 首選顯示上次 50、T1 換動作回來保留 2 組、T2 上次顯示前一次 50（非本次 60）、T3 續接第 3 組、T4 全新動作維持第一次、T5 升級回填 done-row 3＋上次仍 50、T6 離線記錄→補傳→換回→刪除真的刪到 server（server_remaining=0）。「上次查前一次」refinement 再跑 codex-review、2 P2 已修：①resume 分支 lastSets 的 catch 只吞離線（status 0），401/5xx 重拋交 guard（否則 token 失效不導回 setup）；②pickExercise 兩處 await 後加 state.exercise!==exercise 過期守衛（await 期間已換動作/結束訓練就丟棄，不把畫面拉回 logger）。全套 pytest 175 過、ruff clean、F31 logger 回歸 4/4。"
+  },
+  {
+   "id": "F33",
+   "name": "日曆明細＋體重清單卡片化（收斂到 F26 琥珀 accent 語言）",
+   "acceptance": "把兩處舊的 hairline 帳本式堆疊收斂到 F26 已確立的「琥珀 accent 條＋卡片」語言，只動 markup 外層 wrapper 與 CSS、不改任何互動邏輯。【日曆當日明細】① 同一動作的組收進一個視覺區塊：左緣琥珀脊（--led-dim）＋動作名為標頭，其下每組為一列；② 移除每列全寬 border-bottom 的帳本橫線，改以間距/區塊分界（動作與動作之間靠新的脊塊自然分界）；③ 每組列的編輯（✎ stepper）／刪除（🗑 單擊）與 F19 多選批次刪除、F18 狀態行內編輯全部照舊可用（行為零改動）。【體重頁紀錄清單】④ .body-list 收進一張 .body-card（與上方兩張圖表卡片語言一致）、移除 bm-row 的帳本橫線；⑤ 每列的編輯（POST 覆蓋）／單擊刪除照舊可用。【共通】⑥ 數字維持 mono 主角色（--text）、脊與標頭為暗色配角（--text-dim / --led-dim），不新增字體、不引入框架或圖表庫；⑦ 深色對比可讀（沿用既有 tokens）；⑧ 改 static 資產→ sw.js CACHE_NAME 與 state.js APP_VERSION 同步遞增（v34→v35）；⑨ 既有 E2E 回歸不破：logger（verify_f19_logger/f20/f32）、日曆刪除/編輯（F16/F18/F19 對應）、體重（F11/F17）跑過為綠。來源：2026-07-20 Ryan 覺得日曆／體重頁下方堆疊顯示可以更乾淨；選定方向 A（動作卡＋琥珀脊、拿掉帳本橫線）。",
+   "status": "failing",
+   "evidence": ""
   }
  ]
 }

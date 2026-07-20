@@ -1,7 +1,18 @@
 # Session Handoff
 > 最後更新：2026-07-20（**F11 體重補記過去日期 → passing**；F31 亦於本日真機確認 passing）。**feature_list 現 32/32 全 passing —— MVP 全數完成。** sw.js 現 **v34**、APP_VERSION v34。
 >
-> 🎯 **下一步：MVP 收官**（走 vault PLAN 收官 checklist + `sop/after-action.md`）——成功指標對答案、harness 消融檢討、README（先讀 `identity/voice-and-tone.md`）、成就故事、歸檔。或處理 Ryan 真機試用累積的新回饋（有的話先加進 feature_list 標 failing 再做）。
+> 🎯 **下一步（二選一）**：(a) **F33 日曆明細＋體重清單卡片化**（已進 feature_list 標 failing，見下方計畫，Ryan 已選方向 A）；(b) **MVP 收官**（vault PLAN 收官 checklist + `sop/after-action.md`：成功指標對答案、harness 消融檢討、README〔先讀 `identity/voice-and-tone.md`〕、成就故事、歸檔）。
+
+## F33 日曆明細＋體重清單卡片化 → failing（待動工，2026-07-20 定方向 A）
+> Ryan 覺得日曆／體重頁下方的堆疊顯示（`cal-detail-*`、`bm-row`）太「帳本感」。根因＝每列全寬 `border-bottom` hairline＋動作與其組沒有容器歸屬感。決定收斂到 **F26 課表已確立的「琥珀 accent 條＋卡片」語言**（一致性，非新風格）。**只動 markup 外層 wrapper＋CSS，互動邏輯零改動**（F16–F19 的每組編輯/刪除、多選批次、狀態行內編輯全部照舊）。
+>
+> **方向 A 實作重點**：
+> - **日曆明細**（`calendar.js` `detailRows`／`app.css` `.cal-detail-*`）：同一動作的 `.cal-detail-ex` 標頭＋其下 `.cal-detail-row.set` 收進一個區塊容器，左緣 2px 琥珀脊（`--led-dim`）；**拿掉 `.cal-detail-row` 的 `border-bottom`**，組與組靠間距、動作與動作靠「新脊塊」分界。head／status 維持在最上（status 可再收成 chip 感但非必要）。
+> - **體重清單**（`body.js` render 的 `.body-list`／`app.css`）：整個 `.body-list` 包進一張 `.body-card`（跟上方兩張圖表卡一致）、**拿掉 `.bm-row` 的 `border-bottom`**。
+> - 數字維持 mono 主角（`--text`），脊/標頭暗色配角（`--text-dim`/`--led-dim`）；不新增字體/框架。
+> - **鐵則**：改 static → `sw.js` CACHE_NAME 與 `state.js` APP_VERSION **v34→v35**。
+> - **驗證**：新寫 `verify_f33.py`（可斷言 DOM 結構：動作區塊存在琥珀脊 wrapper、`.cal-detail-row` 無 border 帳本；或以視覺截圖為輔）；**重點是回歸**——logger（`verify_f19_logger`/`f20`/`f32`）、日曆刪除/編輯、體重（`verify_f11`/`f17`）全綠證明互動沒被 markup 改動打斷；`uv run pytest`＋`ruff` 綠；完成跑 `/codex-review`，改 passing 前跑 `/codex-verify`。
+> - 純視覺，可先做一張 HTML mockup 給 Ryan 挑細節再落地（Ryan 未指定，動工時問一句）。
 >
 > ## F11 體重補記過去日期 → passing（2026-07-20，本場）
 > - **需求（2026-07-18 真機回饋 #3）**：/body 表單原本只能記今天，要能補記過去日期的體重／體脂。
