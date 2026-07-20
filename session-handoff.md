@@ -1,5 +1,13 @@
 # Session Handoff
-> 最後更新：2026-07-20（**F32 換動作後保留本次已做組數 → passing**，含「上次查前一次」refinement）。前面 F10/F24/F25/F26/F27/F28/F29/F30/F31 皆已上線。sw.js 現 **v33**、APP_VERSION v33。剩 **F11 體重補記過去日期**；F31 仍待 Ryan Android 真機確認通知送達。
+> 最後更新：2026-07-20（**F31 Ryan Android 真機確認送達 → passing**；feature_list 現 **31 passing / 1 failing**）。前面 F10/F24–F32 皆已上線。sw.js 現 **v33**、APP_VERSION v33。**唯一剩餘：F11 體重補記過去日期（尚未動工）**。
+>
+> ⏸ **本場因 Session 5h 用量達 90% 於 F11 動工前收工**——乾淨邊界，F11 一行都還沒寫。
+>
+> ### 下一場：F11 體重補記過去日期（純前端，無後端改動）
+> - **驗收**：/body 頁可選日期補記過去體重／體脂（預設今天、**擋未來日期**）；同日覆蓋語意同 F8（重送覆蓋該日）；補記後趨勢折線正確反映；heatmap 自體重噸位規則維持 F8 現狀（最新體重）不變；前端走既有 `POST /api/body-metrics` 的 **date 欄位**（後端早已支援）。
+> - **改哪**：主戰場 `app/static/js/body.js`（/body 頁表單）；`api.js` 的 body-metrics 送出加帶 date；F17 已在 /body 做過「過去日期編輯清單」，可參照它讀寫 date 的範式。
+> - **鐵則**：改任何 static 資產 → `sw.js` `CACHE_NAME` 與 `state.js` `APP_VERSION` **兩處一起 v33→v34**。
+> - **驗證**：TDD／E2E 用 `verify_f11.py`（選過去日期送出→折線含該點、擋未來日期）；跑 `uv run pytest`＋`uv run ruff check .`；完成跑 `/codex-review`，改 passing 前跑 `/codex-verify`。
 
 ## F32 換動作後保留本次已做組數 → passing（2026-07-20，本場）
 - **需求**：Ryan 反映「換動作在沒按收工/結束訓練時，原本訓練內組數都變成上次動作」。即同一次訓練換動作後回到該動作，先前做的組要留在 done-list，不能被誤標「上次」。
