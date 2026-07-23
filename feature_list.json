@@ -241,8 +241,8 @@
     {
       "id": "F35",
       "name": "動作歷來查詢端點",
-      "status": "failing",
-      "evidence": "",
+      "status": "passing",
+      "evidence": "後端 history 端點：GET /api/exercises/{id}/history?from=&to= 回 {prs,sessions}。tests/test_exercise_history.py 13 條（sessions 區間/軟刪/升冪、prs 全期、422 格式錯與 from>to、404、空區間、months_ago 日曆月）；全套 188 passed、ruff clean。codex-review 4 P2 全修（422/日曆月/N+1/專屬 schema）。codex-verify 跨模型 7/7 pass（報告 scratchpad/codex-verify-F35.md，含 2019/2020 fixture 驗全期 PR 與預設 3 日曆月邊界）。commit 835f89e。",
       "acceptance": "（PRD docs/prd/f35-exercise-detail.md R1）新增 GET /api/exercises/{id}/history?from=YYYY-MM-DD&to=YYYY-MM-DD，回 {prs, sessions}。① sessions＝依日期升冪，每筆 {workout_id, date, sets:[{id,set_number,weight_kg,reps,rpe}]}，只含 deleted_at IS NULL 的組、只含 date 落在 [from,to] 的訓練；② prs＝全期（不受 from/to 影響）{top_weight:{weight_kg,reps}|null, top_set_volume:{weight_kg,reps}|null}，分別為該動作全期單組最大 weight_kg、與全期單組最大 weight_kg×reps；③ from>to 或日期格式錯→422；④ 動作 id 不存在→404；⑤ 動作存在但區間內無資料→200，sessions 空陣列（非 404），prs 仍反映全期；⑥ from/to 省略時預設 to＝今天、from＝今天−3 個月。API 層不直接寫 SQL（走 app/services）；既有 get_progress 不動。後端測試涵蓋 ①③④⑤。"
     },
     {

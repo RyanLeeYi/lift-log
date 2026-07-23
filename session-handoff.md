@@ -1,18 +1,13 @@
 # Session Handoff
-> 最後更新：2026-07-23（**F35 後端完成、F35–F38 凍結動工中**；34 passing／4 failing）。sw.js 現 **v36**、APP_VERSION v36。
+> 最後更新：2026-07-23（**F35 → passing**；35 passing／3 failing，F36–F38 待做）。sw.js 現 **v36**、APP_VERSION v36。
 
 ## 動作詳情頁 F35–F38 動工中（2026-07-23，PRD `docs/prd/f35-exercise-detail.md`）
 > 新想法：每個動作一個詳情頁（曲線＋歷來＋PR）。brainstorm 收斂後寫 PRD（commit `39b56b8`＋`47882aa`）、凍 4 條 feature（F35–F38 failing）。**決策用 mockup** 在 `<scratchpad>/exercise-detail-mockup.html`（v3，橡膠黑×琥珀 LED，可點 toggle/時間窗，是 F36/F37 的視覺藍圖）。
 > **設計要點**：曲線 toggle 兩個〔最重重量（不乘次數）／最重總訓練量（單組 weight×reps 取當天最大）〕；時間窗固定檔位 1M~3Y＋自訂 from/to（同控曲線與清單）；折點 >16 自動聚合每週/每月最佳；PR 全期兩張卡；歷來紀錄綁時間窗、月份摺疊（近 3 月攤開）＋內捲；兩入口（picker 📈＋logger 當前動作標頭）返回都保狀態。
 
-### F35 後端 history 端點 → 實作完成、**待修 4 P2 後才翻 passing**（commit `b3a298d`）
-- **已做**：`GET /api/exercises/{id}/history?from=&to=` 回 `{prs, sessions}`；新 `app/services/history.py`、schemas `ExerciseHistoryOut/HistorySession/PrSummary/PrEntry`；`tests/test_exercise_history.py` 10 條；全套 **185 passed**、ruff clean。
-- **codex-review（commit `b3a298d`）回 4 P2，下場先修再 codex-verify → 翻 passing**：
-  1. **日期格式錯應回 422**：`from=not-a-date` 現在被全域 handler 轉成 400，違反契約。修：在端點自己解析或加 validation 讓格式錯也走 422（現有測試只涵蓋 `from>to`，補一條格式錯的）。
-  2. **預設 3M 用日曆月非 90 天**：`exercises.py:33` 用 `timedelta(days=90)`，`to=07-31` 應回推到 04-30 卻得 05-02，漏區間開頭。修：用 `dateutil.relativedelta` 或自寫月份回推（repo 沒 dateutil，自寫或加 dep 前先確認）。
-  3. **N+1**：`history.py` 只載 WorkoutSet，逐筆存取 `s.workout.date` lazy-load。修：查詢直接帶 `Workout.date` 或 eager-load。
-  4. **HistorySession 重用 SetOut 超出契約**：多回了 `workout_id/exercise_id/rest_seconds`，R1 只定 `id,set_number,weight_kg,reps,rpe`。修：專屬 history set schema。
-- 修完 4 P2 → `/codex-verify F35` 跨模型 → 綠才 feature_list F35 改 passing（evidence 引報告）。
+### F35 後端 history 端點 → **passing**（2026-07-23，commit `835f89e`）
+- `GET /api/exercises/{id}/history?from=&to=` 回 `{prs, sessions}`；`app/services/history.py`（含 `months_ago` 日曆月回推）、schemas `ExerciseHistoryOut/HistorySession/HistorySet/PrSummary/PrEntry`；`tests/test_exercise_history.py` 13 條；全套 **188 passed**、ruff clean。
+- codex-review 4 P2 全修（①日期格式錯→422 ②預設 3M 用日曆月 ③殺 N+1 帶 Workout.date ④專屬 HistorySet 只回 5 欄）；codex-verify 跨模型 **7/7 pass**（報告 `scratchpad/codex-verify-F35.md`）。
 
 ### F36/F37/F38 待做（依序）
 - **F36** 詳情頁殼＋曲線＋PR（state.js 新畫面 `exerciseDetail` 帶 exerciseId；照 mockup v3 落地；改 static 記得 sw.js/APP_VERSION **v36→v37**）
