@@ -324,7 +324,9 @@ function renderHome() {
         // F39：不必先開練，直接瀏覽有資料的動作看表現
         onclick: () =>
           guard(async () => {
+            const origin = state.screen;
             await openTrends();
+            if (state.screen !== origin) return; // 載入期間離開首頁 → 不劫持導覽
             state.screen = "trends";
             render();
           }),
