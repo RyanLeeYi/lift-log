@@ -17,6 +17,7 @@ const detail = {
   customFrom: "",
   customTo: "",
   expandedMonths: new Set(), // F37：歷來紀錄展開中的月份 key（載入時預設近 3 個月）
+  bodyweight: 0, // F37：自體重動作噸位用（取最新體重，同日曆的近似）
 };
 
 const PRESETS = [
@@ -74,6 +75,18 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
   detail.customOpen = false;
   detail.customFrom = "";
   detail.customTo = "";
+  // 自體重動作：取最新體重，噸位才不會把引體向上算成 0（同日曆 set_tonnage 的近似）
+  detail.bodyweight = 0;
+  if (exercise.is_bodyweight) {
+    try {
+      const metrics = await api.listBodyMetrics();
+      if (metrics.length) {
+        detail.bodyweight = metrics.reduce((a, b) => (b.date > a.date ? b : a)).weight_kg;
+      }
+    } catch {
+      /* 拿不到體重就當 0，不擋開頁 */
+    }
+  }
   await loadRange({ kind: "preset", months: 3 });
 }
 
@@ -184,12 +197,16 @@ function relTime(dateStr) {
   if (days <= 0) return "今天";
   if (days === 1) return "昨天";
   if (days < 30) return `${days} 天前`;
-  return "";
+  if (days < 365) return `${Math.round(days / 30)} 個月前`;
+  return `${Math.floor(days / 365)} 年前`;
 }
 
 function dayBlock(s) {
-  const tonnage = s.sets.reduce((a, x) => a + x.weight_kg * x.reps, 0);
-  const bestW = Math.max(...s.sets.map((x) => x.weight_kg)); // 當日最重那組掛 🏆
+  // 自體重動作以（最新體重＋額外負重）計有效重量，同日曆 set_tonnage 規則
+  const isBW = detail.exercise?.is_bodyweight;
+  const bw = isBW && detail.bodyweight ? detail.bodyweight : 0;
+  const tonnage = s.sets.reduce((a, x) => a + (x.weight_kg + bw) * x.reps, 0);
+  const bestW = Math.max(...s.sets.map((x) => x.weight_kg)); // 當日最重那組掛 🏆（比額外負重）
   return el("div", { class: "ex-day" }, [
     el("div", { class: "d" }, [
       el("span", { class: "date" }, [s.date.slice(5)]),
@@ -247,6 +264,7 @@ export function renderExerciseDetail(rerender, goBack, guard) {
   const capGran = el("span", { class: "ex-gran" }, []);
   const capLbl = el("span", { class: "ex-lbl-text" }, [METRICS[detail.metric].lbl]);
   const chart = el("div", { class: "ex-chart" });
+  const histBox = el("div", { class: "ex-hist" });
 
   // R2：切 metric 只重畫曲線＋cap＋按鈕高亮，不 rerender()（整頁重繪）、不打 API
   const mBtn = { w: null, v: null };
@@ -333,8 +351,16 @@ export function renderExerciseDetail(rerender, goBack, guard) {
       el("span", {}, ["歷來紀錄"]),
       el("span", { class: "cnt" }, [`此區間 ${detail.data.sessions.length} 次`]),
     ]),
-    el("div", { class: "ex-hist" }, renderHistory(rerender)), // F37 歷來紀錄清單
+    histBox, // F37 歷來紀錄清單
   ]);
+
+  // 月份摺疊就地更新，保留內捲位置（全頁 rerender 會讓 scrollTop 歸零）
+  function refreshHist() {
+    const st = histBox.scrollTop;
+    histBox.replaceChildren(...renderHistory(refreshHist));
+    histBox.scrollTop = st;
+  }
+  histBox.replaceChildren(...renderHistory(refreshHist));
 
   drawChart(chart, capNow, capGran);
   return node;
