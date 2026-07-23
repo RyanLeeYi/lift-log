@@ -19,6 +19,7 @@ const cal = {
   selectedIds: [], // F19：多選模式下已勾選的 set id
   statusEdit: false, // F18：當日狀態行內編輯中
   statusDraft: null, // F18：{energy, sleep_quality, note} 狀態編輯草稿
+  expandedEx: new Set(), // F34：目前展開的 exercise_id（空＝全收合，切日/切月重置）
 };
 
 async function loadMonth() {
@@ -57,7 +58,9 @@ function shiftMonth(delta) {
   cal.month = m;
 }
 
-async function selectDay(dateStr) {
+// keepExpanded：刪/改後重載當日用（F34 收合狀態要留著，否則刪一組整塊自己收起來）；
+// 使用者切日/切月一律不帶＝重置為全收合
+async function selectDay(dateStr, keepExpanded = false) {
   cal.selected = dateStr;
   cal.editSetId = null; // 換日/重載時清掉行內編輯與多選的殘留態
   cal.editDraft = null;
@@ -65,6 +68,7 @@ async function selectDay(dateStr) {
   cal.selectedIds = [];
   cal.statusEdit = false;
   cal.statusDraft = null;
+  if (!keepExpanded) cal.expandedEx = new Set();
   const [workouts, statuses] = await Promise.all([
     api.listWorkouts(dateStr, dateStr),
     api.listDailyStatus(dateStr, dateStr),
@@ -167,7 +171,7 @@ async function refreshMonthAndDay() {
   cal.days = (await api.calendarStats(cal.year, cal.month)).days;
   // 寫入傳輸中使用者可能已切月（loadMonth 把 selected 設 null）——別讓 selectDay(null)
   // 打出 start=null&end=null 的 400；沒選日就只更新熱力圖（Codex P2）
-  if (cal.selected) await selectDay(cal.selected);
+  if (cal.selected) await selectDay(cal.selected, true);
 }
 
 async function deleteSet(s, rerender) {
@@ -267,6 +271,13 @@ function calSetRow(s, guard, rerender) {
   ]);
 }
 
+// F34：收合摘要用的「最重組」——weight_kg 最大者，平手取 reps 多者
+function topSet(sets) {
+  return sets.reduce((a, b) =>
+    b.weight_kg > a.weight_kg || (b.weight_kg === a.weight_kg && b.reps > a.reps) ? b : a,
+  );
+}
+
 function detailRows(guard, rerender) {
   if (!cal.selected) return [];
   if (cal.detail.length === 0) {
@@ -274,6 +285,9 @@ function detailRows(guard, rerender) {
     return [el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]), ...statusRow(guard, rerender)];
   }
   const tonnage = cal.days[cal.selected];
+  // F19：有組才顯示「選取」入口（進多選批次刪除）
+  // F34：入口從獨立一列的 .cal-select-bar 收進 head 右側，不再獨占一列
+  const hasSets = cal.detail.some((d) => d.sets.length > 0);
   const rows = [
     el("div", { class: "cal-detail-head" }, [
       el("span", {}, [cal.selected]),
@@ -281,26 +295,22 @@ function detailRows(guard, rerender) {
         // 純自體重日噸位可為 0，仍要顯示
         tonnage !== undefined ? `噸位 ${Math.round(tonnage).toLocaleString()} kg` : "",
       ]),
+      ...(hasSets
+        ? [
+            cal.selectMode
+              ? el("button", {
+                  class: "btn btn-ghost sm cal-select-cancel",
+                  onclick: () => { cal.selectMode = false; cal.selectedIds = []; rerender(); },
+                }, ["取消"])
+              : el("button", {
+                  class: "btn btn-ghost sm cal-select-toggle",
+                  onclick: () => { cal.selectMode = true; cal.editSetId = null; rerender(); },
+                }, ["☑ 選取"]),
+          ]
+        : []),
     ]),
     ...statusRow(guard, rerender),
   ];
-  // F19：有組才顯示「選取」入口（進多選批次刪除）
-  const hasSets = cal.detail.some((d) => d.sets.length > 0);
-  if (hasSets) {
-    rows.push(
-      el("div", { class: "cal-select-bar" }, [
-        cal.selectMode
-          ? el("button", {
-              class: "btn btn-ghost sm cal-select-cancel",
-              onclick: () => { cal.selectMode = false; cal.selectedIds = []; rerender(); },
-            }, ["取消"])
-          : el("button", {
-              class: "btn btn-ghost sm cal-select-toggle",
-              onclick: () => { cal.selectMode = true; cal.editSetId = null; rerender(); },
-            }, ["選取"]),
-      ]),
-    );
-  }
   // F16：每個動作一個標題列，其下每組獨立一列可編輯/刪除
   // F33（Codex P2）：跨當日所有 workouts 先彙整同動作的組，再一個動作一個區塊——
   // 否則同日多 workout 含相同動作會產生多個同名區塊，違反「一個動作一個視覺區塊」
@@ -313,11 +323,30 @@ function detailRows(guard, rerender) {
   }
   for (const [exerciseId, groupSets] of grouped) {
     const exercise = cal.exerciseById?.[exerciseId];
+    // F34：選取模式強制展開（否則無組可勾），但不動 expandedEx——退出多選自然恢復先前收合狀態
+    const showSets = cal.selectMode || cal.expandedEx.has(exerciseId);
+    const top = topSet(groupSets);
     // F33：動作標頭＋其組收進一個琥珀脊區塊（取代舊的帳本橫線分隔）
     rows.push(
-      el("div", { class: "cal-ex-block" }, [
-        el("div", { class: "cal-detail-ex" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
-        ...groupSets.map((s) => calSetRow(s, guard, rerender)),
+      el("div", { class: `cal-ex-block${showSets ? " expanded" : ""}` }, [
+        el("div", {
+          class: "cal-detail-ex",
+          // 選取模式下標頭不可點：畫面已強制展開，點了只會偷改看不見的收合狀態
+          ...(cal.selectMode ? {} : {
+            onclick: () => {
+              if (showSets) cal.expandedEx.delete(exerciseId);
+              else cal.expandedEx.add(exerciseId);
+              rerender();
+            },
+          }),
+        }, [
+          el("span", { class: "ex-name" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
+          el("span", { class: "ex-sum" }, [
+            `${groupSets.length}組 · 最重 ${top.weight_kg}×${top.reps}`,
+          ]),
+          el("span", { class: "ex-caret" }, [showSets ? "▾" : "▸"]),
+        ]),
+        ...(showSets ? groupSets.map((s) => calSetRow(s, guard, rerender)) : []),
       ]),
     );
   }
@@ -325,7 +354,8 @@ function detailRows(guard, rerender) {
     rows.push(
       el("div", { class: "cal-batch-bar" }, [
         el("button", {
-          class: "btn btn-danger cal-batch-del",
+          // F34：批次刪除條改琥珀填色（btn-primary），停用態靠 :disabled 淡化
+          class: "btn btn-primary cal-batch-del",
           ...(cal.selectedIds.length === 0 ? { disabled: "" } : {}),
           onclick: () => guard(() => batchDeleteSelected(rerender)),
         }, [`刪除選取 (${cal.selectedIds.length})`]),

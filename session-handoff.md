@@ -1,7 +1,15 @@
 # Session Handoff
-> 最後更新：2026-07-20（**F33 卡片化 → passing**；MVP 32/32＋UI 打磨 F33 共 **33 passing / 1 failing（F34 未動工）**）。sw.js 現 **v35**、APP_VERSION v35。
+> 最後更新：2026-07-23（**F34 → passing**；全部 **34/34 passing**）。sw.js 現 **v36**、APP_VERSION v36。
 >
-> 🎯 **下一步**：**F34 日曆明細收合/展開＋選取鈕收進 head**（規格已凍、實作設計筆記見下，Ryan 已拍板；因 Weekly 用量 98% 硬天花板在動工前收工，一行未寫）。之後仍有 **MVP 收官**（vault PLAN checklist + `sop/after-action.md`：成功指標對答案、harness 消融、README〔先讀 `identity/voice-and-tone.md`〕、成就故事、歸檔）。
+> 🎯 **下一步**：**MVP 收官**（vault PLAN checklist + `sop/after-action.md`：成功指標對答案〔自用自 7/18 起算兩週，8/1 到期〕、harness 消融〔`/harness-retro`，.harness/failures.jsonl 已收 1 筆 F34 caret 對比〕、README〔先讀 `identity/voice-and-tone.md`——尚未建，sticky P2〕、成就故事、歸檔）。另有兩件掛著：**F31 Web Push 待 Ryan Android 真機確認送達**、**F11 當初趕工未跑 codex-verify**（想補跨模型簽章可補跑）。
+
+## F34 日曆明細收合/展開＋選取鈕收進 head → passing（2026-07-23）
+> 動工日規格已凍，本場實作。sw.js/APP_VERSION v35→v36。commit 待推。
+- **實作**（4 檔 markup+CSS，互動邏輯沿用）：`calendar.js` `cal.expandedEx:Set`（空=全收合，`selectDay` 預設重置、加 `keepExpanded` 給刪改後 `refreshMonthAndDay` 保狀態）；標頭改開關（動作名｜`N組 · 最重 W×R`｜▸/▾），`topSet` 取最重組（weight 大、平手 reps 多）；選取模式強制展開但不動 expandedEx（退出自然恢復）；選取鈕從 `.cal-select-bar` 移進 `.cal-detail-head` 右側「☑ 選取」，舊 bar 的 markup+CSS 刪除。
+- **⑤ 重新簽核（2026-07-23）**：凍結 acceptance ⑤ 原寫「保留**琥珀**批次刪除條（**現狀不變**）」自相矛盾——那條一直是 danger-red。Ryan 拍板**真的改成琥珀**：`cal-batch-del` class `btn-danger`→`btn-primary`（琥珀填色 rgb(255,176,32)、深字），加 `:disabled { opacity:.4 }` 停用態。feature_list ⑤ 已改並註記重新簽核。
+- **兩處 codex-verify 抓到的 fail 已修**：r1 caret 用 `--led-dim` 對比僅 2.86:1 → 改 `--led` 10.48:1（過 WCAG 非文字圖示 3:1）；r2 即上述 ⑤。
+- **驗證**：`verify_f34.py`（scratchpad）**12/12 PASS**（R11 caret 對比、R12 批次琥珀為新增斷言）；pytest 175 passed、cov 98%、ruff clean；回歸 F33/F18/F19logger+calendar/F20/F32/F11/F17 全綠（F19_calendar 與 F33 因預設收合更新了 E2E：斷言前先展開，行為不變）；/codex-review 無 findings；**codex-verify 跨模型 r3 8/8 pass**（報告 `scratchpad/codex-verify-F34-r3.md`）。
+- **教訓**：凍結 acceptance 若把既有元素的既有屬性描述錯（把紅寫成琥珀），驗收者會如實判 fail——這是規格 bug 不是實作 bug，要回簽核不是硬改。已收進 `.harness/failures.jsonl` 供 harness-retro。
 
 ## F34 日曆明細動作收合/展開＋選取鈕收進 head → failing（規格凍結，未動工）
 > **2026-07-20 定案、規格進 feature_list（acceptance 已凍），因 Weekly 用量 98% 硬天花板在動工前收工——一行未寫，乾淨邊界。** Ryan 拍板三決定：①預設全收合、②收合帶摘要（組數·最重組）、③選取鈕併進 head。
