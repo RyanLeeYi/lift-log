@@ -262,8 +262,8 @@
     {
       "id": "F38",
       "name": "動作詳情頁：兩入口與返回",
-      "status": "failing",
-      "evidence": "",
+      "status": "passing",
+      "evidence": "兩入口與返回（與 F36 同批實作）：picker 每列（含今日菜單列）＋logger 標頭 📈 詳情入口，點📈進詳情頁不誤觸開始記錄；返回回來源畫面且狀態保留（picker 搜尋/部位、logger 進行中組與休息計時）。sw v37。E2E verify_f36 涵蓋兩入口進出與返回保留；codex-verify 跨模型 F38 全 pass（picker 35 列各含主鍵+📈、今日菜單 1 列有📈、logger 往返組數不變、返回保狀態、📈對比 9.32:1）。commit f08aa53。",
       "acceptance": "（PRD R7/R8）① 選動作 picker 每個動作列有詳情入口 icon（如 📈），點了進該動作詳情頁，且不誤觸『選這動作開始記錄』（兩者分離）；返回回 picker、picker 搜尋/篩選狀態不破壞；② logger 當前動作標頭有詳情入口，點了進詳情頁且進行中訓練狀態不遺失（已記錄組、離線佇列、休息計時照舊，參考 F32）；從詳情頁返回回 logger 且狀態完整可續記；③ 改 static→sw.js CACHE_NAME 與 state.js APP_VERSION v36→v37（兩處一起）；不新增字體/框架、互動指示符對比≥3:1；既有 F1–F34 行為不變。E2E：picker 入口進出、logger 入口進出且組數保留。"
     }
   ]
