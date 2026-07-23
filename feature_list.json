@@ -237,6 +237,34 @@
       "acceptance": "在 F33 的琥珀脊區塊上加收合/展開，並把多選入口收進當日明細 head，純前端 markup＋CSS、互動邏輯沿用。【動作收合/展開】① 每個 .cal-ex-block 預設收合，只顯示動作名＋摘要（組數 · 最重組，最重組＝weight_kg 最大的一組、平手取 reps 多者，顯示 weight×reps）＋展開指示（收合 ▸／展開 ▾）；② 點該塊標頭切換展開/收合；展開才顯示各組 .cal-detail-row.set（含既有 ✎ 編輯／🗑 刪除）；③ 進「選取」多選模式時所有塊自動展開（否則無組可勾），退出多選恢復先前收合狀態；④ 收合/展開＝純前端畫面狀態（存在 cal 內，切日/切月重置無妨）。【選取鈕收進 head】⑤ 「選取」入口從獨立 .cal-select-bar 移到當日明細 head（日期／噸位那列）右側，低調 icon-text（如「☑ 選取」）、不再獨占一列；進多選模式時 head 顯示「取消」，底部批次刪除條改為琥珀填色（--led，btn-primary 樣式，取代原 danger-red），停用態（未選取時）淡化不可按。【共通】⑥ 不新增字體/框架；深色對比可讀；F16–F19 的每組編輯/刪除、多選批次刪除、F18 狀態行內編輯行為全部不變；⑦ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v35→v36；⑧ 回歸：verify_f33 的脊區塊/卡片結構仍成立（收合後展開可見組列）、logger／日曆刪除編輯／體重 E2E 綠、pytest＋ruff 綠。來源：2026-07-20 Ryan 要同動作先收合、點了再展開，且多選『選取』鈕更好看；拍板：預設全收合、收合帶摘要（組數·最重組）、選取鈕併進 head。 【2026-07-23 重新簽核：原⑤把一直是 danger-red 的批次條誤描為「琥珀（現狀不變）」自相矛盾，Ryan 拍板真的改成琥珀。】",
       "status": "passing",
       "evidence": "E2E verify_f34.py 12/12 PASS（收合/展開、摘要=組數·最重組平手取reps多、選取鈕進head、caret 對比 10.48:1、批次條琥珀填色 rgb(255,176,32)、切日重置）；pytest 175 passed cov 98%、ruff clean；回歸 F33/F18/F19logger+calendar/F20/F32/F11/F17 全綠；/codex-review 無 findings；codex-verify 跨模型 8/8 pass（r1 抓 caret 對比 fail、r2 抓 ⑤ 規格矛盾，均修正後 r3 全 pass，報告 scratchpad/codex-verify-F34-r3.md）。⑤ 於 2026-07-23 重新簽核為琥珀批次條。"
+    },
+    {
+      "id": "F35",
+      "name": "動作歷來查詢端點",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（PRD docs/prd/f35-exercise-detail.md R1）新增 GET /api/exercises/{id}/history?from=YYYY-MM-DD&to=YYYY-MM-DD，回 {prs, sessions}。① sessions＝依日期升冪，每筆 {workout_id, date, sets:[{id,set_number,weight_kg,reps,rpe}]}，只含 deleted_at IS NULL 的組、只含 date 落在 [from,to] 的訓練；② prs＝全期（不受 from/to 影響）{top_weight:{weight_kg,reps}|null, top_set_volume:{weight_kg,reps}|null}，分別為該動作全期單組最大 weight_kg、與全期單組最大 weight_kg×reps；③ from>to 或日期格式錯→422；④ 動作 id 不存在→404；⑤ 動作存在但區間內無資料→200，sessions 空陣列（非 404），prs 仍反映全期；⑥ from/to 省略時預設 to＝今天、from＝今天−3 個月。API 層不直接寫 SQL（走 app/services）；既有 get_progress 不動。後端測試涵蓋 ①③④⑤。"
+    },
+    {
+      "id": "F36",
+      "name": "動作詳情頁：曲線＋PR",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（PRD R2/R3/R3b/R4/R5）詳情頁殼（state.js 新畫面 exerciseDetail 帶 exerciseId）＋曲線＋PR。① metric toggle 兩個：最重重量（預設，那次訓練所有組的 max weight_kg，不乘次數）／最重總訓練量（那次訓練所有組的 max weight_kg×reps），選中琥珀填色，切換就地重畫、不打新 API；② 時間窗固定檔位 1M/3M/6M/9M/1Y/2Y/3Y（預設 3M），點了曲線與清單同時重畫、依區間重取（?from=&to=，前端換算）；③ 自訂區間：點「自訂」選 from/to（沿用 F11 深色日期選擇器、to 上限今天），from>to 前端擋不送非法請求；④ 折點自動疏密：區間內訓練數 n≤16 每次一點（每次訓練），n>16 聚合每週最佳（週桶≤16）否則每月最佳，cap 顯示顆粒與折點數；⑤ 曲線客戶端手繪 SVG（同 body.js，不引圖表庫），最新點與區間最大值點加粗、y 軸 3 格線＋值、x 軸 3 日期；⑥ PR 兩張琥珀 LED 卡取自回應 prs（全期）：最重重量（附次數）／最重總訓練量（附 重量×次數），prs 皆 null 時顯示占位「—」不報錯。E2E：切 metric、切檔位、自訂區間、疏密顆粒變化、PR 顯示。"
+    },
+    {
+      "id": "F37",
+      "name": "動作詳情頁：歷來紀錄",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（PRD R6）歷來紀錄區，綁時間窗。① 只列該時間窗內的訓練（與曲線同區間），標題「此區間 N 次」；② 依月份分組、新→舊，最近 3 個月自動攤開（日期→該日各組），更早月份收成標頭「YYYY 年 M 月 · K 次 · 最重 W kg」，點標頭展開/收合（▸/▾）；③ 每個訓練日顯示日期、相對時間（今天/N 天前）、當日總噸位；其下每組 重量×次數 @RPE；當日最重那組掛 🏆；④ 容器固定高度、內容超過框內捲動（同 F20/F21），不推長整頁；⑤ 時間窗內無資料顯示空狀態文字。E2E：區間連動筆數、月份摺疊展開、內捲、空狀態。"
+    },
+    {
+      "id": "F38",
+      "name": "動作詳情頁：兩入口與返回",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（PRD R7/R8）① 選動作 picker 每個動作列有詳情入口 icon（如 📈），點了進該動作詳情頁，且不誤觸『選這動作開始記錄』（兩者分離）；返回回 picker、picker 搜尋/篩選狀態不破壞；② logger 當前動作標頭有詳情入口，點了進詳情頁且進行中訓練狀態不遺失（已記錄組、離線佇列、休息計時照舊，參考 F32）；從詳情頁返回回 logger 且狀態完整可續記；③ 改 static→sw.js CACHE_NAME 與 state.js APP_VERSION v36→v37（兩處一起）；不新增字體/框架、互動指示符對比≥3:1；既有 F1–F34 行為不變。E2E：picker 入口進出、logger 入口進出且組數保留。"
     }
   ]
 }

@@ -205,6 +205,28 @@ class WorkoutDetailOut(WorkoutOut):
     sets: list[SetOut]
 
 
+# F35：動作詳情頁的歷來查詢
+class PrEntry(BaseModel):
+    weight_kg: float
+    reps: int
+
+
+class PrSummary(BaseModel):
+    top_weight: PrEntry | None  # 全期單組最大 weight_kg
+    top_set_volume: PrEntry | None  # 全期單組最大 weight_kg × reps
+
+
+class HistorySession(BaseModel):
+    workout_id: int
+    date: date_type
+    sets: list[SetOut]
+
+
+class ExerciseHistoryOut(BaseModel):
+    prs: PrSummary  # 全期個人紀錄（不受 from/to 影響）
+    sessions: list[HistorySession]  # 區間內每次訓練的全部組，依日期升冪
+
+
 class PushKeys(BaseModel):
     p256dh: str = Field(min_length=1)
     auth: str = Field(min_length=1)
