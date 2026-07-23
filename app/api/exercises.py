@@ -25,8 +25,11 @@ def create_exercise(data: ExerciseCreate, session: DbSession) -> ExerciseOut:
 
 
 @router.get("/exercises", response_model=list[ExerciseOut])
-def search_exercises(session: DbSession, q: str | None = None) -> list[ExerciseOut]:
-    return [ExerciseOut.model_validate(e) for e in svc.search_exercises(session, q)]
+def search_exercises(
+    session: DbSession, q: str | None = None, has_data: bool = False
+) -> list[ExerciseOut]:
+    # F39：has_data=true 只回有紀錄的動作（首頁動作表現瀏覽用）
+    return [ExerciseOut.model_validate(e) for e in svc.search_exercises(session, q, has_data)]
 
 
 @router.get("/exercises/{exercise_id}/history", response_model=ExerciseHistoryOut)

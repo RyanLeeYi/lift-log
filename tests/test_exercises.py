@@ -96,3 +96,40 @@ def test_name_zh_trimmed_on_create(client: TestClient) -> None:
     body = resp.json()
     assert body["name_zh"] == "硬舉"
     assert body["name_en"] == "Deadlift"
+
+
+# F39：GET /api/exercises?has_data=true 只回有紀錄的動作
+def test_exercises_has_data_filter_returns_only_trained(client: TestClient) -> None:
+    from tests.conftest import make_set_payload
+
+    trained = client.post("/api/exercises", json={"name_zh": "深蹲測", "name_en": "SquatT"}).json()
+    untrained = client.post(
+        "/api/exercises", json={"name_zh": "臥推測", "name_en": "BenchT"}
+    ).json()
+    deleted_only = client.post(
+        "/api/exercises", json={"name_zh": "硬舉測", "name_en": "DeadT"}
+    ).json()
+
+    w = client.post("/api/workouts", json={"date": "2026-07-10"}).json()
+    assert (
+        client.post(
+            f"/api/workouts/{w['id']}/sets",
+            json=make_set_payload(trained["id"], client_uuid="hasdata-uuid-1"),
+        ).status_code
+        == 201
+    )
+    # deleted_only 記一組後軟刪 → 不算「有資料」
+    s = client.post(
+        f"/api/workouts/{w['id']}/sets",
+        json=make_set_payload(deleted_only["id"], set_number=2, client_uuid="hasdata-uuid-2"),
+    ).json()
+    assert client.delete(f"/api/sets/{s['id']}").status_code == 204
+
+    all_ids = {e["id"] for e in client.get("/api/exercises").json()}
+    assert {trained["id"], untrained["id"], deleted_only["id"]} <= all_ids  # 無過濾＝全部
+
+    with_data = client.get("/api/exercises", params={"has_data": "true"}).json()
+    ids = {e["id"] for e in with_data}
+    assert trained["id"] in ids
+    assert untrained["id"] not in ids  # 沒練過 → 不回
+    assert deleted_only["id"] not in ids  # 只有軟刪的組 → 不回

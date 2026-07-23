@@ -321,6 +321,20 @@ function renderHome() {
       "button",
       {
         class: "btn",
+        // F39：不必先開練，直接瀏覽有資料的動作看表現
+        onclick: () =>
+          guard(async () => {
+            await openTrends();
+            state.screen = "trends";
+            render();
+          }),
+      },
+      ["📈 動作表現"],
+    ),
+    el(
+      "button",
+      {
+        class: "btn",
         onclick: () =>
           guard(async () => {
             await openBody();
@@ -558,6 +572,47 @@ function exerciseRow(mainBtn, exercise, from) {
       { class: "btn detail-link", "aria-label": "動作表現", onclick: () => openDetail(exercise, from) },
       ["📈"],
     ),
+  ]);
+}
+
+// F39：動作表現瀏覽——只列有資料的動作，依部位分組，點進詳情頁
+let trendsExercises = [];
+
+async function openTrends() {
+  trendsExercises = await api.exercisesWithData();
+}
+
+function renderTrends() {
+  const groups = [...new Set(trendsExercises.map((e) => e.muscle_group))];
+  const body = trendsExercises.length === 0
+    ? [el("p", { class: "trends-empty" }, ["還沒有任何訓練紀錄——先去開練記幾組，這裡就會出現。"])]
+    : groups.map((g) =>
+        el("div", { class: "trends-group" }, [
+          el("div", { class: "menu-head" }, [g]),
+          el("div", { class: "exercise-list" },
+            trendsExercises
+              .filter((e) => e.muscle_group === g)
+              .map((exercise) =>
+                el("button", {
+                  class: "btn exercise-item",
+                  onclick: () => openDetail(exercise, "trends"),
+                }, [
+                  el("span", {}, [exerciseName(exercise)]),
+                  el("span", { class: "sub" }, [exerciseAlias(exercise)]),
+                ]),
+              ),
+          ),
+        ]),
+      );
+  return el("section", { class: "screen trends" }, [
+    el("header", { class: "topbar" }, [
+      el("h1", {}, ["動作表現"]),
+      el("button", { class: "btn btn-ghost chip", onclick: () => { toggleLang(); render(); } },
+        [getLang() === "zh" ? "EN" : "中"]),
+    ]),
+    ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    ...body,
+    el("button", { class: "btn btn-ghost", onclick: () => { state.screen = "home"; render(); } }, ["← 回首頁"]),
   ]);
 }
 
@@ -951,6 +1006,7 @@ function render() {
     home: renderHome,
     templateSelect: renderTemplateSelect,
     picker: renderPicker,
+    trends: renderTrends,
     logger: renderLogger,
     templates: () =>
       renderTemplates(

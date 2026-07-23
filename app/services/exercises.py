@@ -1,4 +1,4 @@
-from sqlalchemy import or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -64,7 +64,9 @@ def _escape_like(q: str) -> str:
     return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def search_exercises(session: Session, q: str | None) -> list[Exercise]:
+def search_exercises(
+    session: Session, q: str | None, has_data: bool = False
+) -> list[Exercise]:
     query = select(Exercise).order_by(Exercise.id)
     if q:
         pattern = f"%{_escape_like(q)}%"
@@ -72,6 +74,14 @@ def search_exercises(session: Session, q: str | None) -> list[Exercise]:
             or_(
                 Exercise.name_zh.ilike(pattern, escape="\\"),
                 Exercise.name_en.ilike(pattern, escape="\\"),
+            )
+        )
+    if has_data:
+        # F39：只回有 ≥1 筆未軟刪組的動作（濾掉沒練過的預設動作）
+        query = query.where(
+            exists().where(
+                WorkoutSet.exercise_id == Exercise.id,
+                WorkoutSet.deleted_at.is_(None),
             )
         )
     return list(session.scalars(query))

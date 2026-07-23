@@ -265,6 +265,13 @@
       "status": "passing",
       "evidence": "兩入口與返回（與 F36 同批實作）：picker 每列（含今日菜單列）＋logger 標頭 📈 詳情入口，點📈進詳情頁不誤觸開始記錄；返回回來源畫面且狀態保留（picker 搜尋/部位、logger 進行中組與休息計時）。sw v37。E2E verify_f36 涵蓋兩入口進出與返回保留；codex-verify 跨模型 F38 全 pass（picker 35 列各含主鍵+📈、今日菜單 1 列有📈、logger 往返組數不變、返回保狀態、📈對比 9.32:1）。commit f08aa53。",
       "acceptance": "（PRD R7/R8）① 選動作 picker 每個動作列有詳情入口 icon（如 📈），點了進該動作詳情頁，且不誤觸『選這動作開始記錄』（兩者分離）；返回回 picker、picker 搜尋/篩選狀態不破壞；② logger 當前動作標頭有詳情入口，點了進詳情頁且進行中訓練狀態不遺失（已記錄組、離線佇列、休息計時照舊，參考 F32）；從詳情頁返回回 logger 且狀態完整可續記；③ 改 static→sw.js CACHE_NAME 與 state.js APP_VERSION v36→v37（兩處一起）；不新增字體/框架、互動指示符對比≥3:1；既有 F1–F34 行為不變。E2E：picker 入口進出、logger 入口進出且組數保留。"
+    },
+    {
+      "id": "F39",
+      "name": "首頁動作表現瀏覽入口",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "從首頁直接瀏覽有資料的動作看表現（不必先開練）。① 後端 GET /api/exercises?has_data=true 只回「至少有 1 筆未軟刪組」的動作（濾掉沒練過的預設動作）；無 has_data 或 false 時維持回全部（既有行為不變）；② 首頁新增『📈 動作表現』按鈕（與 📋 課表／📅 日曆 並排）進入動作表現瀏覽畫面；③ 該畫面依部位分組（同 picker 的 muscle_group 分組）列出有資料的動作名，點某動作進 F36/F37 詳情頁（openDetail，returnScreen＝此畫面），從詳情頁返回回此畫面；④ 沒有任何有資料的動作時顯示空狀態文字（如『還沒有任何訓練紀錄』）；⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v38→v39；既有 F1–F38 行為不變、不新增框架。後端測試涵蓋 ①；E2E 涵蓋 ②③④。"
     }
   ]
 }
