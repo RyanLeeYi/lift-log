@@ -23,14 +23,13 @@ vault 對應：`projects/2026-07-健身紀錄系統/`（收官後補 DEVLOG）�
 - 不做跨動作比較、不做動作間排名
 - 不做匯出、分享、報表
 - 不做曲線上的觸控 tooltip／拖曳選點（點是視覺參考，數值看 cap 的當前值即可）
-- 不做自訂時間區間（只給固定檔位 1M~3Y）
 - 不改既有 `get_progress`／MCP（那是文字查詢用；本頁走新端點）
 
 ## 名詞定義
 
 - **最重重量**：一次訓練中，該動作所有組裡 `weight_kg` 的最大值（不乘次數）
 - **最重總訓練量**：一次訓練中，該動作所有組裡 `weight_kg × reps` 的最大值（以**單組**為單位取最大，非整場加總）
-- **時間窗**：`1M / 3M / 6M / 9M / 1Y / 2Y / 3Y`，預設 3M；同時控制曲線與歷來清單
+- **時間窗**：固定檔位 `1M / 3M / 6M / 9M / 1Y / 2Y / 3Y`（預設 3M）＋**自訂**（挑起訖日期 from→to）；同時控制曲線與歷來清單。統一以 `[from, to]` 日期區間表達，固定檔位＝`from = 今天 − N 個月、to = 今天`
 
 ## 需求與驗收標準
 
@@ -39,10 +38,13 @@ vault 對應：`projects/2026-07-健身紀錄系統/`（收官後補 DEVLOG）�
 #### R1：作為前端，我想用一個端點拿到某動作在時間窗內每次訓練的全部組，以便算指標與畫清單
 
 - Given 服務已啟動且帶正確 Bearer token
-- When `GET /api/exercises/{id}/history?months=N`（N ∈ {1,3,6,9,12,24,36}）
+- When `GET /api/exercises/{id}/history?from=YYYY-MM-DD&to=YYYY-MM-DD`（固定檔位由前端算成起訖日期；自訂區間直接傳；`from`/`to` 省略時預設 to＝今天、from＝今天 − 3 個月）
 - Then 回 `200` 與 `{ prs, sessions }`：
-  - `sessions`＝依日期升冪的陣列，每筆＝一次訓練：`{ workout_id, date, sets: [{ id, set_number, weight_kg, reps, rpe }] }`；只含 `deleted_at IS NULL` 的組；只含日期 ≥（今天 − N 個月）的訓練
-  - `prs`＝**全期**（不受 N 影響）個人紀錄：`{ top_weight: { weight_kg, reps } | null, top_set_volume: { weight_kg, reps } | null }`（該動作全期單組最大 `weight_kg`、與全期單組最大 `weight_kg × reps`；無資料為 null）
+  - `sessions`＝依日期升冪的陣列，每筆＝一次訓練：`{ workout_id, date, sets: [{ id, set_number, weight_kg, reps, rpe }] }`；只含 `deleted_at IS NULL` 的組；只含日期落在 `[from, to]` 內的訓練
+  - `prs`＝**全期**（不受 from/to 影響）個人紀錄：`{ top_weight: { weight_kg, reps } | null, top_set_volume: { weight_kg, reps } | null }`（該動作全期單組最大 `weight_kg`、與全期單組最大 `weight_kg × reps`；無資料為 null）
+- Given `from` 晚於 `to`，或日期格式不合法
+- When 呼叫該端點
+- Then 回 `422`（參數驗證錯）
 - Given 動作 id 不存在
 - When 呼叫該端點
 - Then 回 `404`
@@ -63,9 +65,18 @@ vault 對應：`projects/2026-07-健身紀錄系統/`（收官後補 DEVLOG）�
 #### R3：作為使用者，我想選時間窗，以便看不同長度的趨勢
 
 - Given 詳情頁
-- When 點時間窗檔位（`1M/3M/6M/9M/1Y/2Y/3Y`）
+- When 點固定時間窗檔位（`1M/3M/6M/9M/1Y/2Y/3Y`）
 - Then 該檔位琥珀高亮；曲線與**歷來清單同時**重畫為該區間；預設檔位為 `3M`
-- Then 切換時間窗會依該區間重新取資料（`?months=N`）
+- Then 切換時間窗會依該區間重新取資料（`?from=&to=`，固定檔位由前端換算起訖日期）
+
+#### R3b：作為使用者，我想自訂起訖日期，以便看任意一段時間
+
+- Given 詳情頁
+- When 點「自訂」→ 選 from／to 兩個日期（沿用 F11 的深色日期選擇器，`to` 上限為今天）
+- Then 曲線與歷來清單以該自訂區間 `[from, to]` 重畫（自動疏密照 R4）；自訂檔位高亮，固定檔位取消高亮
+- Given `from` 晚於 `to`
+- When 送出自訂區間
+- Then 前端擋下並提示，不打壞畫面（不送非法請求）
 
 #### R4：作為使用者，我想讓折點在長區間自動變疏，以便線不糊成一團
 
@@ -127,11 +138,11 @@ vault 對應：`projects/2026-07-健身紀錄系統/`（收官後補 DEVLOG）�
 - Then F1–F34 既有行為全部不變（logger 記錄／編輯／刪除、日曆、體重、課表、MCP）
 - Then 改了 static 資產 → `sw.js CACHE_NAME` 與 `state.js APP_VERSION` v36→v37（兩處一起）
 - Then 不新增字體/框架；深色對比可讀（互動指示符 ≥ WCAG 3:1）
-- Then `uv run pytest` 綠、`uv run ruff check .` 綠；新端點有後端測試；曲線指標／自動疏密／PR／清單摺疊／兩入口有 Playwright E2E
+- Then `uv run pytest` 綠、`uv run ruff check .` 綠；新端點有後端測試（含 `from>to` → 422、from/to 過濾）；曲線指標／時間窗／自訂區間／自動疏密／PR／清單摺疊／兩入口有 Playwright E2E
 
 ## 技術備註
 
-- **後端**：新增 `GET /api/exercises/{id}/history`（service 層 `history(session, exercise_id, months)`；查詢濾 `deleted_at`、依 `Workout.date` 排序；`months` 轉日期下界）。`prs` 全期 PR 另跑一次不帶日期下界的查詢（或以既有 `get_progress` 為基礎延伸），與 `sessions` 的區間查詢分開。既有 `get_progress` 不動（MCP 文字查詢用）。
+- **後端**：新增 `GET /api/exercises/{id}/history`（service 層 `history(session, exercise_id, from_date, to_date)`；查詢濾 `deleted_at`、依 `Workout.date` 排序、`Workout.date` 落在 `[from, to]`）。`prs` 全期 PR 另跑一次不帶日期界的查詢（或以既有 `get_progress` 為基礎延伸），與 `sessions` 的區間查詢分開。`from > to` 或日期格式錯 → `422`。既有 `get_progress` 不動（MCP 文字查詢用）。
 - **前端**：詳情頁為 `state.js` 路由新畫面（如 `screen="exerciseDetail"`，帶 `exerciseId`）；兩個 metric 與自動疏密全部客戶端計算（區間資料在手，同 body.js 手繪 SVG）；切 metric 不重取、切時間窗才重取。
 - **自動疏密門檻**：折點上限暫定 16（桶＝每週／每月最佳）；此為可調參數，實作時集中成常數。
 - **返回導航**：R7/R8 需保留來源畫面狀態——picker 與 logger 各記住 return target，避免詳情頁破壞進行中的 workout（參考 F32 的 workout 狀態保存）。
@@ -140,8 +151,8 @@ vault 對應：`projects/2026-07-健身紀錄系統/`（收官後補 DEVLOG）�
 
 一頁多元件、彼此耦合（都依賴新端點與頁面殼），建議拆成可依序 TDD 的數條：
 
-1. **後端 history 端點**（R1）
-2. **詳情頁殼＋曲線**（R2/R3/R4）＋ **PR 卡**（R5）
+1. **後端 history 端點**（R1，from/to ＋全期 prs）
+2. **詳情頁殼＋曲線**（R2/R3/R3b/R4，含固定檔位＋自訂區間＋自動疏密）＋ **PR 卡**（R5）
 3. **歷來紀錄**（R6，時間窗連動＋月份摺疊＋內捲）
 4. **兩個入口與返回**（R7/R8）
 
