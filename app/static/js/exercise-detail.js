@@ -249,7 +249,7 @@ function renderHistory(rerender) {
           },
         }, [
           el("span", { class: "mo" }, [`${y} 年 ${+m} 月`]),
-          el("span", { class: "sum" }, [`${ss.length} 次 · 最重 ${maxW}kg`]),
+          el("span", { class: "sum" }, [`${ss.length} 次 · 最重 ${maxW} kg`]),
           el("span", { class: "car" }, [open ? "▾" : "▸"]),
         ]),
         ...(open ? [el("div", { class: "ex-mbody" }, ss.map(dayBlock))] : []),
