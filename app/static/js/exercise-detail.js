@@ -36,17 +36,23 @@ function monthsAgo(d, n) {
   return new Date(y, m, Math.min(d.getDate(), lastDay));
 }
 
-function rangeDates() {
-  if (detail.range.kind === "custom") {
-    return { from: detail.range.from, to: detail.range.to };
-  }
+function datesFor(range) {
+  if (range.kind === "custom") return { from: range.from, to: range.to };
   const today = new Date();
-  return { from: iso(monthsAgo(today, detail.range.months)), to: iso(today) };
+  return { from: iso(monthsAgo(today, range.months)), to: iso(today) };
 }
 
-async function fetchData() {
-  const { from, to } = rangeDates();
-  detail.data = await api.exerciseHistory(detail.exerciseId, from, to);
+let reqSeq = 0; // 過期回應丟棄：快速連點時只採用最新一次查詢
+
+// 取新 range 的資料，成功才原子提交 range＋data；失敗（拋出）時 range/data 均不動，
+// 由 guard 接住並以舊狀態重繪（新檔位不會殘留高亮、圖表不與檔位不一致）
+async function loadRange(newRange) {
+  const { from, to } = datesFor(newRange);
+  const seq = ++reqSeq;
+  const data = await api.exerciseHistory(detail.exerciseId, from, to);
+  if (seq !== reqSeq) return; // 較舊但較慢的回應——丟棄
+  detail.range = newRange;
+  detail.data = data;
 }
 
 export function detailReturnScreen() {
@@ -60,10 +66,11 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
   detail.returnScreen = returnScreen;
   detail.metric = "w";
   detail.range = { kind: "preset", months: 3 };
+  detail.data = { prs: { top_weight: null, top_set_volume: null }, sessions: [] }; // 清掉上一個動作殘留
   detail.customOpen = false;
   detail.customFrom = "";
   detail.customTo = "";
-  await fetchData();
+  await loadRange({ kind: "preset", months: 3 });
 }
 
 // ---------- 指標與折點疏密 ----------
@@ -104,11 +111,18 @@ function buckets(sessions) {
 
 // ---------- render ----------
 
-function prCard(k, entry) {
-  const v = entry ? String(entry.weight_kg) : "—";
-  const u = entry
-    ? (k === "最重重量" ? `kg × ${entry.reps}` : `kg (${entry.weight_kg}×${entry.reps})`)
-    : "";
+// kind："weight"＝主值顯示重量；"volume"＝主值顯示 weight×reps（總訓練量）
+function prCard(k, entry, kind) {
+  let v = "—", u = "";
+  if (entry) {
+    if (kind === "weight") {
+      v = String(entry.weight_kg);
+      u = `kg × ${entry.reps}`;
+    } else {
+      v = String(entry.weight_kg * entry.reps);
+      u = `kg (${entry.weight_kg}×${entry.reps})`;
+    }
+  }
   return el("div", { class: "pr" }, [
     el("div", { class: "k" }, [k]),
     el("div", { class: "v" }, [v]),
@@ -175,9 +189,8 @@ export function renderExerciseDetail(rerender, goBack, guard) {
       class: detail.range.kind === "preset" && detail.range.months === months ? "on" : "",
       onclick: () =>
         guard(async () => {
-          detail.range = { kind: "preset", months };
+          await loadRange({ kind: "preset", months }); // 成功才提交檔位＋資料
           detail.customOpen = false;
-          await fetchData();
           rerender();
         }),
     }, [label]);
@@ -203,10 +216,14 @@ export function renderExerciseDetail(rerender, goBack, guard) {
           onclick: () =>
             guard(async () => {
               const f = detail.customFrom, t = detail.customTo;
-              if (!f || !t || f > t) { state.error = "起訖日期不對（起要早於訖）"; rerender(); return; }
+              // to 上限 today：max 屬性只是控制項提示，手打的未來日期仍要自己擋
+              if (!f || !t || f > t || t > iso(new Date())) {
+                state.error = "起訖日期不對（起要早於訖，且不能超過今天）";
+                rerender();
+                return;
+              }
               state.error = null;
-              detail.range = { kind: "custom", from: f, to: t };
-              await fetchData();
+              await loadRange({ kind: "custom", from: f, to: t }); // 成功才提交檔位＋資料
               rerender();
             }),
         }, ["套用"]),
@@ -220,8 +237,8 @@ export function renderExerciseDetail(rerender, goBack, guard) {
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     el("div", { class: "ex-prs" }, [
-      prCard("最重重量", detail.data.prs.top_weight),
-      prCard("最重總訓練量", detail.data.prs.top_set_volume),
+      prCard("最重重量", detail.data.prs.top_weight, "weight"),
+      prCard("最重總訓練量", detail.data.prs.top_set_volume, "volume"),
     ]),
     el("div", { class: "seg ex-metric" }, [metricBtn("w"), metricBtn("v")]),
     el("div", { class: "ex-range" }, [...PRESETS.map(presetBtn), customChip]),

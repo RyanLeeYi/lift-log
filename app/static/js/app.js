@@ -541,10 +541,24 @@ async function pickExercise(exercise) {
 // F38：開動作詳情頁（picker／logger 兩處入口共用）；記住來源畫面供返回
 function openDetail(exercise, from) {
   return guard(async () => {
+    const origin = state.screen;
     await openExerciseDetail(exercise, from);
+    if (state.screen !== origin) return; // 載入期間使用者已離開來源畫面 → 不劫持導覽
     state.screen = "exerciseDetail";
     render();
   });
+}
+
+// F38：把「主按鈕＋📈 詳情入口」包成一列（picker 清單與今日菜單共用）
+function exerciseRow(mainBtn, exercise, from) {
+  return el("div", { class: "exercise-row" }, [
+    mainBtn,
+    el(
+      "button",
+      { class: "btn detail-link", "aria-label": "動作表現", onclick: () => openDetail(exercise, from) },
+      ["📈"],
+    ),
+  ]);
 }
 
 function exerciseButtons() {
@@ -553,7 +567,7 @@ function exerciseButtons() {
     : pickerExercises;
   return shown.map((exercise) =>
     // F38：主鍵（選這動作開始記錄）＋📈 詳情入口分成兩顆並排鈕，點📈不誤觸開始記錄
-    el("div", { class: "exercise-row" }, [
+    exerciseRow(
       el(
         "button",
         { class: "btn exercise-item", onclick: () => guard(() => pickExercise(exercise)) },
@@ -562,12 +576,9 @@ function exerciseButtons() {
           el("span", { class: "sub" }, [exerciseAlias(exercise)]),
         ],
       ),
-      el(
-        "button",
-        { class: "btn detail-link", "aria-label": "動作表現", onclick: () => openDetail(exercise, "picker") },
-        ["📈"],
-      ),
-    ]),
+      exercise,
+      "picker",
+    ),
   );
 }
 
@@ -578,20 +589,18 @@ function templateMenu() {
     el("div", { class: "exercise-list menu-list" },
       state.template.exercises.map((item) => {
         const done = state.setCounts[item.exercise_id] || 0;
-        return el(
+        const exercise = {
+          id: item.exercise_id,
+          name_zh: item.name_zh,
+          name_en: item.name_en,
+          muscle_group: item.muscle_group,
+          is_bodyweight: item.is_bodyweight,
+        };
+        const mainBtn = el(
           "button",
           {
             class: `btn exercise-item${done >= item.default_sets ? " menu-done" : ""}`,
-            onclick: () =>
-              guard(() =>
-                pickExercise({
-                  id: item.exercise_id,
-                  name_zh: item.name_zh,
-                  name_en: item.name_en,
-                  muscle_group: item.muscle_group,
-                  is_bodyweight: item.is_bodyweight,
-                }),
-              ),
+            onclick: () => guard(() => pickExercise(exercise)),
           },
           [
             el("span", {}, [exerciseName(item)]),
@@ -600,6 +609,8 @@ function templateMenu() {
             ]),
           ],
         );
+        // F38：今日菜單列也要有 📈 詳情入口（Codex：原本只有臨時加動作清單有）
+        return exerciseRow(mainBtn, exercise, "picker");
       }),
     ),
     el("div", { class: "menu-head" }, ["臨時加動作"]),
