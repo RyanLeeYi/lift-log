@@ -1,5 +1,29 @@
 # Session Handoff
-> 最後更新：2026-07-23（**F34 → passing**；全部 **34/34 passing**）。sw.js 現 **v36**、APP_VERSION v36。
+> 最後更新：2026-07-23（**F35 後端完成、F35–F38 凍結動工中**；34 passing／4 failing）。sw.js 現 **v36**、APP_VERSION v36。
+
+## 動作詳情頁 F35–F38 動工中（2026-07-23，PRD `docs/prd/f35-exercise-detail.md`）
+> 新想法：每個動作一個詳情頁（曲線＋歷來＋PR）。brainstorm 收斂後寫 PRD（commit `39b56b8`＋`47882aa`）、凍 4 條 feature（F35–F38 failing）。**決策用 mockup** 在 `<scratchpad>/exercise-detail-mockup.html`（v3，橡膠黑×琥珀 LED，可點 toggle/時間窗，是 F36/F37 的視覺藍圖）。
+> **設計要點**：曲線 toggle 兩個〔最重重量（不乘次數）／最重總訓練量（單組 weight×reps 取當天最大）〕；時間窗固定檔位 1M~3Y＋自訂 from/to（同控曲線與清單）；折點 >16 自動聚合每週/每月最佳；PR 全期兩張卡；歷來紀錄綁時間窗、月份摺疊（近 3 月攤開）＋內捲；兩入口（picker 📈＋logger 當前動作標頭）返回都保狀態。
+
+### F35 後端 history 端點 → 實作完成、**待修 4 P2 後才翻 passing**（commit `b3a298d`）
+- **已做**：`GET /api/exercises/{id}/history?from=&to=` 回 `{prs, sessions}`；新 `app/services/history.py`、schemas `ExerciseHistoryOut/HistorySession/PrSummary/PrEntry`；`tests/test_exercise_history.py` 10 條；全套 **185 passed**、ruff clean。
+- **codex-review（commit `b3a298d`）回 4 P2，下場先修再 codex-verify → 翻 passing**：
+  1. **日期格式錯應回 422**：`from=not-a-date` 現在被全域 handler 轉成 400，違反契約。修：在端點自己解析或加 validation 讓格式錯也走 422（現有測試只涵蓋 `from>to`，補一條格式錯的）。
+  2. **預設 3M 用日曆月非 90 天**：`exercises.py:33` 用 `timedelta(days=90)`，`to=07-31` 應回推到 04-30 卻得 05-02，漏區間開頭。修：用 `dateutil.relativedelta` 或自寫月份回推（repo 沒 dateutil，自寫或加 dep 前先確認）。
+  3. **N+1**：`history.py` 只載 WorkoutSet，逐筆存取 `s.workout.date` lazy-load。修：查詢直接帶 `Workout.date` 或 eager-load。
+  4. **HistorySession 重用 SetOut 超出契約**：多回了 `workout_id/exercise_id/rest_seconds`，R1 只定 `id,set_number,weight_kg,reps,rpe`。修：專屬 history set schema。
+- 修完 4 P2 → `/codex-verify F35` 跨模型 → 綠才 feature_list F35 改 passing（evidence 引報告）。
+
+### F36/F37/F38 待做（依序）
+- **F36** 詳情頁殼＋曲線＋PR（state.js 新畫面 `exerciseDetail` 帶 exerciseId；照 mockup v3 落地；改 static 記得 sw.js/APP_VERSION **v36→v37**）
+- **F37** 歷來紀錄（綁時間窗、月份摺疊、內捲、空狀態）
+- **F38** 兩入口與返回（picker 📈＋logger 標頭，返回保狀態，參考 F32 workout 狀態保存）
+
+### 另外掛著（非本線）
+- vault `projects/2026-07-健身紀錄系統/DEVLOG.md` 的 **F34 那場還沒補記**（含兩輪 codex-verify fail 的教訓：caret 對比、⑤ 規格矛盾）。
+- MVP 收官：自用自 7/18 起兩週、8/1 到期；F31 Web Push 待 Android 真機確認；F11 未跑 codex-verify。
+
+## F34 日曆明細收合/展開＋選取鈕收進 head → passing（2026-07-23）
 >
 > 🎯 **下一步**：**MVP 收官**（vault PLAN checklist + `sop/after-action.md`：成功指標對答案〔自用自 7/18 起算兩週，8/1 到期〕、harness 消融〔`/harness-retro`，.harness/failures.jsonl 已收 1 筆 F34 caret 對比〕、README〔先讀 `identity/voice-and-tone.md`——尚未建，sticky P2〕、成就故事、歸檔）。另有兩件掛著：**F31 Web Push 待 Ryan Android 真機確認送達**、**F11 當初趕工未跑 codex-verify**（想補跨模型簽章可補跑）。
 
