@@ -176,13 +176,23 @@ function drawChart(container, capNow, capGran) {
 export function renderExerciseDetail(rerender, goBack, guard) {
   const capNow = el("b", { class: "ex-now" }, ["—"]);
   const capGran = el("span", { class: "ex-gran" }, []);
+  const capLbl = el("span", { class: "ex-lbl-text" }, [METRICS[detail.metric].lbl]);
   const chart = el("div", { class: "ex-chart" });
 
-  const metricBtn = (m) =>
-    el("button", {
-      class: `${detail.metric === m ? "on" : ""}`,
-      onclick: () => { detail.metric = m; rerender(); },
-    }, [METRICS[m].lbl]);
+  // R2：切 metric 只重畫曲線＋cap＋按鈕高亮，不 rerender()（整頁重繪）、不打 API
+  const mBtn = { w: null, v: null };
+  function setMetric(m) {
+    detail.metric = m;
+    mBtn.w.classList.toggle("on", m === "w");
+    mBtn.v.classList.toggle("on", m === "v");
+    capLbl.textContent = METRICS[m].lbl;
+    drawChart(chart, capNow, capGran);
+  }
+  const metricBtn = (m) => {
+    const b = el("button", { class: detail.metric === m ? "on" : "", onclick: () => setMetric(m) }, [METRICS[m].lbl]);
+    mBtn[m] = b;
+    return b;
+  };
 
   const presetBtn = ([label, months]) =>
     el("button", {
@@ -245,7 +255,7 @@ export function renderExerciseDetail(rerender, goBack, guard) {
     ...(customPanel ? [customPanel] : []),
     el("div", { class: "ex-chartcard" }, [
       el("div", { class: "ex-cap" }, [
-        el("span", { class: "ex-lbl" }, [METRICS[detail.metric].lbl, capGran]),
+        el("span", { class: "ex-lbl" }, [capLbl, capGran]),
         el("span", { class: "ex-nowwrap" }, [capNow, " ", el("span", { class: "ex-unit" }, ["kg"])]),
       ]),
       chart,
