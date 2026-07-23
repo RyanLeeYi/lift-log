@@ -4,6 +4,7 @@
 給詳情頁前端算兩個指標（最重重量／最重總訓練量）、畫曲線與歷來清單。
 """
 
+import calendar
 from datetime import date
 
 from sqlalchemy import select
@@ -11,7 +12,16 @@ from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
 from app.models import Exercise, Workout, WorkoutSet
-from app.schemas import ExerciseHistoryOut, HistorySession, PrEntry, PrSummary, SetOut
+from app.schemas import ExerciseHistoryOut, HistorySession, HistorySet, PrEntry, PrSummary
+
+
+def months_ago(d: date, n: int) -> date:
+    """回推 n 個日曆月（非 n×30 天）；目標月無該日則 clamp 到月底（如 7/31 回 3 月＝4/30）。"""
+    total = d.year * 12 + (d.month - 1) - n
+    year, month = divmod(total, 12)
+    month += 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
 
 
 def _all_time_prs(session: Session, exercise_id: int) -> PrSummary:
@@ -39,8 +49,9 @@ def exercise_history(
     if session.get(Exercise, exercise_id) is None:
         raise NotFoundError()
 
-    rows = session.scalars(
-        select(WorkoutSet)
+    # 一次查回 set 與其 workout 日期（避免逐筆 s.workout.date 的 N+1）
+    rows = session.execute(
+        select(WorkoutSet, Workout.date)
         .join(Workout, Workout.id == WorkoutSet.workout_id)
         .where(
             WorkoutSet.exercise_id == exercise_id,
@@ -53,12 +64,12 @@ def exercise_history(
 
     sessions: list[HistorySession] = []
     by_workout: dict[int, HistorySession] = {}
-    for s in rows:
+    for s, workout_date in rows:
         entry = by_workout.get(s.workout_id)
         if entry is None:
-            entry = HistorySession(workout_id=s.workout_id, date=s.workout.date, sets=[])
+            entry = HistorySession(workout_id=s.workout_id, date=workout_date, sets=[])
             by_workout[s.workout_id] = entry
             sessions.append(entry)
-        entry.sets.append(SetOut.model_validate(s))
+        entry.sets.append(HistorySet.model_validate(s))
 
     return ExerciseHistoryOut(prs=_all_time_prs(session, exercise_id), sessions=sessions)

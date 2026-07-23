@@ -9,8 +9,17 @@ from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
 from app.models import Exercise, Workout, WorkoutSet
-from app.services.history import exercise_history
+from app.services.history import exercise_history, months_ago
 from tests.conftest import make_set_payload
+
+
+def test_months_ago_calendar_month_subtraction() -> None:
+    # 3 個日曆月：07-31 → 04-30（4 月無 31 日，clamp）
+    assert months_ago(date(2026, 7, 31), 3) == date(2026, 4, 30)
+    # 跨年
+    assert months_ago(date(2026, 2, 15), 3) == date(2025, 11, 15)
+    # 2 月底 clamp
+    assert months_ago(date(2026, 5, 31), 3) == date(2026, 2, 28)
 
 
 def _seed(db_session: Session) -> Exercise:
@@ -119,6 +128,27 @@ def test_api_history_returns_prs_and_sessions(client: TestClient, exercise_id: i
     assert got == {(80.0, 8), (100.0, 3)}
     assert body["prs"]["top_weight"] == {"weight_kg": 100.0, "reps": 3}
     assert body["prs"]["top_set_volume"] == {"weight_kg": 80.0, "reps": 8}
+
+
+def test_api_history_invalid_date_format_422(client: TestClient, exercise_id: int) -> None:
+    resp = client.get(
+        f"/api/exercises/{exercise_id}/history",
+        params={"from": "not-a-date", "to": "2026-07-31"},
+    )
+    assert resp.status_code == 422
+
+
+def test_api_history_set_schema_only_contract_fields(client: TestClient, exercise_id: int) -> None:
+    w = client.post("/api/workouts", json={"date": "2026-07-10"}).json()
+    _post_set(client, w["id"], exercise_id, "schema-uuid-1", weight_kg=80.0, reps=8, rpe=8)
+    resp = client.get(
+        f"/api/exercises/{exercise_id}/history",
+        params={"from": "2026-07-01", "to": "2026-07-31"},
+    )
+    assert resp.status_code == 200
+    s = resp.json()["sessions"][0]["sets"][0]
+    # R1 契約：只回 id/set_number/weight_kg/reps/rpe，不外洩 workout_id/exercise_id/rest_seconds
+    assert set(s.keys()) == {"id", "set_number", "weight_kg", "reps", "rpe"}
 
 
 def test_api_history_from_after_to_422(client: TestClient, exercise_id: int) -> None:

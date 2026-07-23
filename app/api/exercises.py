@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -6,9 +6,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import DbSession, require_token
 from app.schemas import ExerciseCreate, ExerciseHistoryOut, ExerciseOut, SetOut
 from app.services import exercises as svc
-from app.services.history import exercise_history
+from app.services.history import exercise_history, months_ago
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+
+
+def _parse_date(value: str) -> date:
+    # 自解析而非讓 FastAPI 轉型：格式錯要走本端點契約的 422，而非全域 handler 的 400
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"invalid date: {value}") from exc
 
 
 @router.post("/exercises", status_code=status.HTTP_201_CREATED, response_model=ExerciseOut)
@@ -25,12 +33,12 @@ def search_exercises(session: DbSession, q: str | None = None) -> list[ExerciseO
 def history(
     exercise_id: int,
     session: DbSession,
-    from_: Annotated[date | None, Query(alias="from")] = None,
-    to: Annotated[date | None, Query(alias="to")] = None,
+    from_: Annotated[str | None, Query(alias="from")] = None,
+    to: Annotated[str | None, Query(alias="to")] = None,
 ) -> ExerciseHistoryOut:
-    # 省略 → 預設近 3 個月（to＝今天、from＝今天−3 個月）；固定檔位由前端換算成起訖日期
-    to_date = to or date.today()
-    from_date = from_ or (to_date - timedelta(days=90))
+    # 省略 → 預設近 3 個日曆月（to＝今天、from＝今天回推 3 個月）；固定檔位由前端換算成起訖日期
+    to_date = _parse_date(to) if to else date.today()
+    from_date = _parse_date(from_) if from_ else months_ago(to_date, 3)
     if from_date > to_date:
         raise HTTPException(status_code=422, detail="from > to")
     return exercise_history(session, exercise_id, from_date, to_date)

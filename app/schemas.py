@@ -216,10 +216,21 @@ class PrSummary(BaseModel):
     top_set_volume: PrEntry | None  # 全期單組最大 weight_kg × reps
 
 
+class HistorySet(BaseModel):
+    # F35 R1 契約：只回這 5 欄，不外洩 workout_id/exercise_id/rest_seconds
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    set_number: int
+    weight_kg: float
+    reps: int
+    rpe: int | None
+
+
 class HistorySession(BaseModel):
     workout_id: int
     date: date_type
-    sets: list[SetOut]
+    sets: list[HistorySet]
 
 
 class ExerciseHistoryOut(BaseModel):
