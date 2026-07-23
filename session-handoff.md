@@ -1,5 +1,13 @@
 # Session Handoff
-> 最後更新：2026-07-23（**F35 → passing**；35 passing／3 failing，F36–F38 待做）。sw.js 現 **v36**、APP_VERSION v36。
+> 最後更新：2026-07-23（**F35/F36/F38 → passing**；37 passing／1 failing，只剩 F37 歷來清單）。sw.js 現 **v37**、APP_VERSION v37。
+
+## 動作詳情頁 F35–F38（PRD `docs/prd/f35-exercise-detail.md`，mockup `<scratchpad>/exercise-detail-mockup.html` v3）
+- **F35 後端 history 端點 → passing**（commit `835f89e`）：`GET /api/exercises/{id}/history?from=&to=` 回 `{prs, sessions}`。
+- **F36 詳情頁殼＋曲線＋PR → passing**（commit `f08aa53`）：`exercise-detail.js`。metric toggle（就地重畫）、時間窗 1M~3Y＋自訂、折點自動疏密、全期 PR 卡（總訓練量顯示乘積）、客戶端 SVG。codex-review 6 P2 全修（含 volume PR 真 bug——我 E2E 一度把同錯編進去，cross-model 才抓到），codex-verify 複驗全 pass。
+- **F38 兩入口與返回 → passing**（與 F36 同批，commit `f08aa53`）：picker 每列（含今日菜單）＋logger 標頭 📈；返回保狀態。**實作上 F36＋F38 合併做**（導航綁死），feature_list 仍兩條。
+- **F37 歷來紀錄 → 待做（唯一 failing）**：填在詳情頁 `.ex-hist` 容器（截圖下半空白處）。規格 PRD R6：綁時間窗（與曲線同 `detail.range`）、月份摺疊（近 3 月攤開、更早收標頭 ▸/▾）、每日顯示日期/相對時間/總噸位＋各組、當日最重組掛 🏆、固定高度內捲、空狀態。資料已在 `detail.data.sessions`（F36 每次切區間已載）——F37 主要是 render，不必再打 API。改 static 記得 sw.js/APP_VERSION **v37→v38**。
+
+## （F34 之前的歷史 handoff 見下）
 
 ## 動作詳情頁 F35–F38 動工中（2026-07-23，PRD `docs/prd/f35-exercise-detail.md`）
 > 新想法：每個動作一個詳情頁（曲線＋歷來＋PR）。brainstorm 收斂後寫 PRD（commit `39b56b8`＋`47882aa`）、凍 4 條 feature（F35–F38 failing）。**決策用 mockup** 在 `<scratchpad>/exercise-detail-mockup.html`（v3，橡膠黑×琥珀 LED，可點 toggle/時間窗，是 F36/F37 的視覺藍圖）。

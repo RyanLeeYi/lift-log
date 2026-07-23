@@ -248,8 +248,8 @@
     {
       "id": "F36",
       "name": "動作詳情頁：曲線＋PR",
-      "status": "failing",
-      "evidence": "",
+      "status": "passing",
+      "evidence": "動作詳情頁殼＋曲線＋PR（app/static/js/exercise-detail.js）。metric toggle 兩個（最重重量／最重總訓練量，切換就地重畫、不重取、根節點不換）；時間窗 1M~3Y＋自訂 from/to（to≤今天、from>to 擋）；折點自動疏密（>16 聚合每週/每月最佳）；PR 兩張全期卡（總訓練量顯示 weight×reps 乘積）；客戶端手繪 SVG 無圖表庫。E2E verify_f36 13/13；全套 188 passed、ruff clean。codex-review 6 P2 全修（volume PR 真 bug、過期回應、range 原子提交、導覽劫持、未來日期、今日菜單📈）；codex-verify 跨模型複驗全 pass（R2 就地重畫以 DOM 節點身分證明；報告 scratchpad/codex-verify-F36b.md）。commit f08aa53。",
       "acceptance": "（PRD R2/R3/R3b/R4/R5）詳情頁殼（state.js 新畫面 exerciseDetail 帶 exerciseId）＋曲線＋PR。① metric toggle 兩個：最重重量（預設，那次訓練所有組的 max weight_kg，不乘次數）／最重總訓練量（那次訓練所有組的 max weight_kg×reps），選中琥珀填色，切換就地重畫、不打新 API；② 時間窗固定檔位 1M/3M/6M/9M/1Y/2Y/3Y（預設 3M），點了曲線與清單同時重畫、依區間重取（?from=&to=，前端換算）；③ 自訂區間：點「自訂」選 from/to（沿用 F11 深色日期選擇器、to 上限今天），from>to 前端擋不送非法請求；④ 折點自動疏密：區間內訓練數 n≤16 每次一點（每次訓練），n>16 聚合每週最佳（週桶≤16）否則每月最佳，cap 顯示顆粒與折點數；⑤ 曲線客戶端手繪 SVG（同 body.js，不引圖表庫），最新點與區間最大值點加粗、y 軸 3 格線＋值、x 軸 3 日期；⑥ PR 兩張琥珀 LED 卡取自回應 prs（全期）：最重重量（附次數）／最重總訓練量（附 重量×次數），prs 皆 null 時顯示占位「—」不報錯。E2E：切 metric、切檔位、自訂區間、疏密顆粒變化、PR 顯示。"
     },
     {
