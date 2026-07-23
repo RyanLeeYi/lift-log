@@ -59,6 +59,10 @@ export const api = {
   updateSet: (setId, payload) => request("PATCH", `/api/sets/${setId}`, payload), // F16 原位編輯
   deleteSet: (setId) => request("DELETE", `/api/sets/${setId}`), // F16 軟刪
 
+  // F35/F36 動作詳情：某動作 [from,to] 內每次訓練的全部組＋全期 PR
+  exerciseHistory: (exerciseId, from, to) =>
+    request("GET", `/api/exercises/${exerciseId}/history?from=${from}&to=${to}`),
+
   workoutDetail: (workoutId) => request("GET", `/api/workouts/${workoutId}`),
   listWorkouts: (start, end) => request("GET", `/api/workouts?start=${start}&end=${end}`),
   calendarStats: (year, month) =>

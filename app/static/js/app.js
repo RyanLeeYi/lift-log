@@ -7,6 +7,11 @@ import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
 import { el, rpePicker, stepper } from "./dom.js";
 import {
+  detailReturnScreen,
+  openExerciseDetail,
+  renderExerciseDetail,
+} from "./exercise-detail.js";
+import {
   cancelRestPush,
   disablePush,
   enablePush,
@@ -533,19 +538,36 @@ async function pickExercise(exercise) {
   render();
 }
 
+// F38：開動作詳情頁（picker／logger 兩處入口共用）；記住來源畫面供返回
+function openDetail(exercise, from) {
+  return guard(async () => {
+    await openExerciseDetail(exercise, from);
+    state.screen = "exerciseDetail";
+    render();
+  });
+}
+
 function exerciseButtons() {
   const shown = state.muscleFilter
     ? pickerExercises.filter((e) => e.muscle_group === state.muscleFilter)
     : pickerExercises;
   return shown.map((exercise) =>
-    el(
-      "button",
-      { class: "btn exercise-item", onclick: () => guard(() => pickExercise(exercise)) },
-      [
-        el("span", {}, [exerciseName(exercise)]),
-        el("span", { class: "sub" }, [exerciseAlias(exercise)]),
-      ],
-    ),
+    // F38：主鍵（選這動作開始記錄）＋📈 詳情入口分成兩顆並排鈕，點📈不誤觸開始記錄
+    el("div", { class: "exercise-row" }, [
+      el(
+        "button",
+        { class: "btn exercise-item", onclick: () => guard(() => pickExercise(exercise)) },
+        [
+          el("span", {}, [exerciseName(exercise)]),
+          el("span", { class: "sub" }, [exerciseAlias(exercise)]),
+        ],
+      ),
+      el(
+        "button",
+        { class: "btn detail-link", "aria-label": "動作表現", onclick: () => openDetail(exercise, "picker") },
+        ["📈"],
+      ),
+    ]),
   );
 }
 
@@ -835,8 +857,15 @@ function renderLogger() {
 
   return el("section", { class: "screen logger" }, [
     el("header", { class: "exercise-head" }, [
-      el("h2", {}, [exerciseName(exercise)]),
-      el("span", { class: "alias" }, [exerciseAlias(exercise)]),
+      el("div", { class: "exercise-head-name" }, [
+        el("h2", {}, [exerciseName(exercise)]),
+        el("span", { class: "alias" }, [exerciseAlias(exercise)]),
+      ]),
+      // F38：練到一半查當前動作歷史；返回不丟進行中訓練
+      el("button", {
+        class: "btn detail-link logger-detail", "aria-label": "動作表現",
+        onclick: () => openDetail(exercise, "logger"),
+      }, ["📈"]),
     ]),
     el("div", { class: "last-hint" }, [state.lastHint || "第一次做這個動作"]),
     el("div", { class: "rest-hint-row" }, [
@@ -936,6 +965,15 @@ function render() {
         render,
         () => {
           state.screen = "home";
+          render();
+        },
+        guard,
+      ),
+    exerciseDetail: () =>
+      renderExerciseDetail(
+        render,
+        () => {
+          state.screen = detailReturnScreen(); // F38：返回來源畫面（picker／logger），狀態不丟
           render();
         },
         guard,

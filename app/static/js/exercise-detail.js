@@ -1,0 +1,241 @@
+// F36 動作詳情頁：曲線（最重重量／最重總訓練量，時間窗＋自訂區間＋折點自動疏密）＋全期 PR。
+// 歷來紀錄清單由 F37 補在 .ex-hist 容器。資料源＝GET /api/exercises/{id}/history（F35）。
+
+import { api } from "./api.js";
+import { el } from "./dom.js";
+import { exerciseName, state } from "./state.js";
+
+// 本模組畫面狀態（不進全域 state：換畫面即重置無妨）
+const detail = {
+  exerciseId: null,
+  exercise: null, // {id, name_zh, name_en}
+  returnScreen: "picker", // 返回目的地（F38 兩入口各自帶入）
+  metric: "w", // w＝最重重量（不乘次數）／v＝最重總訓練量（單組 weight×reps）
+  range: { kind: "preset", months: 3 }, // 或 {kind:"custom", from, to}
+  data: { prs: { top_weight: null, top_set_volume: null }, sessions: [] },
+  customOpen: false,
+  customFrom: "",
+  customTo: "",
+};
+
+const PRESETS = [
+  ["1M", 1], ["3M", 3], ["6M", 6], ["9M", 9], ["1Y", 12], ["2Y", 24], ["3Y", 36],
+];
+const METRICS = { w: { lbl: "最重重量", u: "kg" }, v: { lbl: "最重總訓練量", u: "kg" } };
+const BUCKET_CAP = 16; // 折點上限；超過就聚合每週／每月最佳
+
+function iso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function monthsAgo(d, n) {
+  const total = d.getFullYear() * 12 + d.getMonth() - n;
+  const y = Math.floor(total / 12);
+  const m = ((total % 12) + 12) % 12; // 0-11
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  return new Date(y, m, Math.min(d.getDate(), lastDay));
+}
+
+function rangeDates() {
+  if (detail.range.kind === "custom") {
+    return { from: detail.range.from, to: detail.range.to };
+  }
+  const today = new Date();
+  return { from: iso(monthsAgo(today, detail.range.months)), to: iso(today) };
+}
+
+async function fetchData() {
+  const { from, to } = rangeDates();
+  detail.data = await api.exerciseHistory(detail.exerciseId, from, to);
+}
+
+export function detailReturnScreen() {
+  return detail.returnScreen;
+}
+
+// 入口（F38 的 picker／logger 兩處呼叫）：載入預設 3M 資料
+export async function openExerciseDetail(exercise, returnScreen = "picker") {
+  detail.exerciseId = exercise.id;
+  detail.exercise = exercise;
+  detail.returnScreen = returnScreen;
+  detail.metric = "w";
+  detail.range = { kind: "preset", months: 3 };
+  detail.customOpen = false;
+  detail.customFrom = "";
+  detail.customTo = "";
+  await fetchData();
+}
+
+// ---------- 指標與折點疏密 ----------
+
+const metricOf = {
+  w: (s) => Math.max(...s.sets.map((x) => x.weight_kg)),
+  v: (s) => Math.max(...s.sets.map((x) => x.weight_kg * x.reps)),
+};
+
+function isoWeekKey(dateStr) {
+  const d = new Date(dateStr);
+  const jan1 = new Date(d.getFullYear(), 0, 1);
+  return `${d.getFullYear()}-W${Math.floor((d - jan1) / 6048e5)}`;
+}
+
+// 回 {gran, pts:[{x,v}]}；折點數控制在 BUCKET_CAP 內
+function buckets(sessions) {
+  const fn = metricOf[detail.metric];
+  const pts = sessions.map((s) => ({ x: s.date.slice(5), v: fn(s), date: s.date }));
+  if (pts.length <= BUCKET_CAP) return { gran: "每次訓練", pts };
+  for (const [keyer, label] of [[isoWeekKey, "每週最佳"], [(d) => d.slice(0, 7), "每月最佳"]]) {
+    const map = new Map();
+    for (const p of pts) {
+      const k = keyer(p.date);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(p);
+    }
+    if (map.size <= BUCKET_CAP || label === "每月最佳") {
+      const agg = [...map.values()].map((g) => ({
+        x: g[g.length - 1].x,
+        v: Math.max(...g.map((p) => p.v)),
+      }));
+      return { gran: label, pts: agg };
+    }
+  }
+  return { gran: "每次訓練", pts };
+}
+
+// ---------- render ----------
+
+function prCard(k, entry) {
+  const v = entry ? String(entry.weight_kg) : "—";
+  const u = entry
+    ? (k === "最重重量" ? `kg × ${entry.reps}` : `kg (${entry.weight_kg}×${entry.reps})`)
+    : "";
+  return el("div", { class: "pr" }, [
+    el("div", { class: "k" }, [k]),
+    el("div", { class: "v" }, [v]),
+    el("div", { class: "u" }, [u]),
+  ]);
+}
+
+function drawChart(container, capNow, capGran) {
+  const { gran, pts } = buckets(detail.data.sessions);
+  const d = pts.map((p) => p.v);
+  const xs = pts.map((p) => p.x);
+  capGran.textContent = pts.length ? `· ${gran} · ${pts.length} 點` : "";
+  if (!d.length) {
+    container.innerHTML = "";
+    container.append(el("p", { class: "ex-chart-empty" }, ["這個區間內沒有紀錄"]));
+    capNow.textContent = "—";
+    return;
+  }
+  capNow.textContent = String(d[d.length - 1]);
+  const W = 330, H = 150, padL = 30, padR = 8, padT = 12, padB = 22;
+  const min = Math.min(...d), max = Math.max(...d);
+  const lo = min - (max - min) * 0.15 - 0.1, hi = max + (max - min) * 0.15 + 0.1;
+  const X = (i) => padL + (W - padL - padR) * (d.length < 2 ? 0.5 : i / (d.length - 1));
+  const Y = (v) => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+  const P = d.map((v, i) => [X(i), Y(v)]);
+  const line = P.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const area = line + ` L${X(d.length - 1).toFixed(1)} ${H - padB} L${padL} ${H - padB} Z`;
+  let g = "";
+  for (let k = 0; k <= 2; k++) {
+    const v = lo + (hi - lo) * k / 2, y = Y(v);
+    g += `<line class="ex-grid" x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"/>`;
+    g += `<text class="ex-axis" x="0" y="${(y + 3).toFixed(1)}">${Math.round(v)}</text>`;
+  }
+  const idxs = [...new Set(d.length <= 5 ? d.map((_, i) => i) : [0, Math.floor(d.length / 2), d.length - 1])];
+  let xl = "";
+  for (const i of idxs) {
+    xl += `<text class="ex-axis" x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${xs[i]}</text>`;
+  }
+  const idxBest = d.indexOf(Math.max(...d));
+  const dots = P.map((p, i) =>
+    `<circle class="ex-dot${i === idxBest ? " pr" : ""}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(i === d.length - 1 || i === idxBest) ? 4 : (d.length > 14 ? 1.8 : 2.5)}"/>`,
+  ).join("");
+  container.innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}">` +
+    `<defs><linearGradient id="exg" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="#ffb020" stop-opacity=".22"/>` +
+    `<stop offset="1" stop-color="#ffb020" stop-opacity="0"/></linearGradient></defs>` +
+    g + `<path class="ex-area" d="${area}"/><path class="ex-line" d="${line}"/>${dots}${xl}</svg>`;
+}
+
+export function renderExerciseDetail(rerender, goBack, guard) {
+  const capNow = el("b", { class: "ex-now" }, ["—"]);
+  const capGran = el("span", { class: "ex-gran" }, []);
+  const chart = el("div", { class: "ex-chart" });
+
+  const metricBtn = (m) =>
+    el("button", {
+      class: `${detail.metric === m ? "on" : ""}`,
+      onclick: () => { detail.metric = m; rerender(); },
+    }, [METRICS[m].lbl]);
+
+  const presetBtn = ([label, months]) =>
+    el("button", {
+      class: detail.range.kind === "preset" && detail.range.months === months ? "on" : "",
+      onclick: () =>
+        guard(async () => {
+          detail.range = { kind: "preset", months };
+          detail.customOpen = false;
+          await fetchData();
+          rerender();
+        }),
+    }, [label]);
+
+  const customChip = el("button", {
+    class: detail.range.kind === "custom" ? "on" : "",
+    onclick: () => { detail.customOpen = !detail.customOpen; rerender(); },
+  }, ["自訂"]);
+
+  const customPanel = detail.customOpen
+    ? el("div", { class: "ex-custom" }, [
+        el("input", {
+          type: "date", class: "ex-date", value: detail.customFrom, max: iso(new Date()),
+          oninput: (e) => { detail.customFrom = e.target.value; },
+        }),
+        el("span", { class: "ex-dash" }, ["→"]),
+        el("input", {
+          type: "date", class: "ex-date", value: detail.customTo, max: iso(new Date()),
+          oninput: (e) => { detail.customTo = e.target.value; },
+        }),
+        el("button", {
+          class: "btn btn-primary sm ex-custom-apply",
+          onclick: () =>
+            guard(async () => {
+              const f = detail.customFrom, t = detail.customTo;
+              if (!f || !t || f > t) { state.error = "起訖日期不對（起要早於訖）"; rerender(); return; }
+              state.error = null;
+              detail.range = { kind: "custom", from: f, to: t };
+              await fetchData();
+              rerender();
+            }),
+        }, ["套用"]),
+      ])
+    : null;
+
+  const node = el("section", { class: "screen exercise-detail" }, [
+    el("header", { class: "topbar" }, [
+      el("button", { class: "btn btn-ghost chip ex-back", onclick: goBack }, ["←"]),
+      el("h1", {}, [exerciseName(detail.exercise)]),
+    ]),
+    ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    el("div", { class: "ex-prs" }, [
+      prCard("最重重量", detail.data.prs.top_weight),
+      prCard("最重總訓練量", detail.data.prs.top_set_volume),
+    ]),
+    el("div", { class: "seg ex-metric" }, [metricBtn("w"), metricBtn("v")]),
+    el("div", { class: "ex-range" }, [...PRESETS.map(presetBtn), customChip]),
+    ...(customPanel ? [customPanel] : []),
+    el("div", { class: "ex-chartcard" }, [
+      el("div", { class: "ex-cap" }, [
+        el("span", { class: "ex-lbl" }, [METRICS[detail.metric].lbl, capGran]),
+        el("span", { class: "ex-nowwrap" }, [capNow, " ", el("span", { class: "ex-unit" }, ["kg"])]),
+      ]),
+      chart,
+    ]),
+    el("div", { class: "ex-hist" }, []), // F37 歷來紀錄清單掛這裡
+  ]);
+
+  drawChart(chart, capNow, capGran);
+  return node;
+}
