@@ -16,6 +16,7 @@ const detail = {
   customOpen: false,
   customFrom: "",
   customTo: "",
+  expandedMonths: new Set(), // F37：歷來紀錄展開中的月份 key（載入時預設近 3 個月）
 };
 
 const PRESETS = [
@@ -53,6 +54,9 @@ async function loadRange(newRange) {
   if (seq !== reqSeq) return; // 較舊但較慢的回應——丟棄
   detail.range = newRange;
   detail.data = data;
+  // F37：每次換區間重設月份展開＝近 3 個月自動攤開
+  const months = [...new Set(data.sessions.map((s) => s.date.slice(0, 7)))].sort().reverse();
+  detail.expandedMonths = new Set(months.slice(0, 3));
 }
 
 export function detailReturnScreen() {
@@ -173,6 +177,71 @@ function drawChart(container, capNow, capGran) {
     g + `<path class="ex-area" d="${area}"/><path class="ex-line" d="${line}"/>${dots}${xl}</svg>`;
 }
 
+// ---------- F37 歷來紀錄（綁時間窗、月份摺疊、內捲） ----------
+
+function relTime(dateStr) {
+  const days = Math.round((new Date(iso(new Date())) - new Date(dateStr)) / 864e5);
+  if (days <= 0) return "今天";
+  if (days === 1) return "昨天";
+  if (days < 30) return `${days} 天前`;
+  return "";
+}
+
+function dayBlock(s) {
+  const tonnage = s.sets.reduce((a, x) => a + x.weight_kg * x.reps, 0);
+  const bestW = Math.max(...s.sets.map((x) => x.weight_kg)); // 當日最重那組掛 🏆
+  return el("div", { class: "ex-day" }, [
+    el("div", { class: "d" }, [
+      el("span", { class: "date" }, [s.date.slice(5)]),
+      ...(relTime(s.date) ? [el("span", { class: "rel" }, [relTime(s.date)])] : []),
+      el("span", { class: "vol" }, [`${Math.round(tonnage).toLocaleString()} kg`]),
+    ]),
+    el("div", { class: "sets" },
+      s.sets.map((x) =>
+        el("span", { class: `set${x.weight_kg === bestW ? " best" : ""}` }, [
+          `${x.weight_kg}×${x.reps}`,
+          ...(x.rpe ? [el("span", { class: "rpe" }, [`@${x.rpe}`])] : []),
+        ]),
+      ),
+    ),
+  ]);
+}
+
+function renderHistory(rerender) {
+  const sessions = [...detail.data.sessions].reverse(); // 新→舊
+  if (!sessions.length) return [el("p", { class: "ex-hist-empty" }, ["這個區間內沒有紀錄"])];
+  const byMonth = new Map();
+  for (const s of sessions) {
+    const k = s.date.slice(0, 7);
+    if (!byMonth.has(k)) byMonth.set(k, []);
+    byMonth.get(k).push(s);
+  }
+  const nodes = [];
+  for (const [k, ss] of byMonth) {
+    const [y, m] = k.split("-");
+    const open = detail.expandedMonths.has(k);
+    const maxW = Math.max(...ss.flatMap((s) => s.sets.map((x) => x.weight_kg)));
+    nodes.push(
+      el("div", { class: `ex-month${open ? "" : " collapsed"}` }, [
+        el("div", {
+          class: "ex-mhead",
+          onclick: () => {
+            if (open) detail.expandedMonths.delete(k);
+            else detail.expandedMonths.add(k);
+            rerender();
+          },
+        }, [
+          el("span", { class: "mo" }, [`${y} 年 ${+m} 月`]),
+          el("span", { class: "sum" }, [`${ss.length} 次 · 最重 ${maxW}kg`]),
+          el("span", { class: "car" }, [open ? "▾" : "▸"]),
+        ]),
+        ...(open ? [el("div", { class: "ex-mbody" }, ss.map(dayBlock))] : []),
+      ]),
+    );
+  }
+  return nodes;
+}
+
 export function renderExerciseDetail(rerender, goBack, guard) {
   const capNow = el("b", { class: "ex-now" }, ["—"]);
   const capGran = el("span", { class: "ex-gran" }, []);
@@ -260,7 +329,11 @@ export function renderExerciseDetail(rerender, goBack, guard) {
       ]),
       chart,
     ]),
-    el("div", { class: "ex-hist" }, []), // F37 歷來紀錄清單掛這裡
+    el("div", { class: "ex-hhead" }, [
+      el("span", {}, ["歷來紀錄"]),
+      el("span", { class: "cnt" }, [`此區間 ${detail.data.sessions.length} 次`]),
+    ]),
+    el("div", { class: "ex-hist" }, renderHistory(rerender)), // F37 歷來紀錄清單
   ]);
 
   drawChart(chart, capNow, capGran);
