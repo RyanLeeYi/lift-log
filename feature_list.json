@@ -269,8 +269,8 @@
     {
       "id": "F39",
       "name": "首頁動作表現瀏覽入口",
-      "status": "failing",
-      "evidence": "",
+      "status": "passing",
+      "evidence": "commit 6bbf7f5。acceptance-verifier 跨 context 驗收（2026-07-24）：完成定義 pytest 189 passed + ruff clean 全綠；逐條 10 子項全 PASS——① has_data 過濾（有練→只回該動作、沒練→排除、軟刪→排除、無參數/false→回全部 35 筆）、② 首頁『📈 動作表現』與課表/日曆並排、③ 初始只顯示部位 chip+提示不列動作、chip 只列有資料部位（腿/胸）、點 chip 才出對應動作、可重選切換、點動作進詳情頁、返回保留剛選部位、④ 全軟刪後空狀態文字、⑤ sw.js/state.js 同步 v40；15/15 Playwright 斷言 PASS，working tree 乾淨無污染。後端另有 tests/test_exercises.py::test_exercises_has_data_filter_returns_only_trained。E2E 腳本 scratchpad/verify_f39.py 7/7。",
       "acceptance": "從首頁直接瀏覽有資料的動作看表現（不必先開練）。① 後端 GET /api/exercises?has_data=true 只回「至少有 1 筆未軟刪組」的動作（濾掉沒練過的預設動作）；無 has_data 或 false 時維持回全部（既有行為不變）；② 首頁新增『📈 動作表現』按鈕（與 📋 課表／📅 日曆 並排）進入動作表現瀏覽畫面；③ 該畫面上方是部位 chip 按鈕（只列有資料的部位，同「加動作」的 chips 操作），**初始不列任何動作、顯示提示選部位**；點一個部位 chip 後才顯示該部位有資料的動作名，chip 可重選切換不同部位；點某動作進 F36/F37 詳情頁（openDetail，returnScreen＝此畫面），從詳情頁返回回此畫面（且保留剛選的部位）；④ 沒有任何有資料的動作時顯示空狀態文字（如『還沒有任何訓練紀錄』）；⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v38→v39；既有 F1–F38 行為不變、不新增框架。後端測試涵蓋 ①；E2E 涵蓋 ②③④。 【2026-07-24 重新簽核：③ 從「一次攤開所有部位分組」改為「先選部位 chip 才出對應動作」，Ryan 要與加動作同操作、避免動作多時清單過長。】"
     }
   ]
