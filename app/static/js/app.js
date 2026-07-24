@@ -577,35 +577,55 @@ function exerciseRow(mainBtn, exercise, from) {
   ]);
 }
 
-// F39：動作表現瀏覽——只列有資料的動作，依部位分組，點進詳情頁
+// F39：動作表現瀏覽——先選部位 chip 才出對應動作（同「加動作」操作），點進詳情頁
 let trendsExercises = [];
+let trendsMuscle = null; // 目前選的部位；null＝還沒選（不列動作）
 
 async function openTrends() {
   trendsExercises = await api.exercisesWithData();
+  trendsMuscle = null; // 每次從首頁進來重置為未選
 }
 
 function renderTrends() {
   const groups = [...new Set(trendsExercises.map((e) => e.muscle_group))];
-  const body = trendsExercises.length === 0
-    ? [el("p", { class: "trends-empty" }, ["還沒有任何訓練紀錄——先去開練記幾組，這裡就會出現。"])]
-    : groups.map((g) =>
-        el("div", { class: "trends-group" }, [
-          el("div", { class: "menu-head" }, [g]),
-          el("div", { class: "exercise-list" },
-            trendsExercises
-              .filter((e) => e.muscle_group === g)
-              .map((exercise) =>
-                el("button", {
-                  class: "btn exercise-item",
-                  onclick: () => openDetail(exercise, "trends"),
-                }, [
-                  el("span", {}, [exerciseName(exercise)]),
-                  el("span", { class: "sub" }, [exerciseAlias(exercise)]),
-                ]),
-              ),
-          ),
-        ]),
+  // 選的部位若已無資料（理論上不會），退回未選
+  if (trendsMuscle && !groups.includes(trendsMuscle)) trendsMuscle = null;
+
+  const body = [];
+  if (trendsExercises.length === 0) {
+    body.push(el("p", { class: "trends-empty" }, ["還沒有任何訓練紀錄——先去開練記幾組，這裡就會出現。"]));
+  } else {
+    // 部位 chips（只列有資料的部位）；點了才出對應動作，可重選切換
+    body.push(
+      el("div", { class: "chips" },
+        groups.map((g) =>
+          el("button", {
+            class: `chip${trendsMuscle === g ? " on" : ""}`,
+            onclick: () => { trendsMuscle = g; render(); },
+          }, [g]),
+        ),
+      ),
+    );
+    if (trendsMuscle === null) {
+      body.push(el("p", { class: "trends-hint" }, ["選一個部位，看該部位動作的表現。"]));
+    } else {
+      body.push(
+        el("div", { class: "exercise-list" },
+          trendsExercises
+            .filter((e) => e.muscle_group === trendsMuscle)
+            .map((exercise) =>
+              el("button", {
+                class: "btn exercise-item",
+                onclick: () => openDetail(exercise, "trends"),
+              }, [
+                el("span", {}, [exerciseName(exercise)]),
+                el("span", { class: "sub" }, [exerciseAlias(exercise)]),
+              ]),
+            ),
+        ),
       );
+    }
+  }
   return el("section", { class: "screen trends" }, [
     el("header", { class: "topbar" }, [
       el("h1", {}, ["動作表現"]),

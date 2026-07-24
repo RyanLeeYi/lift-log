@@ -572,11 +572,10 @@ body {
 .ex-day .set .rpe { color: var(--text-dim); font-size: 11px; }
 .ex-day .set.best { border-color: var(--led-dim); color: var(--led); }
 .ex-day .set.best::after { content: "🏆"; font-size: 10px; }
-/* F39 動作表現瀏覽 */
+/* F39 動作表現瀏覽（先選部位 chip 才出動作） */
 .trends { gap: 12px; }
-.trends-group + .trends-group { margin-top: 6px; }
-.trends-group .menu-head { color: var(--led); }
 .trends-empty { color: var(--text-dim); font-size: 14px; padding: 24px 4px; text-align: center; line-height: 1.6; }
+.trends-hint { color: var(--text-dim); font-size: 14px; padding: 20px 4px; text-align: center; }
 .cal-empty { color: var(--text-dim); font-size: 14px; padding: 8px 4px; }
 .cal-status {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
