@@ -7,6 +7,8 @@
 - 環境恢復：`./init.sh`
 - 啟動：`uv run uvicorn app.main:app_factory --factory --reload`；測試：`uv run pytest`；lint：`uv run ruff check .`
 - 你宣告任何功能完成前，必須先跑過測試與 lint 並貼出輸出
+- **E2E（前端 PWA）**：Playwright 已是 dev 依賴，一律用 `uv run python <script>` 跑。**不要用 `uv run --with playwright`**——那是 ephemeral 疊裝，冷環境/驗收 agent 每次重建很慢；瀏覽器由 init.sh 的 `uv run playwright install chromium` 裝好。
+- **純前端 feature 的驗收**：後端未動時，完成定義的 pytest 可只跑相關子集（例 `uv run pytest tests/test_exercises.py`），保留 ruff + UI E2E 全驗即可，不必每次重跑全套（提速；理由見全域記憶 verification-speed-policy）。
 
 ## 專案結構與邊界
 

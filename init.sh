@@ -5,6 +5,10 @@ set -e
 # 依賴
 uv sync
 
+# E2E 瀏覽器（前端 PWA 驗收用；playwright 已是 dev 依賴，這裡補瀏覽器二進位）
+# 失敗不致命——後端開發不需要；前端 E2E 前補跑 `uv run playwright install chromium` 即可
+uv run playwright install chromium || echo "⚠ chromium 安裝失敗——前端 E2E 需要，之後補跑：uv run playwright install chromium"
+
 # 本地 env（缺才複製，不覆蓋）
 if [ ! -f .env ]; then
   cp .env.example .env
