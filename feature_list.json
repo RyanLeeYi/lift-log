@@ -286,6 +286,13 @@
       "status": "passing",
       "evidence": "commit afab6b3（含 codex-review 三修：P1 addSubmitting 防重＋rerender 移到 flag 歸零後修連續記按鈕卡 disabled、P2 client_uuid 重試沿用、P2 自體重預設負重 0）。acceptance-verifier 跨-context 驗收（2026-07-24）：獨立 Playwright＋REST 24/24 斷言全 PASS——① 過去/今天出現『＋新增動作』、未來日不顯示；② 就地搜尋(比對中英名/別名)選動作→steppers＋累度軸(預設輕鬆)＋記這組；③ 選中日無 workout 新建/有則附加、set_number 接續[1,2]、連續記、就地刷新明細＋熱力圖噸位(320.0)；④ 補記不改 sessionStorage active workoutId(今天#1 不變、補記為另一 workout#2)、首頁仍『繼續訓練』；⑤ v42。完成定義 pytest 189＋ruff clean，working tree 乾淨無污染。另 codex-review 的 P1 修正被自測 E2E 抓出『連續記按鈕卡 disabled』regression 並修掉。E2E scratchpad/verify_f41.py 10/10（含 P1 只發 1 POST、P2 負重 0）。",
       "acceptance": "在日曆就地補記過去（或今天）的訓練紀錄，不必先開練、不離開日曆（後端沿用既有 createWorkout({date}) 與 logSet，無新增端點）。① 日曆選中『今天或過去』某天 → 當日明細區出現『＋ 新增動作』入口；**未來日期不顯示**該入口。② 點入口 → 就地展開記錄表單：搜尋框選動作（比對 name_zh/name_en/別名）→ 重量/次數 steppers ＋ 累度軸（沿用 F40，預設輕鬆）＋『記這組』。③ 按『記這組』→ 該日若無 workout 就以**選中日**建一筆（createWorkout，date＝選中日）、已有就附加至該日 workout；set_number＝該動作在此 workout 既有未軟刪組數＋1，client_uuid＝crypto.randomUUID()；送出後就地刷新——新組即時出現在當日明細對應動作區塊，當月熱力圖噸位同步更新；**表單保留剛選動作，可連續記下一組**（set_number 接續）。④ 補記全程**不改變 state.workoutId**——首頁『今天訓練還開著/繼續訓練』狀態不受影響。⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v41→v42；既有 F1–F40 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①②③④。 【2026-07-24 簽核：Design B 就地記（不離開日曆）＋『另開、不動今天那筆』，Ryan 選定。】"
+    },
+    {
+      "id": "F42",
+      "name": "logger 導覽簡化（底部按鈕→左上返回箭頭）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "簡化 logger（記組/訓練計時器）畫面的導覽。① 移除 logger 底部『換動作』與『收工』兩顆按鈕（.logger-foot 整塊）；② logger 左上角（exercise-head 內、動作名之前）新增『←』返回箭頭 → 點它回到動作選擇 picker，等同原『換動作』行為：**不結束訓練**，進行中的 workout 與已記錄的組保留、state.workoutId 不變（回 picker 走既有 finish/goPicker 路徑，不呼叫 endWorkout）；③ 記組主按鈕『✓ 完成這組／繼續下一組』（F15 兩態切換）維持不變；④ 結束整個訓練改由 picker 既有的『結束訓練』按鈕完成（本來就有、行為不變）——logger 不再有收工入口；⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v42→v43；其餘 logger 行為（steppers、累度軸、休息計時、done-list 行內編輯/刪除）不變、不新增框架/圖表庫。E2E 涵蓋 ①②③（底部兩鈕消失、左上箭頭回 picker 且 workoutId 不變、主按鈕兩態仍運作）。 【2026-07-25 簽核：Ryan 要 logger 更乾淨；『換下一組』確認指底部『換動作』，改成左上← 回 picker；結束訓練走 picker 既有入口。】"
     }
   ]
 }

@@ -144,6 +144,9 @@ body {
 .exercise-head h2 { font-size: 24px; font-weight: 700; }
 .exercise-head .alias { color: var(--text-dim); font-size: 14px; }
 .exercise-head .logger-detail { min-height: 40px; }
+/* F42：左上返回箭頭——回動作選擇 picker */
+.exercise-head .logger-back { min-height: 40px; font-size: 22px; padding: 4px 10px; flex: 0 0 auto; }
+.exercise-head .exercise-head-name { flex: 1; min-width: 0; }
 .last-hint {
   color: var(--text-dim);
   font-size: 14px;
@@ -267,8 +270,6 @@ body {
 .done-row.editing .edit-actions .btn { flex: 1; }
 .done-row .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
 
-.logger-foot { display: flex; gap: 10px; }
-.logger-foot .btn { flex: 1; }
 /* F29：picker 底部（回首頁＋結束訓練）並排 */
 .picker-foot { display: flex; gap: 10px; }
 .picker-foot .btn { flex: 1; }

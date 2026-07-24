@@ -945,6 +945,11 @@ function renderLogger() {
 
   return el("section", { class: "screen logger" }, [
     el("header", { class: "exercise-head" }, [
+      // F42：左上返回箭頭——回動作選擇 picker（等同原『換動作』，不結束訓練、workout 保留）
+      el("button", {
+        class: "btn btn-ghost logger-back", "aria-label": "回動作選擇",
+        onclick: finish,
+      }, ["←"]),
       el("div", { class: "exercise-head-name" }, [
         el("h2", {}, [exerciseName(exercise)]),
         el("span", { class: "alias" }, [exerciseAlias(exercise)]),
@@ -1013,10 +1018,7 @@ function renderLogger() {
       },
       [state.restStartedAt ? "繼續下一組" : "✓ 完成這組"],
     ),
-    el("div", { class: "logger-foot" }, [
-      el("button", { class: "btn", onclick: finish }, ["換動作"]),
-      el("button", { class: "btn btn-danger", onclick: endWorkout }, ["收工"]),
-    ]),
+    // F42：底部『換動作』『收工』已移除——換動作改左上←，結束訓練走 picker 的『結束訓練』
   ]);
 }
 
