@@ -34,7 +34,10 @@ export function stepper(name, value, steps, apply, rerender) {
 const RPE_WORDS = { 6: "輕鬆", 7: "有餘力", 8: "吃力", 9: "很吃力", 10: "力竭" };
 
 export function rpePicker(value, apply, _rerender) {
-  const cur = value == null ? 6 : value;
+  // 底層 schema 允許 rpe 1–10，但此軸只呈現 6–10 五個停點。舊資料 1–5（或任何越界值）正規化到
+  // 最低停點 6，且同步回呼叫端草稿——否則畫面顯示輕鬆卻仍送出原 1–5 值，畫面≠送出（Codex P2）。
+  const cur = value == null ? 6 : Math.min(10, Math.max(6, value));
+  if (value != null && value !== cur) apply(cur);
   const word = el("output", { class: "rpe-word" }, [RPE_WORDS[cur]]);
   const slider = el("input", {
     type: "range", class: "rpe-slider", min: "6", max: "10", step: "1",
