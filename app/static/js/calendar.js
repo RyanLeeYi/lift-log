@@ -25,6 +25,7 @@ const cal = {
   addSearch: "", // F41：動作搜尋字串
   addDraft: null, // F41：新組草稿 {weight, reps, rpe, uuid}（選定動作後建立）
   addSubmitting: false, // F41：記這組送出中（防快速雙擊重複；同 logger 的 state.submitting）
+  exScrollTop: 0, // F43：動作捲軸容器 scrollTop——全畫面重繪後還原，避免捲到下面互動即跳回頂端（切日/切月重置）
 };
 
 // F41：本地「今天」ISO（與格子 dateStr 同格式、同時區）——未來日不給補記入口
@@ -87,6 +88,7 @@ async function selectDay(dateStr, keepExpanded = false) {
     cal.addExercise = null;
     cal.addSearch = "";
     cal.addDraft = null;
+    cal.exScrollTop = 0; // 切日/切月：捲軸回頂端
   }
   const [workouts, statuses] = await Promise.all([
     api.listWorkouts(dateStr, dateStr),
@@ -359,6 +361,9 @@ function addBlock(rerender) {
 }
 
 function closeAddModal(rerender) {
+  // Codex P2：送出中不可關/重開——否則使用者可在 addSet await 期間關掉再重開、選新動作，
+  // 舊請求成功後的清理會清掉新開 modal 的選取與輸入。送出成功會自動關（addSet 內處理）。
+  if (cal.addSubmitting) return;
   cal.addOpen = false;
   cal.addExercise = null;
   cal.addDraft = null;
@@ -407,7 +412,8 @@ function addModal(guard, rerender) {
         el("span", { class: "ex-name" }, [exerciseName(cal.addExercise)]),
         el("button", {
           class: "btn btn-ghost sm",
-          onclick: () => { cal.addExercise = null; cal.addDraft = null; rerender(); },
+          ...(cal.addSubmitting ? { disabled: "" } : {}), // 送出中不可換動作（配合 closeAddModal 防競態）
+          onclick: () => { if (cal.addSubmitting) return; cal.addExercise = null; cal.addDraft = null; rerender(); },
         }, ["換動作"]),
       ]),
       el("div", { class: "steppers" }, [
@@ -424,7 +430,11 @@ function addModal(guard, rerender) {
           ...(cal.addSubmitting ? { disabled: "" } : {}), // 送出期間停用，防快速雙擊重複
           onclick: () => guard(() => addSet(rerender)),
         }, ["記這組"]),
-        el("button", { class: "btn btn-ghost sm modal-cancel", onclick: () => closeAddModal(rerender) }, ["取消"]),
+        el("button", {
+          class: "btn btn-ghost sm modal-cancel",
+          ...(cal.addSubmitting ? { disabled: "" } : {}), // 送出中停用取消（防競態；成功會自動關）
+          onclick: () => closeAddModal(rerender),
+        }, ["取消"]),
       ]),
     ]);
   }
@@ -515,7 +525,14 @@ function detailRows(guard, rerender) {
   }
   // F43：動作區塊 > 3 個 → 收進固定高度捲軸容器（只捲動作段，噸位/狀態/補記入口不被捲入）
   if (blocks.length > 3) {
-    rows.push(el("div", { class: "cal-ex-scroll" }, blocks));
+    const scroller = el("div", {
+      class: "cal-ex-scroll",
+      // Codex P2：全畫面重繪會重建此容器、scrollTop 歸零——記錄捲動位置，重繪後用 rAF 還原，
+      // 否則捲到下面的區塊一互動（展開/編輯/選取）就跳回頂端
+      onscroll: (e) => { cal.exScrollTop = e.target.scrollTop; },
+    }, blocks);
+    requestAnimationFrame(() => { scroller.scrollTop = cal.exScrollTop; });
+    rows.push(scroller);
   } else {
     rows.push(...blocks);
   }
