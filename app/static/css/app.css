@@ -517,6 +517,22 @@ body {
 /* F34：批次刪除鈕琥珀填色；未選取時停用＝淡化不可按 */
 .cal-batch-bar .cal-batch-del:disabled { opacity: .4; cursor: default; }
 
+/* F41：日曆就地補記過去訓練 */
+.cal-add-toggle { width: 100%; margin-top: 8px; border-style: dashed; color: var(--led); }
+.cal-add {
+  margin-top: 8px; padding: 10px; border: 1px solid var(--card-edge);
+  border-radius: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.cal-add-head { display: flex; align-items: center; justify-content: space-between; }
+.cal-add-head .ex-name { color: var(--led); font-weight: 700; }
+.cal-add-search {
+  width: 100%; padding: 10px; border-radius: 8px;
+  border: 1px solid var(--card-edge); background: var(--bg); color: var(--text);
+}
+.cal-add-list { max-height: 210px; overflow-y: auto; gap: 6px; }
+.cal-add-actions { display: flex; gap: 8px; align-items: center; }
+.cal-add-actions .cal-add-log { flex: 1; }
+
 /* ---------- F36 動作詳情頁 ---------- */
 .exercise-detail { gap: 12px; }
 .exercise-detail .ex-back { padding: 6px 12px; }

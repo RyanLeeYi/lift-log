@@ -2,7 +2,7 @@
 
 import { api, ApiError } from "./api.js";
 import { el, rpePicker, stepper } from "./dom.js";
-import { exerciseName, getLang, state } from "./state.js";
+import { exerciseAlias, exerciseName, getLang, state } from "./state.js";
 
 // 本模組自己的畫面狀態（不進全域 state：換畫面即重置無妨）
 const cal = {
@@ -20,7 +20,17 @@ const cal = {
   statusEdit: false, // F18：當日狀態行內編輯中
   statusDraft: null, // F18：{energy, sleep_quality, note} 狀態編輯草稿
   expandedEx: new Set(), // F34：目前展開的 exercise_id（空＝全收合，切日/切月重置）
+  addOpen: false, // F41：就地補記表單是否展開（切日重置）
+  addExercise: null, // F41：補記表單已選要記的動作（null＝還在搜尋選動作）
+  addSearch: "", // F41：動作搜尋字串
+  addDraft: null, // F41：新組草稿 {weight, reps, rpe}（選定動作後建立）
 };
+
+// F41：本地「今天」ISO（與格子 dateStr 同格式、同時區）——未來日不給補記入口
+function calToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 async function loadMonth() {
   const data = await api.calendarStats(cal.year, cal.month);
@@ -68,7 +78,15 @@ async function selectDay(dateStr, keepExpanded = false) {
   cal.selectedIds = [];
   cal.statusEdit = false;
   cal.statusDraft = null;
-  if (!keepExpanded) cal.expandedEx = new Set();
+  // F41：切日/切月一律收掉補記表單；keepExpanded（刪/改/補記後重載當日）則保留，
+  // 讓「記完連續記下一組」不被自身刷新中斷（同 expandedEx 的保留邏輯）。
+  if (!keepExpanded) {
+    cal.expandedEx = new Set();
+    cal.addOpen = false;
+    cal.addExercise = null;
+    cal.addSearch = "";
+    cal.addDraft = null;
+  }
   const [workouts, statuses] = await Promise.all([
     api.listWorkouts(dateStr, dateStr),
     api.listDailyStatus(dateStr, dateStr),
@@ -278,11 +296,127 @@ function topSet(sets) {
   );
 }
 
+// F41：就地補記——送一組到「選中日」的 workout（該日無則以選中日新建），全程不碰 state.workoutId。
+async function addSet(rerender) {
+  const d = cal.addDraft;
+  const ex = cal.addExercise;
+  // 目標 workout：該日已有就附加、沒有就以選中日新建（不影響今天進行中的 workout）
+  let workoutId = cal.detail[0]?.workout.id;
+  if (workoutId == null) {
+    workoutId = (await api.createWorkout({ date: cal.selected })).id;
+  }
+  // set_number＝該動作在此 workout 既有未軟刪組數＋1（cal.detail 只含未軟刪組）
+  const existing = cal.detail
+    .filter((x) => x.workout.id === workoutId)
+    .flatMap((x) => x.sets)
+    .filter((s) => s.exercise_id === ex.id).length;
+  await api.logSet(workoutId, {
+    client_uuid: crypto.randomUUID(),
+    exercise_id: ex.id,
+    set_number: existing + 1,
+    weight_kg: d.weight,
+    reps: d.reps,
+    rpe: d.rpe,
+  });
+  // 量測值保留當起點、累度軸回預設輕鬆；動作保留供連續記下一組。刷新熱力圖＋當日明細（keepExpanded）。
+  cal.addDraft = { weight: d.weight, reps: d.reps, rpe: 6 };
+  await refreshMonthAndDay();
+  rerender();
+}
+
+// F41：補記入口與表單。未來日不給入口；選中日今天或過去才顯示。
+function addBlock(guard, rerender) {
+  if (!cal.selected || cal.selectMode) return []; // 多選批次刪除模式不夾雜新增
+  if (cal.selected > calToday()) return []; // 未來日期不可補記
+  if (!cal.addOpen) {
+    return [
+      el("button", {
+        class: "btn cal-add-toggle",
+        onclick: () => { cal.addOpen = true; rerender(); },
+      }, ["＋ 新增動作"]),
+    ];
+  }
+  if (!cal.addExercise) {
+    // 搜尋選動作：清單就地 replaceChildren 更新，不呼叫 rerender——否則每打一字整頁重繪、輸入框失焦
+    const listBox = el("div", { class: "exercise-list cal-add-list" }, []);
+    const paintList = () => {
+      const q = cal.addSearch.trim().toLowerCase();
+      const all = Object.values(cal.exerciseById || {});
+      const shown = (q
+        ? all.filter((e) =>
+            (e.name_zh || "").toLowerCase().includes(q) || (e.name_en || "").toLowerCase().includes(q))
+        : all).slice(0, 30);
+      listBox.replaceChildren(...shown.map((exx) =>
+        el("button", {
+          class: "btn exercise-item",
+          onclick: () => {
+            cal.addExercise = exx;
+            cal.addDraft = { weight: 20, reps: 8, rpe: 6 };
+            rerender();
+          },
+        }, [el("span", {}, [exerciseName(exx)]), el("span", { class: "sub" }, [exerciseAlias(exx)])])));
+    };
+    const search = el("input", {
+      class: "cal-add-search", placeholder: "搜尋動作…", value: cal.addSearch,
+      oninput: (e) => { cal.addSearch = e.target.value; paintList(); },
+    });
+    paintList();
+    return [
+      el("div", { class: "cal-add" }, [
+        el("div", { class: "cal-add-head" }, [
+          el("span", {}, ["新增動作"]),
+          el("button", {
+            class: "btn btn-ghost sm",
+            onclick: () => { cal.addOpen = false; cal.addSearch = ""; rerender(); },
+          }, ["取消"]),
+        ]),
+        search,
+        listBox,
+      ]),
+    ];
+  }
+  // 已選動作：steppers ＋ 累度軸 ＋ 記這組（可連續記）
+  const d = cal.addDraft;
+  return [
+    el("div", { class: "cal-add recording" }, [
+      el("div", { class: "cal-add-head" }, [
+        el("span", { class: "ex-name" }, [exerciseName(cal.addExercise)]),
+        el("button", {
+          class: "btn btn-ghost sm",
+          onclick: () => { cal.addExercise = null; cal.addDraft = null; rerender(); },
+        }, ["換動作"]),
+      ]),
+      el("div", { class: "steppers" }, [
+        stepper(cal.addExercise.is_bodyweight ? "負重 KG" : "KG", d.weight,
+          [["−2.5", -2.5], ["+2.5", +2.5]],
+          (delta) => { d.weight = Math.max(0, Math.round((d.weight + delta) * 10) / 10); }, rerender),
+        stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
+          (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
+      ]),
+      rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
+      el("div", { class: "cal-add-actions" }, [
+        el("button", { class: "btn btn-primary cal-add-log", onclick: () => guard(() => addSet(rerender)) }, ["記這組"]),
+        el("button", {
+          class: "btn btn-ghost sm cal-add-done",
+          onclick: () => {
+            cal.addOpen = false; cal.addExercise = null; cal.addDraft = null; cal.addSearch = "";
+            rerender();
+          },
+        }, ["完成"]),
+      ]),
+    ]),
+  ];
+}
+
 function detailRows(guard, rerender) {
   if (!cal.selected) return [];
   if (cal.detail.length === 0) {
-    // 休息日也可能記了當日狀態（R9：不依附 workout）
-    return [el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]), ...statusRow(guard, rerender)];
+    // 休息日也可能記了當日狀態（R9：不依附 workout）；F41：休息日也能就地補記
+    return [
+      el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]),
+      ...statusRow(guard, rerender),
+      ...addBlock(guard, rerender),
+    ];
   }
   const tonnage = cal.days[cal.selected];
   // F19：有組才顯示「選取」入口（進多選批次刪除）
@@ -362,6 +496,7 @@ function detailRows(guard, rerender) {
       ]),
     );
   }
+  rows.push(...addBlock(guard, rerender)); // F41：補記入口（未來日/多選模式自動不顯示）
   return rows;
 }
 
