@@ -23,7 +23,8 @@ const cal = {
   addOpen: false, // F41：就地補記表單是否展開（切日重置）
   addExercise: null, // F41：補記表單已選要記的動作（null＝還在搜尋選動作）
   addSearch: "", // F41：動作搜尋字串
-  addDraft: null, // F41：新組草稿 {weight, reps, rpe}（選定動作後建立）
+  addDraft: null, // F41：新組草稿 {weight, reps, rpe, uuid}（選定動作後建立）
+  addSubmitting: false, // F41：記這組送出中（防快速雙擊重複；同 logger 的 state.submitting）
 };
 
 // F41：本地「今天」ISO（與格子 dateStr 同格式、同時區）——未來日不給補記入口
@@ -296,31 +297,51 @@ function topSet(sets) {
   );
 }
 
+// F41：草稿工廠——自體重動作 weight_kg 代表「額外負重」故預設 0（同 logger），其餘 20；
+// client_uuid 於草稿建立時就固定，重試沿用，只有整個送出＋刷新成功後才換新（避免重複寫入）。
+function newAddDraft(exercise) {
+  return {
+    weight: exercise.is_bodyweight ? 0 : 20,
+    reps: 8,
+    rpe: 6,
+    uuid: crypto.randomUUID(),
+  };
+}
+
 // F41：就地補記——送一組到「選中日」的 workout（該日無則以選中日新建），全程不碰 state.workoutId。
 async function addSet(rerender) {
-  const d = cal.addDraft;
-  const ex = cal.addExercise;
-  // 目標 workout：該日已有就附加、沒有就以選中日新建（不影響今天進行中的 workout）
-  let workoutId = cal.detail[0]?.workout.id;
-  if (workoutId == null) {
-    workoutId = (await api.createWorkout({ date: cal.selected })).id;
+  if (cal.addSubmitting) return; // Codex P1：防重入——快速雙擊只送一組
+  cal.addSubmitting = true;
+  try {
+    const d = cal.addDraft;
+    const ex = cal.addExercise;
+    // 目標 workout：該日已有就附加、沒有就以選中日新建（不影響今天進行中的 workout）
+    let workoutId = cal.detail[0]?.workout.id;
+    if (workoutId == null) {
+      workoutId = (await api.createWorkout({ date: cal.selected })).id;
+    }
+    // set_number＝該動作在此 workout 既有未軟刪組數＋1（cal.detail 只含未軟刪組）
+    const existing = cal.detail
+      .filter((x) => x.workout.id === workoutId)
+      .flatMap((x) => x.sets)
+      .filter((s) => s.exercise_id === ex.id).length;
+    await api.logSet(workoutId, {
+      client_uuid: d.uuid, // Codex P2：重試沿用同 uuid，伺服器對重複 client_uuid 冪等去重
+      exercise_id: ex.id,
+      set_number: existing + 1,
+      weight_kg: d.weight,
+      reps: d.reps,
+      rpe: d.rpe,
+    });
+    await refreshMonthAndDay(); // 刷新熱力圖＋當日明細（keepExpanded）
+    // 全流程成功後才換新草稿：量測值保留當起點、軸回輕鬆、換新 uuid 供下一組（動作保留可連續記）。
+    // 若上面任一步丟錯，draft 不變（含同 uuid）→ 使用者重試不會產生重複組。
+    cal.addDraft = { weight: d.weight, reps: d.reps, rpe: 6, uuid: crypto.randomUUID() };
+  } finally {
+    cal.addSubmitting = false;
   }
-  // set_number＝該動作在此 workout 既有未軟刪組數＋1（cal.detail 只含未軟刪組）
-  const existing = cal.detail
-    .filter((x) => x.workout.id === workoutId)
-    .flatMap((x) => x.sets)
-    .filter((s) => s.exercise_id === ex.id).length;
-  await api.logSet(workoutId, {
-    client_uuid: crypto.randomUUID(),
-    exercise_id: ex.id,
-    set_number: existing + 1,
-    weight_kg: d.weight,
-    reps: d.reps,
-    rpe: d.rpe,
-  });
-  // 量測值保留當起點、累度軸回預設輕鬆；動作保留供連續記下一組。刷新熱力圖＋當日明細（keepExpanded）。
-  cal.addDraft = { weight: d.weight, reps: d.reps, rpe: 6 };
-  await refreshMonthAndDay();
+  // rerender 必須在 flag 歸零「之後」：否則記完那刻以 addSubmitting=true 重繪出 disabled 按鈕，
+  // 之後不再重繪 → 按鈕卡在停用、連續記下一組按不動（錯誤路徑由 guard 收，按鈕原就 enabled 可重試）。
   rerender();
 }
 
@@ -351,7 +372,7 @@ function addBlock(guard, rerender) {
           class: "btn exercise-item",
           onclick: () => {
             cal.addExercise = exx;
-            cal.addDraft = { weight: 20, reps: 8, rpe: 6 };
+            cal.addDraft = newAddDraft(exx);
             rerender();
           },
         }, [el("span", {}, [exerciseName(exx)]), el("span", { class: "sub" }, [exerciseAlias(exx)])])));
@@ -395,7 +416,11 @@ function addBlock(guard, rerender) {
       ]),
       rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
       el("div", { class: "cal-add-actions" }, [
-        el("button", { class: "btn btn-primary cal-add-log", onclick: () => guard(() => addSet(rerender)) }, ["記這組"]),
+        el("button", {
+          class: "btn btn-primary cal-add-log",
+          ...(cal.addSubmitting ? { disabled: "" } : {}), // Codex P1：送出期間停用，防重複
+          onclick: () => guard(() => addSet(rerender)),
+        }, ["記這組"]),
         el("button", {
           class: "btn btn-ghost sm cal-add-done",
           onclick: () => {
