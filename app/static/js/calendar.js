@@ -259,7 +259,7 @@ function calSetRow(s, guard, rerender) {
       class: "btn icon-btn edit-set",
       onclick: () => {
         cal.editSetId = s.id;
-        cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? null };
+        cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
         rerender();
       },
     }, ["✎"]),

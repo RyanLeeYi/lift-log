@@ -464,7 +464,7 @@ function rememberDoneSets() {
 
 async function pickExercise(exercise) {
   state.exercise = exercise;
-  state.rpe = null;
+  state.rpe = 6; // F40：進動作預設累度「輕鬆」
   state.doneSets = [];
   state.setNumber = (state.setCounts[exercise.id] || 0) + 1; // 回頭選同動作時接續編號
 
@@ -808,7 +808,7 @@ function renderLogger() {
         set_number: state.setNumber,
         weight_kg: state.weightKg,
         reps: state.reps,
-        ...(state.rpe ? { rpe: state.rpe } : {}),
+        rpe: state.rpe, // F40：累度軸一律有值（6–10），新組必帶 rpe
         // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）
         ...(state.pendingRestSeconds != null ? { rest_seconds: state.pendingRestSeconds } : {}),
       };
@@ -827,7 +827,7 @@ function renderLogger() {
       state.doneSets.push(saved);
       state.setCounts[exercise.id] = state.setNumber;
       state.setNumber += 1;
-      state.rpe = null;
+      state.rpe = 6; // F40：記完重置回預設「輕鬆」（下一組不碰即帶 6）
       rememberDoneSets(); // F32：換動作後回到此動作可還原本次組
       saveActiveWorkout(); // setCounts/doneByExercise 持久化：重新整理後編號續接、組不丟
       startRestTimer(); // 招牌時刻：LED 亮起＝已記錄
@@ -931,7 +931,7 @@ function renderLogger() {
       el("button", {
         class: "btn icon-btn edit-set",
         onclick: () => {
-          editDraft = { key, weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? null };
+          editDraft = { key, weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
           render();
         },
       }, ["✎"]),

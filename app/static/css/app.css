@@ -197,22 +197,31 @@ body {
 .stepper .pair { display: flex; gap: 8px; width: 100%; }
 .stepper .pair .btn { flex: 1; font-size: 22px; padding: 10px; font-family: var(--mono); }
 
-/* RPE 快速鈕（選填，不擋送出） */
-.rpe-row { display: flex; gap: 6px; align-items: center; }
-.rpe-row .name { color: var(--text-dim); font-size: 12px; letter-spacing: .1em; }
-.rpe { display: flex; gap: 5px; flex: 1; }
-.rpe button {
-  flex: 1;
-  border: 1px solid var(--card-edge);
-  background: transparent;
-  color: var(--text-dim);
-  border-radius: 8px;
-  font-family: var(--mono);
-  font-size: 14px;
-  padding: 8px 0;
-  cursor: pointer;
+/* F40：口語「累度軸」——5 停點 slider（可拖可點），對應底層 rpe 6–10，預設輕鬆 */
+.rpe-axis { display: flex; flex-direction: column; gap: 8px; }
+.rpe-head { display: flex; align-items: baseline; justify-content: space-between; }
+.rpe-lbl { color: var(--text-dim); font-size: 13px; }
+.rpe-word { color: var(--led); font-weight: 700; font-size: 15px; font-family: var(--mono); }
+.rpe-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px; border-radius: 999px;
+  background: var(--card-edge); outline: none; cursor: pointer; margin: 4px 0;
 }
-.rpe button.on { color: #14100a; background: var(--led); border-color: var(--led); font-weight: 700; }
+.rpe-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--led); border: 2px solid #14100a; cursor: pointer;
+}
+.rpe-slider::-moz-range-thumb {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--led); border: 2px solid #14100a; cursor: pointer;
+}
+.rpe-ticks { display: flex; gap: 4px; }
+.rpe-tick {
+  flex: 1; border: 1px solid var(--card-edge); background: transparent;
+  color: var(--text-dim); border-radius: 8px; font-size: 12px; padding: 7px 0; cursor: pointer;
+}
+.rpe-tick.on { color: #14100a; background: var(--led); border-color: var(--led); font-weight: 700; }
 
 .log-btn { font-size: 20px; padding: 18px; border-radius: 18px; }
 

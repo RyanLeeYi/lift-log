@@ -272,6 +272,20 @@
       "status": "passing",
       "evidence": "commit 6bbf7f5。acceptance-verifier 跨 context 驗收（2026-07-24）：完成定義 pytest 189 passed + ruff clean 全綠；逐條 10 子項全 PASS——① has_data 過濾（有練→只回該動作、沒練→排除、軟刪→排除、無參數/false→回全部 35 筆）、② 首頁『📈 動作表現』與課表/日曆並排、③ 初始只顯示部位 chip+提示不列動作、chip 只列有資料部位（腿/胸）、點 chip 才出對應動作、可重選切換、點動作進詳情頁、返回保留剛選部位、④ 全軟刪後空狀態文字、⑤ sw.js/state.js 同步 v40；15/15 Playwright 斷言 PASS，working tree 乾淨無污染。後端另有 tests/test_exercises.py::test_exercises_has_data_filter_returns_only_trained。E2E 腳本 scratchpad/verify_f39.py 7/7。",
       "acceptance": "從首頁直接瀏覽有資料的動作看表現（不必先開練）。① 後端 GET /api/exercises?has_data=true 只回「至少有 1 筆未軟刪組」的動作（濾掉沒練過的預設動作）；無 has_data 或 false 時維持回全部（既有行為不變）；② 首頁新增『📈 動作表現』按鈕（與 📋 課表／📅 日曆 並排）進入動作表現瀏覽畫面；③ 該畫面上方是部位 chip 按鈕（只列有資料的部位，同「加動作」的 chips 操作），**初始不列任何動作、顯示提示選部位**；點一個部位 chip 後才顯示該部位有資料的動作名，chip 可重選切換不同部位；點某動作進 F36/F37 詳情頁（openDetail，returnScreen＝此畫面），從詳情頁返回回此畫面（且保留剛選的部位）；④ 沒有任何有資料的動作時顯示空狀態文字（如『還沒有任何訓練紀錄』）；⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v38→v39；既有 F1–F38 行為不變、不新增框架。後端測試涵蓋 ①；E2E 涵蓋 ②③④。 【2026-07-24 重新簽核：③ 從「一次攤開所有部位分組」改為「先選部位 chip 才出對應動作」，Ryan 要與加動作同操作、避免動作多時清單過長。】"
+    },
+    {
+      "id": "F40",
+      "name": "RPE 改口語累度軸",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "把難懂的『RPE 6–10 數字按鈕』改成口語化的 5 停點累度軸（共用元件 rpePicker）。① 記組/編輯的強度選擇改成一條 5 停點累度軸：可左右拖曳、也可直接點停點，吸附到最近停點；5 停點文字為 輕鬆／有餘力／吃力／很吃力／力竭，分別對應底層 rpe 6／7／8／9／10；軸（上方或明顯處）即時顯示當前選中的形容詞。② 軸一進畫面即顯示，**新組預設值＝輕鬆(6)**；不再有『未記 RPE』空狀態（新組送出必帶 rpe=軸當前值），標籤用口語（如『這組多累？』，不以生硬 RPE 字樣為主，數字對應可留作輔助）。③ **編輯既有組**時，軸起始停點＝該組已存的 rpe；若該組原本無 rpe，起始＝輕鬆(6)。④ 底層 schema 不變（rpe 仍為 1–10 整數、nullable）、舊資料照常顯示；此為共用元件，開練記組、開練/日曆行內編輯、以及 F41 日曆補記全部一致採用。⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v40→v41；重量/次數 steppers、休息計時等既有行為不變、不新增框架/圖表庫。E2E 涵蓋 ①②③（拖曳/點選改值、新組預設輕鬆並隨值送出、編輯既有組帶入原值）。 【2026-07-24 簽核：Ryan 反映連自己都不選 RPE、數字太難懂；改口語累度軸、預設輕鬆、一進畫面即顯示、不需清除鈕。】"
+    },
+    {
+      "id": "F41",
+      "name": "日曆就地補記過去訓練",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "在日曆就地補記過去（或今天）的訓練紀錄，不必先開練、不離開日曆（後端沿用既有 createWorkout({date}) 與 logSet，無新增端點）。① 日曆選中『今天或過去』某天 → 當日明細區出現『＋ 新增動作』入口；**未來日期不顯示**該入口。② 點入口 → 就地展開記錄表單：搜尋框選動作（比對 name_zh/name_en/別名）→ 重量/次數 steppers ＋ 累度軸（沿用 F40，預設輕鬆）＋『記這組』。③ 按『記這組』→ 該日若無 workout 就以**選中日**建一筆（createWorkout，date＝選中日）、已有就附加至該日 workout；set_number＝該動作在此 workout 既有未軟刪組數＋1，client_uuid＝crypto.randomUUID()；送出後就地刷新——新組即時出現在當日明細對應動作區塊，當月熱力圖噸位同步更新；**表單保留剛選動作，可連續記下一組**（set_number 接續）。④ 補記全程**不改變 state.workoutId**——首頁『今天訓練還開著/繼續訓練』狀態不受影響。⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v41→v42；既有 F1–F40 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①②③④。 【2026-07-24 簽核：Design B 就地記（不離開日曆）＋『另開、不動今天那筆』，Ryan 選定。】"
     }
   ]
 }

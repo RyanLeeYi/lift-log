@@ -27,21 +27,36 @@ export function stepper(name, value, steps, apply, rerender) {
   ]);
 }
 
-// RPE 6–10 點選（再點同值＝取消）。apply(next) 收 6-10 或 null。
-export function rpePicker(value, apply, rerender) {
-  return el("div", { class: "rpe-row" }, [
-    el("span", { class: "name" }, ["RPE"]),
-    el("div", { class: "rpe" },
-      [6, 7, 8, 9, 10].map((n) =>
-        el(
-          "button",
-          {
-            class: value === n ? "on" : "",
-            onclick: () => { apply(value === n ? null : n); rerender(); },
-          },
-          [String(n)],
-        ),
-      ),
-    ),
+// F40：口語「累度軸」——一條 5 停點 slider（可左右拖、也可點停點），對應底層 rpe 6–10。
+// 一律有值（新組預設輕鬆＝6；value 為 null 的舊組亦起始 6），不再有「未記」空狀態。
+// 拖曳/點選時只就地更新本元件 DOM（形容詞＋停點高亮），絕不呼叫 rerender——否則整頁重繪會把
+// 正在拖的 input 拆掉、中斷拖曳（同「就地重畫」教訓）；rerender 參數保留僅為呼叫端簽名相容。
+const RPE_WORDS = { 6: "輕鬆", 7: "有餘力", 8: "吃力", 9: "很吃力", 10: "力竭" };
+
+export function rpePicker(value, apply, _rerender) {
+  const cur = value == null ? 6 : value;
+  const word = el("output", { class: "rpe-word" }, [RPE_WORDS[cur]]);
+  const slider = el("input", {
+    type: "range", class: "rpe-slider", min: "6", max: "10", step: "1",
+    value: String(cur), "aria-label": "這組多累？",
+  });
+  const ticks = [6, 7, 8, 9, 10].map((n) =>
+    el("button", { type: "button", class: `rpe-tick${n === cur ? " on" : ""}` }, [RPE_WORDS[n]]),
+  );
+  const paint = (v) => {
+    slider.value = String(v);
+    word.textContent = RPE_WORDS[v];
+    ticks.forEach((t, i) => t.classList.toggle("on", 6 + i === v));
+  };
+  const set = (v) => { apply(v); paint(v); }; // 就地更新，不整頁重繪
+  slider.addEventListener("input", () => set(Number(slider.value)));
+  ticks.forEach((t, i) => t.addEventListener("click", () => set(6 + i)));
+  return el("div", { class: "rpe-axis" }, [
+    el("div", { class: "rpe-head" }, [
+      el("span", { class: "rpe-lbl" }, ["這組多累？"]),
+      word,
+    ]),
+    slider,
+    el("div", { class: "rpe-ticks" }, ticks),
   ]);
 }

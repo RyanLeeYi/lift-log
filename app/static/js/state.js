@@ -3,7 +3,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v40";
+export const APP_VERSION = "v41";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -15,7 +15,7 @@ export const state = {
   exercise: null, // {id, name_zh, name_en, is_bodyweight}
   weightKg: 20,
   reps: 8,
-  rpe: null,
+  rpe: 6, // F40：累度軸預設「輕鬆」＝6（新組必帶 rpe，不再有未記空狀態）
   setNumber: 1,
   doneSets: [], // 本回合該動作已完成的組（顯示用）
   doneByExercise: {}, // F32 {exerciseId:[sets]}——本次 workout 各動作已做組的鏡射；換動作後回到該動作原樣還原，不被誤標成「上次」
