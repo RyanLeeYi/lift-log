@@ -518,21 +518,24 @@ body {
 /* F34：批次刪除鈕琥珀填色；未選取時停用＝淡化不可按 */
 .cal-batch-bar .cal-batch-del:disabled { opacity: .4; cursor: default; }
 
-/* F41：日曆就地補記過去訓練 */
-.cal-add-toggle { width: 100%; margin-top: 8px; border-style: dashed; color: var(--led); }
-.cal-add {
-  margin-top: 8px; padding: 10px; border: 1px solid var(--card-edge);
-  border-radius: 12px; display: flex; flex-direction: column; gap: 10px;
+/* F43：動作區塊 > 3 個時，動作列表段固定高度（約 3 個收合區塊）＋垂直捲軸——
+   第 4 個起需捲動，避免當日動作多時把明細推得過長（噸位/狀態/補記入口不被捲入）。 */
+.cal-ex-scroll {
+  max-height: 150px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  display: flex; flex-direction: column; gap: 8px;
 }
-.cal-add-head { display: flex; align-items: center; justify-content: space-between; }
-.cal-add-head .ex-name { color: var(--led); font-weight: 700; }
+
+/* F41→F43：日曆補記入口＋懸浮 modal */
+.cal-add-toggle { width: 100%; margin-top: 8px; border-style: dashed; color: var(--led); }
+/* modal 內的補記表單（modal base 樣式見 .modal / .modal-overlay） */
+.cal-add-modal .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cal-add-modal .modal-head .ex-name { color: var(--led); font-weight: 700; }
 .cal-add-search {
   width: 100%; padding: 10px; border-radius: 8px;
   border: 1px solid var(--card-edge); background: var(--bg); color: var(--text);
 }
-.cal-add-list { max-height: 210px; overflow-y: auto; gap: 6px; }
-.cal-add-actions { display: flex; gap: 8px; align-items: center; }
-.cal-add-actions .cal-add-log { flex: 1; }
+.cal-add-modal .cal-add-list { max-height: 42dvh; overflow-y: auto; gap: 6px; }
+.cal-add-modal .modal-actions .cal-add-log { flex: 1; }
 
 /* ---------- F36 動作詳情頁 ---------- */
 .exercise-detail { gap: 12px; }

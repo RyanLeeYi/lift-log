@@ -293,6 +293,13 @@
       "status": "passing",
       "evidence": "commit 5e6da79。acceptance-verifier 跨-context 驗收（2026-07-25）：19 條 Playwright 斷言、①~⑤ 逐條 pass——① .logger-foot 不存在、畫面無『換動作』『收工』字樣；② 左上 .logger-back『←』在 exercise-head 內動作名之前，點它回 .screen.picker、workoutId 點擊前後不變(1→1 非 null)、picker 仍有『結束訓練』、REST 確認 workout 與已記組保留(finish 不呼叫 endWorkout)；③ 主按鈕三態 ✓完成這組→繼續下一組→✓完成這組；④ picker『結束訓練』回首頁、按鈕變『開練』、activeWorkout 清除(session/local 皆 None)；⑤ sw.js/state.js 同步 v43、commit 僅動 5 檔無新依賴。完成定義 ruff clean＋pytest 189 passed，working tree 乾淨無污染。E2E scratchpad/verify_f42.py 5/5。codex-review 無功能問題（唯一 P2 是誤判 status 應提早翻 passing，與 harness『驗收過才翻』流程相悖，不採納）。",
       "acceptance": "簡化 logger（記組/訓練計時器）畫面的導覽。① 移除 logger 底部『換動作』與『收工』兩顆按鈕（.logger-foot 整塊）；② logger 左上角（exercise-head 內、動作名之前）新增『←』返回箭頭 → 點它回到動作選擇 picker，等同原『換動作』行為：**不結束訓練**，進行中的 workout 與已記錄的組保留、state.workoutId 不變（回 picker 走既有 finish/goPicker 路徑，不呼叫 endWorkout）；③ 記組主按鈕『✓ 完成這組／繼續下一組』（F15 兩態切換）維持不變；④ 結束整個訓練改由 picker 既有的『結束訓練』按鈕完成（本來就有、行為不變）——logger 不再有收工入口；⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v42→v43；其餘 logger 行為（steppers、累度軸、休息計時、done-list 行內編輯/刪除）不變、不新增框架/圖表庫。E2E 涵蓋 ①②③（底部兩鈕消失、左上箭頭回 picker 且 workoutId 不變、主按鈕兩態仍運作）。 【2026-07-25 簽核：Ryan 要 logger 更乾淨；『換下一組』確認指底部『換動作』，改成左上← 回 picker；結束訓練走 picker 既有入口。】"
+    },
+    {
+      "id": "F43",
+      "name": "日曆明細動作捲軸＋補記改懸浮 modal",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "日曆明細兩項改進。① 日曆當日**動作區塊 > 3 個**時，動作列表段套固定高度＋垂直捲軸（比照 logger done-list 的 .scrollable）；≤3 個維持原樣不捲；噸位 head、當日狀態列、補記入口不被捲入（只捲動作區塊那段）。② F41 補記改懸浮式：『＋新增動作』入口保留在日曆明細（僅一顆按鈕、不佔版面），點它 → 開懸浮 modal（照 templates F21 的 .modal-overlay/.modal），不再內嵌把明細推長；點遮罩空白處或『取消』關閉 modal。③ modal 內：搜尋框選動作（比對 name_zh/name_en/別名）→ 重量/次數 steppers ＋ 累度軸（沿用 F40，預設輕鬆）→『記這組』；自體重動作預設負重 0。④ 按『記這組』→ 送出後**自動關閉 modal**，日曆即時刷新（當月熱力圖噸位＋當日明細，新組出現在對應動作區塊）；要再記就再點入口；未來日期不顯示入口；全程不改變 state.workoutId。移除舊的內嵌 .cal-add recording 態與『完成/換動作』連續記那套。⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v43→v44；既有 F1–F42 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①②③④。 【2026-07-25 簽核：Ryan 要日曆超過三個動作變捲軸、補記像編輯課表那樣懸浮不佔版面；連續記體驗改為『記一組就自動關 modal』。】"
     }
   ]
 }

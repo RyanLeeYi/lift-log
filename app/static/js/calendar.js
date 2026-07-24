@@ -334,31 +334,45 @@ async function addSet(rerender) {
       rpe: d.rpe,
     });
     await refreshMonthAndDay(); // 刷新熱力圖＋當日明細（keepExpanded）
-    // 全流程成功後才換新草稿：量測值保留當起點、軸回輕鬆、換新 uuid 供下一組（動作保留可連續記）。
-    // 若上面任一步丟錯，draft 不變（含同 uuid）→ 使用者重試不會產生重複組。
-    cal.addDraft = { weight: d.weight, reps: d.reps, rpe: 6, uuid: crypto.randomUUID() };
+    // F43：記一組即自動關 modal（不再連續記）——成功才關；失敗時 draft 不變（含同 uuid）→ 重試不重複寫入。
+    cal.addOpen = false;
+    cal.addExercise = null;
+    cal.addDraft = null;
+    cal.addSearch = "";
   } finally {
     cal.addSubmitting = false;
   }
-  // rerender 必須在 flag 歸零「之後」：否則記完那刻以 addSubmitting=true 重繪出 disabled 按鈕，
-  // 之後不再重繪 → 按鈕卡在停用、連續記下一組按不動（錯誤路徑由 guard 收，按鈕原就 enabled 可重試）。
   rerender();
 }
 
-// F41：補記入口與表單。未來日不給入口；選中日今天或過去才顯示。
-function addBlock(guard, rerender) {
+// F41→F43：補記入口。未來日不給入口；選中日今天或過去才顯示。入口只是一顆按鈕（不佔版面），
+// 點它開懸浮 modal（addModal）。
+function addBlock(rerender) {
   if (!cal.selected || cal.selectMode) return []; // 多選批次刪除模式不夾雜新增
   if (cal.selected > calToday()) return []; // 未來日期不可補記
-  if (!cal.addOpen) {
-    return [
-      el("button", {
-        class: "btn cal-add-toggle",
-        onclick: () => { cal.addOpen = true; rerender(); },
-      }, ["＋ 新增動作"]),
-    ];
-  }
+  return [
+    el("button", {
+      class: "btn cal-add-toggle",
+      onclick: () => { cal.addOpen = true; cal.addExercise = null; cal.addSearch = ""; rerender(); },
+    }, ["＋ 新增動作"]),
+  ];
+}
+
+function closeAddModal(rerender) {
+  cal.addOpen = false;
+  cal.addExercise = null;
+  cal.addDraft = null;
+  cal.addSearch = "";
+  rerender();
+}
+
+// F43：補記懸浮 modal（照 templates F21 的 .modal-overlay/.modal），不佔日曆版面。
+// 記一組即自動關（addSet 成功後關）。點遮罩空白處或『取消』關閉。
+function addModal(guard, rerender) {
+  if (!cal.addOpen || !cal.selected || cal.selectMode || cal.selected > calToday()) return [];
+  let inner;
   if (!cal.addExercise) {
-    // 搜尋選動作：清單就地 replaceChildren 更新，不呼叫 rerender——否則每打一字整頁重繪、輸入框失焦
+    // 搜尋選動作：清單就地 replaceChildren 更新，不 rerender——否則每打一字整頁重繪、輸入框失焦
     const listBox = el("div", { class: "exercise-list cal-add-list" }, []);
     const paintList = () => {
       const q = cal.addSearch.trim().toLowerCase();
@@ -370,11 +384,7 @@ function addBlock(guard, rerender) {
       listBox.replaceChildren(...shown.map((exx) =>
         el("button", {
           class: "btn exercise-item",
-          onclick: () => {
-            cal.addExercise = exx;
-            cal.addDraft = newAddDraft(exx);
-            rerender();
-          },
+          onclick: () => { cal.addExercise = exx; cal.addDraft = newAddDraft(exx); rerender(); },
         }, [el("span", {}, [exerciseName(exx)]), el("span", { class: "sub" }, [exerciseAlias(exx)])])));
     };
     const search = el("input", {
@@ -382,25 +392,18 @@ function addBlock(guard, rerender) {
       oninput: (e) => { cal.addSearch = e.target.value; paintList(); },
     });
     paintList();
-    return [
-      el("div", { class: "cal-add" }, [
-        el("div", { class: "cal-add-head" }, [
-          el("span", {}, ["新增動作"]),
-          el("button", {
-            class: "btn btn-ghost sm",
-            onclick: () => { cal.addOpen = false; cal.addSearch = ""; rerender(); },
-          }, ["取消"]),
-        ]),
-        search,
-        listBox,
+    inner = el("div", { class: "modal cal-add-modal" }, [
+      el("div", { class: "modal-head" }, [`新增動作 · ${cal.selected}`]),
+      search,
+      listBox,
+      el("div", { class: "modal-actions" }, [
+        el("button", { class: "btn btn-ghost modal-cancel", onclick: () => closeAddModal(rerender) }, ["取消"]),
       ]),
-    ];
-  }
-  // 已選動作：steppers ＋ 累度軸 ＋ 記這組（可連續記）
-  const d = cal.addDraft;
-  return [
-    el("div", { class: "cal-add recording" }, [
-      el("div", { class: "cal-add-head" }, [
+    ]);
+  } else {
+    const d = cal.addDraft;
+    inner = el("div", { class: "modal cal-add-modal recording" }, [
+      el("div", { class: "modal-head" }, [
         el("span", { class: "ex-name" }, [exerciseName(cal.addExercise)]),
         el("button", {
           class: "btn btn-ghost sm",
@@ -415,21 +418,21 @@ function addBlock(guard, rerender) {
           (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
       ]),
       rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
-      el("div", { class: "cal-add-actions" }, [
+      el("div", { class: "modal-actions" }, [
         el("button", {
           class: "btn btn-primary cal-add-log",
-          ...(cal.addSubmitting ? { disabled: "" } : {}), // Codex P1：送出期間停用，防重複
+          ...(cal.addSubmitting ? { disabled: "" } : {}), // 送出期間停用，防快速雙擊重複
           onclick: () => guard(() => addSet(rerender)),
         }, ["記這組"]),
-        el("button", {
-          class: "btn btn-ghost sm cal-add-done",
-          onclick: () => {
-            cal.addOpen = false; cal.addExercise = null; cal.addDraft = null; cal.addSearch = "";
-            rerender();
-          },
-        }, ["完成"]),
+        el("button", { class: "btn btn-ghost sm modal-cancel", onclick: () => closeAddModal(rerender) }, ["取消"]),
       ]),
-    ]),
+    ]);
+  }
+  return [
+    el("div", {
+      class: "modal-overlay",
+      onclick: (e) => { if (e.target === e.currentTarget) closeAddModal(rerender); }, // 點遮罩空白＝關
+    }, [inner]),
   ];
 }
 
@@ -440,7 +443,7 @@ function detailRows(guard, rerender) {
     return [
       el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]),
       ...statusRow(guard, rerender),
-      ...addBlock(guard, rerender),
+      ...addBlock(rerender),
     ];
   }
   const tonnage = cal.days[cal.selected];
@@ -480,13 +483,14 @@ function detailRows(guard, rerender) {
       grouped.get(s.exercise_id).push(s);
     }
   }
+  const blocks = [];
   for (const [exerciseId, groupSets] of grouped) {
     const exercise = cal.exerciseById?.[exerciseId];
     // F34：選取模式強制展開（否則無組可勾），但不動 expandedEx——退出多選自然恢復先前收合狀態
     const showSets = cal.selectMode || cal.expandedEx.has(exerciseId);
     const top = topSet(groupSets);
     // F33：動作標頭＋其組收進一個琥珀脊區塊（取代舊的帳本橫線分隔）
-    rows.push(
+    blocks.push(
       el("div", { class: `cal-ex-block${showSets ? " expanded" : ""}` }, [
         el("div", {
           class: "cal-detail-ex",
@@ -509,6 +513,12 @@ function detailRows(guard, rerender) {
       ]),
     );
   }
+  // F43：動作區塊 > 3 個 → 收進固定高度捲軸容器（只捲動作段，噸位/狀態/補記入口不被捲入）
+  if (blocks.length > 3) {
+    rows.push(el("div", { class: "cal-ex-scroll" }, blocks));
+  } else {
+    rows.push(...blocks);
+  }
   if (cal.selectMode) {
     rows.push(
       el("div", { class: "cal-batch-bar" }, [
@@ -521,7 +531,7 @@ function detailRows(guard, rerender) {
       ]),
     );
   }
-  rows.push(...addBlock(guard, rerender)); // F41：補記入口（未來日/多選模式自動不顯示）
+  rows.push(...addBlock(rerender)); // F41：補記入口（未來日/多選模式自動不顯示）
   return rows;
 }
 
@@ -582,5 +592,7 @@ export function renderCalendar(rerender, goHome, guard) {
     ]),
     el("div", { class: "cal-detail" }, detailRows(guard, rerender)),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
+    // F43：補記懸浮 modal（position:fixed，蓋在整個日曆畫面上；未開啟時回 []）
+    ...addModal(guard, rerender),
   ]);
 }
