@@ -68,7 +68,18 @@ export const api = {
   listWorkouts: (start, end) => request("GET", `/api/workouts?start=${start}&end=${end}`),
   calendarStats: (year, month) =>
     request("GET", `/api/stats/calendar?year=${year}&month=${month}`),
-  listBodyMetrics: () => request("GET", "/api/body-metrics"),
+  // F56：選填區間（後端已支援 start／end）。不帶＝全部（自體重動作抓最新體重時仍用不帶的形式）
+  // F56：選填區間（後端已支援 start／end）。不帶＝全部（exercise-detail 抓自體重時用不帶的形式）。
+  // review P3-2：傳了 range 卻欠欄位時明確拋錯——原本會靜默降級成「查全部」，症狀是悄悄顯示全部資料
+  listBodyMetrics: (range) => {
+    if (range && !(range.from && range.to)) {
+      throw new Error("listBodyMetrics: range 需要同時有 from 與 to");
+    }
+    return request(
+      "GET",
+      range ? `/api/body-metrics?start=${range.from}&end=${range.to}` : "/api/body-metrics",
+    );
+  },
   logBodyMetric: (payload) => request("POST", "/api/body-metrics", payload),
   deleteBodyMetric: (dateIso) => request("DELETE", `/api/body-metrics/${dateIso}`), // F17 硬刪
   listDailyStatus: (start, end) => request("GET", `/api/daily-status?start=${start}&end=${end}`),

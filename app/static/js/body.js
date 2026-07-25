@@ -4,7 +4,13 @@ import { api, ApiError } from "./api.js";
 import { el } from "./dom.js";
 import { state } from "./state.js";
 
-const CHART_POINTS = 90; // 折線最多畫最近 90 筆，再久的看數字就好
+// F56：區間檔位沿用「動作表現」（exercise-detail.js）那組，行為與樣式一致
+const PRESETS = [
+  ["1M", 1], ["3M", 3], ["6M", 6], ["9M", 9], ["1Y", 12], ["2Y", 24], ["3Y", 36],
+];
+// 折線最多畫的點數上限（保險，避免極長區間畫出上千個點）。**刻意不做聚合抽樣**：
+// 體重是天天量的連續數列，取週/月最佳會抹掉短期波動，而波動正是看體重的重點（F56 簽核時已告知 Ryan）
+const CHART_POINTS = 1200;
 
 // 本模組自己的畫面狀態（不進全域 state：換畫面即重置無妨）
 const body = {
@@ -15,6 +21,11 @@ const body = {
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
   editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
   metric: "weight", // F53：圖表與紀錄清單顯示哪一項（weight|fat）；不持久化，進畫面一律回體重
+  // F56：查詢區間。{kind:"preset",months} 或 {kind:"custom",from,to}；不持久化，進畫面回 3M
+  range: { kind: "preset", months: 3 },
+  customOpen: false,
+  customFrom: "",
+  customTo: "",
   // F53 review P2-1/P2-2：紀錄清單的捲動位置。**分頁籤各記一份**——體脂清單通常比體重短，
   // 只存一份的話「切去體脂（位置被夾成 0）再切回體重」會回不到原處
   rowsScroll: { weight: 0, fat: 0 },
@@ -22,11 +33,14 @@ const body = {
   // 否則重試會誤寫今天／覆蓋既有資料，Codex P1）；成功儲存後清空 → 回預設今天
 };
 
+function isoOf(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 function todayIso() {
-  const now = new Date();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${m}-${d}`;
+  return isoOf(new Date()); // review P3-3：原本與 isoOf 重複實作
 }
 
 // F53 review P2-1：重繪前把清單捲動位置抓下來（由 app.js 的 render() 統一呼叫）。
@@ -36,8 +50,48 @@ export function captureBodyScroll() {
   if (live) body.rowsScroll[body.metric] = live.scrollTop;
 }
 
+// F56：月份回推（月底日期夾到當月最後一天，同 exercise-detail 的 monthsAgo）
+function monthsAgo(d, months) {
+  const y = d.getFullYear();
+  const m = d.getMonth() - months;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  return new Date(y, m, Math.min(d.getDate(), lastDay));
+}
+
+function datesFor(range) {
+  if (range.kind === "custom") return { from: range.from, to: range.to };
+  return { from: isoOf(monthsAgo(new Date(), range.months)), to: todayIso() };
+}
+
+let reqSeq = 0; // 過期回應丟棄：快速連點檔位時只採用最新一次查詢（同 exercise-detail 的 reqSeq）
+
+// F56：取新區間的資料，**成功才原子提交 range＋metrics**；失敗（拋出）時兩者都不動，
+// 由 guard 接住並以舊狀態重繪——不會出現「chip 已高亮但圖表還是舊區間」的半套狀態
+// F56 review P2-1：mutation（記錄／編輯／刪除）後的重查也要有 seq 保護，否則「刪一列後立刻切區間」
+// 可能讓晚回的舊查詢覆寫 body.metrics → chip 顯示新區間、資料卻是舊區間。與 loadRange 共用 reqSeq，
+// 政策統一為「最後發出的贏」。
+async function refetchCurrent() {
+  const seq = ++reqSeq;
+  const data = await api.listBodyMetrics(datesFor(body.range));
+  if (seq !== reqSeq) return;
+  body.metrics = data;
+}
+
+async function loadRange(newRange) {
+  const { from, to } = datesFor(newRange);
+  const seq = ++reqSeq;
+  const data = await api.listBodyMetrics({ from, to });
+  if (seq !== reqSeq) return; // 較舊但較慢的回應——丟棄
+  body.range = newRange;
+  body.metrics = data;
+}
+
 export async function openBody() {
-  body.metrics = await api.listBodyMetrics();
+  // review P3-5：先查資料、成功後才重設模組狀態——載入失敗時（離線／5xx）不會留下「範圍已重設但資料是舊的」
+  await loadRange({ kind: "preset", months: 3 }); // F56：進畫面回預設 3M（不記憶選擇）
+  body.customOpen = false;
+  body.customFrom = "";
+  body.customTo = "";
   body.savedFlash = null;
   body.editDate = null;
   body.form = null; // 進畫面回到預設今天
@@ -189,7 +243,7 @@ export function renderBody(rerender, goHome, guard) {
     body.saving = true;
     try {
       await api.logBodyMetric(payload);
-      body.metrics = await api.listBodyMetrics();
+      await refetchCurrent(); // F56：維持當前區間（含 seq 保護）
       body.savedFlash =
         dateSel === todayIso()
           ? "已記錄——同日重送會覆蓋更新"
@@ -208,7 +262,7 @@ export function renderBody(rerender, goHome, guard) {
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 404)) throw err; // 404＝已刪，視為成功（防連點）
     }
-    body.metrics = await api.listBodyMetrics();
+    await refetchCurrent(); // F56：維持當前區間（含 seq 保護）
     rerender();
   };
 
@@ -233,7 +287,7 @@ export function renderBody(rerender, goHome, guard) {
     await api.logBodyMetric(payload); // POST 同日覆蓋（既有 upsert）
     body.editDate = null;
     state.error = null;
-    body.metrics = await api.listBodyMetrics();
+    await refetchCurrent(); // F56：維持當前區間（含 seq 保護）
     rerender();
   };
 
@@ -285,6 +339,8 @@ export function renderBody(rerender, goHome, guard) {
   };
 
   // 兩序列各自先篩選再取最後 N 點——體脂記得稀疏時，先切再篩會丟掉仍屬最近的體脂點
+  // review P3-4：slice(-CHART_POINTS) 會靜默丟掉最舊的點。3Y preset 約 1096 天碰不到 1200，
+  // 只有「自訂 > 1200 天」才觸發，屆時 .body-card-foot 顯示的起始日是第一個被畫出的點（非區間起點）
   const weightPoints = body.metrics
     .map((m) => ({ date: m.date, value: m.weight_kg }))
     .slice(-CHART_POINTS);
@@ -339,11 +395,58 @@ export function renderBody(rerender, goHome, guard) {
     rowsHost.scrollTop = body.rowsScroll[body.metric];
   });
 
+  // F56：區間 chips＋自訂面板。切換一律走 loadRange（成功才提交），失敗由 guard 接住、狀態不動
+  const presetBtn = ([label, months]) =>
+    el("button", {
+      class: body.range.kind === "preset" && body.range.months === months ? "on" : "",
+      onclick: () =>
+        guard(async () => {
+          await loadRange({ kind: "preset", months });
+          body.customOpen = false;
+          rerender();
+        }),
+    }, [label]);
+  const customChip = el("button", {
+    class: body.range.kind === "custom" ? "on" : "",
+    onclick: () => { body.customOpen = !body.customOpen; rerender(); },
+  }, ["自訂"]);
+  const customPanel = body.customOpen
+    ? el("div", { class: "ex-custom" }, [
+        el("input", {
+          type: "date", class: "ex-date", value: body.customFrom, max: todayIso(),
+          oninput: (e) => { body.customFrom = e.target.value; },
+        }),
+        el("span", { class: "ex-dash" }, ["→"]),
+        el("input", {
+          type: "date", class: "ex-date", value: body.customTo, max: todayIso(),
+          oninput: (e) => { body.customTo = e.target.value; },
+        }),
+        el("button", {
+          class: "btn btn-primary sm ex-custom-apply",
+          onclick: () =>
+            guard(async () => {
+              const f = body.customFrom, t = body.customTo;
+              // max 屬性只是控制項提示，手打的未來日期仍要自己擋（同 F35）
+              if (!f || !t || f > t || t > todayIso()) {
+                state.error = "起訖日期不對（起要早於訖，且不能超過今天）";
+                rerender();
+                return;
+              }
+              state.error = null;
+              await loadRange({ kind: "custom", from: f, to: t });
+              rerender();
+            }),
+        }, ["套用"]),
+      ])
+    : null;
+
   return el("section", { class: "screen body fills" }, [
     el("header", { class: "topbar" }, [el("h1", {}, ["體重"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(body.savedFlash ? [el("div", { class: "body-saved" }, [body.savedFlash])] : []),
 
+    el("div", { class: "ex-range body-range" }, [...PRESETS.map(presetBtn), customChip]),
+    ...(customPanel ? [customPanel] : []),
     el("div", { class: "body-card" }, [
       el("div", { class: "body-card-head" }, [toggle]),
       chartHost,

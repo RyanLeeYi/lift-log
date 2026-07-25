@@ -645,9 +645,13 @@ body {
 .seg { display: flex; background: var(--card); border: 1px solid var(--card-edge); border-radius: 11px; padding: 3px; gap: 2px; }
 .seg button { flex: 1; background: none; border: 0; color: var(--text-dim); font-family: var(--sans); font-size: 14px; padding: 9px 0; border-radius: 8px; cursor: pointer; }
 .seg button.on { background: var(--led); color: #14100a; font-weight: 700; }
-/* 時間窗 chips ＋自訂 */
+/* 時間窗 chips ＋自訂。⚠ 這組樣式**兩頁共用**（動作表現 exercise-detail 與 /body 的 .body-range，
+   F56 起）——為其中一頁微調前，另一頁也要一起量（review P3-1）。 */
+/* F56 review P2-3：原 min-width: 38px 讓 8 顆 chip 在 ≤362px 寬換成兩行（30px→64px），
+   /body 的門檻算式因此短算 34px、在 ≤362 寬留下 657–672 的殘留死帶。縮 min-width 讓它在 320 也是一行
+   （8 顆＋7 個 gap 需 ≤292px 內容寬）。 */
 .ex-range { display: flex; gap: 4px; flex-wrap: wrap; }
-.ex-range button { flex: 1 0 auto; min-width: 38px; background: var(--card); border: 1px solid var(--card-edge); color: var(--text-dim); font-family: var(--mono); font-size: 12px; padding: 7px 0; border-radius: 8px; cursor: pointer; }
+.ex-range button { flex: 1 0 auto; min-width: 30px; background: var(--card); border: 1px solid var(--card-edge); color: var(--text-dim); font-family: var(--mono); font-size: 12px; padding: 7px 2px; border-radius: 8px; cursor: pointer; }
 .ex-range button.on { color: var(--led); border-color: var(--led-dim); background: #16120a; }
 .ex-custom { display: flex; align-items: center; gap: 6px; }
 .ex-custom .ex-date { flex: 1; background: var(--card); border: 1px solid var(--card-edge); color: var(--text); border-radius: 8px; padding: 8px; font-family: var(--mono); color-scheme: dark; }
@@ -789,13 +793,17 @@ body {
   scrollbar-width: thin; scrollbar-color: var(--led-dim) transparent;
 }
 /* F53／F54：門檻算式（唯一來源）
-   固定區塊 = 標頭 25 ＋「＋ 記錄」鈕 55 ＋ 圖表卡 217 ＋「← 回首頁」55 ＋ 間距 56 = **408px**
-   （F54 把原本 231px 的輸入表單收進懸浮視窗後，從 F53 的 584 降下來）
+   固定區塊 = 標頭 25 ＋ 區間 chips 30 ＋ 圖表卡 217 ＋「＋ 記錄」55 ＋「← 回首頁」55 ＋ 間距 70 = **452px**
+   （F54 把 231px 的輸入表單收進懸浮視窗 → 584 降到 408；F56 加了區間 chips 一列 → 408 升到 452。
+    **每次動這個畫面的固定內容都要重量一次並改門檻**——F53/F54 各因少算一項各製造過一次死帶）
    ＋ **最壞情況的額外區塊 56px**：頁面層 error-banner 42＋gap 14（flash `.body-saved` 是 23＋14=37，較小）
      ——review P2-1 抓到：408 只在「無 flash、無錯誤」時成立，而成功記錄一定有 flash，
        原本用 556 會讓 557–592 在 flash 出現時溢出、底部鈕落到摺線下
    ＋ 清單 min-height 120 ＋ .app padding 28
-   = **612px**：這是「填滿版面在任何狀態下都塞得下」的最低視窗高度。矮於此一律退出 flex-fill。
+   **明確的例外（review P2-2）**：自訂區間面板（`.ex-custom`，約 50px）展開時**不**納入算式——它是暫時性的
+     （使用者打開來選日期、套用後就收起），此時允許整頁捲動而非永久提高門檻。若把它算進去，門檻要升到約 706，
+     657–706 的裝置就算面板收著也永遠拿不到「填滿」，代價更大。實測面板展開時：底部鈕捲得到、無元素重疊。
+   = **656px**：這是「填滿版面在任何狀態下都塞得下」的最低視窗高度。矮於此一律退出 flex-fill。
    矮於此一律退出 flex-fill、卡片吃回內容高、整頁可捲。
    ⚠ 兩個 review 教訓釘在這裡：
    ① 門檻必須 = 固定區塊 ＋ .body-list 的 min-height ＋ 28（三個數字綁在一起，改一個要重算）。
@@ -805,7 +813,7 @@ body {
       的容器裡等於卡片塌成只剩標頭，而子節點 .bm-rows 的 60px 下限會穿出卡片、疊在「← 回首頁」上（review P1-1，
       實測 667 溢出 47px、疊住按鈕 33px 且頁面捲不動＝真破圖）。
    ⚠ 也必須放在 .screen.fills 之後：同 specificity 靠順序決勝（F52 P2-1 踩過）。 */
-@media (max-height: 612px) {
+@media (max-height: 656px) {
   .screen.body { height: auto; }
   .body-list { flex: none; min-height: 0; }
   .bm-rows.scrollable { flex: none; min-height: 0; max-height: 40dvh; }
