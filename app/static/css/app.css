@@ -41,20 +41,16 @@ body {
 
 /* ---------- 通用 ---------- */
 .screen { display: flex; flex-direction: column; flex: 1; gap: 14px; }
-/* F50：這三個畫面的清單要吃掉「扣掉標頭與底部按鈕之後」的剩餘空間，因此畫面本身必須有確定高度
-   （.app 只有 min-height，flex 子項拿不到可分配的剩餘空間）。其餘畫面不受影響，仍照舊隨內容長高。 */
-.screen.picker,
-.screen.templates,
-.screen.template-select,
-.screen.template-edit { height: calc(100dvh - var(--app-pad-y)); }
+/* F50：帶 .fills 的畫面，其內部清單要吃掉「扣掉標頭與底部按鈕之後」的剩餘空間，因此畫面本身必須有
+   確定高度（.app 只有 min-height，flex 子項拿不到可分配的剩餘空間）。沒有 .fills 的畫面照舊隨內容長高。
+   F52：改用 marker class——原本這裡與下方 media query 各列一份畫面清單，每加一個畫面要改兩處（F51 就是
+   這樣加的）。現在由 JS 在畫面 section 上掛 fills，CSS 只認它。 */
+.screen.fills { height: calc(100dvh - var(--app-pad-y)); }
 /* F50 review P2：極矮視窗（手機橫放 844×390、小裝置 320×420）連 min-content 都塞不進一屏，
    釘死高度只會讓底部按鈕落在可視區外。這種情境放棄「填滿」，回退成整張畫面可捲——
    按鈕捲得到比留在畫面內重要。直立 ≥480px 高（含 iPhone SE 的 667）不受影響。 */
 @media (max-height: 480px) {
-  .screen.picker,
-  .screen.templates,
-  .screen.template-select,
-  .screen.template-edit { height: auto; }
+  .screen.fills { height: auto; }
 }
 .topbar { display: flex; justify-content: space-between; align-items: baseline; }
 .topbar h1 { font-size: 17px; font-weight: 600; letter-spacing: .02em; }
@@ -121,7 +117,8 @@ body {
 /* 文字/搜尋輸入框共用樣式（picker 搜尋、課表名稱、加動作搜尋） */
 .picker input[type="search"],
 .template-edit input[type="text"],
-.tpl-add-panel input[type="search"] {
+.tpl-add-modal input[type="search"] { /* F52 review P2-2：原寫 .tpl-add-panel，那個 class 從未存在
+    → 加動作視窗的搜尋框一直是原生白底 19px、字 13.3px（iOS focus 會放大整頁） */
   background: var(--card);
   border: 1px solid var(--card-edge);
   border-radius: 12px;
@@ -354,7 +351,8 @@ body {
 .menu-list.scrollable { flex: 1 1 0; min-height: 56px; }
 .tpl-rows.scrollable,
 .tpl-choice-list.scrollable,
-.menu-list.scrollable {
+.menu-list.scrollable,
+.tpl-items.scrollable { /* F52：編輯頁清單原本沒吃到這組樣式，它現在是全 app 最高的捲動區 */
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
@@ -405,16 +403,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .tpl-item-rest .rest-custom:focus-visible { outline: 2px solid var(--led); }
-.tpl-add-panel { display: flex; flex-direction: column; gap: 10px; }
-.tpl-add-panel .exercise-list { max-height: 40dvh; }
+/* F52：清單改吃視窗剩餘空間（視窗高度由 .modal.pick-modal 的 80dvh 給定）。
+   舊行為的成因是 .modal 的 max-height: 80dvh ＋ `.modal .exercise-list` 的 max-height: 48dvh——
+   basis＝內容高度，搜尋篩到 1 筆時整窗縮短、置中使搜尋框往下位移 84px（review P3-3 更正：
+   原註解寫的 `.tpl-add-panel .exercise-list { max-height: 40dvh }` 那條 class 從未存在、本來就沒生效）。
+   與 F50 P1 對 picker 視窗的修法同一套（那次只補了 .pick-modal，這個視窗漏掉）。 */
+.tpl-add-modal .exercise-list { flex: 1 1 0; min-height: 56px; max-height: none; }
 /* F21 訂門檻（>2 個動作才捲動）、F51 改高度策略為填滿剩餘空間——F50 改了四處清單但漏掉這一處，
    Ryan 真機一眼看出「課表頁面沒有動態調整」。min-height 是下限，矮螢幕仍留得下約一個動作列。 */
 /* F51：編輯課表頁的三顆鈕貼底，位置與清單長度脫鉤（見 templates.js 同段註解） */
 .tpl-edit-foot { display: flex; flex-direction: column; gap: 14px; margin-top: auto; }
-.tpl-items.scrollable {
-  flex: 1 1 0; min-height: 120px;
-  overflow-y: auto; -webkit-overflow-scrolling: touch;
-}
+.tpl-items.scrollable { flex: 1 1 0; min-height: 120px; } /* 捲軸與 touch 行為見上方共用規則（F52） */
 /* F21：加動作懸浮視窗 */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 100;
@@ -466,7 +465,20 @@ body {
    先前用 flex-basis: auto 會讓 basis＝內容高度 → 視窗高度隨結果數變動，搜尋篩到剩兩項時視窗縮短、
    置中使上緣往下掉 111px，正在打字的搜尋框從指下溜走（正是 F23 當年 Codex P2 修掉的老問題）。 */
 .modal.pick-modal { height: 80dvh; }
-.pick-modal .pick-list { flex: 1 1 0; min-height: 56px; }
+/* max-height: none 解除 `.modal .exercise-list` 的 48dvh——否則 ≥1000px 高的視窗會被它壓住、
+   flex 的「吃滿剩餘空間」失效，視窗底部留死空白（review P3-2） */
+.pick-modal .pick-list { flex: 1 1 0; min-height: 56px; max-height: none; }
+.pick-modal .chips { flex: none; }
+/* F52 review P2-1：極矮視窗（320×420、手機橫放 844×390）的視窗 min-content 已超過 80dvh，
+   釘死高度＋清單 56px 地板會讓「確定加入」被裁掉、.modal 的 overflow-y 接手＝雙層捲動。
+   這裡回到「內容決定高度、清單可壓縮到 0」，與 .screen.fills 的矮螢幕退讓同一個原則。
+   ⚠ 必須放在上面那兩條之後：同 specificity（0-2-0）時靠出現順序決勝，寫在檔案前面的 media query
+   會被後面的 height: 80dvh 蓋掉（首版修正就是這樣失效的）。 */
+@media (max-height: 480px) {
+  .modal.pick-modal { height: auto; }
+  .tpl-add-modal .exercise-list,
+  .pick-modal .pick-list { min-height: 0; flex-basis: auto; }
+}
 .pick-modal .chips { flex: none; }
 
 /* ---------- calendar（heatmap） ---------- */

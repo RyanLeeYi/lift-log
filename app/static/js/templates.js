@@ -244,7 +244,7 @@ export function renderTemplates(rerender, goHome, guard) {
     requestAnimationFrame(() => { rowsNode.scrollTop = tpl.listScrollTop; });
   }
 
-  return el("section", { class: "screen templates" }, [
+  return el("section", { class: "screen templates fills" }, [
     el("header", { class: "topbar" }, [el("h1", {}, ["課表"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(tpl.list.length === 0
@@ -480,7 +480,7 @@ function addModal(rerender, guard) {
     // 點遮罩空白處＝取消（不加入）
     { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) close(); } },
     [
-      el("div", { class: "modal tpl-add-modal" }, [
+      el("div", { class: "modal pick-modal tpl-add-modal" }, [
         el("div", { class: "modal-head" }, ["加動作"]),
         el("input", {
           type: "search",
@@ -604,7 +604,7 @@ export function renderTemplateEdit(rerender, guard) {
 
   saveTemplateDraft(); // F30：每次重繪（結構性變更後）自動存草稿；即時輸入的名稱/休息由 app.js 的 visibility/beforeunload 補存
 
-  return el("section", { class: "screen template-edit" }, [
+  return el("section", { class: "screen template-edit fills" }, [
     el("header", { class: "topbar" }, [
       el("h1", {}, [editing.id === null ? "新課表" : "編輯課表"]),
     ]),

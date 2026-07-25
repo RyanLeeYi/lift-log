@@ -386,7 +386,7 @@ function renderTemplateSelect() {
   // F48：課表超過 2 份才固定高度＋內部捲動；「自由訓練」與「← 回首頁」留在捲動區外（它們不是課表，
   // 位置要固定才按得到）。此畫面不會在停留中重繪，故不需存還原 scrollTop。
   const scrollable = templateChoices.length > 2;
-  return el("section", { class: "screen template-select" }, [
+  return el("section", { class: "screen template-select fills" }, [
     el("header", { class: "topbar" }, [el("h1", {}, ["今天練哪份？"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     // 課表清單與「自由訓練」同一組（間距不變），但只有課表清單會捲動
@@ -808,7 +808,7 @@ function renderPicker() {
   // 否則每次開練都要多點一下才選得到動作。
   const inModal = Boolean(state.template);
 
-  return el("section", { class: "screen picker" }, [
+  return el("section", { class: "screen picker fills" }, [
     el("header", { class: "topbar" }, [
       el("h1", {}, [state.template ? "今日菜單" : "選動作"]),
       el(
