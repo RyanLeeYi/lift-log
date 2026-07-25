@@ -199,3 +199,33 @@ def test_log_workout_bodyweight_tonnage_uses_latest_weight(db_session: Session) 
         LogWorkoutIn(sets=[LogSetIn(exercise="引體向上", weight_kg=0, reps=6)]),
     )
     assert summary.tonnage_kg == 600.0
+
+
+class TestBodyMetricBounds:
+    """F58：資料起訖端點——前端用它判斷哪些區間檔位有意義。"""
+
+    def test_empty_db_returns_nulls(self, client: TestClient) -> None:
+        body = client.get("/api/body-metrics/range").json()
+        assert body == {"weight_first": None, "fat_first": None, "last": None}
+
+    def test_weight_only_leaves_fat_first_null(self, client: TestClient) -> None:
+        client.post("/api/body-metrics", json={"date": "2026-05-01", "weight_kg": 100.0})
+        client.post("/api/body-metrics", json={"date": "2026-07-01", "weight_kg": 99.0})
+
+        body = client.get("/api/body-metrics/range").json()
+        assert body == {"weight_first": "2026-05-01", "fat_first": None, "last": "2026-07-01"}
+
+    def test_fat_first_is_earliest_row_with_fat(self, client: TestClient) -> None:
+        client.post("/api/body-metrics", json={"date": "2026-05-01", "weight_kg": 100.0})
+        client.post(
+            "/api/body-metrics",
+            json={"date": "2026-06-15", "weight_kg": 99.5, "body_fat_pct": 24.0},
+        )
+        client.post("/api/body-metrics", json={"date": "2026-07-01", "weight_kg": 99.0})
+
+        body = client.get("/api/body-metrics/range").json()
+        assert body == {
+            "weight_first": "2026-05-01",
+            "fat_first": "2026-06-15",
+            "last": "2026-07-01",
+        }

@@ -5,6 +5,7 @@ import { el } from "./dom.js";
 import { state } from "./state.js";
 
 // F56：區間檔位沿用「動作表現」（exercise-detail.js）那組，行為與樣式一致
+// ⚠ 必須由短到長遞增：F58 的 longestAvailablePreset() 取 filter 後的最後一個當「最長可用」
 const PRESETS = [
   ["1M", 1], ["3M", 3], ["6M", 6], ["9M", 9], ["1Y", 12], ["2Y", 24], ["3Y", 36],
 ];
@@ -26,6 +27,9 @@ const body = {
   customOpen: false,
   customFrom: "",
   customTo: "",
+  // F58：資料起訖 {weight_first, fat_first, last}——判斷哪些區間檔位有意義（分體重／體脂各自判定）
+  bounds: { weight_first: null, fat_first: null, last: null },
+  rangeNote: null, // F58：點到停用檔位／自動退檔時的一次性說明
   // F53 review P2-1/P2-2：紀錄清單的捲動位置。**分頁籤各記一份**——體脂清單通常比體重短，
   // 只存一份的話「切去體脂（位置被夾成 0）再切回體重」會回不到原處
   rowsScroll: { weight: 0, fat: 0 },
@@ -47,7 +51,12 @@ function todayIso() {
 // 讀 DOM 而不掛 onscroll——節點被拆時瀏覽器補送的 scrollTop=0 會污染記錄（F48 首版的教訓）。
 export function captureBodyScroll() {
   const live = document.querySelector(".bm-rows");
-  if (live) body.rowsScroll[body.metric] = live.scrollTop;
+  // ⚠ 只在「DOM 裡這份清單確實屬於當前 metric」時才記錄。F58 P1-1 把切 metric 改走 rerender 後
+  // 暴露了這個 bug：render() 開頭執行本函式時 body.metric 已是新的，但 DOM 還是舊 metric 的清單，
+  // 於是舊清單的 scrollTop 被寫進新 metric 的記憶格；切回去時原本記住的位置就被蓋掉。
+  if (live && live.dataset.metric === body.metric) {
+    body.rowsScroll[body.metric] = live.scrollTop;
+  }
 }
 
 // F56：月份回推（月底日期夾到當月最後一天，同 exercise-detail 的 monthsAgo）
@@ -66,6 +75,32 @@ function datesFor(range) {
   return { from: isoOf(monthsAgo(new Date(), range.months)), to: todayIso() };
 }
 
+// F58：當前 metric 的最早紀錄日（體脂比體重稀疏，故分開判定；null＝沒有資料）
+function firstDateFor(metric) {
+  return metric === "fat" ? body.bounds.fat_first : body.bounds.weight_first;
+}
+
+// F58：這個 preset 檔位有意義嗎？
+// 規則＝「起始日落在資料範圍內」的檔位 ＋ **第一個完整涵蓋所有資料的檔位**。
+// 後面那個例外是必要的：若只留「起始日 >= 最早紀錄」的檔位，資料 100 天時最大只能選 3M（90 天），
+// 最舊的 10 天用任何 preset 都看不到、只能自訂——那不是「限制住」而是「藏起來」。
+// 完全沒有紀錄時不限制（否則會變成「全部灰掉」的死狀態）。
+function presetAvailable(months) {
+  const first = firstDateFor(body.metric);
+  if (!first) return true;
+  const startOf = (m) => isoOf(monthsAgo(new Date(), m));
+  if (startOf(months) >= first) return true; // 起始日在資料範圍內
+  // 是不是「第一個涵蓋得住全部資料」的那個檔位？（比它更長的才真的多餘）
+  const covering = PRESETS.map(([, m]) => m).filter((m) => startOf(m) < first);
+  return covering.length > 0 && months === covering[0];
+}
+
+// F58：切 metric 後若當前檔位不可用，退到「最長的可用檔位」
+function longestAvailablePreset() {
+  const usable = PRESETS.filter(([, m]) => presetAvailable(m));
+  return usable.length ? usable[usable.length - 1][1] : PRESETS[0][1];
+}
+
 let reqSeq = 0; // 過期回應丟棄：快速連點檔位時只採用最新一次查詢（同 exercise-detail 的 reqSeq）
 
 // F56：取新區間的資料，**成功才原子提交 range＋metrics**；失敗（拋出）時兩者都不動，
@@ -74,6 +109,12 @@ let reqSeq = 0; // 過期回應丟棄：快速連點檔位時只採用最新一�
 // 可能讓晚回的舊查詢覆寫 body.metrics → chip 顯示新區間、資料卻是舊區間。與 loadRange 共用 reqSeq，
 // 政策統一為「最後發出的贏」。
 async function refetchCurrent() {
+  // review P2-2：任何資料變動後，先前那條「還沒有更早的資料」之類的說明就過期了
+  body.rangeNote = null;
+  // review P2-3：順手非阻塞刷新 bounds——否則補記一筆更早的資料後，點灰掉的檔位會回一句
+  // 「還沒有更早的資料」，與旁邊的「已補記 2020-01-01」直接互斥（主動說錯話）。
+  // 用 .then 而非 await：bounds 失敗不該讓「記錄成功」變成失敗（同 openBody 的精神）
+  api.bodyMetricBounds().then((b) => { body.bounds = b; }).catch(() => {});
   const seq = ++reqSeq;
   const data = await api.listBodyMetrics(datesFor(body.range));
   if (seq !== reqSeq) return;
@@ -92,7 +133,17 @@ async function loadRange(newRange) {
 
 export async function openBody() {
   // review P3-5：先查資料、成功後才重設模組狀態——載入失敗時（離線／5xx）不會留下「範圍已重設但資料是舊的」
-  await loadRange({ kind: "preset", months: 3 }); // F56：進畫面回預設 3M（不記憶選擇）
+  // review P3-4：**先**抓 bounds 再決定初次載入哪個區間——否則資料只有幾天時，
+  // 預設 3M 會同時是 on 與 off（被選中的那顆是灰的、旁邊 1M 卻亮著）。順序對調不多花請求。
+  body.metric = "weight"; // 判定用當前 metric，先歸位（下面還會再設一次，無害）
+  try {
+    body.bounds = await api.bodyMetricBounds(); // F58
+  } catch {
+    body.bounds = { weight_first: null, fat_first: null, last: null }; // 拿不到就不限制，不擋開頁
+  }
+  const initialMonths = presetAvailable(3) ? 3 : longestAvailablePreset();
+  await loadRange({ kind: "preset", months: initialMonths }); // F56：進畫面回預設（不記憶選擇）
+  body.rangeNote = null;
   body.customOpen = false;
   body.customFrom = "";
   body.customTo = "";
@@ -404,7 +455,26 @@ export function renderBody(rerender, goHome, guard) {
           // review P3-1：切頁籤一併退出行內編輯——編輯列可能因過濾而消失，留著編輯態沒有任何提示
           body.metric = key;
           body.editDate = null;
-          paint();
+          body.rangeNote = null;
+          // F58：分 metric 判定的代價——切過去後當前檔位可能不可用（體脂通常比體重晚開始記）。
+          // 留在不可用的檔位只會給一張空圖，故自動退到最長的可用檔位並說明一次。
+          if (body.range.kind === "preset" && !presetAvailable(body.range.months)) {
+            const months = longestAvailablePreset();
+            const what = key === "fat" ? "體脂" : "體重";
+            guard(async () => {
+              await loadRange({ kind: "preset", months });
+              // review P3-5：訊息在切換成功後才設——失敗時 metric 已切但區間沒切，
+              // 若先設就會出現「說改了其實沒改」
+              body.rangeNote = `${what}紀錄從 ${firstDateFor(key)} 開始，已改為顯示最近 ${months} 個月`;
+              rerender();
+            });
+            return;
+          }
+          // review P1-1：這裡必須 rerender 而非 paint——paint() 只更新圖表/清單/toggle，
+          // 不碰 .body-range 的 chips 與 .range-note，切 metric 後 chips 會留著上一個 metric 的
+          // 灰／亮狀態（直接打掉「分 metric 判定」的契約）。rerender 同樣不重查資料，
+          // 且 renderBody 尾端的 rAF 會還原 rowsScroll，F53 的分頁籤捲動記憶不受影響。
+          rerender();
         },
       },
       [label],
@@ -427,6 +497,7 @@ export function renderBody(rerender, goHome, guard) {
     rowsHost.classList.toggle("scrollable", rows.length > 2);
     for (const b of toggle.children) b.classList.remove("on");
     (isFat ? tabF : tabW).classList.add("on");
+    rowsHost.dataset.metric = body.metric; // 給 captureBodyScroll 判斷這份清單屬於哪個 metric
     // 還原該頁籤自己的捲動位置（replaceChildren 會把 scrollTop 夾掉；review P2-2）
     rowsHost.scrollTop = body.rowsScroll[body.metric];
   }
@@ -437,19 +508,36 @@ export function renderBody(rerender, goHome, guard) {
   });
 
   // F56：區間 chips＋自訂面板。切換一律走 loadRange（成功才提交），失敗由 guard 接住、狀態不動
-  const presetBtn = ([label, months]) =>
-    el("button", {
-      class: body.range.kind === "preset" && body.range.months === months ? "on" : "",
-      onclick: () =>
+  const presetBtn = ([label, months]) => {
+    // F58：超出資料範圍的檔位灰掉但**仍可點**——點了顯示說明（用 disabled 就點不到、給不了說明）
+    const available = presetAvailable(months);
+    const on = body.range.kind === "preset" && body.range.months === months;
+    return el("button", {
+      class: `${on ? "on" : ""}${available ? "" : " off"}`.trim(),
+      // review P3-6：不能用 disabled（要能點以顯示說明）。**也不能用 aria-disabled**——它宣告的正是
+      // 「不可互動」，與「點了給說明」自相矛盾，而且 Playwright 會據此拒絕點擊（實測踩到）。
+      // 改用 aria-label 把狀態講給螢幕閱讀器聽，同時保留可互動語意。
+      ...(available ? {} : { "aria-label": `${label}（超出資料範圍，點擊查看說明）` }),
+      onclick: () => {
+        if (!available) {
+          const first = firstDateFor(body.metric);
+          const what = body.metric === "fat" ? "體脂" : "體重";
+          body.rangeNote = `最早的${what}紀錄是 ${first}，還沒有更早的資料`;
+          rerender();
+          return;
+        }
         guard(async () => {
+          body.rangeNote = null;
           await loadRange({ kind: "preset", months });
           body.customOpen = false;
           rerender();
-        }),
+        });
+      },
     }, [label]);
+  };
   const customChip = el("button", {
     class: body.range.kind === "custom" ? "on" : "",
-    onclick: () => { body.customOpen = !body.customOpen; rerender(); },
+    onclick: () => { body.customOpen = !body.customOpen; body.rangeNote = null; rerender(); },
   }, ["自訂"]);
   const customPanel = body.customOpen
     ? el("div", { class: "ex-custom" }, [
@@ -474,6 +562,7 @@ export function renderBody(rerender, goHome, guard) {
                 return;
               }
               state.error = null;
+              body.rangeNote = null; // review P2-2：套用自訂後，「已改為顯示最近 N 個月」會變成謊話
               await loadRange({ kind: "custom", from: f, to: t });
               rerender();
             }),
@@ -487,6 +576,8 @@ export function renderBody(rerender, goHome, guard) {
     ...(body.savedFlash ? [el("div", { class: "body-saved" }, [body.savedFlash])] : []),
 
     el("div", { class: "ex-range body-range" }, [...PRESETS.map(presetBtn), customChip]),
+    // F58：點到停用檔位／自動退檔時的說明（一次性，任何區間或頁籤操作即清）
+    ...(body.rangeNote ? [el("p", { class: "range-note" }, [body.rangeNote])] : []),
     ...(customPanel ? [customPanel] : []),
     el("div", { class: "body-card" }, [
       el("div", { class: "body-card-head" }, [toggle]),

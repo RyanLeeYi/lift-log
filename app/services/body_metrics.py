@@ -1,8 +1,8 @@
-"""體重體脂 service：同日覆蓋 upsert、區間查詢、最新體重（噸位計算用）。"""
+"""體重體脂 service：同日覆蓋 upsert、區間查詢、最新體重（噸位計算用）、資料起訖（F58）。"""
 
 from datetime import date as date_type
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -62,3 +62,17 @@ def latest_weight(session: Session) -> float | None:
     return session.scalar(
         select(BodyMetric.weight_kg).order_by(BodyMetric.date.desc()).limit(1)
     )
+
+
+def metric_bounds(session: Session) -> dict[str, date_type | None]:
+    """F58：資料起訖——只回 min/max 日期，不回資料列（給前端判斷哪些區間檔位有意義）。
+
+    體脂與體重分開算：體脂通常比體重稀疏，兩者的最早紀錄日不同。
+    """
+    weight_first, last = session.execute(
+        select(func.min(BodyMetric.date), func.max(BodyMetric.date))
+    ).one()
+    fat_first = session.scalar(
+        select(func.min(BodyMetric.date)).where(BodyMetric.body_fat_pct.is_not(None))
+    )
+    return {"weight_first": weight_first, "fat_first": fat_first, "last": last}

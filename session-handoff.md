@@ -1,11 +1,11 @@
 # session handoff
 
-最後更新：2026-07-26（F48–F57 十個 feature 收工）
+最後更新：2026-07-26（F48–F58 十一個 feature 收工）
 
 ## 現況
 
-**57/57 feature passing**，線上 **v58**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
-公開 sw.js 已是 v58）。本輪完成：
+**58/58 feature passing**，線上 **v59**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
+公開 sw.js 已是 v59）。本輪完成：
 
 - **F48** 課表三處清單超過兩項改捲動（列表頁／挑課表／今日菜單）
 - **F49** 有課表時「臨時加動作」收成一顆入口鈕＋懸浮視窗（自由訓練維持攤開、點動作即進 logger）
@@ -22,6 +22,9 @@
   `loadRange` 原子提交＋`reqSeq`）——門檻因 chips 一列重算為 **656**（固定區塊 452）
 - **F57** 圖表 x 軸改為時間軸（domain＝選取區間）：兩個月空缺的水平間距是相鄰日的 60 倍，
   等距索引的斜率誤導解決；點數 ≤30 時每點加小圓（短跨度塌成豎線時仍看得出有幾筆）、最新值旁標量測日期
+- **F58** 資料不足時停用超出範圍的區間檔位（**本輪唯一有後端**）：新端點 `GET /api/body-metrics/range`
+  回 `{weight_first, fat_first, last}`；chips 灰掉但仍可點（點了說明最早紀錄日）；切 metric 時當前檔位
+  不可用會自動退檔。可用性規則＝「起始日在資料範圍內」＋「第一個完整涵蓋所有資料的檔位」
 
 ## ⚠ Codex 額度用盡 → 本輪 review 改由 Claude 執行
 
@@ -65,7 +68,8 @@ E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`
    要改先寫 acceptance 簽核。
 1. **F53 留下的規格模糊待裁決**：體脂頁籤「只列有體脂的日子」是實作解讀（acceptance ② 沒明說）。後果是
    沒量體脂的日子在該頁籤看不到也改不到，要補記得切回體重頁籤。另一案是「全部日子都列、沒體脂顯示 —」。
-1. **手機實機掃 F44–F54**：F47 批次列在小螢幕的捲動與誤觸；F49 視窗「點即進」會不會誤觸；F50 四處清單的
+1. **手機實機掃 F44–F58**（正式站實測 `weight_first=2026-07-20`、`fat_first=null`——你的資料只有 4 天，
+   所以手機上會看到「只有 1M 可點、其餘灰掉」，體脂頁籤因無紀錄而不限制。這正是 F58 要處理的情境）：F47 批次列在小螢幕的捲動與誤觸；F49 視窗「點即進」會不會誤觸；F50 四處清單的
    高度手感（min-height 下限與 `.pick-modal` 的 80dvh 是我定的，不合手就改那幾行）。
 2. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（**現 6 筆**）。
 3. **未修的 UX 落差（verifier 發現，未列 feature）**：`save()` 設 `body.saving = true` 後沒立即 rerender，
@@ -90,6 +94,19 @@ E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`
 `flex: none`（吃回內容高），**不要**把 min-height 設 0（卡片會塌成只剩標頭、子節點下限穿出卡片＝F53 P1-1 破圖）。
 **E2E 不要把門檻寫死**：F54／F55／F56 的腳本已改成從服役中的 `/css/app.css` 讀 `@media (max-height: N)`
 再推算測試高度——否則每次改門檻都會讓舊腳本無故變紅。
+
+## 上游 feature 改動讓下游測試失效（F53–F58 共五次，動任何 /body 的東西前先讀）
+
+改一個 feature 常會讓**前一個 feature 的 E2E** 失去意義。五次分別是：
+1. F54 讓清單變高 → F53 的捲動測試因資料不再溢出而 `before=0`（**靜默**，測不到但仍綠）
+2. F57 每點加小圓 → F53/F57 的 `querySelector('circle')` 抓到小圓而非末點圓（要 `circle[r="3"]`）
+3. F58 停用超範圍檔位 → F57 的「換長區間」點 1Y 沒反應（**正確變紅**，因為斷言依賴那個前提）
+4. F58 改門檻／改 metric 判定 → F53 的「切 toggle 不整頁重繪」條目**與新實作衝突**（見下）
+5. F58 把切 metric 改走 rerender → 暴露 `captureBodyScroll()` 把捲動位置記到錯 metric 的既有 bug
+
+**處置原則**：先分辨「測試過期」還是「產品回歸」。若舊 acceptance 的**手段**被新 feature 推翻但**目的**仍成立
+（例如 F53 ⑥「不整頁重繪」的目的是不清掉使用者輸入，而 F54 已把表單移進視窗），就在 feature_list 附註說明、
+把該條 E2E 改驗目的而非手段——**不改寫凍結的原文**。
 
 ## 測試腳本自身的維護債（F53–F57 累積）
 

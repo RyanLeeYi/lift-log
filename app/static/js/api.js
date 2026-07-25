@@ -80,6 +80,8 @@ export const api = {
       range ? `/api/body-metrics?start=${range.from}&end=${range.to}` : "/api/body-metrics",
     );
   },
+  // F58：資料起訖（不回資料列）——前端用它判斷哪些區間檔位有意義
+  bodyMetricBounds: () => request("GET", "/api/body-metrics/range"),
   logBodyMetric: (payload) => request("POST", "/api/body-metrics", payload),
   deleteBodyMetric: (dateIso) => request("DELETE", `/api/body-metrics/${dateIso}`), // F17 硬刪
   listDailyStatus: (start, end) => request("GET", `/api/daily-status?start=${start}&end=${end}`),

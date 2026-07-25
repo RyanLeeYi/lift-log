@@ -153,6 +153,17 @@ class BodyMetricIn(BaseModel):
     body_fat_pct: float | None = Field(default=None, gt=0, lt=100)
 
 
+class BodyMetricBounds(BaseModel):
+    """F58：體重／體脂各自的最早紀錄日與整體最後一天（無資料為 None）。
+
+    `last` 目前前端未使用（僅為端點語意完整）——不要以為有邏輯依賴它。
+    """
+
+    weight_first: date_type | None
+    fat_first: date_type | None
+    last: date_type | None
+
+
 class BodyMetricOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
