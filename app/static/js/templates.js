@@ -21,6 +21,7 @@ const tpl = {
   selectedAdd: null, // F21：懸浮視窗內單選中的動作物件（null＝未選）
   muscleFilter: null, // F22：加動作視窗的部位篩選（null＝全部）
   itemsScrollTop: 0, // F21：編輯課表動作清單的捲動位置（整頁重繪後還原，避免每次編輯跳回頂端）
+  listScrollTop: 0, // F48：課表列表（卡片）的捲動位置——刪除確認開關等重繪後還原
   exercises: [], // 加動作面板的動作庫清單
   searchQ: "",
   searchSeq: 0, // 搜尋回應排序：舊回應晚到不得覆蓋新結果
@@ -30,6 +31,21 @@ const tpl = {
 export async function openTemplates() {
   tpl.list = await api.listTemplates();
   tpl.confirmDeleteId = null;
+}
+
+// F48：重繪前把課表列表當下的捲動位置抓下來（由 app.js 的 render() 統一呼叫）。
+// 為什麼讀 DOM 而不掛 onscroll：節點被重繪拆掉時瀏覽器會補送一次 scrollTop=0 的 scroll 事件，
+// 記錄會被那記 0 覆寫，「還原」等於還原到頂端（F48 首版實測就是這樣壞的）。
+// DOM 是唯一事實來源，不另外維護一份會說謊的鏡射。
+export function captureTemplateListScroll() {
+  const live = document.querySelector(".tpl-rows");
+  if (live) tpl.listScrollTop = live.scrollTop;
+}
+
+// F48：捲動位置只在「停留於此頁的重繪」間保留——從別的畫面進來一律從頂端。
+// 刻意不寫在 openTemplates()：那支也被刪除/儲存後的重載共用，那兩種情況不該把使用者拉回頂端。
+export function resetTemplateListScroll() {
+  tpl.listScrollTop = 0;
 }
 
 function startEditor(template) {
@@ -216,12 +232,24 @@ export function renderTemplates(rerender, goHome, guard) {
     state.screen = "templateEdit";
     rerender();
   };
+  // F48：課表超過 2 份才固定高度＋內部捲動，下方「＋新課表」「← 回首頁」位置不被推走。
+  // 捲動位置存/還原：刪除確認視窗開關會整頁重繪，否則每次都跳回頂端。
+  const scrollable = tpl.list.length > 2;
+  const rowsNode = el(
+    "div",
+    { class: `tpl-rows${scrollable ? " scrollable" : ""}` },
+    tpl.list.map((t) => templateRow(t, rerender, guard, openEditor)),
+  );
+  if (scrollable) {
+    requestAnimationFrame(() => { rowsNode.scrollTop = tpl.listScrollTop; });
+  }
+
   return el("section", { class: "screen templates" }, [
     el("header", { class: "topbar" }, [el("h1", {}, ["課表"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(tpl.list.length === 0
       ? [el("p", { class: "tpl-empty" }, ["還沒有課表。建一份，開練就能一鍵帶出菜單。"])]
-      : tpl.list.map((t) => templateRow(t, rerender, guard, openEditor))),
+      : [rowsNode]),
     el("button", { class: "btn btn-primary", onclick: () => openEditor(null) }, ["＋ 新課表"]),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
     // F28：刪除確認視窗

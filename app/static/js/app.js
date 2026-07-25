@@ -28,10 +28,12 @@ import {
   removeQueued,
 } from "./queue.js";
 import {
+  captureTemplateListScroll,
   hasUnsavedTemplate,
   openTemplates,
   renderTemplateEdit,
   renderTemplates,
+  resetTemplateListScroll,
   restoreTemplateDraft,
   saveTemplateDraft,
 } from "./templates.js";
@@ -258,6 +260,8 @@ async function startWorkout(template) {
   const workout = await api.createWorkout(template ? { template_id: template.id } : {});
   state.workoutId = workout.id;
   state.template = template; // 課表快照跟著這次訓練走，之後刪課表不受影響
+  menuScrollTop = 0; // F48（Codex P2）：捲動位置屬於「這次訓練的菜單」——換一次訓練要從頂端開始，
+  //                    否則舊偏移量會蓋在新課表上，前幾個動作被藏在捲動區上方
   saveActiveWorkout();
   await goPicker();
 }
@@ -298,6 +302,7 @@ function renderHome() {
         onclick: () =>
           guard(async () => {
             await openTemplates();
+            resetTemplateListScroll(); // F48：從首頁進課表頁一律從頂端
             state.screen = "templates";
             render();
           }),
@@ -378,23 +383,31 @@ function renderHome() {
 let templateChoices = [];
 
 function renderTemplateSelect() {
+  // F48：課表超過 2 份才固定高度＋內部捲動；「自由訓練」與「← 回首頁」留在捲動區外（它們不是課表，
+  // 位置要固定才按得到）。此畫面不會在停留中重繪，故不需存還原 scrollTop。
+  const scrollable = templateChoices.length > 2;
   return el("section", { class: "screen" }, [
     el("header", { class: "topbar" }, [el("h1", {}, ["今天練哪份？"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
-    el("div", { class: "exercise-list" }, [
-      ...templateChoices.map((template) =>
-        el(
-          "button",
-          { class: "btn exercise-item", onclick: () => guard(() => startWorkout(template)) },
-          [
-            el("span", {}, [template.name]),
-            el("span", { class: "sub" }, [`${template.exercises.length} 動作`]),
-          ],
+    // 課表清單與「自由訓練」同一組（間距不變），但只有課表清單會捲動
+    el("div", { class: "exercise-list tpl-choice-wrap" }, [
+      el(
+        "div",
+        { class: `exercise-list tpl-choice-list${scrollable ? " scrollable" : ""}` },
+        templateChoices.map((template) =>
+          el(
+            "button",
+            { class: "btn exercise-item", onclick: () => guard(() => startWorkout(template)) },
+            [
+              el("span", {}, [template.name]),
+              el("span", { class: "sub" }, [`${template.exercises.length} 動作`]),
+            ],
+          ),
         ),
       ),
       el(
         "button",
-        { class: "btn exercise-item", onclick: () => guard(() => startWorkout(null)) },
+        { class: "btn exercise-item free-choice", onclick: () => guard(() => startWorkout(null)) },
         [
           el("span", {}, ["自由訓練"]),
           el("span", { class: "sub" }, ["不用課表"]),
@@ -659,37 +672,48 @@ function exerciseButtons() {
   );
 }
 
+// F48：今日菜單的捲動位置——記完一組回 picker 會整頁重繪（進度數字更新），否則每次都跳回頂端
+let menuScrollTop = 0;
+
 function templateMenu() {
   if (!state.template) return [];
+  // F48：課表動作超過 2 個才固定高度＋內部捲動，下方「臨時加動作」搜尋/chips/清單不被推出畫面
+  const scrollable = state.template.exercises.length > 2;
+  const menuNode = el(
+    "div",
+    { class: `exercise-list menu-list${scrollable ? " scrollable" : ""}` },
+    state.template.exercises.map((item) => {
+      const done = state.setCounts[item.exercise_id] || 0;
+      const exercise = {
+        id: item.exercise_id,
+        name_zh: item.name_zh,
+        name_en: item.name_en,
+        muscle_group: item.muscle_group,
+        is_bodyweight: item.is_bodyweight,
+      };
+      const mainBtn = el(
+        "button",
+        {
+          class: `btn exercise-item${done >= item.default_sets ? " menu-done" : ""}`,
+          onclick: () => guard(() => pickExercise(exercise)),
+        },
+        [
+          el("span", {}, [exerciseName(item)]),
+          el("span", { class: `sub${done > 0 ? " lit" : ""}` }, [
+            `${done}/${item.default_sets} 組`,
+          ]),
+        ],
+      );
+      // F38：今日菜單列也要有 📈 詳情入口（Codex：原本只有臨時加動作清單有）
+      return exerciseRow(mainBtn, exercise, "picker");
+    }),
+  );
+  if (scrollable) {
+    requestAnimationFrame(() => { menuNode.scrollTop = menuScrollTop; });
+  }
   return [
     el("div", { class: "menu-head" }, [`今日菜單 · ${state.template.name}`]),
-    el("div", { class: "exercise-list menu-list" },
-      state.template.exercises.map((item) => {
-        const done = state.setCounts[item.exercise_id] || 0;
-        const exercise = {
-          id: item.exercise_id,
-          name_zh: item.name_zh,
-          name_en: item.name_en,
-          muscle_group: item.muscle_group,
-          is_bodyweight: item.is_bodyweight,
-        };
-        const mainBtn = el(
-          "button",
-          {
-            class: `btn exercise-item${done >= item.default_sets ? " menu-done" : ""}`,
-            onclick: () => guard(() => pickExercise(exercise)),
-          },
-          [
-            el("span", {}, [exerciseName(item)]),
-            el("span", { class: `sub${done > 0 ? " lit" : ""}` }, [
-              `${done}/${item.default_sets} 組`,
-            ]),
-          ],
-        );
-        // F38：今日菜單列也要有 📈 詳情入口（Codex：原本只有臨時加動作清單有）
-        return exerciseRow(mainBtn, exercise, "picker");
-      }),
-    ),
+    menuNode,
     el("div", { class: "menu-head" }, ["臨時加動作"]),
   ];
 }
@@ -1024,7 +1048,17 @@ function renderLogger() {
 
 // ---------- render ----------
 
+// F48：每次重繪前先把可捲清單當下的位置抓下來（唯一事實來源＝DOM）。
+// 放在 render() 開頭是因為畫面切換（picker → logger）不會呼叫另一個畫面的 render 函式，
+// 位置只能在舊 DOM 還在時抓；掛 onscroll 記錄則會被節點拆除時補送的 scrollTop=0 覆寫。
+function captureScrollPositions() {
+  const menu = document.querySelector(".menu-list");
+  if (menu) menuScrollTop = menu.scrollTop;
+  captureTemplateListScroll();
+}
+
 function render() {
+  captureScrollPositions();
   const screens = {
     setup: renderSetup,
     home: renderHome,

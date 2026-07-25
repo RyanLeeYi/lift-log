@@ -328,6 +328,13 @@
       "status": "passing",
       "evidence": "verify_f47.py（本機 Playwright E2E）7/7 PASS：①模式切換預設「單一動作」②用課表→列課表→批次態 3 列預設全勾 ③上次最重組帶入 62.5×6、無紀錄 20×8、組數＝default_sets(3/2/1) ④取消勾第 3 列後「全部記錄」→ 自動關、只寫 3+2 組、set_number 1..3／rpe 6、明細 2 區塊＋熱力圖上色、再跑一次接續為 1..6 ⑥未來日無入口。迴歸 F43/F44/F45 E2E 全綠、pytest 189 passed、ruff 全過。codex review 兩則已修：P1（空白日部分失敗重試會重建 workout 撞 409 → workoutId 存進批次草稿沿用）、P2（課表快取跨畫面過期 → 重進日曆失效快取）。",
       "acceptance": "① 補記 modal 的選動作態頂部有模式切換 `.cal-add-mode`：「單一動作」（預設，行為＝F43–F46 現況不變）與「用課表」。② 切到「用課表」→ 列出所有課表（`.cal-tpl-item`）；點一張 → 進入批次確認態 `.cal-add-modal.batch`：課表每個動作一列 `.cal-batch-row`，含勾選框（預設全勾）、動作名、KG／REPS steppers、組數 stepper（預設＝該課表項目的 default_sets，下限 1）。列數多時清單可垂直捲動，不撐破 modal。③ 預設值：重量／次數帶入該動作「上次紀錄」（`/api/exercises/{id}/last-sets` 的最重一組）；查無紀錄或查詢失敗 → 一般動作 20kg、自體重動作 0，8 下。累度一律預設輕鬆（rpe 6）。④ 按『全部記錄』→ 對每個勾選動作依其組數逐組寫入選定日的 workout（沿用當日既有 workout，沒有才建立；同 F41 規則），set_number 由該動作既有組數接續；成功後自動關閉 modal 並刷新日曆（當月熱力圖＋當日明細）。全部取消勾選時『全部記錄』停用。⑤ 每組草稿的 client_uuid 建立時固定、重試沿用（伺服器對重複 client_uuid 冪等去重）；送出中『全部記錄』與『取消』停用、點遮罩不關；送出過程出錯 → modal 不關、已寫入的保留、可直接重試而不重複寫入。⑥ 未來日期仍不顯示補記入口；全程不改變 state.workoutId。⑦ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v47→v48；既有 F1–F46 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①②③④。 【2026-07-25 簽核：Ryan 選「先展開清單讓我逐個確認」＋累度一律預設輕鬆。】"
+    },
+    {
+      "id": "F48",
+      "name": "課表三處清單超過兩項改固定高度捲動",
+      "status": "passing",
+      "evidence": "2026-07-25：實作者 E2E `verify_f48_own.py` 11/11 PASS（真實滑鼠滾輪＋非邊界值 200/40，點擊改 dispatchEvent 繞開 Playwright auto-scroll）；pytest 189 passed、ruff clean；回歸 verify_f42 19/19、verify_f43 全綠。codex-review 兩輪：第一輪 1 條 P2（menuScrollTop 跨訓練沒清，換課表會沿用舊偏移把前幾個動作藏起來）已修（startWorkout 歸零＋課表頁進場歸零），第二輪無 findings。acceptance-verifier 獨立重驗 ①–⑦ 全 PASS＋三條反向情境（換訓練/重進頁面/首次進菜單皆從頂端）。\n重要修正：首版靠 onscroll 記錄捲動位置，但節點被重繪拆掉時瀏覽器補送一次 scrollTop=0 的 scroll 事件，把記錄覆寫成 0＝還原到頂端；實作者首版 E2E 用 e.scrollTop=e.scrollHeight（最大值）與失敗態結果重合而假 PASS，由 acceptance-verifier 用真實滾輪抓到。根治＝拿掉鏡射，改在 render() 開頭從 DOM 讀舊節點位置（app.js captureScrollPositions／templates.js captureTemplateListScroll）。已記入 .harness/failures.jsonl。",
+      "acceptance": "① 課表列表頁（screen templates）：課表 ≤2 份時版面與現狀相同（無捲軸）；≥3 份時卡片清單包在固定高度容器（約 2 張卡高）內部垂直捲動，「＋新課表」與「← 回首頁」不被捲入、位置固定。② 開練挑課表（screen templateSelect）：≤2 份無捲軸；≥3 份時只有課表選項捲動，「自由訓練／不用課表」與「← 回首頁」留在捲動區外、位置固定。③ 今日菜單（picker 上方 .menu-list）：課表動作 ≤2 個無捲軸；≥3 個時固定高度（約 2 列高）內部捲動，「今日菜單 · 課表名」標頭與下方「臨時加動作」搜尋／chips／清單不被捲入。④ 捲動位置不因重繪流失：記完一組回 picker（菜單進度重繪）、課表列表刪除確認開關等重繪後，捲動位置保留（沿用 F21／F43 的 scrollTop 記錄＋還原，或就地更新節點）。⑤ 捲軸樣式與既有一致（細捲軸＋-webkit-overflow-scrolling: touch），深色主題下可見；不引新框架與圖表庫。⑥ 既有行為不變：F4 今日菜單 n/m 進度與做滿變暗、F26 課表卡片視覺、F28 刪除確認視窗、F30 草稿還原、開練帶菜單皆照舊；回歸 E2E 全綠。⑦ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v48→v49 同步遞增。 【2026-07-25 簽核：Ryan「都一起開工」＝①②③ 三處同批；容器高度 px 刻意不入 acceptance（F21 教訓：參數靠真機微調），不含「已完成動作排到捲動區底部」（未簽核，不動 F4 排序）。】"
     }
   ]
 }

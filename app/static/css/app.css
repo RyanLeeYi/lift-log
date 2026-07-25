@@ -321,6 +321,23 @@ body {
 .tpl-actions { display: flex; gap: 8px; }
 .tpl-empty { color: var(--text-dim); font-size: 14px; line-height: 1.6; }
 
+/* F48：課表相關清單「超過兩項才捲動」——三處同一範式（列表卡片／開練挑課表／今日菜單）。
+   ≤2 項時不加 .scrollable＝版面與捲軸出現前完全相同；≥3 項才固定高度，讓下方按鈕位置穩定。
+   高度取「約兩項高」，是真機滑過調出來的參數（同 F21），不是規格值——手感不對就改這裡。 */
+.tpl-rows { display: flex; flex-direction: column; gap: 14px; } /* gap 對齊 .screen，未捲動時外觀不變 */
+.tpl-rows.scrollable { max-height: 290px; } /* 約 2 張課表卡 */
+.tpl-choice-wrap { flex: none; overflow: visible; } /* 外層只負責間距，捲動交給內層課表清單 */
+.tpl-choice-list.scrollable,
+.menu-list.scrollable { max-height: 118px; } /* 約 2 列動作 */
+.tpl-rows.scrollable,
+.tpl-choice-list.scrollable,
+.menu-list.scrollable {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--led-dim) transparent;
+}
+
 .template-edit input:focus-visible { outline: 2px solid var(--led); }
 .tpl-items { display: flex; flex-direction: column; gap: 8px; }
 .tpl-item {
