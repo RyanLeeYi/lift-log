@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v50"; // F49：臨時加動作改按鈕＋懸浮視窗（有課表時）（改此處務必同步 state.js 的 APP_VERSION）
+const CACHE_NAME = "liftlog-shell-v51"; // F50：可捲清單高度改為填滿剩餘空間（改此處務必同步 state.js 的 APP_VERSION）
 const SHELL = [
   "/",
   "/css/app.css",

@@ -26,16 +26,34 @@ body {
 }
 
 .app {
+  /* F50：上下 padding 抽成變數並由它組出 padding 本身——padding 與可用高度是同一組值的兩個用途，
+     手抄兩份的話以後改了一邊就會多／少一截（review P3-6）。 */
+  --app-pad-top: max(12px, env(safe-area-inset-top));
+  --app-pad-bot: max(16px, env(safe-area-inset-bottom));
+  --app-pad-y: calc(var(--app-pad-top) + var(--app-pad-bot));
   max-width: 480px;
   margin: 0 auto;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  padding: var(--app-pad-top) 16px var(--app-pad-bot);
 }
 
 /* ---------- 通用 ---------- */
 .screen { display: flex; flex-direction: column; flex: 1; gap: 14px; }
+/* F50：這三個畫面的清單要吃掉「扣掉標頭與底部按鈕之後」的剩餘空間，因此畫面本身必須有確定高度
+   （.app 只有 min-height，flex 子項拿不到可分配的剩餘空間）。其餘畫面不受影響，仍照舊隨內容長高。 */
+.screen.picker,
+.screen.templates,
+.screen.template-select { height: calc(100dvh - var(--app-pad-y)); }
+/* F50 review P2：極矮視窗（手機橫放 844×390、小裝置 320×420）連 min-content 都塞不進一屏，
+   釘死高度只會讓底部按鈕落在可視區外。這種情境放棄「填滿」，回退成整張畫面可捲——
+   按鈕捲得到比留在畫面內重要。直立 ≥480px 高（含 iPhone SE 的 667）不受影響。 */
+@media (max-height: 480px) {
+  .screen.picker,
+  .screen.templates,
+  .screen.template-select { height: auto; }
+}
 .topbar { display: flex; justify-content: space-between; align-items: baseline; }
 .topbar h1 { font-size: 17px; font-weight: 600; letter-spacing: .02em; }
 .topbar .date { color: var(--text-dim); font-size: 14px; font-family: var(--mono); }
@@ -136,7 +154,8 @@ body {
 }
 /* F23：選動作畫面的臨時加動作清單固定約 4 個動作高＋內部捲動（今日菜單 .menu-list 不受影響）。
    用固定 height 而非 max-height——搜尋/篩選剩幾項時清單也不收縮，下方按鈕位置才穩定（Codex P2）。 */
-.exercise-list.pick-list { height: 248px; -webkit-overflow-scrolling: touch; }
+/* F50：原 F23 的固定 248px 改為填滿剩餘空間（自由訓練攤開時吃畫面、視窗內吃視窗） */
+.exercise-list.pick-list { flex: 1 1 0; min-height: 56px; -webkit-overflow-scrolling: touch; }
 
 /* ---------- logger（記錄一組） ---------- */
 .logger { gap: 10px; }
@@ -325,10 +344,12 @@ body {
    ≤2 項時不加 .scrollable＝版面與捲軸出現前完全相同；≥3 項才固定高度，讓下方按鈕位置穩定。
    高度取「約兩項高」，是真機滑過調出來的參數（同 F21），不是規格值——手感不對就改這裡。 */
 .tpl-rows { display: flex; flex-direction: column; gap: 14px; } /* gap 對齊 .screen，未捲動時外觀不變 */
-.tpl-rows.scrollable { max-height: 290px; } /* 約 2 張課表卡 */
-.tpl-choice-wrap { flex: none; overflow: visible; } /* 外層只負責間距，捲動交給內層課表清單 */
+/* F50：高度改為「填滿剩餘空間」——螢幕越高顯示越多，錯誤橫幅等元素出現時自動讓位，
+   不再用固定 px（F48 的 290／118 是猜的）。min-height 是下限，極矮螢幕仍留得下約一列。 */
+.tpl-rows.scrollable { flex: 1 1 0; min-height: 132px; }
+.tpl-choice-wrap { flex: 1 1 0; min-height: 0; overflow: visible; } /* 外層負責間距，捲動交給內層課表清單 */
 .tpl-choice-list.scrollable,
-.menu-list.scrollable { max-height: 118px; } /* 約 2 列動作 */
+.menu-list.scrollable { flex: 1 1 0; min-height: 56px; }
 .tpl-rows.scrollable,
 .tpl-choice-list.scrollable,
 .menu-list.scrollable {
@@ -397,6 +418,8 @@ body {
   background: var(--card); border: 1px solid var(--card-edge);
   border-radius: 16px; width: 100%; max-width: 420px; max-height: 80dvh;
   display: flex; flex-direction: column; gap: 10px; padding: 14px;
+  /* F49 review：極端內容超出可壓縮量時仍能捲到（零成本防禦） */
+  overflow-y: auto;
 }
 .modal-head { font-weight: 600; font-size: 16px; }
 .modal .exercise-list { max-height: 48dvh; }
@@ -431,7 +454,11 @@ body {
 .add-exercise-open { border-style: dashed; }
 /* 視窗內的清單沿用 F23 的固定高度（約 4 個動作），視窗整體再由 .modal 的 max-height 收邊；
    高度是真機手感參數，不對就改這裡（不影響 acceptance） */
-.pick-modal .pick-list { height: 248px; max-height: 44dvh; }
+/* F50 review P1：視窗給確定高度，清單才能用 basis 0 真正「吃剩餘空間」。
+   先前用 flex-basis: auto 會讓 basis＝內容高度 → 視窗高度隨結果數變動，搜尋篩到剩兩項時視窗縮短、
+   置中使上緣往下掉 111px，正在打字的搜尋框從指下溜走（正是 F23 當年 Codex P2 修掉的老問題）。 */
+.modal.pick-modal { height: 80dvh; }
+.pick-modal .pick-list { flex: 1 1 0; min-height: 56px; }
 .pick-modal .chips { flex: none; }
 
 /* ---------- calendar（heatmap） ---------- */

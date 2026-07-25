@@ -386,7 +386,7 @@ function renderTemplateSelect() {
   // F48：課表超過 2 份才固定高度＋內部捲動；「自由訓練」與「← 回首頁」留在捲動區外（它們不是課表，
   // 位置要固定才按得到）。此畫面不會在停留中重繪，故不需存還原 scrollTop。
   const scrollable = templateChoices.length > 2;
-  return el("section", { class: "screen" }, [
+  return el("section", { class: "screen template-select" }, [
     el("header", { class: "topbar" }, [el("h1", {}, ["今天練哪份？"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     // 課表清單與「自由訓練」同一組（間距不變），但只有課表清單會捲動
@@ -424,8 +424,16 @@ let pickerExercises = [];
 let customFormOpen = false; // F10 自訂動作視窗是否開啟（picker）
 let addPanelOpen = false; // F49：有課表時的「臨時加動作」懸浮視窗是否開啟
 
+// F49 review P2-3：搜尋回應排序保護——舊回應晚到不得覆蓋新結果（沿用 templates.js searchSeq 慣例）。
+// 回傳 false＝這次回應已過期，呼叫端不要拿去重畫清單。
+let pickerSearchSeq = 0;
+
 async function loadExercises(q) {
-  pickerExercises = await api.searchExercises(q || "");
+  const seq = ++pickerSearchSeq;
+  const found = await api.searchExercises(q || "");
+  if (seq !== pickerSearchSeq) return false;
+  pickerExercises = found;
+  return true;
 }
 
 function openCustomForm() {
@@ -459,7 +467,9 @@ function pickerCustomModal() {
       state.muscleFilter = null;
       guard(async () => {
         try {
-          await loadExercises("");
+          // loadExercises 現在會在「回應過期」時回 false（不是拋錯）——那條路也要補進清單，
+          // 否則新建的自訂動作既沒 reload 也沒補上，使用者看不到剛建的動作（review P3-5）
+          if (!(await loadExercises(""))) pickerExercises = [...pickerExercises, created];
         } catch {
           pickerExercises = [...pickerExercises, created];
         }
@@ -728,7 +738,12 @@ function exercisePickerParts() {
   const groups = [...new Set(pickerExercises.map((e) => e.muscle_group))];
   // F23：pick-list＝動作清單，固定高度可捲動（不含今日菜單 .menu-list）
   const list = el("div", { class: "exercise-list pick-list" }, exerciseButtons());
-  const repaint = () => list.replaceChildren(...exerciseButtons());
+  // list 可能在 await 期間被一次整頁重繪換掉（例如 online → syncQueue → renderUnlessTyping）——
+  // 對已 detach 的節點 replaceChildren 不會報錯但更新靜默消失，故先確認還在文件裡（review P2-3 附帶）
+  const repaint = () => {
+    if (!list.isConnected) return;
+    list.replaceChildren(...exerciseButtons());
+  };
 
   const chips = el("div", { class: "chips" },
     groups.map((g) =>
@@ -756,8 +771,8 @@ function exercisePickerParts() {
     oninput: (e) => {
       state.searchQ = e.target.value;
       guard(async () => {
-        await loadExercises(state.searchQ);
-        repaint();
+        const fresh = await loadExercises(state.searchQ);
+        if (fresh) repaint();
       });
     },
   });
@@ -777,6 +792,9 @@ function addExerciseModal() {
     [
       el("div", { class: "modal pick-modal" }, [
         el("div", { class: "modal-head" }, ["臨時加動作"]),
+        // F49 review P2-2：畫面上的 error-banner 會被這層遮罩蓋住——視窗內要自己顯示一份，
+        // 否則視窗內搜尋失敗（離線／5xx）時使用者只看到「打了字清單沒反應」，得不到任何解釋
+        ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
         ...exercisePickerParts(),
         el("button", { class: "btn add-custom-ex", onclick: openCustomForm }, ["＋ 自訂動作"]),
         el("button", { class: "btn btn-ghost", onclick: close }, ["取消"]),
@@ -1136,6 +1154,14 @@ function captureScrollPositions() {
 
 function render() {
   captureScrollPositions();
+  // F49 review P2-1：回到 setup／home＝離開訓練情境，picker 的兩個懸浮視窗一律關閉。
+  // 收斂成不變式而不是在每個離場點手動歸零——401（guard 導回 setup）就是漏掉的那條路：
+  // 重新登入後按「繼續訓練」，picker 會自己蓋上視窗。刻意不含 logger／exerciseDetail：
+  // 前者由 pickExercise 歸零，後者的往返要保留視窗（瀏覽中途離開，回來接續）。
+  if (state.screen === "setup" || state.screen === "home") {
+    addPanelOpen = false;
+    customFormOpen = false;
+  }
   const screens = {
     setup: renderSetup,
     home: renderHome,

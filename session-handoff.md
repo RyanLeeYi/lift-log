@@ -1,64 +1,58 @@
 # session handoff
 
-最後更新：2026-07-25（F48 收工 → F49 實作完成待 review 決策）
-
-## ⚠ 先看這裡：F49 卡在「缺跨模型 review」
-
-**F49 實作與驗收都完成了，但 status 刻意維持 failing**：`codex exec review` 回報**額度用盡，7/29 07:26 才恢復**，
-而規則的退路 `/code-review` 是 user-triggered 指令、agent 叫不動。等 Ryan 三選一後再改 status：
-①自己跑一次 `/code-review`（medium 以上 effort）②等 7/29 Codex 回來補審這段 diff ③接受現狀直接翻 passing。
-
-**F49 也還沒部署**（線上仍是 v49），要在手機上摸新的「＋ 臨時加動作」視窗需先 `mission-control restart lift-log`。
-
-已有的證據：實作者 E2E `verify_f49_own.py` 14/14、pytest 189、ruff clean、acceptance-verifier 獨立 ①–⑨ 全 PASS。
-自審抓到並修掉一條真 bug（離線時開窗前的動作庫刷新失敗會讓視窗開不起來＝有課表＋離線無法臨時加動作）。
-另一條自審 finding 經 E2E 證實不可達（視窗開著時 `.picker-foot` 被遮罩蓋住、那顆鈕點不到），歸零那行留作防禦。
-
-**順帶暴露的規則缺口**：全域 `agents.md` 的「額度 fallback」假設兩邊不會同時見底——Claude 撞 90% 換 Codex、
-Codex 撞額度換 Claude，但這次是 Codex 先掛而 `/code-review` 又不能由 agent 觸發，等於檢查側直接開天窗。
-收官時值得把這條寫進全域 memory。
+最後更新：2026-07-25（F48 / F49 / F50 三個 feature 收工）
 
 ## 現況
 
-48/49 feature passing（F49 見上），線上版本 **v49**（sw.js CACHE_NAME 與 state.js APP_VERSION 同步），已 deploy
-（mission-control restart lift-log；本機與公開 `/health` 皆 200、公開 sw.js 已是 v49）。
+**50/50 feature passing**，線上 **v51**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
+公開 sw.js 已是 v51）。本輪完成：
 
-本輪完成：
+- **F48** 課表三處清單超過兩項改捲動（列表頁／挑課表／今日菜單）
+- **F49** 有課表時「臨時加動作」收成一顆入口鈕＋懸浮視窗（自由訓練維持攤開、點動作即進 logger）
+- **F50** 四處可捲清單高度改為「填滿剩餘空間」（純 CSS flex，隨螢幕高度自適應）
 
-- **F48** 課表三處清單「超過兩項改固定高度捲動」：①課表列表頁卡片清單（>2 份）②開練挑課表
-  （>2 份，「自由訓練」留在捲動區外）③今日菜單 `.menu-list`（>2 動作，標頭與「臨時加動作」不被捲入）。
-  容器高度（290px／118px）是真機手感參數，不在 acceptance 內，改起來不用重簽核。
+## ⚠ Codex 額度用盡 → 本輪 review 改由 Claude 執行
+
+`codex exec review` 回報額度用盡（**7/29 07:26 恢復**），`/code-review` 是 user-triggered、agent 叫不動。
+Ryan 指示「就直接由 claude 審」，故 F49／F50 的 review 都是 **Claude fresh-context subagent**（同模型跨 context，
+獨立性弱於 Codex，已知並接受）。**7/29 之後若想補一次跨模型審，範圍是 commit c67c89d 之後的前端 diff。**
+
+規則缺口（收官時值得寫進全域 memory）：`agents.md` 的額度 fallback 假設兩邊不會同時見底，但這次 Codex 先掛、
+Claude 側唯一退路又只能使用者手動觸發，等於檢查側開天窗。需要一條「兩邊都不可用時怎麼辦」。
 
 ## 驗證
 
-E2E 腳本在 scratchpad（非 repo）：`verify_f48_own.py`，跑法 `PYTHONUTF8=1 uv run python <script>`。
-本輪 11/11 PASS、pytest 189、ruff clean、回歸 verify_f42（19/19）與 verify_f43 全綠。
-codex-review 兩輪（第一輪 1 P2 已修、第二輪無 findings）；acceptance-verifier 獨立重驗 ①–⑦ 全 PASS。
+E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`（17 條）／`verify_f50_own.py`（14 條），
+跑法 `PYTHONUTF8=1 uv run python <script>`。本輪三支全綠、pytest 189、ruff clean、verify_f42 19/19。
 
-**⚠ 這個 feature 的教訓（下次寫 UI 狀態保留類 E2E 前先讀）**：
-
-- 首版靠 `onscroll` 記錄捲動位置 → **節點被重繪拆掉時瀏覽器會補送一次 `scrollTop=0` 的 scroll 事件**，
-  記錄被覆寫成 0，「還原」等於還原到頂端。根治＝不維護鏡射，改在 `render()` 開頭從 DOM 讀舊節點位置
-  （`app.js` 的 `captureScrollPositions()`＋`templates.js` 的 `captureTemplateListScroll()`）。
-- 首版實作者 E2E **假 PASS**：用 `e.scrollTop = e.scrollHeight`（最大值）→ 與「還原失效後被 Playwright
-  auto-scroll 捲到底」同值。驗這類行為要用**真實滾輪＋非邊界值**。
-- Playwright 真實 `click()` 對捲出視野的元素會先 auto-scroll，在重繪前污染 scrollTop：
-  改用 `locator.evaluate("e => e.dispatchEvent(new MouseEvent('click',{bubbles:true}))")` 或只點可見元素。
-- 已記入 `.harness/failures.jsonl`（status: open）供 `/harness-retro`。
+**測試慣例（三次踩過才定下來，寫 UI E2E 前先讀）**：
+- 驗「狀態保留」類行為，捲動一律用真實滾輪且**刻意用非邊界值**——設成最大值會與失敗態結果重合，測試永遠綠（F48）
+- Playwright 真實 `click()` 對捲出視野的元素會先 auto-scroll，在重繪前污染 scrollTop → 用
+  `locator.evaluate("e => e.dispatchEvent(new MouseEvent('click',{bubbles:true}))")` 或只點可見元素
+- 版號斷言不要釘死數字，只驗「sw.js 與 APP_VERSION 兩處一致」，否則每次 bump 都要改腳本
+- F50 之後清單會填滿螢幕，要測「真的在捲」得備足資料量（844 高度下 4 份課表根本塞得下）
+- 視窗開著時 `.picker-foot` 的按鈕被遮罩蓋住、點不到（先關窗）
 
 ## 下一步 / 待辦
 
-0. **F49 的 review 決策（見開頭）＋決定後部署**。
-1. 手機實機掃一次 F44–F49 的手感（F47 批次列在小螢幕的捲動與誤觸；F48 三處捲動區高度合不合手）。
-2. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（現 3 筆）。
-3. Android app 方案未定（`docs/decisions/android-app-evaluation.md` 傾向 Capacitor，等 Ryan 拍板）。
-4. acceptance-verifier 的建議（未列入 feature）：把關鍵回歸 E2E 從 scratchpad 收進 repo `tests/e2e/`——
-   每輪驗收者都得重造等效場景，且 scratchpad 會被清掉（本輪 F48 腳本就被驗收者同名檔覆寫過一次）。
+1. **手機實機掃 F44–F50**：F47 批次列在小螢幕的捲動與誤觸；F49 視窗「點即進」會不會誤觸；F50 四處清單的
+   高度手感（min-height 下限與 `.pick-modal` 的 80dvh 是我定的，不合手就改那幾行）。
+2. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（**現 5 筆**，
+   本輪新增 3 筆：測試載體邊界值、改參數前先查來歷、acceptance 描述不存在的元素）。
+3. **F50 acceptance ⑥ 的規格 bug（待 Ryan 決定）**：⑥ 寫「⏳ 待同步提示出現時清單讓位」，但
+   `syncStatusLine()` 只在 home／logger 呼叫，該提示在這三個畫面永遠不出現。已用 error-banner 驗到等效行為
+   並判 PASS，但條文本身描述了不存在的現狀（同 F34 那類）。要更正就回簽核，不自己改寫。
+4. Android app 方案未定（`docs/decisions/android-app-evaluation.md` 傾向 Capacitor，等 Ryan 拍板）。
+5. 把關鍵回歸 E2E 從 scratchpad 收進 repo `tests/e2e/`（acceptance-verifier 建議，未列入 feature）——本輪
+   確實出事：驗收者的腳本同名覆寫掉 `verify_f48.py`，得重寫一份。
 
 ## 卡點
 
 無。
 
-**待確認的既有疑點（尚未查證，不在任何 feature 範圍內）**：F21 的課表編輯動作清單（`tpl.itemsScrollTop`）
-用的是與 F48 首版相同的 `onscroll` 記錄手法，可能同樣一直沒生效。若要處理，先加進 `feature_list.json`
-標 failing 再動工（工作規則 3）。
+**待確認的既有疑點（不在任何 feature 範圍內）**：F21 的課表編輯動作清單（`tpl.itemsScrollTop`）用的是與 F48
+首版相同的 `onscroll` 記錄手法，可能同樣一直沒生效（節點被拆時瀏覽器補送 scrollTop=0 會污染記錄）。
+要處理先加進 `feature_list.json` 標 failing 再動工（工作規則 3）。
+
+**刻意未修的既有債（前一輪 review 的 P3）**：視窗缺 `role="dialog"`／focus trap／Escape 關閉；`.chip` 高約 35px
+低於 44px 觸控建議；視窗內 chips 不隨搜尋結果重建，可能出現「亮著的空篩選」。都是 F21/F43 沿用至今、F49 沒惡化。
