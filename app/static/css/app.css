@@ -427,6 +427,12 @@ body {
 .checkbox-row { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .checkbox-row input[type="checkbox"] { width: 20px; height: 20px; }
 .add-custom-ex { border-style: dashed; }
+/* F49：有課表時「臨時加動作」收成一顆入口鈕＋懸浮視窗（自由訓練仍直接攤開清單） */
+.add-exercise-open { border-style: dashed; }
+/* 視窗內的清單沿用 F23 的固定高度（約 4 個動作），視窗整體再由 .modal 的 max-height 收邊；
+   高度是真機手感參數，不對就改這裡（不影響 acceptance） */
+.pick-modal .pick-list { height: 248px; max-height: 44dvh; }
+.pick-modal .chips { flex: none; }
 
 /* ---------- calendar（heatmap） ---------- */
 .cal-nav { display: flex; align-items: center; gap: 8px; }

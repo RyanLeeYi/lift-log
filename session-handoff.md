@@ -1,10 +1,26 @@
 # session handoff
 
-最後更新：2026-07-25（F48 收工）
+最後更新：2026-07-25（F48 收工 → F49 實作完成待 review 決策）
+
+## ⚠ 先看這裡：F49 卡在「缺跨模型 review」
+
+**F49 實作與驗收都完成了，但 status 刻意維持 failing**：`codex exec review` 回報**額度用盡，7/29 07:26 才恢復**，
+而規則的退路 `/code-review` 是 user-triggered 指令、agent 叫不動。等 Ryan 三選一後再改 status：
+①自己跑一次 `/code-review`（medium 以上 effort）②等 7/29 Codex 回來補審這段 diff ③接受現狀直接翻 passing。
+
+**F49 也還沒部署**（線上仍是 v49），要在手機上摸新的「＋ 臨時加動作」視窗需先 `mission-control restart lift-log`。
+
+已有的證據：實作者 E2E `verify_f49_own.py` 14/14、pytest 189、ruff clean、acceptance-verifier 獨立 ①–⑨ 全 PASS。
+自審抓到並修掉一條真 bug（離線時開窗前的動作庫刷新失敗會讓視窗開不起來＝有課表＋離線無法臨時加動作）。
+另一條自審 finding 經 E2E 證實不可達（視窗開著時 `.picker-foot` 被遮罩蓋住、那顆鈕點不到），歸零那行留作防禦。
+
+**順帶暴露的規則缺口**：全域 `agents.md` 的「額度 fallback」假設兩邊不會同時見底——Claude 撞 90% 換 Codex、
+Codex 撞額度換 Claude，但這次是 Codex 先掛而 `/code-review` 又不能由 agent 觸發，等於檢查側直接開天窗。
+收官時值得把這條寫進全域 memory。
 
 ## 現況
 
-48/48 feature passing，線上版本 **v49**（sw.js CACHE_NAME 與 state.js APP_VERSION 同步），已 deploy
+48/49 feature passing（F49 見上），線上版本 **v49**（sw.js CACHE_NAME 與 state.js APP_VERSION 同步），已 deploy
 （mission-control restart lift-log；本機與公開 `/health` 皆 200、公開 sw.js 已是 v49）。
 
 本輪完成：
@@ -32,9 +48,12 @@ codex-review 兩輪（第一輪 1 P2 已修、第二輪無 findings）；accepta
 
 ## 下一步 / 待辦
 
-1. 手機實機掃一次 F44–F48 的手感（F47 批次列在小螢幕的捲動與誤觸；F48 三處捲動區高度合不合手）。
+0. **F49 的 review 決策（見開頭）＋決定後部署**。
+1. 手機實機掃一次 F44–F49 的手感（F47 批次列在小螢幕的捲動與誤觸；F48 三處捲動區高度合不合手）。
 2. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（現 3 筆）。
 3. Android app 方案未定（`docs/decisions/android-app-evaluation.md` 傾向 Capacitor，等 Ryan 拍板）。
+4. acceptance-verifier 的建議（未列入 feature）：把關鍵回歸 E2E 從 scratchpad 收進 repo `tests/e2e/`——
+   每輪驗收者都得重造等效場景，且 scratchpad 會被清掉（本輪 F48 腳本就被驗收者同名檔覆寫過一次）。
 
 ## 卡點
 

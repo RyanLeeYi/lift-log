@@ -422,6 +422,7 @@ function renderTemplateSelect() {
 
 let pickerExercises = [];
 let customFormOpen = false; // F10 自訂動作視窗是否開啟（picker）
+let addPanelOpen = false; // F49：有課表時的「臨時加動作」懸浮視窗是否開啟
 
 async function loadExercises(q) {
   pickerExercises = await api.searchExercises(q || "");
@@ -435,6 +436,7 @@ function openCustomForm() {
 // 收工／結束訓練：只清 client 狀態回首頁；已記錄的組在 server（SSOT），佇列未同步的之後仍補傳進這個 workout。
 // logger 的「收工」與 picker 的「結束訓練」共用（module 級 function 宣告會 hoist，logger 內引用不受順序影響）。
 function endWorkout() {
+  addPanelOpen = false; // F49：收工一併關窗
   stopRestTimer();
   state.pendingRestSeconds = null;
   editDraft = null;
@@ -476,6 +478,7 @@ function rememberDoneSets() {
 }
 
 async function pickExercise(exercise) {
+  addPanelOpen = false; // F49：選了動作就離開 picker，視窗狀態不留到下次回來（否則回 picker 會自己彈開）
   state.exercise = exercise;
   state.rpe = 6; // F40：進動作預設累度「輕鬆」
   state.doneSets = [];
@@ -718,10 +721,74 @@ function templateMenu() {
   ];
 }
 
-function renderPicker() {
+// F49：選動作的三件套（搜尋框／部位 chips／清單）。自由訓練直接攤在畫面上、有課表時裝進懸浮視窗，
+// 兩處共用同一份實作——搜尋與 chips 一律就地 replaceChildren 更新清單，不呼叫 render()：整頁重繪會
+// 清掉正在輸入的搜尋字並讓鍵盤失焦（本專案第 N 次的「就地重畫」教訓，這次預先避開）。
+function exercisePickerParts() {
   const groups = [...new Set(pickerExercises.map((e) => e.muscle_group))];
-  // F23：pick-list＝臨時加動作清單，固定高度可捲動（不含今日菜單 .menu-list）
+  // F23：pick-list＝動作清單，固定高度可捲動（不含今日菜單 .menu-list）
   const list = el("div", { class: "exercise-list pick-list" }, exerciseButtons());
+  const repaint = () => list.replaceChildren(...exerciseButtons());
+
+  const chips = el("div", { class: "chips" },
+    groups.map((g) =>
+      el(
+        "button",
+        {
+          class: `chip${state.muscleFilter === g ? " on" : ""}`,
+          onclick: (e) => {
+            // 再點同一顆＝取消篩選（沿用既有語意）
+            state.muscleFilter = state.muscleFilter === g ? null : g;
+            for (const btn of chips.children) btn.classList.remove("on");
+            if (state.muscleFilter === g) e.currentTarget.classList.add("on");
+            repaint();
+          },
+        },
+        [g],
+      ),
+    ),
+  );
+
+  const search = el("input", {
+    type: "search",
+    placeholder: "搜尋（中英皆可）",
+    value: state.searchQ,
+    oninput: (e) => {
+      state.searchQ = e.target.value;
+      guard(async () => {
+        await loadExercises(state.searchQ);
+        repaint();
+      });
+    },
+  });
+
+  return [search, chips, list];
+}
+
+// F49：臨時加動作懸浮視窗（有課表時的選動作入口）。點動作即進 logger（pickExercise 換畫面，視窗隨之消失）。
+function addExerciseModal() {
+  const close = () => { addPanelOpen = false; render(); };
+  return el(
+    "div",
+    {
+      class: "modal-overlay",
+      onclick: (e) => { if (e.target === e.currentTarget) close(); },
+    },
+    [
+      el("div", { class: "modal pick-modal" }, [
+        el("div", { class: "modal-head" }, ["臨時加動作"]),
+        ...exercisePickerParts(),
+        el("button", { class: "btn add-custom-ex", onclick: openCustomForm }, ["＋ 自訂動作"]),
+        el("button", { class: "btn btn-ghost", onclick: close }, ["取消"]),
+      ]),
+    ],
+  );
+}
+
+function renderPicker() {
+  // F49：有課表＝清單收進懸浮視窗（畫面留給今日菜單）；自由訓練＝選動作就是主畫面，維持攤開，
+  // 否則每次開練都要多點一下才選得到動作。
+  const inModal = Boolean(state.template);
 
   return el("section", { class: "screen picker" }, [
     el("header", { class: "topbar" }, [
@@ -734,42 +801,52 @@ function renderPicker() {
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...templateMenu(),
-    el("input", {
-      type: "search",
-      placeholder: "搜尋（中英皆可）",
-      value: state.searchQ,
-      // 只更新清單、不整頁重繪——重繪會清空輸入框並讓鍵盤失焦
-      oninput: (e) => {
-        state.searchQ = e.target.value;
-        guard(async () => {
-          await loadExercises(state.searchQ);
-          list.replaceChildren(...exerciseButtons());
-        });
-      },
-    }),
-    el("div", { class: "chips" },
-      groups.map((g) =>
-        el(
-          "button",
-          {
-            class: `chip${state.muscleFilter === g ? " on" : ""}`,
-            onclick: () => {
-              state.muscleFilter = state.muscleFilter === g ? null : g;
-              render();
+    ...(inModal
+      ? [
+          el(
+            "button",
+            {
+              class: "btn add-exercise-open",
+              onclick: () =>
+                guard(async () => {
+                  // 每次開窗從乾淨狀態開始（同 F21 慣例）：上次無結果的搜尋字不該讓重開變空白
+                  state.searchQ = "";
+                  state.muscleFilter = null;
+                  try {
+                    await loadExercises("");
+                  } catch (err) {
+                    // 離線時仍要開得起來——沿用已載入的動作庫，否則有課表＋離線＝無法臨時加動作
+                    // （F5 的離線記錄場景會被堵死）；非離線錯誤照舊上拋交 guard（401 導回 setup）
+                    if (!isOffline(err)) throw err;
+                  }
+                  addPanelOpen = true;
+                  render();
+                }),
             },
-          },
-          [g],
-        ),
-      ),
-    ),
-    list,
-    el("button", { class: "btn add-custom-ex", onclick: openCustomForm }, ["＋ 自訂動作"]),
+            ["＋ 臨時加動作"],
+          ),
+        ]
+      : [
+          ...exercisePickerParts(),
+          el("button", { class: "btn add-custom-ex", onclick: openCustomForm }, ["＋ 自訂動作"]),
+        ]),
     el("div", { class: "picker-foot" }, [
-      el("button", { class: "btn btn-ghost", onclick: () => { state.screen = "home"; render(); } }, ["← 回首頁"]),
+      el(
+        "button",
+        {
+          class: "btn btn-ghost",
+          // F49：回首頁要一併關窗——訓練沒結束，回來時若還記著 addPanelOpen 就會自己彈出視窗。
+          // （進「動作表現」詳情頁的往返刻意不關：那是瀏覽中途離開，回來接續才對）
+          onclick: () => { addPanelOpen = false; state.screen = "home"; render(); },
+        },
+        ["← 回首頁"],
+      ),
       // F29：直接從今日菜單結束訓練，不必先進 logger 才收工（與 logger「收工」同一動作）
       el("button", { class: "btn btn-danger", onclick: endWorkout }, ["結束訓練"]),
     ]),
-    // F10：自訂動作懸浮視窗（overlay，蓋在整個選動作畫面上）
+    // F49：臨時加動作視窗（有課表時）
+    ...(inModal && addPanelOpen ? [addExerciseModal()] : []),
+    // F10：自訂動作懸浮視窗（overlay，蓋在整個選動作畫面上；F49 起也可能疊在臨時加動作視窗上，同 F25）
     ...(customFormOpen ? [pickerCustomModal()] : []),
   ]);
 }
