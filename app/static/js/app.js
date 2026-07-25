@@ -2,7 +2,7 @@
 // 課表管理（templates / templateEdit）在 templates.js。
 
 import { api, ApiError, getToken, setToken } from "./api.js";
-import { openBody, renderBody } from "./body.js";
+import { captureBodyScroll, openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
 import { el, rpePicker, stepper } from "./dom.js";
@@ -1150,6 +1150,7 @@ function captureScrollPositions() {
   const menu = document.querySelector(".menu-list");
   if (menu) menuScrollTop = menu.scrollTop;
   captureTemplateListScroll();
+  captureBodyScroll(); // F53：體重頁紀錄清單
 }
 
 function render() {

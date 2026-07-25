@@ -755,7 +755,14 @@ body {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 14px; color: var(--text-dim);
 }
-.body-card-head .latest { font-family: var(--mono); font-size: 20px; color: var(--led); }
+/* F53：體重／體脂 toggle（沿用 .chips/.chip 既有樣式）＋最新值靠右。
+   review P3-4：原 `.body-card-head .latest` 在 .latest 移出 head 後成死規則，已與這條併成一份 */
+.body-metric-toggle { flex: none; }
+.body-card-body { display: flex; flex-direction: column; gap: 8px; }
+.body-card-latest {
+  display: flex; justify-content: flex-end;
+  font-family: var(--mono); font-size: 20px; color: var(--led);
+}
 .body-chart { color: var(--led); }
 .body-chart svg { width: 100%; height: 96px; display: block; }
 .body-card-foot {
@@ -764,7 +771,34 @@ body {
 }
 .body-empty { color: var(--text-dim); font-size: 14px; padding: 4px 0 8px; }
 /* F17 體重紀錄清單：每列可編輯/單擊刪除 */
-.body-list { display: flex; flex-direction: column; gap: 6px; }
+/* F53：紀錄清單填滿剩餘空間（畫面掛 .fills 提供確定高度），>2 筆才內部捲動；
+   「← 回首頁」不被推走。min-height 與下方 media query 的門檻是綁在一起的兩個數字——
+   門檻 = 固定區塊 584 ＋ 這個 min-height ＋ .app padding 28，改一邊要改另一邊（review P1-2）。 */
+.body-list {
+  display: flex; flex-direction: column; gap: 6px;
+  flex: 1 1 0; min-height: 120px;
+}
+.bm-rows { display: flex; flex-direction: column; gap: 6px; }
+.bm-rows.scrollable {
+  flex: 1 1 0; min-height: 60px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; scrollbar-color: var(--led-dim) transparent;
+}
+/* F53：/body 的固定區塊（表單 231＋圖表卡 217＋標頭＋底部鈕＋間距）實測就佔 584px，
+   加上清單 min-height 120 與 .app padding 28 → **至少要 732px 高**才塞得下「填滿」版面。
+   矮於此一律退出 flex-fill、卡片吃回內容高、整頁可捲。
+   ⚠ 兩個 review 教訓釘在這裡：
+   ① 門檻必須 = 584 ＋ .body-list 的 min-height ＋ 28。原本寫 700 造成 701–732 死帶：釘死高度但塞不進、
+      底部鈕落在可視區外，「剛好過門檻」比「剛好沒過」更糟（review P1-2）。
+   ② 退讓要用 `flex: none`（吃回內容高），不是把 min-height 設 0——basis 0 ＋ 允許縮到 0 在 height:auto
+      的容器裡等於卡片塌成只剩標頭，而子節點 .bm-rows 的 60px 下限會穿出卡片、疊在「← 回首頁」上（review P1-1，
+      實測 667 溢出 47px、疊住按鈕 33px 且頁面捲不動＝真破圖）。
+   ⚠ 也必須放在 .screen.fills 之後：同 specificity 靠順序決勝（F52 P2-1 踩過）。 */
+@media (max-height: 732px) {
+  .screen.body { height: auto; }
+  .body-list { flex: none; min-height: 0; }
+  .bm-rows.scrollable { flex: none; min-height: 0; max-height: 40dvh; }
+}
 .body-list-head { color: var(--text-dim); font-size: 13px; font-weight: 600; padding: 2px 4px; }
 .bm-row {
   display: flex; align-items: center; gap: 10px;

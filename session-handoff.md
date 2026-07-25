@@ -1,17 +1,20 @@
 # session handoff
 
-最後更新：2026-07-25（F48 / F49 / F50 / F51 四個 feature 收工）
+最後更新：2026-07-26（F48–F53 六個 feature 收工；F54 已簽核方向待動工）
 
 ## 現況
 
-**51/51 feature passing**，線上 **v52**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
-公開 sw.js 已是 v52）。本輪完成：
+**53/53 feature passing**，線上 **v54**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
+公開 sw.js 已是 v54）。本輪完成：
 
 - **F48** 課表三處清單超過兩項改捲動（列表頁／挑課表／今日菜單）
 - **F49** 有課表時「臨時加動作」收成一顆入口鈕＋懸浮視窗（自由訓練維持攤開、點動作即進 logger）
 - **F50** 四處可捲清單高度改為「填滿剩餘空間」（純 CSS flex，隨螢幕高度自適應）
 - **F51** 編輯課表頁動作清單也改填滿剩餘空間（F50 漏掉的第五處，Ryan 真機發現）＋三顆鈕貼底
   （`.tpl-edit-foot { margin-top: auto }`——清單跨門檻塌陷時按鈕不再上跳 156px 造成誤存）
+- **F52** 編輯頁加動作視窗高度穩定（搜尋篩選時不再縮短位移）＋`.tpl-items` 併入細捲軸共用樣式＋
+  四畫面改掛 `fills` marker class（CSS 兩處重複的選擇器清單合成一條）
+- **F53** 體重頁改 toggle 切換體重／體脂（圖表＋紀錄清單一起切）＋紀錄清單填滿剩餘空間
 
 ## ⚠ Codex 額度用盡 → 本輪 review 改由 Claude 執行
 
@@ -37,19 +40,24 @@ E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`
 - 視窗開著時 `.picker-foot` 的按鈕被遮罩蓋住、點不到（先關窗）
 - **auto-scroll artifact 會兩面刃**：F48 那次靠它抓到真 bug，F51 這次 reviewer 因它誤報「捲動位置失效」
   （真實 click 點第一列 → 容器捲回 0 → 看起來像還原失效）。判定捲動相關行為前先確認用的是 dispatchEvent
-- 版號斷言三支腳本都已改成「兩處一致」不釘死數字（同一個坑踩了三次才全改完）
+- 版號斷言各腳本一律「兩處一致」不釘死數字（同一個坑踩了三次才全改完）
+- **「元素可見」不等於「元素沒被蓋住」**（F53 教訓）：只驗 bounding box 在 viewport 內會漏掉「別的元素疊在
+  它上面」。驗版面要同時量「有無溢出容器」與「與下方元素的重疊量」，或用 `elementFromPoint` 確認最上層是它
+- 判「畫面有沒有釘死高度」不要拿 computed height 跟 `viewport − padding` 比：某些高度下 `height:auto` 的
+  內容高度剛好等於該值（F53 在 667 踩到）。看行為——頁面是否可捲、清單是否被拉伸
+- 驗「切換有沒有整頁重繪」不要看焦點（點按鈕本來就會帶走焦點），在容器上打 `dataset` 標記看節點是否被替換
 
 ## 下一步 / 待辦
 
-0. **F52 已簽核待動工**（Ryan 選定三項，皆為 F51 review 的範圍外 findings）：
-   ①編輯頁「＋ 加動作」視窗搜尋篩選時整窗縮短、搜尋框位移 84px（`templates.js` 自己的 addModal 沒吃到
-   F50 P1 給 `.pick-modal` 的修法）②`.tpl-items` 缺 `scrollbar-width: thin` 那組共用樣式（它現在是全 app
-   最高的捲動區，桌機/Android 上捲軸比別處粗）③CSS「哪些畫面釘視窗高」的選擇器清單重複兩份（正常規則＋
-   矮螢幕 media query），每加一個畫面要改兩處——改成 JS 統一掛 marker class。
-1. **手機實機掃 F44–F51**：F47 批次列在小螢幕的捲動與誤觸；F49 視窗「點即進」會不會誤觸；F50 四處清單的
+0. **F54 已定方向待動工（Ryan 拍板）**：/body 的輸入表單（日期＋體重＋體脂＋記錄鈕，佔 231px）收進懸浮視窗，
+   畫面只留一顆「＋ 記錄」（同 F49 的做法）。動機：F53 實測 /body 固定區塊 584px，667 級螢幕的紀錄清單只剩
+   55px、560 高放不下；表單一移走就騰出 231px，屆時矮螢幕也能填滿（F53 的 732px 門檻可望下修）。
+   動工前要先寫 acceptance 給 Ryan 簽核。
+1. **F53 留下的規格模糊待裁決**：體脂頁籤「只列有體脂的日子」是實作解讀（acceptance ② 沒明說）。後果是
+   沒量體脂的日子在該頁籤看不到也改不到，要補記得切回體重頁籤。另一案是「全部日子都列、沒體脂顯示 —」。
+2. **手機實機掃 F44–F53**：F47 批次列在小螢幕的捲動與誤觸；F49 視窗「點即進」會不會誤觸；F50 四處清單的
    高度手感（min-height 下限與 `.pick-modal` 的 80dvh 是我定的，不合手就改那幾行）。
-2. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（**現 5 筆**，
-   本輪新增 3 筆：測試載體邊界值、改參數前先查來歷、acceptance 描述不存在的元素）。
+3. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（**現 6 筆**）。
 3. **F50 acceptance ⑥ 的規格 bug（待 Ryan 決定）**：⑥ 寫「⏳ 待同步提示出現時清單讓位」，但
    `syncStatusLine()` 只在 home／logger 呼叫，該提示在這三個畫面永遠不出現。已用 error-banner 驗到等效行為
    並判 PASS，但條文本身描述了不存在的現狀（同 F34 那類）。要更正就回簽核，不自己改寫。

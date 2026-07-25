@@ -13,6 +13,10 @@ const body = {
   saving: false, // 防雙擊：送出中不再受理（教訓同 logSet／課表儲存）
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
   editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
+  metric: "weight", // F53：圖表與紀錄清單顯示哪一項（weight|fat）；不持久化，進畫面一律回體重
+  // F53 review P2-1/P2-2：紀錄清單的捲動位置。**分頁籤各記一份**——體脂清單通常比體重短，
+  // 只存一份的話「切去體脂（位置被夾成 0）再切回體重」會回不到原處
+  rowsScroll: { weight: 0, fat: 0 },
   form: null, // F11：頂部補記表單草稿 {date,weight,fat}——失敗重繪時保留（尤其目標日期，
   // 否則重試會誤寫今天／覆蓋既有資料，Codex P1）；成功儲存後清空 → 回預設今天
 };
@@ -24,24 +28,32 @@ function todayIso() {
   return `${now.getFullYear()}-${m}-${d}`;
 }
 
+// F53 review P2-1：重繪前把清單捲動位置抓下來（由 app.js 的 render() 統一呼叫）。
+// 讀 DOM 而不掛 onscroll——節點被拆時瀏覽器補送的 scrollTop=0 會污染記錄（F48 首版的教訓）。
+export function captureBodyScroll() {
+  const live = document.querySelector(".bm-rows");
+  if (live) body.rowsScroll[body.metric] = live.scrollTop;
+}
+
 export async function openBody() {
   body.metrics = await api.listBodyMetrics();
   body.savedFlash = null;
   body.editDate = null;
   body.form = null; // 進畫面回到預設今天
+  body.metric = "weight"; // F53：不記憶選擇（Ryan 決定），每次進來都是體重
+  body.rowsScroll = { weight: 0, fat: 0 }; // 進畫面從頂端
 }
 
 function latestMetric() {
   return body.metrics[body.metrics.length - 1] || null;
 }
 
-function chartCard(title, points, unit) {
-  // points 升冪 [{date, value}]；自縮放，min/max 與起訖日期標示
+// F53：圖表卡內容（不含 toggle 列）——切換時就地替換這一塊，不整頁重繪
+function chartBody(points, unit) {
+  // points 升冪 [{date, value}]；自縮放，min/max 與起訖日期標示。
+  // 體脂沒量的日子已在呼叫端被 filter 掉＝有記的點才連線（F8 既有行為，F53 沿用）
   if (points.length === 0) {
-    return el("div", { class: "body-card" }, [
-      el("div", { class: "body-card-head" }, [el("span", {}, [title])]),
-      el("p", { class: "body-empty" }, ["還沒有紀錄"]),
-    ]);
+    return [el("p", { class: "body-empty" }, ["還沒有紀錄"])];
   }
   const w = 320;
   const h = 96;
@@ -68,9 +80,8 @@ function chartCard(title, points, unit) {
     `r="3" fill="currentColor"/>` +
     "</svg>";
 
-  return el("div", { class: "body-card" }, [
-    el("div", { class: "body-card-head" }, [
-      el("span", {}, [title]),
+  return [
+    el("div", { class: "body-card-latest" }, [
       el("span", { class: "n latest" }, [`${last.value} ${unit}`]),
     ]),
     chart,
@@ -79,7 +90,7 @@ function chartCard(title, points, unit) {
       el("span", { class: "n" }, [`${min}–${max} ${unit}`]),
       el("span", {}, [last.date]),
     ]),
-  ]);
+  ];
 }
 
 export function renderBody(rerender, goHome, guard) {
@@ -235,11 +246,13 @@ export function renderBody(rerender, goHome, guard) {
         el("button", { class: "btn btn-ghost sm", onclick: () => { body.editDate = null; state.error = null; rerender(); } }, ["取消"]),
       ]);
     }
+    // F53：清單跟著 toggle 只顯示該項數值（編輯/刪除仍是整筆操作，編輯表單維持體重＋體脂兩欄）
+    const valText = body.metric === "fat"
+      ? `${m.body_fat_pct} %`
+      : `${m.weight_kg} kg`;
     return el("div", { class: "bm-row" }, [
       el("span", { class: "bm-date" }, [m.date]),
-      el("span", { class: "bm-val" }, [
-        `${m.weight_kg} kg${m.body_fat_pct != null ? `　${m.body_fat_pct}%` : ""}`,
-      ]),
+      el("span", { class: "bm-val" }, [valText]),
       el("button", {
         class: "btn icon-btn bm-edit",
         onclick: () => {
@@ -269,7 +282,53 @@ export function renderBody(rerender, goHome, guard) {
     .map((m) => ({ date: m.date, value: m.body_fat_pct }))
     .slice(-CHART_POINTS);
 
-  return el("section", { class: "screen body" }, [
+  // F53：體重／體脂一顆 toggle 切換（沿用 F36 動作表現的 metric 切換範式）。
+  // 切換一律就地替換圖表與清單節點、不呼叫 rerender——整頁重繪會清掉上方表單正在輸入的值並讓
+  // 輸入框失焦（本專案反覆踩過的「就地重畫」教訓，這次預先避開）。
+  const chartHost = el("div", { class: "body-card-body" });
+  const rowsHost = el("div", { class: "bm-rows" });
+  const mkTab = (key, label) =>
+    el(
+      "button",
+      {
+        class: `chip${body.metric === key ? " on" : ""}`,
+        onclick: () => {
+          // 先把目前頁籤的捲動位置收起來，再換頁籤（否則切過去被夾成 0，切回來就回不去了）
+          body.rowsScroll[body.metric] = rowsHost.scrollTop;
+          // review P3-1：切頁籤一併退出行內編輯——編輯列可能因過濾而消失，留著編輯態沒有任何提示
+          body.metric = key;
+          body.editDate = null;
+          paint();
+        },
+      },
+      [label],
+    );
+  const tabW = mkTab("weight", "體重");
+  const tabF = mkTab("fat", "體脂");
+  const toggle = el("div", { class: "chips body-metric-toggle" }, [tabW, tabF]);
+
+  function paint() {
+    const isFat = body.metric === "fat";
+    chartHost.replaceChildren(...chartBody(isFat ? fatPoints : weightPoints, isFat ? "%" : "kg"));
+    // 體脂頁籤只列有體脂的日子（沒量的日子在該頁籤沒有數值可顯示；要補記就切回體重頁籤編輯那天）
+    const rows = [...body.metrics].reverse().filter((m) => !isFat || m.body_fat_pct != null);
+    rowsHost.replaceChildren(
+      ...(rows.length > 0 ? rows.map(metricRow) : [el("p", { class: "body-empty" }, ["還沒有紀錄"])]),
+    );
+    // >2 筆才捲動（門檻語意同 F48／F50／F51）；高度由 CSS 的 flex 吃剩餘空間
+    rowsHost.classList.toggle("scrollable", rows.length > 2);
+    for (const b of toggle.children) b.classList.remove("on");
+    (isFat ? tabF : tabW).classList.add("on");
+    // 還原該頁籤自己的捲動位置（replaceChildren 會把 scrollTop 夾掉；review P2-2）
+    rowsHost.scrollTop = body.rowsScroll[body.metric];
+  }
+  paint();
+  // 整頁重繪後（編輯/刪除/儲存）用 rAF 還原——此時節點才進 DOM、scrollHeight 才算得出來（review P2-1）
+  requestAnimationFrame(() => {
+    rowsHost.scrollTop = body.rowsScroll[body.metric];
+  });
+
+  return el("section", { class: "screen body fills" }, [
     el("header", { class: "topbar" }, [el("h1", {}, ["體重"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(body.savedFlash ? [el("div", { class: "body-saved" }, [body.savedFlash])] : []),
@@ -290,17 +349,17 @@ export function renderBody(rerender, goHome, guard) {
         ["✓ 記錄"],
       ),
     ]),
-    chartCard("體重", weightPoints, "kg"),
-    chartCard("體脂", fatPoints, "%"),
+    el("div", { class: "body-card" }, [
+      el("div", { class: "body-card-head" }, [toggle]),
+      chartHost,
+    ]),
+    // F33：紀錄清單收進卡片（與圖表卡一致）；F53：清單填滿剩餘空間、內部捲動。
+    // review P3-3：完全沒有任何紀錄時不渲染這張卡（否則首次使用會看到空卡片還吃掉 120px）
     ...(body.metrics.length > 0
-      ? [
-          // F33：紀錄清單收進卡片（與上方圖表卡一致），列間不再用帳本橫線
-          el("div", { class: "body-card body-list" }, [
-            el("div", { class: "body-list-head" }, ["紀錄"]),
-            // 最新在上
-            ...[...body.metrics].reverse().map(metricRow),
-          ]),
-        ]
+      ? [el("div", { class: "body-card body-list" }, [
+          el("div", { class: "body-list-head" }, ["紀錄"]),
+          rowsHost,
+        ])]
       : []),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
   ]);

@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v53"; // F52：加動作視窗高度穩定＋捲軸樣式與畫面清單去重（改此處務必同步 state.js 的 APP_VERSION）
+const CACHE_NAME = "liftlog-shell-v54"; // F53：體重頁 toggle 切換體重／體脂＋紀錄清單填滿剩餘空間（改此處務必同步 state.js 的 APP_VERSION）
 const SHELL = [
   "/",
   "/css/app.css",
