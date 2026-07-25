@@ -1,6 +1,6 @@
 # session handoff
 
-最後更新：2026-07-26（F48–F59 十二個 feature 收工）
+最後更新：2026-07-26（F48–F59 十二個 feature 收工；**F60 實作已落地但未驗證**，Claude 額度撞 90% 線收工）
 
 ## 現況
 
@@ -26,6 +26,42 @@
   回 `{weight_first, fat_first, last}`；chips 灰掉但仍可點（點了說明最早紀錄日）；切 metric 時當前檔位
   不可用會自動退檔。可用性規則＝「起始日在資料範圍內」＋「第一個完整涵蓋所有資料的檔位」
 - **F59** 動作表現頁套用同一套檔位停用（`first_session_date` 掛在既有 history 回應、不新增端點）
+
+## 🚧 F60 進行中（下一個 session 從這裡接手）
+
+**狀態：`failing`，程式碼已寫完、E2E 腳本已寫好但一次都沒跑過。** 別把它當完成品，也別重寫——
+先跑驗證，紅了再修。中斷原因：Claude Session 額度 91%（usage-guard 收工線），不是卡點。
+
+**F60 是什麼**：用課表批次新增的每列預設**摺疊成一行摘要**（勾選＋動作名＋「20kg × 8 × 3 組」＋▸），
+點標頭才展開既有的 KG／REPS steppers ＋組數控制。動機是實測資料：4 個動作的課表每列高 **259px**、
+390×844 下清單可視 439px、內容 1065px → **一屏只看得到 1 列**，要捲三屏才確認得完，
+違背 F47「先展開讓人逐列確認」的本意。設計由 Ryan 從四個選項中選定（摺疊摘要＋點開微調）。
+
+**已改的檔案**（未 review、未驗收）：
+- `feature_list.json` F60 條目（acceptance ①–⑦ 已簽核＝**凍結**，不得改寫）
+- `app/static/js/calendar.js`：新增 `batchRowNode(row, onCheckChange)`（整列**就地重畫** paint，
+  不呼叫整頁 rerender——否則清單捲動位置與其他列的展開態會被沖掉）；`openBatch` 每列加 `open: false`；
+  `addModal` 的批次態改用它，並把「全部記錄」的 disabled 改成 `syncLogBtn()` 就地 setAttribute
+  （順手修掉 handoff 待辦第 3 條那類「disabled 沒反映到 DOM」的問題，只限這顆按鈕）
+- `app/static/css/app.css`：`.batch-head` / `.batch-summary` / `.batch-caret`，`.ex-name` 從
+  `.batch-pick` 底下移出（動作名現在點了會展開，不再切勾選）並加 ellipsis
+- v60 → **v61**（sw.js CACHE_NAME ＋ state.js APP_VERSION 兩處都已改）
+
+**已跑過的**：`ruff` clean、`node --check calendar.js` 通過。**沒跑的**：E2E、pytest 子集、review、驗收、deploy。
+
+**接手步驟**：
+1. `PYTHONUTF8=1 uv run python <scratchpad>/verify_f60_own.py`（腳本在 scratchpad，涵蓋 ①–⑦；
+   捲動相關斷言刻意用 dispatchEvent 而非真 click，理由見腳本註解）
+2. 回歸 `verify_f49_own.py`（同一個補記 modal）
+3. Claude fresh-context review（Codex 額度到 **7/29 07:26** 才回來）→ acceptance-verifier → 改 passing → deploy → commit
+
+**實作時已想過、留給驗證去證實的三個風險**：
+- ③ 的「點勾選不展開」靠 `e.target.closest('.batch-pick')` 擋冒泡；label 與 input 各發一次 click，
+  兩者都在 `.batch-pick` 內所以都被擋——要驗「勾選態真的變了」而不只是「沒展開」
+- `paint()` 每次 `replaceChildren` 重建整列（含正在被按的 stepper 按鈕）。click 已派發完才重建，
+  理論上無害，但連點與 caret 同步要實測
+- ⑤ 的收合列高度預估 ~42px（padding 8×2 ＋ 單行 24 ＋ border 2），4 列含 gap ~198px
+  遠低於 360×640 的 52dvh＝333px。若動作名在窄螢幕換行，這條會直接破——ellipsis 就是為此加的
 
 ## ⚠ Codex 額度用盡 → 本輪 review 改由 Claude 執行
 

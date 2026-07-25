@@ -430,7 +430,8 @@ async function openBatch(tpl, rerender) {
     } catch {
       // 查不到上次紀錄不該擋住補記——沿用預設值即可
     }
-    return { item: it, checked: true, weight, reps, sets: Math.max(1, it.default_sets), uuids: [] };
+    // F60：open＝該列是否展開 steppers，預設全部收合
+    return { item: it, checked: true, open: false, weight, reps, sets: Math.max(1, it.default_sets), uuids: [] };
   }));
   cal.batch = { name: tpl.name, rows, workoutId: null };
   rerender();
@@ -550,46 +551,84 @@ function modeSwitch(rerender, guard) {
   return el("div", { class: "cal-add-mode" }, [mk("單一動作", "single"), mk("用課表", "template")]);
 }
 
+// F60：批次確認的單列。摺疊態只一行摘要，點標頭展開 steppers。
+// 整列一律**就地重畫**（paint），不呼叫整頁 rerender——否則清單捲動位置與其他列的展開態都會被
+// 沖掉（F48 以來的老教訓）。摘要不另存狀態，每次 paint 都從 row 讀，避免同一份事實存兩處。
+function batchRowNode(row, onCheckChange) {
+  const node = el("div", {});
+  const paint = () => {
+    node.className = `cal-batch-row${row.checked ? "" : " off"}${row.open ? " open" : ""}`;
+    const unit = row.item.is_bodyweight ? "負重 " : "";
+    const summary = `${unit}${row.weight}kg × ${row.reps} × ${row.sets} 組`;
+    const head = el("div", {
+      class: "batch-head",
+      onclick: (e) => {
+        // ③ 勾選框與其 label 區獨立：點它只切勾選，不展開／收合
+        if (e.target.closest(".batch-pick")) return;
+        row.open = !row.open;
+        paint();
+      },
+    }, [
+      el("label", { class: "batch-pick" }, [
+        el("input", {
+          type: "checkbox",
+          ...(row.checked ? { checked: "" } : {}),
+          onchange: () => { row.checked = !row.checked; paint(); onCheckChange(); },
+        }),
+      ]),
+      el("span", { class: "ex-name" }, [exerciseName(row.item)]),
+      el("span", { class: "batch-summary" }, [summary]),
+      el("span", { class: "batch-caret" }, [row.open ? "▾" : "▸"]),
+    ]);
+    const kids = [head];
+    if (row.open) {
+      kids.push(
+        el("div", { class: "steppers" }, [
+          stepper(row.item.is_bodyweight ? "負重 KG" : "KG", row.weight,
+            [["−2.5", -2.5], ["+2.5", +2.5]],
+            (delta) => { row.weight = Math.max(0, Math.round((row.weight + delta) * 10) / 10); },
+            paint),
+          stepper("REPS", row.reps, [["−1", -1], ["+1", +1]],
+            (delta) => { row.reps = Math.max(1, row.reps + delta); }, paint),
+        ]),
+        el("div", { class: "batch-sets" }, [
+          el("span", { class: "name" }, ["組數"]),
+          el("button", { class: "btn", onclick: () => { row.sets = Math.max(1, row.sets - 1); paint(); } }, ["−1"]),
+          el("output", { class: "val" }, [String(row.sets)]),
+          el("button", { class: "btn", onclick: () => { row.sets += 1; paint(); } }, ["+1"]),
+        ]),
+      );
+    }
+    node.replaceChildren(...kids);
+  };
+  paint();
+  return node;
+}
+
 function addModal(guard, rerender) {
   if (!cal.addOpen || !cal.selected || cal.selectMode || cal.selected > calToday()) return [];
   let inner;
   if (cal.batch) {
     // F47：批次確認態——課表每個動作一列，逐列可勾選/調重量次數組數，按一次全部寫入
-    const anyChecked = cal.batch.rows.some((r) => r.checked);
+    // F60：每列預設摺疊成一行摘要（勾選＋動作名＋「20kg × 8 × 3 組」＋▸），點標頭才展開 steppers。
+    // 4 個動作的課表原本要捲三屏才看得完，違背 F47「先展開讓人逐列確認」的本意。
+    const logBtn = el("button", {
+      class: "btn btn-primary cal-batch-log",
+      onclick: () => guard(() => batchLog(rerender)),
+    }, ["全部記錄"]);
+    // 勾選改變時就地同步按鈕停用態（不整頁重繪；setAttribute 讓 disabled 反映在 DOM）
+    const syncLogBtn = () => {
+      const ok = cal.batch.rows.some((r) => r.checked) && !cal.batchSubmitting;
+      if (ok) logBtn.removeAttribute("disabled");
+      else logBtn.setAttribute("disabled", "");
+    };
+    syncLogBtn();
     inner = el("div", { class: "modal cal-add-modal batch" }, [
       el("div", { class: "modal-head" }, [`${cal.batch.name} · ${cal.selected}`]),
-      el("div", { class: "cal-batch-list" }, cal.batch.rows.map((row) =>
-        el("div", { class: `cal-batch-row${row.checked ? "" : " off"}` }, [
-          el("label", { class: "batch-pick" }, [
-            el("input", {
-              type: "checkbox",
-              ...(row.checked ? { checked: "" } : {}),
-              onchange: () => { row.checked = !row.checked; rerender(); },
-            }),
-            el("span", { class: "ex-name" }, [exerciseName(row.item)]),
-          ]),
-          el("div", { class: "steppers" }, [
-            stepper(row.item.is_bodyweight ? "負重 KG" : "KG", row.weight,
-              [["−2.5", -2.5], ["+2.5", +2.5]],
-              (delta) => { row.weight = Math.max(0, Math.round((row.weight + delta) * 10) / 10); },
-              rerender),
-            stepper("REPS", row.reps, [["−1", -1], ["+1", +1]],
-              (delta) => { row.reps = Math.max(1, row.reps + delta); }, rerender),
-          ]),
-          el("div", { class: "batch-sets" }, [
-            el("span", { class: "name" }, ["組數"]),
-            el("button", { class: "btn", onclick: () => { row.sets = Math.max(1, row.sets - 1); rerender(); } }, ["−1"]),
-            el("output", { class: "val" }, [String(row.sets)]),
-            el("button", { class: "btn", onclick: () => { row.sets += 1; rerender(); } }, ["+1"]),
-          ]),
-        ]),
-      )),
+      el("div", { class: "cal-batch-list" },
+        cal.batch.rows.map((row) => batchRowNode(row, syncLogBtn))),
       el("div", { class: "modal-actions" }, [
-        el("button", {
-          class: "btn btn-primary cal-batch-log",
-          ...(cal.batchSubmitting || !anyChecked ? { disabled: "" } : {}),
-          onclick: () => guard(() => batchLog(rerender)),
-        }, ["全部記錄"]),
+        logBtn,
         el("button", {
           class: "btn btn-ghost sm modal-cancel",
           ...(cal.batchSubmitting ? { disabled: "" } : {}),
