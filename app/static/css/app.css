@@ -45,14 +45,16 @@ body {
    （.app 只有 min-height，flex 子項拿不到可分配的剩餘空間）。其餘畫面不受影響，仍照舊隨內容長高。 */
 .screen.picker,
 .screen.templates,
-.screen.template-select { height: calc(100dvh - var(--app-pad-y)); }
+.screen.template-select,
+.screen.template-edit { height: calc(100dvh - var(--app-pad-y)); }
 /* F50 review P2：極矮視窗（手機橫放 844×390、小裝置 320×420）連 min-content 都塞不進一屏，
    釘死高度只會讓底部按鈕落在可視區外。這種情境放棄「填滿」，回退成整張畫面可捲——
    按鈕捲得到比留在畫面內重要。直立 ≥480px 高（含 iPhone SE 的 667）不受影響。 */
 @media (max-height: 480px) {
   .screen.picker,
   .screen.templates,
-  .screen.template-select { height: auto; }
+  .screen.template-select,
+  .screen.template-edit { height: auto; }
 }
 .topbar { display: flex; justify-content: space-between; align-items: baseline; }
 .topbar h1 { font-size: 17px; font-weight: 600; letter-spacing: .02em; }
@@ -405,8 +407,14 @@ body {
 .tpl-item-rest .rest-custom:focus-visible { outline: 2px solid var(--led); }
 .tpl-add-panel { display: flex; flex-direction: column; gap: 10px; }
 .tpl-add-panel .exercise-list { max-height: 40dvh; }
-/* F21：編輯課表動作清單固定高度（約 2 個動作高，超過再捲動）＋內部捲動 */
-.tpl-items.scrollable { max-height: 310px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* F21 訂門檻（>2 個動作才捲動）、F51 改高度策略為填滿剩餘空間——F50 改了四處清單但漏掉這一處，
+   Ryan 真機一眼看出「課表頁面沒有動態調整」。min-height 是下限，矮螢幕仍留得下約一個動作列。 */
+/* F51：編輯課表頁的三顆鈕貼底，位置與清單長度脫鉤（見 templates.js 同段註解） */
+.tpl-edit-foot { display: flex; flex-direction: column; gap: 14px; margin-top: auto; }
+.tpl-items.scrollable {
+  flex: 1 1 0; min-height: 120px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
 /* F21：加動作懸浮視窗 */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 100;

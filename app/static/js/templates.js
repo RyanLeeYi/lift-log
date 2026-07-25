@@ -588,7 +588,7 @@ export function renderTemplateEdit(rerender, guard) {
   };
 
   // 整頁重繪會重置捲動位置——存/還原 scrollTop，讓下方動作的組數/休息/排序可連續編輯不跳頂（Codex P2）
-  // F21（2026-07-19 調整）：清單約 2 個動作高，超過 2 個才固定高度捲動
+  // F21（2026-07-19 調整）：超過 2 個動作才變成可捲清單（門檻）；高度策略由 F51 改為填滿剩餘空間
   const scrollable = editing.items.length > 2;
   const itemsNode = el(
     "div",
@@ -610,37 +610,42 @@ export function renderTemplateEdit(rerender, guard) {
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     nameInput,
-    // F21：動作清單固定高度（約 1 個動作高）＋內部捲動，儲存/加動作按鈕不被推走
+    // F21：動作清單可捲，儲存/加動作按鈕不被推走；高度由 F51 改為填滿剩餘空間（見 app.css .tpl-items）
     itemsNode,
-    el(
-      "button",
-      {
-        class: "btn",
-        onclick: () =>
-          guard(async () => {
-            tpl.searchQ = ""; // 每次開窗都從完整清單開始（免得上次無結果的搜尋字讓重開變空白）
-            tpl.muscleFilter = null;
-            await loadPickable("");
-            tpl.selectedAdd = null;
-            tpl.adding = true;
-            rerender();
-          }),
-      },
-      ["＋ 加動作"],
-    ),
-    el("button", { class: "btn btn-primary", onclick: () => guard(save) }, ["儲存課表"]),
-    el(
-      "button",
-      {
-        class: "btn btn-ghost",
-        // F27：有未儲存變更時先跳自訂確認視窗（不用瀏覽器 confirm，沿用 app 慣例）
-        onclick: () => {
-          if (hasUnsavedTemplate()) { tpl.confirmLeave = true; rerender(); }
-          else guard(backToList);
+    // F51（Ryan 拍板）：三顆鈕包一層貼底容器——清單在 3→2 個動作跨門檻塌陷時，按鈕位置若跟著上移
+    // 156px（高螢幕更多），剛按完 ✕ 的手指正落在「儲存課表」上＝誤存離開。margin-top: auto 讓按鈕
+    // 位置與清單長度脫鉤；清單可捲時 flex 已吃滿空間，這個 auto 邊界不生效。
+    el("div", { class: "tpl-edit-foot" }, [
+      el(
+        "button",
+        {
+          class: "btn",
+          onclick: () =>
+            guard(async () => {
+              tpl.searchQ = ""; // 每次開窗都從完整清單開始（免得上次無結果的搜尋字讓重開變空白）
+              tpl.muscleFilter = null;
+              await loadPickable("");
+              tpl.selectedAdd = null;
+              tpl.adding = true;
+              rerender();
+            }),
         },
-      },
-      ["← 課表列表"],
-    ),
+        ["＋ 加動作"],
+      ),
+      el("button", { class: "btn btn-primary", onclick: () => guard(save) }, ["儲存課表"]),
+      el(
+        "button",
+        {
+          class: "btn btn-ghost",
+          // F27：有未儲存變更時先跳自訂確認視窗（不用瀏覽器 confirm，沿用 app 慣例）
+          onclick: () => {
+            if (hasUnsavedTemplate()) { tpl.confirmLeave = true; rerender(); }
+            else guard(backToList);
+          },
+        },
+        ["← 課表列表"],
+      ),
+    ]),
     // F21：加動作懸浮視窗（overlay，蓋在整個編輯畫面上）
     ...(tpl.adding ? [addModal(rerender, guard)] : []),
     // F25：自訂動作視窗疊在加動作視窗上層
