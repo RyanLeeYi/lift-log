@@ -343,7 +343,20 @@ export function renderBody(rerender, goHome, guard) {
     el("header", { class: "topbar" }, [el("h1", {}, ["體重"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(body.savedFlash ? [el("div", { class: "body-saved" }, [body.savedFlash])] : []),
-    // F54：表單收進懸浮視窗，畫面只留入口鈕——原本這塊佔 231px，是 F53「清單填滿」在矮螢幕
+
+    el("div", { class: "body-card" }, [
+      el("div", { class: "body-card-head" }, [toggle]),
+      chartHost,
+    ]),
+    // F33：紀錄清單收進卡片（與圖表卡一致）；F53：清單填滿剩餘空間、內部捲動。
+    // review P3-3：完全沒有任何紀錄時不渲染這張卡（否則首次使用會看到空卡片還吃掉 120px）
+    ...(body.metrics.length > 0
+      ? [el("div", { class: "body-card body-list" }, [
+          el("div", { class: "body-list-head" }, ["紀錄"]),
+          rowsHost,
+        ])]
+      : []),
+    // F54：表單收進懸浮視窗，畫面只留入口鈕；F55：入口鈕移到畫面下方（在「← 回首頁」之上）——原本這塊佔 231px，是 F53「清單填滿」在矮螢幕
     // 做不到的主因（/body 固定區塊 584px）
     el(
       "button",
@@ -359,18 +372,6 @@ export function renderBody(rerender, goHome, guard) {
       },
       ["＋ 記錄"],
     ),
-    el("div", { class: "body-card" }, [
-      el("div", { class: "body-card-head" }, [toggle]),
-      chartHost,
-    ]),
-    // F33：紀錄清單收進卡片（與圖表卡一致）；F53：清單填滿剩餘空間、內部捲動。
-    // review P3-3：完全沒有任何紀錄時不渲染這張卡（否則首次使用會看到空卡片還吃掉 120px）
-    ...(body.metrics.length > 0
-      ? [el("div", { class: "body-card body-list" }, [
-          el("div", { class: "body-list-head" }, ["紀錄"]),
-          rowsHost,
-        ])]
-      : []),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
     // F54：記錄視窗（overlay）。錯誤訊息在視窗內自帶一份——遮罩會蓋住畫面上的 error-banner（F49 P2-2）
     ...(body.formOpen
