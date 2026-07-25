@@ -1,11 +1,11 @@
 # session handoff
 
-最後更新：2026-07-26（F48–F58 十一個 feature 收工）
+最後更新：2026-07-26（F48–F59 十二個 feature 收工）
 
 ## 現況
 
-**58/58 feature passing**，線上 **v59**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
-公開 sw.js 已是 v59）。本輪完成：
+**59/59 feature passing**，線上 **v60**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
+公開 sw.js 已是 v60）。本輪完成：
 
 - **F48** 課表三處清單超過兩項改捲動（列表頁／挑課表／今日菜單）
 - **F49** 有課表時「臨時加動作」收成一顆入口鈕＋懸浮視窗（自由訓練維持攤開、點動作即進 logger）
@@ -25,6 +25,7 @@
 - **F58** 資料不足時停用超出範圍的區間檔位（**本輪唯一有後端**）：新端點 `GET /api/body-metrics/range`
   回 `{weight_first, fat_first, last}`；chips 灰掉但仍可點（點了說明最早紀錄日）；切 metric 時當前檔位
   不可用會自動退檔。可用性規則＝「起始日在資料範圍內」＋「第一個完整涵蓋所有資料的檔位」
+- **F59** 動作表現頁套用同一套檔位停用（`first_session_date` 掛在既有 history 回應、不新增端點）
 
 ## ⚠ Codex 額度用盡 → 本輪 review 改由 Claude 執行
 
@@ -63,9 +64,14 @@ E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`
 
 ## 下一步 / 待辦
 
-0. **「動作表現」頁的 x 軸仍是等距索引**（F57 只改了 /body）。那頁的點是「每次訓練」而非日曆日，
-   語意不同——訓練間隔不規則時等距軸同樣會誤導斜率，但也可以主張「第 N 次訓練」本來就是有意義的軸。
-   要改先寫 acceptance 簽核。
+0. **建議下一步（兩個都待 Ryan 決定）**：
+   a. **抽共用 `range.js`**（F59 review P3-6，reviewer 明確建議「抽」）：`PRESETS`／`monthsAgo`／`iso`／
+      `presetAvailable(firstDate)`／`longestAvailablePreset(firstDate)` 現在在 `body.js` 與 `exercise-detail.js`
+      各一份，邏輯逐字相同、只差 first 的來源。理由不是「重複不好」，而是它帶著**無法由程式強制的隱性契約**
+      （註解自己寫「改一邊要改另一邊」＝靠人記；規則有反直覺的例外分支；改錯的後果是**靜默顯示錯誤的資料範圍、
+      不會有測試爆**；`PRESETS 必須遞增`的契約原本只寫在一邊）。本輪只做了最小處置（兩邊註解互相標明）。
+   b. **動作表現頁的 x 軸仍是等距索引**（F57 只改了 /body）。那頁的點是「每次訓練」而非日曆日，且有 BUCKET_CAP 16
+      的聚合——時間軸要另外決定聚合點畫在哪個日期上。Ryan 在 F59 的選項中刻意沒選這個。
 1. **F53 留下的規格模糊待裁決**：體脂頁籤「只列有體脂的日子」是實作解讀（acceptance ② 沒明說）。後果是
    沒量體脂的日子在該頁籤看不到也改不到，要補記得切回體重頁籤。另一案是「全部日子都列、沒體脂顯示 —」。
 1. **手機實機掃 F44–F58**（正式站實測 `weight_first=2026-07-20`、`fat_first=null`——你的資料只有 4 天，

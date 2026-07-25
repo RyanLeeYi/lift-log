@@ -7,7 +7,7 @@
 import calendar
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
@@ -72,4 +72,15 @@ def exercise_history(
             sessions.append(entry)
         entry.sets.append(HistorySet.model_validate(s))
 
-    return ExerciseHistoryOut(prs=_all_time_prs(session, exercise_id), sessions=sessions)
+    # F59：全期最早訓練日（不受 from/to 影響）——前端用它判斷哪些區間檔位有意義。
+    # 只算未軟刪的組，否則「刪光了的動作」會被當成還有歷史
+    first_session_date = session.scalar(
+        select(func.min(Workout.date))
+        .join(WorkoutSet, WorkoutSet.workout_id == Workout.id)
+        .where(WorkoutSet.exercise_id == exercise_id, WorkoutSet.deleted_at.is_(None))
+    )
+    return ExerciseHistoryOut(
+        prs=_all_time_prs(session, exercise_id),
+        sessions=sessions,
+        first_session_date=first_session_date,
+    )

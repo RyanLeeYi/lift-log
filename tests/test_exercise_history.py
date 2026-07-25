@@ -180,3 +180,46 @@ def test_api_history_default_range_last_3_months(client: TestClient, exercise_id
     resp = client.get(f"/api/exercises/{exercise_id}/history")
     assert resp.status_code == 200
     assert "prs" in resp.json() and "sessions" in resp.json()
+
+
+class TestFirstSessionDate:
+    """F59：全期最早訓練日——前端據此停用超出資料範圍的區間檔位。"""
+
+    def test_none_when_no_sets(self, db_session: Session) -> None:
+        ex = Exercise(name_zh="臥推", name_en="Bench Press", muscle_group="胸")
+        db_session.add(ex)
+        db_session.commit()
+
+        out = exercise_history(db_session, ex.id, date(2026, 1, 1), date(2026, 12, 31))
+        assert out.first_session_date is None
+
+    def test_earliest_session_regardless_of_range(self, db_session: Session) -> None:
+        squat = _seed(db_session)  # 4/10、7/10、7/16 三次訓練
+
+        # 查詢區間只框 7 月，first_session_date 仍要回 4/10（全期）
+        out = exercise_history(db_session, squat.id, date(2026, 7, 1), date(2026, 7, 31))
+        assert out.first_session_date == date(2026, 4, 10)
+
+    def test_ignores_soft_deleted_sets(self, db_session: Session) -> None:
+        ex = Exercise(name_zh="划船", name_en="Row", muscle_group="背")
+        db_session.add(ex)
+        db_session.flush()
+        w_old = Workout(date=date(2026, 3, 1))
+        w_new = Workout(date=date(2026, 7, 1))
+        db_session.add_all([w_old, w_new])
+        db_session.flush()
+        # 舊那次的組全部軟刪 → 最早訓練日應該是 7/1，不是 3/1
+        db_session.add_all([
+            WorkoutSet(
+                workout_id=w_old.id, exercise_id=ex.id, set_number=1, weight_kg=50.0, reps=8,
+                client_uuid="f59-old-1", deleted_at=datetime(2026, 7, 20, 12, 0, 0),
+            ),
+            WorkoutSet(
+                workout_id=w_new.id, exercise_id=ex.id, set_number=1, weight_kg=55.0, reps=8,
+                client_uuid="f59-new-1",
+            ),
+        ])
+        db_session.commit()
+
+        out = exercise_history(db_session, ex.id, date(2026, 1, 1), date(2026, 12, 31))
+        assert out.first_session_date == date(2026, 7, 1)

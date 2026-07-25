@@ -12,6 +12,7 @@ const detail = {
   returnScreen: "picker", // 返回目的地（F38 兩入口各自帶入）
   metric: "w", // w＝最重重量（不乘次數）／v＝最重總訓練量（單組 weight×reps）
   range: { kind: "preset", months: 3 }, // 或 {kind:"custom", from, to}
+  rangeNote: null, // F59：點到停用檔位時的一次性說明（初次退檔是靜默的，同 F58 的 openBody）
   data: { prs: { top_weight: null, top_set_volume: null }, sessions: [] },
   customOpen: false,
   customFrom: "",
@@ -20,6 +21,9 @@ const detail = {
   bodyweight: 0, // F37：自體重動作噸位用（取最新體重，同日曆的近似）
 };
 
+// ⚠ 必須由短到長遞增：longestAvailablePreset() 取 filter 後的最後一個當「最長可用」。
+// ⚠ 這份與 body.js 的 PRESETS／presetAvailable／longestAvailablePreset **是同一套規則的第二份拷貝**
+//   （F58 在 body.js、F59 複製到這裡）。改任一邊都要改另一邊；抽成共用模組的提案見 session-handoff。
 const PRESETS = [
   ["1M", 1], ["3M", 3], ["6M", 6], ["9M", 9], ["1Y", 12], ["2Y", 24], ["3Y", 36],
 ];
@@ -42,6 +46,23 @@ function datesFor(range) {
   if (range.kind === "custom") return { from: range.from, to: range.to };
   const today = new Date();
   return { from: iso(monthsAgo(today, range.months)), to: iso(today) };
+}
+
+// F59：檔位可用性——規則與 F58（/body）**完全相同**，改一邊要改另一邊：
+// 可用 =「檔位起始日 ≥ 最早訓練日」或「它是第一個完整涵蓋所有資料的檔位」；沒有紀錄時不限制。
+// 後者的例外是必要的：否則資料 100 天時最大只能選 3M，最舊 10 天用任何 preset 都看不到（只能自訂）。
+function presetAvailable(months) {
+  const first = detail.data.first_session_date;
+  if (!first) return true;
+  const startOf = (m) => iso(monthsAgo(new Date(), m));
+  if (startOf(months) >= first) return true;
+  const covering = PRESETS.map(([, m]) => m).filter((m) => startOf(m) < first);
+  return covering.length > 0 && months === covering[0];
+}
+
+function longestAvailablePreset() {
+  const usable = PRESETS.filter(([, m]) => presetAvailable(m));
+  return usable.length ? usable[usable.length - 1][1] : PRESETS[0][1];
 }
 
 let reqSeq = 0; // 過期回應丟棄：快速連點時只採用最新一次查詢
@@ -87,7 +108,29 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
       /* 拿不到體重就當 0，不擋開頁 */
     }
   }
+  detail.rangeNote = null;
+  const myId = exercise.id; // review P2-1：載入期間使用者可能又點了別的動作
   await loadRange({ kind: "preset", months: 3 });
+  // review P2-1：本函式在 await 後才切畫面，期間可再點另一個動作。若 detail.exerciseId 已被換掉，
+  // 這裡的續行就不該再動任何狀態（同 app.js pickExercise 的 `state.exercise !== exercise` 手法）
+  if (detail.exerciseId !== myId) return;
+  // F59（同 F58 P3-4）：first_session_date 要等第一次查詢回來才知道；若 3M 其實不可用就退檔，
+  // 否則畫面會出現「被選中的那顆是灰的」。
+  // review P2-2：**不再發第二次請求**——可以證明它必然多餘：presetAvailable(3) 為 false
+  // ⇒ 資料全落在最近一個月內 ⇒ 可用集合恆為 {1M} ⇒ 1M 的資料是剛拿到的 3M 的嚴格子集。
+  // 而那次請求若失敗會讓使用者「明明資料在手上卻進不去頁面」。所以就地過濾。
+  if (!presetAvailable(3)) {
+    const months = longestAvailablePreset(); // 依上述推導必為 1M
+    const from = iso(monthsAgo(new Date(), months));
+    detail.range = { kind: "preset", months };
+    detail.data = {
+      ...detail.data,
+      sessions: detail.data.sessions.filter((x) => x.date >= from),
+    };
+    // 與 loadRange 一致：換區間後重設月份展開＝近 3 個月自動攤開
+    const ms = [...new Set(detail.data.sessions.map((x) => x.date.slice(0, 7)))].sort().reverse();
+    detail.expandedMonths = new Set(ms.slice(0, 3));
+  }
 }
 
 // ---------- 指標與折點疏密 ----------
@@ -267,9 +310,17 @@ export function renderExerciseDetail(rerender, goBack, guard) {
   const histBox = el("div", { class: "ex-hist" });
 
   // R2：切 metric 只重畫曲線＋cap＋按鈕高亮，不 rerender()（整頁重繪）、不打 API
+  // F59：說明節點——setMetric 是就地更新（F36 起刻意不整頁重繪），所以切 metric 時要自己把它移掉
+  const noteNode = detail.rangeNote
+    ? el("p", { class: "range-note" }, [detail.rangeNote])
+    : null;
+
   const mBtn = { w: null, v: null };
   function setMetric(m) {
     detail.metric = m;
+    // F59（acceptance ⑤）：切 metric 後舊說明就過期了；就地移除，不走 rerender
+    detail.rangeNote = null;
+    if (noteNode && noteNode.isConnected) noteNode.remove();
     mBtn.w.classList.toggle("on", m === "w");
     mBtn.v.classList.toggle("on", m === "v");
     capLbl.textContent = METRICS[m].lbl;
@@ -281,20 +332,33 @@ export function renderExerciseDetail(rerender, goBack, guard) {
     return b;
   };
 
-  const presetBtn = ([label, months]) =>
-    el("button", {
-      class: detail.range.kind === "preset" && detail.range.months === months ? "on" : "",
-      onclick: () =>
+  const presetBtn = ([label, months]) => {
+    // F59：超出資料範圍的檔位灰掉但**仍可點**——點了顯示說明（用 disabled 就點不到；
+    // 也不能用 aria-disabled，它宣告「不可互動」且會讓 Playwright 拒絕點擊，見 F58 P3-6）
+    const available = presetAvailable(months);
+    const on = detail.range.kind === "preset" && detail.range.months === months;
+    return el("button", {
+      class: `${on ? "on" : ""}${available ? "" : " off"}`.trim(),
+      ...(available ? {} : { "aria-label": `${label}（超出資料範圍，點擊查看說明）` }),
+      onclick: () => {
+        if (!available) {
+          detail.rangeNote = `這個動作最早的訓練是 ${detail.data.first_session_date}，還沒有更早的資料`;
+          rerender();
+          return;
+        }
         guard(async () => {
+          detail.rangeNote = null;
           await loadRange({ kind: "preset", months }); // 成功才提交檔位＋資料
           detail.customOpen = false;
           rerender();
-        }),
+        });
+      },
     }, [label]);
+  };
 
   const customChip = el("button", {
     class: detail.range.kind === "custom" ? "on" : "",
-    onclick: () => { detail.customOpen = !detail.customOpen; rerender(); },
+    onclick: () => { detail.customOpen = !detail.customOpen; detail.rangeNote = null; rerender(); },
   }, ["自訂"]);
 
   const customPanel = detail.customOpen
@@ -313,6 +377,7 @@ export function renderExerciseDetail(rerender, goBack, guard) {
           onclick: () =>
             guard(async () => {
               const f = detail.customFrom, t = detail.customTo;
+              detail.rangeNote = null; // review P3-4：驗證失敗會早退，說明要在早退前就清掉
               // to 上限 today：max 屬性只是控制項提示，手打的未來日期仍要自己擋
               if (!f || !t || f > t || t > iso(new Date())) {
                 state.error = "起訖日期不對（起要早於訖，且不能超過今天）";
@@ -339,6 +404,8 @@ export function renderExerciseDetail(rerender, goBack, guard) {
     ]),
     el("div", { class: "seg ex-metric" }, [metricBtn("w"), metricBtn("v")]),
     el("div", { class: "ex-range" }, [...PRESETS.map(presetBtn), customChip]),
+    // F59：點到停用檔位／初次退檔時的說明（節點抽成變數，讓 setMetric 能就地移除）
+    ...(noteNode ? [noteNode] : []),
     ...(customPanel ? [customPanel] : []),
     el("div", { class: "ex-chartcard" }, [
       el("div", { class: "ex-cap" }, [

@@ -247,6 +247,9 @@ class HistorySession(BaseModel):
 class ExerciseHistoryOut(BaseModel):
     prs: PrSummary  # 全期個人紀錄（不受 from/to 影響）
     sessions: list[HistorySession]  # 區間內每次訓練的全部組，依日期升冪
+    # F59：全期最早訓練日（不受 from/to 影響；無未軟刪的組時為 None）
+    # 前端據此停用超出資料範圍的區間檔位
+    first_session_date: date_type | None = None
 
 
 class PushKeys(BaseModel):

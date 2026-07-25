@@ -5,7 +5,8 @@ import { el } from "./dom.js";
 import { state } from "./state.js";
 
 // F56：區間檔位沿用「動作表現」（exercise-detail.js）那組，行為與樣式一致
-// ⚠ 必須由短到長遞增：F58 的 longestAvailablePreset() 取 filter 後的最後一個當「最長可用」
+// ⚠ 必須由短到長遞增：F58 的 longestAvailablePreset() 取 filter 後的最後一個當「最長可用」。
+// ⚠ 這份與 exercise-detail.js 的同名規則是**同一套規則的兩份拷貝**（F58 在此、F59 複製過去）——改一邊要改另一邊
 const PRESETS = [
   ["1M", 1], ["3M", 3], ["6M", 6], ["9M", 9], ["1Y", 12], ["2Y", 24], ["3Y", 36],
 ];
