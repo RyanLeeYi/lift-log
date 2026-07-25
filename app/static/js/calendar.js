@@ -13,8 +13,10 @@ const cal = {
   detail: [], // [{workout, sets}]
   status: null, // 當日狀態 {energy, sleep_quality, note}（F9；沒記就是 null）
   exerciseById: null, // 進日曆時載一次，點日不重抓
-  editSetId: null, // F16：日曆明細正在行內編輯的 set id
+  editSetId: null, // F16→F45：日曆明細正在編輯的 set id（F45 起表單在懸浮 modal，不在列內）
+  editSet: null, // F45：正在編輯的那筆 set（modal 要顯示 set_number／動作名，且存檔要原欄位）
   editDraft: null, // {weight, reps, rpe} 編輯草稿（steppers 就地維護）
+  editSubmitting: false, // F45：編輯送出中（停用儲存/取消、遮罩不關；同補記 modal 的防競態）
   selectMode: false, // F19：多選批次刪除模式
   selectedIds: [], // F19：多選模式下已勾選的 set id
   statusEdit: false, // F18：當日狀態行內編輯中
@@ -74,7 +76,8 @@ function shiftMonth(delta) {
 // 使用者切日/切月一律不帶＝重置為全收合
 async function selectDay(dateStr, keepExpanded = false) {
   cal.selected = dateStr;
-  cal.editSetId = null; // 換日/重載時清掉行內編輯與多選的殘留態
+  cal.editSetId = null; // 換日/重載時清掉編輯與多選的殘留態
+  cal.editSet = null;
   cal.editDraft = null;
   cal.selectMode = false;
   cal.selectedIds = [];
@@ -225,37 +228,82 @@ async function batchDeleteSelected(rerender) {
 }
 
 async function saveEditSet(s, rerender) {
-  const { weight: w, reps: r, rpe } = cal.editDraft; // 值由 steppers 就地維護，邊界已保證
-  await api.updateSet(s.id, {
-    weight_kg: w,
-    reps: r,
-    ...(rpe ? { rpe } : {}),
-    ...(s.rest_seconds != null ? { rest_seconds: s.rest_seconds } : {}),
-  });
+  if (cal.editSubmitting) return; // 防快速雙擊重複送出（同 addSet）
+  cal.editSubmitting = true;
+  rerender(); // 先畫出停用態，再送出
+  try {
+    const { weight: w, reps: r, rpe } = cal.editDraft; // 值由 steppers 就地維護，邊界已保證
+    await api.updateSet(s.id, {
+      weight_kg: w,
+      reps: r,
+      ...(rpe ? { rpe } : {}),
+      ...(s.rest_seconds != null ? { rest_seconds: s.rest_seconds } : {}),
+    });
+    // F45：PATCH 成功即關 modal（此時編輯已生效），再刷新畫面。
+    // 順序不可對調（Codex P2）：refreshMonthAndDay → selectDay 本來就會清掉編輯態，
+    // 放在它之後等於「刷新失敗也照樣關」，與「失敗留 draft 重試」的意圖相反。
+    // PATCH 本身失敗才是要重試的情況——那時 draft 完整留著。
+    cal.editSetId = null;
+    cal.editSet = null;
+    cal.editDraft = null;
+    await refreshMonthAndDay();
+  } finally {
+    cal.editSubmitting = false;
+  }
+  rerender(); // 放在 finally 之後：否則失敗時畫出的是永遠停用的按鈕（F41 教訓）
+}
+
+// F45：關閉編輯 modal（取消／點遮罩空白）。送出中不可關——與 closeAddModal 同一防競態理由。
+function closeEditModal(rerender) {
+  if (cal.editSubmitting) return;
   cal.editSetId = null;
+  cal.editSet = null;
   cal.editDraft = null;
-  await refreshMonthAndDay();
   rerender();
 }
 
+// F45：編輯既有組的懸浮 modal（沿用 .modal-overlay/.modal；不佔日曆明細版面）
+function editModal(guard, rerender) {
+  if (!cal.editSetId || !cal.editSet || cal.selectMode) return [];
+  const s = cal.editSet;
+  const d = cal.editDraft;
+  const exx = (cal.exerciseById || {})[s.exercise_id];
+  return [
+    el("div", {
+      class: "modal-overlay",
+      onclick: (e) => { if (e.target === e.currentTarget) closeEditModal(rerender); },
+    }, [
+      el("div", { class: "modal cal-edit-modal" }, [
+        el("div", { class: "modal-head" }, [
+          el("span", { class: "ex-name" }, [exx ? exerciseName(exx) : ""]),
+          el("span", { class: "setno" }, [`編輯 #${s.set_number}`]),
+        ]),
+        el("div", { class: "steppers" }, [
+          stepper("KG", d.weight, [["−2.5", -2.5], ["+2.5", +2.5]],
+            (delta) => { d.weight = Math.max(0, Math.round((d.weight + delta) * 10) / 10); }, rerender),
+          stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
+            (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
+        ]),
+        rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
+        el("div", { class: "modal-actions" }, [
+          el("button", {
+            class: "btn btn-primary cal-edit-save",
+            ...(cal.editSubmitting ? { disabled: "" } : {}),
+            onclick: () => guard(() => saveEditSet(s, rerender)),
+          }, ["儲存"]),
+          el("button", {
+            class: "btn btn-ghost sm modal-cancel",
+            ...(cal.editSubmitting ? { disabled: "" } : {}),
+            onclick: () => closeEditModal(rerender),
+          }, ["取消"]),
+        ]),
+      ]),
+    ]),
+  ];
+}
+
 function calSetRow(s, guard, rerender) {
-  if (cal.editSetId === s.id) {
-    const d = cal.editDraft;
-    return el("div", { class: "cal-detail-row editing" }, [
-      el("div", { class: "edit-head" }, [`編輯 #${s.set_number}`]),
-      el("div", { class: "steppers" }, [
-        stepper("KG", d.weight, [["−2.5", -2.5], ["+2.5", +2.5]],
-          (delta) => { d.weight = Math.max(0, Math.round((d.weight + delta) * 10) / 10); }, rerender),
-        stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
-          (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
-      ]),
-      rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
-      el("div", { class: "edit-actions" }, [
-        el("button", { class: "btn btn-primary sm", onclick: () => guard(() => saveEditSet(s, rerender)) }, ["儲存"]),
-        el("button", { class: "btn btn-ghost sm", onclick: () => { cal.editSetId = null; cal.editDraft = null; rerender(); } }, ["取消"]),
-      ]),
-    ]);
-  }
+  // F45：編輯表單改懸浮 modal（editModal），這裡不再有行內編輯列
   if (cal.selectMode) {
     // F19 多選：整列可點切換勾選，隱藏編輯/刪除單擊鈕
     const checked = cal.selectedIds.includes(s.id);
@@ -280,6 +328,7 @@ function calSetRow(s, guard, rerender) {
       class: "btn icon-btn edit-set",
       onclick: () => {
         cal.editSetId = s.id;
+        cal.editSet = s;
         cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
         rerender();
       },
@@ -481,7 +530,7 @@ function detailRows(guard, rerender) {
                 }, ["取消"])
               : el("button", {
                   class: "btn btn-ghost sm cal-select-toggle",
-                  onclick: () => { cal.selectMode = true; cal.editSetId = null; rerender(); },
+                  onclick: () => { cal.selectMode = true; cal.editSetId = null; cal.editSet = null; cal.editDraft = null; rerender(); },
                 }, ["☑ 選取"]),
           ]
         : []),
@@ -616,5 +665,6 @@ export function renderCalendar(rerender, goHome, guard) {
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
     // F43：補記懸浮 modal（position:fixed，蓋在整個日曆畫面上；未開啟時回 []）
     ...addModal(guard, rerender),
+    ...editModal(guard, rerender),
   ]);
 }

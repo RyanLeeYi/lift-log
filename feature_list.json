@@ -307,6 +307,13 @@
       "status": "passing",
       "evidence": "verify_f44.py（本機 Playwright E2E）6/6 PASS：①記錄態無「換動作」按鈕 ②取消＝退回選動作態（modal 仍開、搜尋字清空、draft 丟棄→重選為 20kg/8下/輕鬆）③選動作態取消關閉 modal 回日曆、點遮罩空白行為不變 ＋迴歸「記這組仍自動關 modal 並寫入一組」。ruff check 全過；codex review（--uncommitted）無 findings。",
       "acceptance": "① 補記 modal 記錄態（已選動作）不再有『換動作』按鈕（`.cal-add-modal.recording` 內找不到文字為『換動作』的按鈕）。② 記錄態的『取消』＝退回選動作態：點下後 modal 仍開著（`.modal-overlay` 存在）、回到搜尋框＋動作清單（`.cal-add-search` 出現、steppers 消失）、搜尋字串清空、該次未送出的 draft 丟棄（重新選同一動作時是全新預設值：一般動作 20kg／自體重 0、8 下、累度輕鬆）。③ 選動作態的『取消』＝真正關閉 modal 回到日曆（`.modal-overlay` 消失，日曆明細照舊顯示）；點遮罩空白處行為不變（關閉 modal）。④ 送出中（addSubmitting）兩態的取消一律停用，防競態；『記這組』成功仍自動關 modal（F43 行為不變）。⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v44→v45；既有 F1–F43 行為不變。E2E 涵蓋 ①②③。 【2026-07-25 簽核：Ryan 指出換動作多餘，取消應是退一步、選動作態的取消才是離開日曆補記。】"
+    },
+    {
+      "id": "F45",
+      "name": "日曆明細編輯既有組改為懸浮 modal",
+      "status": "passing",
+      "evidence": "verify_f45.py（本機 Playwright E2E）5/5 PASS：①✎ 開 .cal-edit-modal、無 .cal-detail-row.editing、含 steppers＋累度軸 ②帶入原值 50kg/5下/累度7 ③儲存→自動關＋PATCH 生效（52.5×6）＋明細刷新 ④取消／點遮罩關閉且未寫入。ruff 全過；pytest 189 passed；codex review 一則 P2（儲存後刷新失敗會誤關 modal）已修——改為 PATCH 成功即關再刷新。",
+      "acceptance": "① 點某組的 ✎ → 開懸浮 modal（`.modal-overlay` 內含 `.cal-edit-modal`），不再有行內編輯列（`.cal-detail-row.editing` 不存在），日曆明細版面不被表單撐開。② modal 內容：標題「編輯 #<set_number>」＋該組動作名、KG／REPS steppers、累度軸（皆帶入該組原值；rpe 為空時預設輕鬆）、『儲存』與『取消』。③ 按『儲存』→ PATCH 該組後 modal 自動關閉、日曆即時刷新（明細顯示新值、當月熱力圖噸位跟著更新）。④ 按『取消』或點遮罩空白處 → 關閉 modal 且該組維持原值（未送出）。⑤ 送出中（editSubmitting）儲存與取消停用、點遮罩不關（防競態，同 F43/F44 補記 modal）；多選模式（selectMode）下不顯示編輯 modal。⑥ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v45→v46；既有 F1–F44 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①③④。 【2026-07-25 簽核：Ryan 要日曆內的動作更新也改成懸浮式。】"
     }
   ]
 }

@@ -504,10 +504,11 @@ body {
   flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
   background: transparent; border: 1px solid var(--card-edge);
 }
-.cal-detail-row.editing { flex-direction: column; align-items: stretch; gap: 10px; padding-left: 12px; }
-.cal-detail-row.editing .edit-head { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
-.cal-detail-row.editing .edit-actions { display: flex; gap: 10px; }
-.cal-detail-row.editing .edit-actions .btn { flex: 1; }
+/* F45：編輯既有組的懸浮 modal（取代舊的行內編輯列；modal base 見 .modal / .modal-overlay） */
+.cal-edit-modal .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cal-edit-modal .modal-head .ex-name { color: var(--led); font-weight: 700; }
+.cal-edit-modal .modal-head .setno { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
+.cal-edit-modal .modal-actions .cal-edit-save { flex: 1; }
 .cal-detail-row .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
 /* F19 多選批次刪除 */
 .cal-detail-row.selectable { cursor: pointer; padding-left: 8px; }
