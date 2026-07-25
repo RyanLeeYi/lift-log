@@ -25,6 +25,11 @@ const cal = {
   addOpen: false, // F41：就地補記表單是否展開（切日重置）
   addExercise: null, // F41：補記表單已選要記的動作（null＝還在搜尋選動作）
   addSearch: "", // F41：動作搜尋字串
+  addMuscle: null, // F46：補記選動作的部位篩選（null＝全部；與 addSearch 為 AND）
+  addMode: "single", // F47：補記來源——"single" 單一動作／"template" 用課表
+  templates: null, // F47：課表清單（第一次切到「用課表」才載入）
+  batch: null, // F47：批次確認態 {name, rows:[{item, checked, weight, reps, sets, uuids}]}
+  batchSubmitting: false, // F47：批次送出中（停用全部記錄/取消、遮罩不關）
   addDraft: null, // F41：新組草稿 {weight, reps, rpe, uuid}（選定動作後建立）
   addSubmitting: false, // F41：記這組送出中（防快速雙擊重複；同 logger 的 state.submitting）
   exScrollTop: 0, // F43：動作捲軸容器 scrollTop——全畫面重繪後還原，避免捲到下面互動即跳回頂端（切日/切月重置）
@@ -50,6 +55,7 @@ export async function openCalendar() {
   cal.exerciseById = Object.fromEntries(
     (await api.searchExercises("")).map((e) => [e.id, e]),
   );
+  cal.templates = null; // Codex P2：課表可能在課表頁被改過，重進日曆一律重抓（切到「用課表」時才實際載入）
   await loadMonth();
 }
 
@@ -90,6 +96,9 @@ async function selectDay(dateStr, keepExpanded = false) {
     cal.addOpen = false;
     cal.addExercise = null;
     cal.addSearch = "";
+    cal.addMuscle = null; // F46：切日/切月重置部位篩選
+    cal.addMode = "single"; // F47
+    cal.batch = null;
     cal.addDraft = null;
     cal.exScrollTop = 0; // 切日/切月：捲軸回頂端
   }
@@ -390,8 +399,81 @@ async function addSet(rerender) {
     cal.addExercise = null;
     cal.addDraft = null;
     cal.addSearch = "";
+    cal.addMuscle = null; // F46
+    cal.addMode = "single"; // F47
   } finally {
     cal.addSubmitting = false;
+  }
+  rerender();
+}
+
+// F47：批次列的 client_uuid 於「這一輪」固定——重試沿用同 uuid，伺服器冪等去重，
+// 部分失敗後重按不會把已成功的組寫第二次。組數加大時才補新的 uuid。
+function ensureUuids(row) {
+  while (row.uuids.length < row.sets) row.uuids.push(crypto.randomUUID());
+}
+
+// F47：課表 → 批次確認列。重量/次數帶入該動作「上次紀錄」的最重一組；查無或查詢失敗用預設值。
+// 註：last-sets 回的是該動作**最近一次**訓練（不分早於／晚於補記日），純粹當填表預設值。
+async function openBatch(tpl, rerender) {
+  const rows = await Promise.all(tpl.exercises.map(async (it) => {
+    let weight = it.is_bodyweight ? 0 : 20;
+    let reps = 8;
+    try {
+      const last = await api.lastSets(it.exercise_id);
+      if (last.length) {
+        const top = last.reduce((a, b) =>
+          b.weight_kg > a.weight_kg || (b.weight_kg === a.weight_kg && b.reps > a.reps) ? b : a);
+        weight = top.weight_kg;
+        reps = top.reps;
+      }
+    } catch {
+      // 查不到上次紀錄不該擋住補記——沿用預設值即可
+    }
+    return { item: it, checked: true, weight, reps, sets: Math.max(1, it.default_sets), uuids: [] };
+  }));
+  cal.batch = { name: tpl.name, rows, workoutId: null };
+  rerender();
+}
+
+// F47：把勾選的動作依各自組數一次寫進選中日的 workout（同 addSet 的 workout 解析與 set_number 規則）
+async function batchLog(rerender) {
+  if (cal.batchSubmitting) return;
+  cal.batchSubmitting = true;
+  rerender(); // 先畫停用態
+  try {
+    // Codex P1：新建的 workout id 要記在批次草稿裡。部分失敗後重試時 cal.detail 仍是空的，
+    // 若再建一筆新 workout，既有 uuid 會撞到前一筆 workout 的組而 409、永遠重試不成功。
+    let workoutId = cal.batch.workoutId ?? cal.detail[0]?.workout.id;
+    if (workoutId == null) {
+      workoutId = (await api.createWorkout({ date: cal.selected })).id;
+      cal.batch.workoutId = workoutId;
+    }
+    for (const row of cal.batch.rows.filter((r) => r.checked)) {
+      ensureUuids(row);
+      const existing = cal.detail
+        .filter((x) => x.workout.id === workoutId)
+        .flatMap((x) => x.sets)
+        .filter((s) => s.exercise_id === row.item.exercise_id).length;
+      for (let i = 0; i < row.sets; i++) {
+        await api.logSet(workoutId, {
+          client_uuid: row.uuids[i],
+          exercise_id: row.item.exercise_id,
+          set_number: existing + i + 1,
+          weight_kg: row.weight,
+          reps: row.reps,
+          rpe: 6, // 批次一律預設「輕鬆」，要調再逐組編輯（F45 modal）
+        });
+      }
+    }
+    // 全部寫入成功才關（中途失敗 → modal 留著、uuid 不變，直接重按即可續寫不重複）；
+    // 關在 refresh 之前，理由同 F45 的 Codex P2。
+    cal.addOpen = false;
+    cal.batch = null;
+    cal.addMode = "single";
+    await refreshMonthAndDay();
+  } finally {
+    cal.batchSubmitting = false;
   }
   rerender();
 }
@@ -404,7 +486,15 @@ function addBlock(rerender) {
   return [
     el("button", {
       class: "btn cal-add-toggle",
-      onclick: () => { cal.addOpen = true; cal.addExercise = null; cal.addSearch = ""; rerender(); },
+      onclick: () => {
+        cal.addOpen = true;
+        cal.addExercise = null;
+        cal.addSearch = "";
+        cal.addMuscle = null;
+        cal.addMode = "single"; // F47：入口一律從「單一動作」開始
+        cal.batch = null;
+        rerender();
+      },
     }, ["＋ 新增動作"]),
   ];
 }
@@ -416,41 +506,146 @@ function backToPicker(rerender) {
   cal.addExercise = null;
   cal.addDraft = null;
   cal.addSearch = "";
+  cal.addMuscle = null; // F46：退一步回到「全部部位」
+  cal.batch = null; // F47
   rerender();
 }
 
 function closeAddModal(rerender) {
   // Codex P2：送出中不可關/重開——否則使用者可在 addSet await 期間關掉再重開、選新動作，
   // 舊請求成功後的清理會清掉新開 modal 的選取與輸入。送出成功會自動關（addSet 內處理）。
-  if (cal.addSubmitting) return;
+  if (cal.addSubmitting || cal.batchSubmitting) return;
   cal.addOpen = false;
   cal.addExercise = null;
   cal.addDraft = null;
   cal.addSearch = "";
+  cal.addMuscle = null; // F46
+  cal.addMode = "single"; // F47：關掉再開一律回「單一動作」
+  cal.batch = null;
   rerender();
 }
 
 // F43：補記懸浮 modal（照 templates F21 的 .modal-overlay/.modal），不佔日曆版面。
 // 記一組即自動關（addSet 成功後關）。記錄態『取消』＝退回選動作（F44）；選動作態『取消』或點遮罩空白＝關閉。
+// F47：補記的兩種來源切換——單一動作（F43–F46 現況）／用課表（批次）。
+// 課表清單第一次切過去才載入，之後沿用（modal 關掉不清，切日也不必重抓）。
+function modeSwitch(rerender, guard) {
+  const mk = (label, mode) =>
+    el("button", {
+      class: `chip${cal.addMode === mode ? " on" : ""}`,
+      onclick: () => {
+        if (cal.addMode === mode) return;
+        if (mode === "template" && !cal.templates) {
+          guard(async () => {
+            cal.templates = await api.listTemplates();
+            cal.addMode = "template";
+            rerender();
+          });
+          return;
+        }
+        cal.addMode = mode;
+        rerender();
+      },
+    }, [label]);
+  return el("div", { class: "cal-add-mode" }, [mk("單一動作", "single"), mk("用課表", "template")]);
+}
+
 function addModal(guard, rerender) {
   if (!cal.addOpen || !cal.selected || cal.selectMode || cal.selected > calToday()) return [];
   let inner;
-  if (!cal.addExercise) {
+  if (cal.batch) {
+    // F47：批次確認態——課表每個動作一列，逐列可勾選/調重量次數組數，按一次全部寫入
+    const anyChecked = cal.batch.rows.some((r) => r.checked);
+    inner = el("div", { class: "modal cal-add-modal batch" }, [
+      el("div", { class: "modal-head" }, [`${cal.batch.name} · ${cal.selected}`]),
+      el("div", { class: "cal-batch-list" }, cal.batch.rows.map((row) =>
+        el("div", { class: `cal-batch-row${row.checked ? "" : " off"}` }, [
+          el("label", { class: "batch-pick" }, [
+            el("input", {
+              type: "checkbox",
+              ...(row.checked ? { checked: "" } : {}),
+              onchange: () => { row.checked = !row.checked; rerender(); },
+            }),
+            el("span", { class: "ex-name" }, [exerciseName(row.item)]),
+          ]),
+          el("div", { class: "steppers" }, [
+            stepper(row.item.is_bodyweight ? "負重 KG" : "KG", row.weight,
+              [["−2.5", -2.5], ["+2.5", +2.5]],
+              (delta) => { row.weight = Math.max(0, Math.round((row.weight + delta) * 10) / 10); },
+              rerender),
+            stepper("REPS", row.reps, [["−1", -1], ["+1", +1]],
+              (delta) => { row.reps = Math.max(1, row.reps + delta); }, rerender),
+          ]),
+          el("div", { class: "batch-sets" }, [
+            el("span", { class: "name" }, ["組數"]),
+            el("button", { class: "btn", onclick: () => { row.sets = Math.max(1, row.sets - 1); rerender(); } }, ["−1"]),
+            el("output", { class: "val" }, [String(row.sets)]),
+            el("button", { class: "btn", onclick: () => { row.sets += 1; rerender(); } }, ["+1"]),
+          ]),
+        ]),
+      )),
+      el("div", { class: "modal-actions" }, [
+        el("button", {
+          class: "btn btn-primary cal-batch-log",
+          ...(cal.batchSubmitting || !anyChecked ? { disabled: "" } : {}),
+          onclick: () => guard(() => batchLog(rerender)),
+        }, ["全部記錄"]),
+        el("button", {
+          class: "btn btn-ghost sm modal-cancel",
+          ...(cal.batchSubmitting ? { disabled: "" } : {}),
+          // 同 F44 的退一步：先回課表清單，再按一次才離開
+          onclick: () => { if (!cal.batchSubmitting) { cal.batch = null; rerender(); } },
+        }, ["取消"]),
+      ]),
+    ]);
+  } else if (!cal.addExercise && cal.addMode === "template") {
+    // F47：課表清單態
+    inner = el("div", { class: "modal cal-add-modal templates" }, [
+      el("div", { class: "modal-head" }, [`用課表新增 · ${cal.selected}`]),
+      modeSwitch(rerender, guard),
+      el("div", { class: "exercise-list cal-tpl-list" },
+        (cal.templates || []).length
+          ? cal.templates.map((tpl) =>
+            el("button", {
+              class: "btn exercise-item cal-tpl-item",
+              onclick: () => guard(() => openBatch(tpl, rerender)),
+            }, [
+              el("span", {}, [tpl.name]),
+              el("span", { class: "sub" }, [`${tpl.exercises.length} 個動作`]),
+            ]))
+          : [el("div", { class: "empty" }, ["還沒有課表"])],
+      ),
+      el("div", { class: "modal-actions" }, [
+        el("button", { class: "btn btn-ghost modal-cancel", onclick: () => closeAddModal(rerender) }, ["取消"]),
+      ]),
+    ]);
+  } else if (!cal.addExercise) {
     // 搜尋選動作：清單就地 replaceChildren 更新，不 rerender——否則每打一字整頁重繪、輸入框失焦
     const listBox = el("div", { class: "exercise-list cal-add-list" }, []);
+    // F46：部位 chips——沿用 picker 的語意（再點同顆＝取消篩選），與關鍵字 AND
+    const groups = [...new Set(Object.values(cal.exerciseById || {}).map((e) => e.muscle_group))];
+    const chipEls = groups.map((g) =>
+      el("button", { class: `chip${cal.addMuscle === g ? " on" : ""}` }, [g]));
     const paintList = () => {
       const q = cal.addSearch.trim().toLowerCase();
       const all = Object.values(cal.exerciseById || {});
-      const shown = (q
-        ? all.filter((e) =>
-            (e.name_zh || "").toLowerCase().includes(q) || (e.name_en || "").toLowerCase().includes(q))
-        : all).slice(0, 30);
+      const shown = all.filter((e) =>
+        (cal.addMuscle === null || e.muscle_group === cal.addMuscle)
+        && (!q || (e.name_zh || "").toLowerCase().includes(q)
+          || (e.name_en || "").toLowerCase().includes(q)),
+      ).slice(0, 30);
+      chipEls.forEach((c, i) => c.classList.toggle("on", groups[i] === cal.addMuscle));
       listBox.replaceChildren(...shown.map((exx) =>
         el("button", {
           class: "btn exercise-item",
           onclick: () => { cal.addExercise = exx; cal.addDraft = newAddDraft(exx); rerender(); },
         }, [el("span", {}, [exerciseName(exx)]), el("span", { class: "sub" }, [exerciseAlias(exx)])])));
     };
+    // chips 與清單一律就地更新，不 rerender——否則切 chip 會整頁重繪、搜尋框失焦（第 N 次教訓）
+    chipEls.forEach((c, i) => c.addEventListener("click", () => {
+      cal.addMuscle = cal.addMuscle === groups[i] ? null : groups[i];
+      paintList();
+    }));
     const search = el("input", {
       class: "cal-add-search", placeholder: "搜尋動作…", value: cal.addSearch,
       oninput: (e) => { cal.addSearch = e.target.value; paintList(); },
@@ -458,6 +653,8 @@ function addModal(guard, rerender) {
     paintList();
     inner = el("div", { class: "modal cal-add-modal" }, [
       el("div", { class: "modal-head" }, [`新增動作 · ${cal.selected}`]),
+      modeSwitch(rerender, guard),
+      el("div", { class: "chips" }, chipEls),
       search,
       listBox,
       el("div", { class: "modal-actions" }, [

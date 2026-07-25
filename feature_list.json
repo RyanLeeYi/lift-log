@@ -3,240 +3,240 @@
     {
       "id": "F1",
       "name": "資料層＋記錄 API",
-      "acceptance": "uv run pytest 全過：workout/sets CRUD、client_uuid 冪等（重送回 200 不新增列；跨 workout／已刪除 409；TOCTOU 復原）、缺欄位 400、錯 token 401、數值範圍驗證。詳見 docs/prd/mvp-lift-log.md R1 與邊界情況",
       "status": "passing",
-      "evidence": "2026-07-17：uv run pytest --cov → 28 passed，覆蓋率 99%（TOTAL 291 stmts）；ruff check 無錯誤。code review（8 finder + 3 verifier agents）10 findings 全數修復：冪等範圍修正、IntegrityError 復原、LIKE 跳脫、compare_digest、last-sets 404、409 語意入 PRD"
+      "evidence": "2026-07-17：uv run pytest --cov → 28 passed，覆蓋率 99%（TOTAL 291 stmts）；ruff check 無錯誤。code review（8 finder + 3 verifier agents）10 findings 全數修復：冪等範圍修正、IntegrityError 復原、LIKE 跳脫、compare_digest、last-sets 404、409 語意入 PRD",
+      "acceptance": "uv run pytest 全過：workout/sets CRUD、client_uuid 冪等（重送回 200 不新增列；跨 workout／已刪除 409；TOCTOU 復原）、缺欄位 400、錯 token 401、數值範圍驗證。詳見 docs/prd/mvp-lift-log.md R1 與邊界情況"
     },
     {
       "id": "F2",
       "name": "手機記錄 UI",
-      "acceptance": "手機瀏覽器完成「開練→選動作→kg×reps→送出」；同動作上次重量次數自動帶入；送出後組間計時器啟動、休息秒數隨下一組送出（rest_seconds=該組前休息）；RPE 選填不擋送出。詳見 PRD R2",
       "status": "passing",
-      "evidence": "2026-07-17：34 tests 全過（覆蓋率 99%）+ ruff 乾淨；acceptance-verifier 以獨立 Playwright 390×844 重跑全流程逐條 PASS（rest_seconds 掛下一組、RPE 選填、上次帶入、set_number 接續、搜尋即時過濾）；截圖 docs/evidence-f2-logger.png。真機最終確認留待 Ryan。fresh-context review 4 findings（搜尋框重繪清空、雙擊重送、回選同動作編號重複、計時器洩漏）+ 驗證中發現 LIFTLOG_DB env 未生效，全數修復"
+      "evidence": "2026-07-17：34 tests 全過（覆蓋率 99%）+ ruff 乾淨；acceptance-verifier 以獨立 Playwright 390×844 重跑全流程逐條 PASS（rest_seconds 掛下一組、RPE 選填、上次帶入、set_number 接續、搜尋即時過濾）；截圖 docs/evidence-f2-logger.png。真機最終確認留待 Ryan。fresh-context review 4 findings（搜尋框重繪清空、雙擊重送、回選同動作編號重複、計時器洩漏）+ 驗證中發現 LIFTLOG_DB env 未生效，全數修復",
+      "acceptance": "手機瀏覽器完成「開練→選動作→kg×reps→送出」；同動作上次重量次數自動帶入；送出後組間計時器啟動、休息秒數隨下一組送出（rest_seconds=該組前休息）；RPE 選填不擋送出。詳見 PRD R2"
     },
     {
       "id": "F3",
       "name": "日曆 heatmap",
-      "acceptance": "pytest 驗噸位計算（自體重=最新體重+負重，無體重紀錄只計負重）；/calendar 月視圖 5 級深淺、點日期看明細。詳見 PRD R3",
       "status": "passing",
-      "evidence": "2026-07-17：41 tests 全過（+7 F3：噸位加總/自體重無體重只計負重/軟刪除排除/月界含末日/空月/400/401）；Playwright 實測月視圖 3 天 3 級深淺、點日明細（噸位 2,700 kg、動作分組 kg×reps@RPE）、◀▶ 換月、零噸位日顯示 0 kg；截圖 docs/evidence-f3-calendar.png。fresh-context review 4 findings（guard 繞過/重複抓動作庫/零噸位 falsy/月份不重置）全修。set_tonnage 的 bodyweight_kg 參數已為 F8 預留"
+      "evidence": "2026-07-17：41 tests 全過（+7 F3：噸位加總/自體重無體重只計負重/軟刪除排除/月界含末日/空月/400/401）；Playwright 實測月視圖 3 天 3 級深淺、點日明細（噸位 2,700 kg、動作分組 kg×reps@RPE）、◀▶ 換月、零噸位日顯示 0 kg；截圖 docs/evidence-f3-calendar.png。fresh-context review 4 findings（guard 繞過/重複抓動作庫/零噸位 falsy/月份不重置）全修。set_tonnage 的 bodyweight_kg 參數已為 F8 預留",
+      "acceptance": "pytest 驗噸位計算（自體重=最新體重+負重，無體重紀錄只計負重）；/calendar 月視圖 5 級深淺、點日期看明細。詳見 PRD R3"
     },
     {
       "id": "F4",
       "name": "課表選單",
-      "acceptance": "建課表（名稱+動作+順序+預設組數）→開練選課表帶出清單→訓練中可臨時加動作；刪課表不影響歷史 workout。詳見 PRD R4",
       "status": "passing",
-      "evidence": "2026-07-17：58 tests 全過（17 個 F4 專屬：CRUD/順序/預設組數/400/401/404/刪課表不影響歷史/更新不留半套），覆蓋率 99%、ruff 乾淨；Playwright 390×844 全流程實測（建課表→開練帶菜單→記組進度→臨時加動作不污染課表→重整續接→刪課表後日曆歷史完好），截圖 docs/evidence-f4-templates.png、docs/evidence-f4-menu.png；code review（8 finder + 2 verifier）7 findings 成立全數處置（雙擊防重入×2、加動作面板排除已加入動作、搜尋 race 防護、muscle_group 契約補齊、delete 減少無用 join、CSS 合併），setCounts 續接屬 F5 範圍；acceptance-verifier 以 live curl 逐條覆核 5 項全 PASS"
+      "evidence": "2026-07-17：58 tests 全過（17 個 F4 專屬：CRUD/順序/預設組數/400/401/404/刪課表不影響歷史/更新不留半套），覆蓋率 99%、ruff 乾淨；Playwright 390×844 全流程實測（建課表→開練帶菜單→記組進度→臨時加動作不污染課表→重整續接→刪課表後日曆歷史完好），截圖 docs/evidence-f4-templates.png、docs/evidence-f4-menu.png；code review（8 finder + 2 verifier）7 findings 成立全數處置（雙擊防重入×2、加動作面板排除已加入動作、搜尋 race 防護、muscle_group 契約補齊、delete 減少無用 join、CSS 合併），setCounts 續接屬 F5 範圍；acceptance-verifier 以 live curl 逐條覆核 5 項全 PASS",
+      "acceptance": "建課表（名稱+動作+順序+預設組數）→開練選課表帶出清單→訓練中可臨時加動作；刪課表不影響歷史 workout。詳見 PRD R4"
     },
     {
       "id": "F5",
       "name": "PWA 離線佇列",
-      "acceptance": "DevTools offline 模式記 3 組（UI 標示待同步）→恢復連線自動補傳、client_uuid 冪等不重複、標示消失；訓練中重新整理頁面後 set_number 不得與已存組重複（setCounts 需隨續接恢復，F2 驗收遺留）。詳見 PRD R5",
       "status": "passing",
-      "evidence": "2026-07-17：60 tests 全過（+2：/sw.js 供應、SHELL 清單漂移防護）、ruff 乾淨；acceptance-verifier 以獨立 Playwright setOffline 重現 R5 全情境 8/8 PASS（離線記 3 組 UI ⏳ 待同步、恢復連線自動補傳、curl 覆核 client_uuid 冪等 201→200 同 id、標示消失、重整後 set_number 1..5 連續、死 workout 404 標 failed 手動捨棄不無限重試）；截圖 docs/evidence-f5-offline-queue.png。code review（8 finder + 2 verifier）10 findings 成立全數處置：401 上拋導回 setup、5xx 保留重試不誤標永久失敗、⏳/⚠ 標示改由佇列狀態即時推導（修捨棄後誤顯已同步）、online 事件重繪不清輸入焦點、離線帶入本次待同步組數、respondWith 不回 undefined、SWR 掛 waitUntil、install 逐檔容錯、discardFailed 單一交易、sync-failed 按鈕補 .btn 可及性"
+      "evidence": "2026-07-17：60 tests 全過（+2：/sw.js 供應、SHELL 清單漂移防護）、ruff 乾淨；acceptance-verifier 以獨立 Playwright setOffline 重現 R5 全情境 8/8 PASS（離線記 3 組 UI ⏳ 待同步、恢復連線自動補傳、curl 覆核 client_uuid 冪等 201→200 同 id、標示消失、重整後 set_number 1..5 連續、死 workout 404 標 failed 手動捨棄不無限重試）；截圖 docs/evidence-f5-offline-queue.png。code review（8 finder + 2 verifier）10 findings 成立全數處置：401 上拋導回 setup、5xx 保留重試不誤標永久失敗、⏳/⚠ 標示改由佇列狀態即時推導（修捨棄後誤顯已同步）、online 事件重繪不清輸入焦點、離線帶入本次待同步組數、respondWith 不回 undefined、SWR 掛 waitUntil、install 逐檔容錯、discardFailed 單一交易、sync-failed 按鈕補 .btn 可及性",
+      "acceptance": "DevTools offline 模式記 3 組（UI 標示待同步）→恢復連線自動補傳、client_uuid 冪等不重複、標示消失；訓練中重新整理頁面後 set_number 不得與已存組重複（setCounts 需隨續接恢復，F2 驗收遺留）。詳見 PRD R5"
     },
     {
       "id": "F6",
       "name": "MCP＋AI connector",
-      "acceptance": "/mcp 帶 token 連上，查詢 tools（query_workouts/get_progress/list_templates/get_body_metrics）回正確 JSON、雙語匹配；記錄 tools（log_workout/log_body_metrics）可代記錄、未知動作整包拒絕並回建議；至少一家 connector 實連成功（截圖）。詳見 PRD R7/R7b",
       "status": "passing",
-      "evidence": "2026-07-18：103 tests 全過、覆蓋率 99%、ruff 乾淨（commit 6b13980 修完 review ~20 findings：MCP client_uuid 冪等、SingleTokenVerifier、未知動作整包拒絕細節、課表同名 guard 等）。acceptance-verifier 以 live server（隔離 DB port 8137）實呼叫 MCP 逐條 8/8 PASS：token/401/無尾斜線、4 查詢 tools 雙語大小寫匹配、log_workout 代記錄後查回、未知動作整包拒絕含建議且零寫入、create_missing 才建檔、同 client_uuid 重放同 workout_id 組數不翻倍、log-workout-interview prompt 存在、connector 實連證據 docs/evidence-f6-mcp-connector.txt（claude -p 實呼叫）"
+      "evidence": "2026-07-18：103 tests 全過、覆蓋率 99%、ruff 乾淨（commit 6b13980 修完 review ~20 findings：MCP client_uuid 冪等、SingleTokenVerifier、未知動作整包拒絕細節、課表同名 guard 等）。acceptance-verifier 以 live server（隔離 DB port 8137）實呼叫 MCP 逐條 8/8 PASS：token/401/無尾斜線、4 查詢 tools 雙語大小寫匹配、log_workout 代記錄後查回、未知動作整包拒絕含建議且零寫入、create_missing 才建檔、同 client_uuid 重放同 workout_id 組數不翻倍、log-workout-interview prompt 存在、connector 實連證據 docs/evidence-f6-mcp-connector.txt（claude -p 實呼叫）",
+      "acceptance": "/mcp 帶 token 連上，查詢 tools（query_workouts/get_progress/list_templates/get_body_metrics）回正確 JSON、雙語匹配；記錄 tools（log_workout/log_body_metrics）可代記錄、未知動作整包拒絕並回建議；至少一家 connector 實連成功（截圖）。詳見 PRD R7/R7b"
     },
     {
       "id": "F7",
       "name": "Cloudflare Tunnel 部署＋mission-control 收編",
-      "acceptance": "公開 HTTPS 可達；手機 4G 實測完成一次記錄；mission-control 可啟停與監控本服務。詳見 PRD R8",
       "status": "passing",
-      "evidence": "2026-07-18：acceptance-verifier 逐條 3/3 PASS。公開 HTTPS：https://lift-log.my-super-dev-server.work/health 回 200 status ok、首頁 200 經 Cloudflare（Ryan 於 dashboard 加 public hostname → localhost:8137）。手機 4G 記錄：Ryan 真機實測確認＋資料面證據（當日 workout 1-3 含 2/5/6 組實值 sets，20kg×8 等，跨 exercise 17/24，rest_seconds 有量測）。mission-control：services.toml 收編（port 8137、autostart、health_url），啟停實測記錄於雙方 session-handoff（2026-07-18），8137 /health 由中台拉起存活中"
+      "evidence": "2026-07-18：acceptance-verifier 逐條 3/3 PASS。公開 HTTPS：https://lift-log.my-super-dev-server.work/health 回 200 status ok、首頁 200 經 Cloudflare（Ryan 於 dashboard 加 public hostname → localhost:8137）。手機 4G 記錄：Ryan 真機實測確認＋資料面證據（當日 workout 1-3 含 2/5/6 組實值 sets，20kg×8 等，跨 exercise 17/24，rest_seconds 有量測）。mission-control：services.toml 收編（port 8137、autostart、health_url），啟停實測記錄於雙方 session-handoff（2026-07-18），8137 /health 由中台拉起存活中",
+      "acceptance": "公開 HTTPS 可達；手機 4G 實測完成一次記錄；mission-control 可啟停與監控本服務。詳見 PRD R8"
     },
     {
       "id": "F8",
       "name": "體重體脂記錄與趨勢",
-      "acceptance": "POST /api/body-metrics 同日覆蓋；/body 趨勢折線；heatmap 自體重噸位改用最新體重；MCP get_body_metrics 查得到。詳見 PRD R6",
       "status": "passing",
-      "evidence": "2026-07-18：110 tests 全過、覆蓋率 99%、ruff 乾淨。acceptance-verifier live 逐條 5/5 PASS：同日覆蓋 201→200 同 id 單筆、400/401 邊界、區間過濾排序、/js/body.js 供應＋SHELL 收錄＋UI 截圖（docs/evidence-f8-body.png，390×844 兩張 SVG 折線卡）、heatmap 自體重噸位 = 最新體重×reps（101.5×6=609 實測）、MCP get_body_metrics 與 REST 同值同序。Codex review 3 P2 findings 全修（舊體脂預填污染 SSOT、體脂序列先篩後切 90 點、防雙擊＋service 併發 upsert 復原為覆蓋）"
+      "evidence": "2026-07-18：110 tests 全過、覆蓋率 99%、ruff 乾淨。acceptance-verifier live 逐條 5/5 PASS：同日覆蓋 201→200 同 id 單筆、400/401 邊界、區間過濾排序、/js/body.js 供應＋SHELL 收錄＋UI 截圖（docs/evidence-f8-body.png，390×844 兩張 SVG 折線卡）、heatmap 自體重噸位 = 最新體重×reps（101.5×6=609 實測）、MCP get_body_metrics 與 REST 同值同序。Codex review 3 P2 findings 全修（舊體脂預填污染 SSOT、體脂序列先篩後切 90 點、防雙擊＋service 併發 upsert 復原為覆蓋）",
+      "acceptance": "POST /api/body-metrics 同日覆蓋；/body 趨勢折線；heatmap 自體重噸位改用最新體重；MCP get_body_metrics 查得到。詳見 PRD R6"
     },
     {
       "id": "F9",
       "name": "當日狀態記錄",
-      "acceptance": "energy(1-5)+sleep_quality+note 同日覆蓋、休息日可記、評分越界 400；日曆明細顯示狀態；MCP log/get_daily_status；log-workout-interview prompt 模板引導後一次寫入。詳見 PRD R9",
       "status": "passing",
-      "evidence": "2026-07-18：121 tests 全過、覆蓋率 98%、ruff 乾淨。acceptance-verifier live 逐條 6/6 PASS：同日覆蓋 201→200 同 id、休息日（該日零 workout）可記、越界與缺欄 400 全整包拒絕、日曆明細顯示狀態（截圖 docs/evidence-f9-daily-status.png：休息日顯示精力＋note）、MCP log/get_daily_status 中文 note 同值查回且越界不寫入、interview prompt 含 log_daily_status＋覆述確認（含當日狀態）後才一次寫入。Codex review 2 P2 findings 全修（prompt 覆述納入當日狀態、shell cache bump v3 防新舊資產混版）"
+      "evidence": "2026-07-18：121 tests 全過、覆蓋率 98%、ruff 乾淨。acceptance-verifier live 逐條 6/6 PASS：同日覆蓋 201→200 同 id、休息日（該日零 workout）可記、越界與缺欄 400 全整包拒絕、日曆明細顯示狀態（截圖 docs/evidence-f9-daily-status.png：休息日顯示精力＋note）、MCP log/get_daily_status 中文 note 同值查回且越界不寫入、interview prompt 含 log_daily_status＋覆述確認（含當日狀態）後才一次寫入。Codex review 2 P2 findings 全修（prompt 覆述納入當日狀態、shell cache bump v3 防新舊資產混版）",
+      "acceptance": "energy(1-5)+sleep_quality+note 同日覆蓋、休息日可記、評分越界 400；日曆明細顯示狀態；MCP log/get_daily_status；log-workout-interview prompt 模板引導後一次寫入。詳見 PRD R9"
     },
     {
       "id": "F10",
       "name": "自訂動作（使用者新增）",
-      "acceptance": "手機 UI 可新增自訂動作：中文名必填；英文名、部位選填；「自體重動作」勾選。建立後立即出現在動作選單與課表編輯可選清單並可直接記錄；自體重動作噸位計算沿用既有規則（最新體重＋負重）；名稱與現有動作重複（zh 或 en 任一衝突）擋下並提示；前端走既有 POST /api/exercises，不繞過 services 層。來源：2026-07-18 Ryan 真機試用回饋 #1，欄位範圍 Ryan 選「完整但多數選填」",
       "status": "passing",
-      "evidence": "2026-07-19 完成。後端：ExerciseCreate 英文名/部位改選填、name_zh 去空白驗證（app/schemas.py）；create_exercise 英文名留空鏡射中文名、部位留空預設「其他」、正規化重複前置檢查 zh/en → DomainError 400、DB unique 後盾（app/services/exercises.py）；POST /api/exercises 仍經 services 層。前端：picker「＋ 自訂動作」鈕開 .modal-overlay（中文名必填/英文名選填/部位既有 chips＋「其他」自訂/自體重勾選/重複就地提示不丟輸入），api.js createExercise，sw.js v18。測試：tests/test_exercises.py 9 條 + 全套 161 passed、ruff clean。E2E：scratchpad verify_f10.py R1–R6 全 PASS（含後端鏡射/預設、自體重落庫、留空前端擋不打 API、重複擋且保留輸入、自體重預設負重 0 可直接記錄、出現在課表編輯清單）。codex-review 3 P2 全修（成功後才關窗+離線 fallback、401 重拋交全域 guard、modal 可捲動）。acceptance-verifier R1–R10 全 pass（獨立重跑 pytest 與 E2E）。"
+      "evidence": "2026-07-19 完成。後端：ExerciseCreate 英文名/部位改選填、name_zh 去空白驗證（app/schemas.py）；create_exercise 英文名留空鏡射中文名、部位留空預設「其他」、正規化重複前置檢查 zh/en → DomainError 400、DB unique 後盾（app/services/exercises.py）；POST /api/exercises 仍經 services 層。前端：picker「＋ 自訂動作」鈕開 .modal-overlay（中文名必填/英文名選填/部位既有 chips＋「其他」自訂/自體重勾選/重複就地提示不丟輸入），api.js createExercise，sw.js v18。測試：tests/test_exercises.py 9 條 + 全套 161 passed、ruff clean。E2E：scratchpad verify_f10.py R1–R6 全 PASS（含後端鏡射/預設、自體重落庫、留空前端擋不打 API、重複擋且保留輸入、自體重預設負重 0 可直接記錄、出現在課表編輯清單）。codex-review 3 P2 全修（成功後才關窗+離線 fallback、401 重拋交全域 guard、modal 可捲動）。acceptance-verifier R1–R10 全 pass（獨立重跑 pytest 與 E2E）。",
+      "acceptance": "手機 UI 可新增自訂動作：中文名必填；英文名、部位選填；「自體重動作」勾選。建立後立即出現在動作選單與課表編輯可選清單並可直接記錄；自體重動作噸位計算沿用既有規則（最新體重＋負重）；名稱與現有動作重複（zh 或 en 任一衝突）擋下並提示；前端走既有 POST /api/exercises，不繞過 services 層。來源：2026-07-18 Ryan 真機試用回饋 #1，欄位範圍 Ryan 選「完整但多數選填」"
     },
     {
       "id": "F11",
       "name": "體重補記過去日期",
-      "acceptance": "/body 頁可選日期補記過去的體重／體脂（預設今天、不可選未來日期）；同日覆蓋語意與 F8 一致（重送覆蓋該日紀錄）；補記後趨勢折線正確反映；heatmap 自體重噸位規則維持 F8 現狀（最新體重）不變；前端走既有 POST /api/body-metrics 的 date 欄位。來源：2026-07-18 Ryan 真機試用回饋 #3",
       "status": "passing",
-      "evidence": "2026-07-20 完成。純前端：/body 頂部表單加日期選擇器（type=date、預設今天、max=今天擋未來，save 再驗 dateSel>today 防手打），送出走既有 POST /api/body-metrics 的 date 欄位；換日期把該日既有紀錄帶進表單（同日覆蓋看得見、避免把今天的值誤存過去日）。sw.js v33→v34、APP_VERSION v34。codex-review 兩輪：P1（失敗重繪日期被重設今天→重試誤寫/覆蓋今天資料）已修——表單草稿 body.form 跨重繪保留目標日期與輸入；P2a（onchange 只改 DOM、編輯清單列 rerender 丟日期）＋P2b（跨午夜 value/max 停在昨天）已修——date=null 表示未明示選日、提交時取當下 todayIso()（跨午夜正確落今天），明示選日才鎖該日；weight/fat 加 oninput 同步草稿。E2E verify_f11.py R1–R7 全 PASS（預設今天+max、補記入清單+折線最早點=補記日、未來日擋下無新增、同日覆蓋不新增列值更新、選既有日回填、失敗重繪保留補記日、未選日只打體重落今天）；全套 pytest 175 過、ruff clean。"
+      "evidence": "2026-07-20 完成。純前端：/body 頂部表單加日期選擇器（type=date、預設今天、max=今天擋未來，save 再驗 dateSel>today 防手打），送出走既有 POST /api/body-metrics 的 date 欄位；換日期把該日既有紀錄帶進表單（同日覆蓋看得見、避免把今天的值誤存過去日）。sw.js v33→v34、APP_VERSION v34。codex-review 兩輪：P1（失敗重繪日期被重設今天→重試誤寫/覆蓋今天資料）已修——表單草稿 body.form 跨重繪保留目標日期與輸入；P2a（onchange 只改 DOM、編輯清單列 rerender 丟日期）＋P2b（跨午夜 value/max 停在昨天）已修——date=null 表示未明示選日、提交時取當下 todayIso()（跨午夜正確落今天），明示選日才鎖該日；weight/fat 加 oninput 同步草稿。E2E verify_f11.py R1–R7 全 PASS（預設今天+max、補記入清單+折線最早點=補記日、未來日擋下無新增、同日覆蓋不新增列值更新、選既有日回填、失敗重繪保留補記日、未選日只打體重落今天）；全套 pytest 175 過、ruff clean。",
+      "acceptance": "/body 頁可選日期補記過去的體重／體脂（預設今天、不可選未來日期）；同日覆蓋語意與 F8 一致（重送覆蓋該日紀錄）；補記後趨勢折線正確反映；heatmap 自體重噸位規則維持 F8 現狀（最新體重）不變；前端走既有 POST /api/body-metrics 的 date 欄位。來源：2026-07-18 Ryan 真機試用回饋 #3"
     },
     {
       "id": "F12",
       "name": "組間休息倒數提醒（參考值）",
-      "acceptance": "課表編輯每動作可設選填參考休息秒數（快選 60/90/120/180＋自訂，範圍 15–600，pytest 驗 API 範圍檢查）；未設定一律預設 60s（含臨時動作與自由訓練）。訓練中 REST 從參考值倒數（mm:ss），到 0 時 LED 變色＋navigator.vibrate（支援平台生效），超時顯示負數（如 -0:15）繼續計；下一組 rest_seconds 照舊寫入實際總經過秒數（量測邏輯不變，pytest 驗證）。訓練中點參考值可臨時調（僅本次、不寫回課表，Playwright 驗證）。logger 畫面持 Screen Wake Lock、離開釋放、不支援時靜默降級。詳見 PRD R10。來源：2026-07-18 Ryan 真機試用回饋 #4，經需求訪談定稿（倒數＋負數超時、預設 60s 均 Ryan 拍板）",
       "status": "passing",
-      "evidence": "2026-07-18：134 tests 全過、ruff 乾淨。codex-review 4 P2 全修（Wake Lock 競態、調長目標重武裝提醒、原地換列保儲存點擊、零點門檻同步）。acceptance-verifier live 逐條 8/8 PASS（Codex sandbox 跑不了 uv 退回 fallback）：API 範圍 14/601→400、15/600→201、未帶 null；自由訓練與臨時動作預設 60s；倒數 mm:ss（15s 參考 2.2s 時顯示 00:13）；到 0 同刻 .over＋vibrate stub 呼叫 1 次；超時 -00:05 續計；第二組 rest_seconds=21≈實際經過（非參考值 15/臨時值 60）；chip 循環 15→60、重整保留、課表 SSOT 仍 15 不寫回；Wake Lock stub/真實 API/降級三法驗證。截圖 docs/evidence-f12-*.png"
+      "evidence": "2026-07-18：134 tests 全過、ruff 乾淨。codex-review 4 P2 全修（Wake Lock 競態、調長目標重武裝提醒、原地換列保儲存點擊、零點門檻同步）。acceptance-verifier live 逐條 8/8 PASS（Codex sandbox 跑不了 uv 退回 fallback）：API 範圍 14/601→400、15/600→201、未帶 null；自由訓練與臨時動作預設 60s；倒數 mm:ss（15s 參考 2.2s 時顯示 00:13）；到 0 同刻 .over＋vibrate stub 呼叫 1 次；超時 -00:05 續計；第二組 rest_seconds=21≈實際經過（非參考值 15/臨時值 60）；chip 循環 15→60、重整保留、課表 SSOT 仍 15 不寫回；Wake Lock stub/真實 API/降級三法驗證。截圖 docs/evidence-f12-*.png",
+      "acceptance": "課表編輯每動作可設選填參考休息秒數（快選 60/90/120/180＋自訂，範圍 15–600，pytest 驗 API 範圍檢查）；未設定一律預設 60s（含臨時動作與自由訓練）。訓練中 REST 從參考值倒數（mm:ss），到 0 時 LED 變色＋navigator.vibrate（支援平台生效），超時顯示負數（如 -0:15）繼續計；下一組 rest_seconds 照舊寫入實際總經過秒數（量測邏輯不變，pytest 驗證）。訓練中點參考值可臨時調（僅本次、不寫回課表，Playwright 驗證）。logger 畫面持 Screen Wake Lock、離開釋放、不支援時靜默降級。詳見 PRD R10。來源：2026-07-18 Ryan 真機試用回饋 #4，經需求訪談定稿（倒數＋負數超時、預設 60s 均 Ryan 拍板）"
     },
     {
       "id": "F13",
       "name": "靜態資產快取策略（sw.js no-cache）",
-      "acceptance": "origin 對 /sw.js 回應 Cache-Control: no-cache（或 max-age=0, must-revalidate），部署新版後公開 URL 的 sw.js 不再被 Cloudflare 邊緣快取延誤（cf-cache-status 不得為 HIT 舊版）；其餘 shell 資產快取策略不變（由 SW CACHE_NAME 版本管理）；pytest 驗 /sw.js 回應標頭。來源：2026-07-18 F12 部署時發現 CF 邊緣快取 sw.js 4 小時，更新最多延遲 4 小時才到手機",
       "status": "passing",
-      "evidence": "2026-07-18：136 tests 全過、ruff 乾淨、codex review 無 findings。acceptance-verifier 4/4 PASS：pytest 兩條 F13 測試＋正式 8137 實回 cache-control: no-cache；公開 URL cache-bust 三連打 MISS→REVALIDATED→REVALIDATED（每次回源驗證，部署即時生效；zone 會把瀏覽器側標頭改寫 max-age=14400，但瀏覽器對 SW 主腳本更新預設繞過 HTTP cache，不影響）；/js/app.js 無 no-cache（策略不變）。已知一次性殘留：改版前的舊 /sw.js 快取條目 HIT 至 TTL 過期（~2h）或手動 purge，此後不再發生"
+      "evidence": "2026-07-18：136 tests 全過、ruff 乾淨、codex review 無 findings。acceptance-verifier 4/4 PASS：pytest 兩條 F13 測試＋正式 8137 實回 cache-control: no-cache；公開 URL cache-bust 三連打 MISS→REVALIDATED→REVALIDATED（每次回源驗證，部署即時生效；zone 會把瀏覽器側標頭改寫 max-age=14400，但瀏覽器對 SW 主腳本更新預設繞過 HTTP cache，不影響）；/js/app.js 無 no-cache（策略不變）。已知一次性殘留：改版前的舊 /sw.js 快取條目 HIT 至 TTL 過期（~2h）或手動 purge，此後不再發生",
+      "acceptance": "origin 對 /sw.js 回應 Cache-Control: no-cache（或 max-age=0, must-revalidate），部署新版後公開 URL 的 sw.js 不再被 Cloudflare 邊緣快取延誤（cf-cache-status 不得為 HIT 舊版）；其餘 shell 資產快取策略不變（由 SW CACHE_NAME 版本管理）；pytest 驗 /sw.js 回應標頭。來源：2026-07-18 F12 部署時發現 CF 邊緣快取 sw.js 4 小時，更新最多延遲 4 小時才到手機"
     },
     {
       "id": "F14",
       "name": "部署自動到位（SW 殼資產版本戳＋接管自動重載）",
-      "acceptance": "sw.js install 以 ?v=CACHE_NAME 查詢字串抓取 SHELL 每個資產並以原始 URL 存入 cache（CDN/瀏覽器快取必失效，杜絕新 SW 裝舊內容的混版；pytest 驗 sw.js 源碼模式）；app.js 監聽 controllerchange 自動 reload（防循環：每次接管只 reload 一次；首次安裝不 reload——以啟動時已有 controller 為條件）；Playwright 驗證：已載入舊版的頁面在部署新 CACHE_NAME 後重新導航一次，無手動強制重整即自動顯示新版內容。來源：2026-07-18 F12 部署後 Ryan 桌機需 Ctrl+Shift+R、手機需重開兩次才見新版，Ryan 簽核根治",
       "status": "passing",
-      "evidence": "acceptance-verifier 逐條 3/3 PASS（commits 8820688 + 8426a15）：R1 sw.js install 以 ?v=CACHE_NAME 版本戳逐檔抓取 + cache.put(url) 原始 URL 存入、無 cache.add；R2 app.js controllerchange 自動 reload、refreshing 防循環、skippedInitialClaim 只跳過首裝初次接管（修 Codex P2① 首訪者不更新，以 hadController 判首裝）；R3 驗收者自寫 Playwright 實測：部署新 CACHE_NAME 後重新導航一次即自動顯示新版（marker_seen=True，server log 見第二次未經腳本觸發的自動導航）。uv run pytest 138 passed、ruff clean。codex-review 3 條：P2① 已修；P1（首次 F14 部署對舊 app.js 頁面需手動刷一次的一次性 bootstrap）與 P2②（記錄中途被 reload 丟失正填的一組輸入）已揭露並接受。"
+      "evidence": "acceptance-verifier 逐條 3/3 PASS（commits 8820688 + 8426a15）：R1 sw.js install 以 ?v=CACHE_NAME 版本戳逐檔抓取 + cache.put(url) 原始 URL 存入、無 cache.add；R2 app.js controllerchange 自動 reload、refreshing 防循環、skippedInitialClaim 只跳過首裝初次接管（修 Codex P2① 首訪者不更新，以 hadController 判首裝）；R3 驗收者自寫 Playwright 實測：部署新 CACHE_NAME 後重新導航一次即自動顯示新版（marker_seen=True，server log 見第二次未經腳本觸發的自動導航）。uv run pytest 138 passed、ruff clean。codex-review 3 條：P2① 已修；P1（首次 F14 部署對舊 app.js 頁面需手動刷一次的一次性 bootstrap）與 P2②（記錄中途被 reload 丟失正填的一組輸入）已揭露並接受。",
+      "acceptance": "sw.js install 以 ?v=CACHE_NAME 查詢字串抓取 SHELL 每個資產並以原始 URL 存入 cache（CDN/瀏覽器快取必失效，杜絕新 SW 裝舊內容的混版；pytest 驗 sw.js 源碼模式）；app.js 監聽 controllerchange 自動 reload（防循環：每次接管只 reload 一次；首次安裝不 reload——以啟動時已有 controller 為條件）；Playwright 驗證：已載入舊版的頁面在部署新 CACHE_NAME 後重新導航一次，無手動強制重整即自動顯示新版內容。來源：2026-07-18 F12 部署後 Ryan 桌機需 Ctrl+Shift+R、手機需重開兩次才見新版，Ryan 簽核根治"
     },
     {
       "id": "F15",
       "name": "組間休息按鈕兩態切換（完成這組 ⇄ 繼續下一組）",
-      "acceptance": "就緒態主按鈕顯示「✓ 完成這組」，按下記錄該組、倒數開始、進入休息態、按鈕變「繼續下一組」；休息態主按鈕顯示「繼續下一組」，按下停止倒數、LED 回靜態顯示參考秒數、凍結本次休息秒數、回就緒態、按鈕變回「✓ 完成這組」；休息態下主按鈕不做記錄，必須先按繼續下一組回就緒態才能記下一組。rest_seconds 定案點＝按「繼續下一組」當下的 elapsed（含超時絕對值），下一組完成這組時把凍結值寫進該組 rest_seconds、寫入後清空不重複套用，第一組不帶 rest_seconds。換動作／收工在任一態都停止倒數並清掉未用凍結值。F12 行為不變：休息態超時倒數轉負＋LED 變紅＋震動一次，rest-hint chip 仍可臨時調參考秒數。Playwright E2E 驗：完成這組→按鈕變繼續下一組且倒數在跑→繼續下一組→按鈕變回完成這組且倒數停→再完成這組時該組帶 rest_seconds＝剛才凍結值。Ryan 2026-07-18 簽核。",
       "status": "passing",
-      "evidence": "acceptance-verifier R1–R7 PASS（自寫 Playwright 擷取 POST /sets body、LED 回參考秒數比對、休息態不記錄）；R8 換動作分支 PASS（驗收者）+ 收工分支 PASS（補測 verify_f15_endworkout.py：收工後新 workout 首組無 rest_seconds＝凍結值已清）；R9 F12 迴歸屬 out-of-scope（未動 F12 程式碼，F12 已 passing）。E2E verify_f15.py：set1 無 rest_seconds、繼續下一組凍結後 set2 rest_seconds=3。codex-review 1 P2 已修（commit 11bfbdf：凍結值改為確認保住後才清，非離線失敗/入列失敗重試不丟）。commits b581b3a + 11bfbdf。uv run pytest 139 passed、ruff clean。"
+      "evidence": "acceptance-verifier R1–R7 PASS（自寫 Playwright 擷取 POST /sets body、LED 回參考秒數比對、休息態不記錄）；R8 換動作分支 PASS（驗收者）+ 收工分支 PASS（補測 verify_f15_endworkout.py：收工後新 workout 首組無 rest_seconds＝凍結值已清）；R9 F12 迴歸屬 out-of-scope（未動 F12 程式碼，F12 已 passing）。E2E verify_f15.py：set1 無 rest_seconds、繼續下一組凍結後 set2 rest_seconds=3。codex-review 1 P2 已修（commit 11bfbdf：凍結值改為確認保住後才清，非離線失敗/入列失敗重試不丟）。commits b581b3a + 11bfbdf。uv run pytest 139 passed、ruff clean。",
+      "acceptance": "就緒態主按鈕顯示「✓ 完成這組」，按下記錄該組、倒數開始、進入休息態、按鈕變「繼續下一組」；休息態主按鈕顯示「繼續下一組」，按下停止倒數、LED 回靜態顯示參考秒數、凍結本次休息秒數、回就緒態、按鈕變回「✓ 完成這組」；休息態下主按鈕不做記錄，必須先按繼續下一組回就緒態才能記下一組。rest_seconds 定案點＝按「繼續下一組」當下的 elapsed（含超時絕對值），下一組完成這組時把凍結值寫進該組 rest_seconds、寫入後清空不重複套用，第一組不帶 rest_seconds。換動作／收工在任一態都停止倒數並清掉未用凍結值。F12 行為不變：休息態超時倒數轉負＋LED 變紅＋震動一次，rest-hint chip 仍可臨時調參考秒數。Playwright E2E 驗：完成這組→按鈕變繼續下一組且倒數在跑→繼續下一組→按鈕變回完成這組且倒數停→再完成這組時該組帶 rest_seconds＝剛才凍結值。Ryan 2026-07-18 簽核。"
     },
     {
       "id": "F16",
       "name": "訓練組 編輯＋刪除",
-      "acceptance": "後端新增 PATCH /api/sets/{id} 更新 weight_kg/reps/rpe/rest_seconds（範圍驗證同 POST）、set 不存在或已軟刪回 404、回更新後 SetOut、set_number 不變；logger「已完成的組」每列有編輯與刪除入口，刪除為兩段式確認（第一下該列進確認態、第二下真刪）：已同步組打 DELETE /api/sets/{id}（軟刪）、未同步 queued 組移出離線佇列，刪後即時從畫面移除且不計入噸位/heatmap/歷史；編輯把該組值帶回 steppers 可改、存檔打 PATCH 原位更新（未同步組改佇列那筆）；日曆某天明細把每動作分組文字改成每組一列可編輯/刪除（同機制）。後端測試涵蓋 PATCH 更新/404/範圍驗證；logger 與日曆的編輯刪除以 Playwright E2E 驗。同步更新 CLAUDE.md「sets 不做 update」措辭。Ryan 2026-07-18 簽核。",
       "status": "passing",
-      "evidence": "acceptance-verifier R1–R14 全 pass（含 R9 複驗）：後端 PATCH /api/sets/{id} 原位更新、set_number 不變/404 未知+已軟刪/範圍 400（TestUpdateSet 7 測）；logger done-list 與日曆明細每組可用 stepper +/- 編輯（驗收者實測編輯態 0 個 input、2 個 stepper，PATCH server 生效、set_number 不變）＋兩段式刪除（軟刪、明細少一筆）；離線 queued 組刪除移出佇列、同步後回填 server id。codex-review 3 條已修：P1（flushQueue 回填 id 至 doneSets）、P2（刪除更新 setCounts）、R9（編輯改用 steppers 非 number input）。CLAUDE.md sets 規則已更新。commits 4cad81d/eceb448/6f8babe/6e39f97/5bb518d。E2E verify_f16_logger/calendar/p1（scratchpad）。uv run pytest 146 passed、ruff clean。"
+      "evidence": "acceptance-verifier R1–R14 全 pass（含 R9 複驗）：後端 PATCH /api/sets/{id} 原位更新、set_number 不變/404 未知+已軟刪/範圍 400（TestUpdateSet 7 測）；logger done-list 與日曆明細每組可用 stepper +/- 編輯（驗收者實測編輯態 0 個 input、2 個 stepper，PATCH server 生效、set_number 不變）＋兩段式刪除（軟刪、明細少一筆）；離線 queued 組刪除移出佇列、同步後回填 server id。codex-review 3 條已修：P1（flushQueue 回填 id 至 doneSets）、P2（刪除更新 setCounts）、R9（編輯改用 steppers 非 number input）。CLAUDE.md sets 規則已更新。commits 4cad81d/eceb448/6f8babe/6e39f97/5bb518d。E2E verify_f16_logger/calendar/p1（scratchpad）。uv run pytest 146 passed、ruff clean。",
+      "acceptance": "後端新增 PATCH /api/sets/{id} 更新 weight_kg/reps/rpe/rest_seconds（範圍驗證同 POST）、set 不存在或已軟刪回 404、回更新後 SetOut、set_number 不變；logger「已完成的組」每列有編輯與刪除入口，刪除為兩段式確認（第一下該列進確認態、第二下真刪）：已同步組打 DELETE /api/sets/{id}（軟刪）、未同步 queued 組移出離線佇列，刪後即時從畫面移除且不計入噸位/heatmap/歷史；編輯把該組值帶回 steppers 可改、存檔打 PATCH 原位更新（未同步組改佇列那筆）；日曆某天明細把每動作分組文字改成每組一列可編輯/刪除（同機制）。後端測試涵蓋 PATCH 更新/404/範圍驗證；logger 與日曆的編輯刪除以 Playwright E2E 驗。同步更新 CLAUDE.md「sets 不做 update」措辭。Ryan 2026-07-18 簽核。"
     },
     {
       "id": "F17",
       "name": "體重 編輯＋刪除",
-      "acceptance": "後端新增 DELETE /api/body-metrics/{date} 硬刪該日、不存在回 404；/body 頁在折線圖下新增體重紀錄清單（日期＋體重＋體脂，最新在上）每列可編輯/刪除；刪除為單擊即刪（打 DELETE、硬刪，跟 F19 範式一致、無兩段式確認）；編輯把該日值帶回表單可改（數字輸入，日期顯示但不可改）、存檔為 POST（同日覆蓋 upsert，既有行為）；刪/改後折線圖與清單即時更新。後端測試涵蓋 DELETE 刪除/404；清單編輯刪除以 Playwright E2E 驗。Ryan 2026-07-18 簽核（刪除 UX 依 F19 定調由兩段式改單擊即刪）。",
       "status": "passing",
-      "evidence": "acceptance-verifier R1–R7 全 pass（Playwright + httpx 實測）：DELETE /api/body-metrics/{date} 硬刪/404/硬刪後可重記同日 201（3 後端測試）；/body 折線圖下體重紀錄清單（最新在上、日期+體重+體脂）；編輯把該日值帶回數字輸入表單（日期顯示不可改）、POST 同日覆蓋、他日不受影響；單擊即刪硬刪（無確認態、server 端該日消失）；刪/改後折線圖與清單即時更新。codex-review 1 P2 已修（編輯草稿存 body.editDraft、驗證失敗不丟輸入——驗收者實測「5」超範圍時輸入保留）。sw v10。commits 5512c3e/a7d6888/5cb6b3c。uv run pytest 149、ruff clean。E2E verify_f17.py。"
+      "evidence": "acceptance-verifier R1–R7 全 pass（Playwright + httpx 實測）：DELETE /api/body-metrics/{date} 硬刪/404/硬刪後可重記同日 201（3 後端測試）；/body 折線圖下體重紀錄清單（最新在上、日期+體重+體脂）；編輯把該日值帶回數字輸入表單（日期顯示不可改）、POST 同日覆蓋、他日不受影響；單擊即刪硬刪（無確認態、server 端該日消失）；刪/改後折線圖與清單即時更新。codex-review 1 P2 已修（編輯草稿存 body.editDraft、驗證失敗不丟輸入——驗收者實測「5」超範圍時輸入保留）。sw v10。commits 5512c3e/a7d6888/5cb6b3c。uv run pytest 149、ruff clean。E2E verify_f17.py。",
+      "acceptance": "後端新增 DELETE /api/body-metrics/{date} 硬刪該日、不存在回 404；/body 頁在折線圖下新增體重紀錄清單（日期＋體重＋體脂，最新在上）每列可編輯/刪除；刪除為單擊即刪（打 DELETE、硬刪，跟 F19 範式一致、無兩段式確認）；編輯把該日值帶回表單可改（數字輸入，日期顯示但不可改）、存檔為 POST（同日覆蓋 upsert，既有行為）；刪/改後折線圖與清單即時更新。後端測試涵蓋 DELETE 刪除/404；清單編輯刪除以 Playwright E2E 驗。Ryan 2026-07-18 簽核（刪除 UX 依 F19 定調由兩段式改單擊即刪）。"
     },
     {
       "id": "F18",
       "name": "每日狀態 編輯＋刪除",
-      "acceptance": "後端新增 DELETE /api/daily-status/{date} 硬刪該日、不存在回 404；日曆某天明細的狀態列可編輯/刪除；刪除為單擊即刪（打 DELETE、硬刪，跟 F19 範式一致、無兩段式確認）；編輯把當日狀態帶回 inline 控制項可改（精力 1–5、睡眠 1–5 可清空、note 文字；前端原無記錄 UI，故新建）、存檔為 POST /api/daily-status（同日覆蓋 upsert）；刪/改後日曆明細即時更新。後端測試涵蓋 DELETE 刪除/404；日曆狀態編輯刪除以 Playwright E2E 驗。Ryan 2026-07-18 簽核（刪除 UX 依 F19 定調由兩段式改單擊即刪）。",
       "status": "passing",
-      "evidence": "acceptance-verifier 全條 pass（Playwright + httpx 實測）：DELETE /api/daily-status/{date} 硬刪/404/硬刪後可重記同日 201（3 後端測試）；日曆狀態列有編輯/刪除入口；編輯出現 inline 控制項（精力/睡眠 1–5 量表——睡眠可清空、精力必填不可清；備註輸入）、POST 同日覆蓋（energy=5+note 存入、同 id）；單擊即刪硬刪（無確認態、server 回空）；刪/改後日曆明細即時更新。codex-review 1 P2 已修（refreshMonthAndDay 守衛 selectDay(null) 切月競態、避免 start=null&end=null 的 400，影響 F16/F18/F19）。sw v11。commits 2d1e260/88a067a/682790c。uv run pytest 152、ruff clean。E2E verify_f18.py。"
+      "evidence": "acceptance-verifier 全條 pass（Playwright + httpx 實測）：DELETE /api/daily-status/{date} 硬刪/404/硬刪後可重記同日 201（3 後端測試）；日曆狀態列有編輯/刪除入口；編輯出現 inline 控制項（精力/睡眠 1–5 量表——睡眠可清空、精力必填不可清；備註輸入）、POST 同日覆蓋（energy=5+note 存入、同 id）；單擊即刪硬刪（無確認態、server 回空）；刪/改後日曆明細即時更新。codex-review 1 P2 已修（refreshMonthAndDay 守衛 selectDay(null) 切月競態、避免 start=null&end=null 的 400，影響 F16/F18/F19）。sw v11。commits 2d1e260/88a067a/682790c。uv run pytest 152、ruff clean。E2E verify_f18.py。",
+      "acceptance": "後端新增 DELETE /api/daily-status/{date} 硬刪該日、不存在回 404；日曆某天明細的狀態列可編輯/刪除；刪除為單擊即刪（打 DELETE、硬刪，跟 F19 範式一致、無兩段式確認）；編輯把當日狀態帶回 inline 控制項可改（精力 1–5、睡眠 1–5 可清空、note 文字；前端原無記錄 UI，故新建）、存檔為 POST /api/daily-status（同日覆蓋 upsert）；刪/改後日曆明細即時更新。後端測試涵蓋 DELETE 刪除/404；日曆狀態編輯刪除以 Playwright E2E 驗。Ryan 2026-07-18 簽核（刪除 UX 依 F19 定調由兩段式改單擊即刪）。"
     },
     {
       "id": "F19",
       "name": "訓練組刪除 UX 改版（單擊即刪 + 日曆多選批次刪除）",
-      "acceptance": "拿掉訓練組刪除的兩段式確認：logger done-list 與日曆明細每組的 🗑 單擊即刪（已同步走 DELETE 軟刪、未同步移出佇列），刪後即時從畫面移除、setCounts/heatmap 正確更新；多選批次刪除只在日曆明細：日曆明細有「選取」入口進多選模式，模式中每組可勾選、隱藏 ✎/🗑，底部顯示「刪除選取 (N)」與「取消」，勾多筆按一次全刪（各自軟刪），完成後退出模式並刷新噸位與明細；多選模式中不可編輯，「取消」退出不刪任何東西。E2E 驗：logger 與日曆單擊即刪（無確認步驟）＋日曆多選勾兩筆一次刪、server 端確認。取代 F16 的兩段式確認（F16 仍為 passing，按其原規格交付）。Ryan 2026-07-18 簽核。",
       "status": "passing",
-      "evidence": "acceptance-verifier 12/12 全 pass（Playwright + httpx 實測）：logger 與日曆單擊即刪無確認態（.confirm-del count=0、明細少一筆軟刪）、刪後噸位/heatmap 即時更新（1000→500kg DOM 與 API 同步）、日曆多選模式（選取→勾選 selectable、隱藏 ✎/🗑、刪除選取 (N)、批次軟刪 server 確認、退出模式）、取消不刪（server 未動）、多選中不可編輯。codex-review 2 P2 已修（404 當成功防連點、批次 finally 重載）。死 CSS 已清。sw v9。commits fb4d73e/e91414c/+css。uv run pytest 146、ruff clean。E2E verify_f19_logger/calendar（scratchpad）。取代 F16 兩段式確認（F16 仍 passing）。"
+      "evidence": "acceptance-verifier 12/12 全 pass（Playwright + httpx 實測）：logger 與日曆單擊即刪無確認態（.confirm-del count=0、明細少一筆軟刪）、刪後噸位/heatmap 即時更新（1000→500kg DOM 與 API 同步）、日曆多選模式（選取→勾選 selectable、隱藏 ✎/🗑、刪除選取 (N)、批次軟刪 server 確認、退出模式）、取消不刪（server 未動）、多選中不可編輯。codex-review 2 P2 已修（404 當成功防連點、批次 finally 重載）。死 CSS 已清。sw v9。commits fb4d73e/e91414c/+css。uv run pytest 146、ruff clean。E2E verify_f19_logger/calendar（scratchpad）。取代 F16 兩段式確認（F16 仍 passing）。",
+      "acceptance": "拿掉訓練組刪除的兩段式確認：logger done-list 與日曆明細每組的 🗑 單擊即刪（已同步走 DELETE 軟刪、未同步移出佇列），刪後即時從畫面移除、setCounts/heatmap 正確更新；多選批次刪除只在日曆明細：日曆明細有「選取」入口進多選模式，模式中每組可勾選、隱藏 ✎/🗑，底部顯示「刪除選取 (N)」與「取消」，勾多筆按一次全刪（各自軟刪），完成後退出模式並刷新噸位與明細；多選模式中不可編輯，「取消」退出不刪任何東西。E2E 驗：logger 與日曆單擊即刪（無確認步驟）＋日曆多選勾兩筆一次刪、server 端確認。取代 F16 的兩段式確認（F16 仍為 passing，按其原規格交付）。Ryan 2026-07-18 簽核。"
     },
     {
       "id": "F20",
       "name": "開練頁 done-list 新→舊排序＋固定高度可捲動",
-      "acceptance": "logger（開練）頁的「已完成的組」清單一律新→舊排序（最新一組在最上面、最舊在最下）；當組數 > 2 時該清單區塊改固定高度（約 2 列）＋內部 overflow-y 上下捲動，使下方 steppers 與主按鈕不因組數增加被往下推走；編輯某列時該清單不受高度限制（展開的 steppers 編輯表單完整可見）；組數 ≤ 2 時照常完整顯示、不捲動。E2E 驗：記 3 組後最新組（#3）在清單最上、done-list 內部可捲動（scrollHeight > clientHeight）、編輯時清單不再受高度限制。Ryan 2026-07-19 簽核。",
       "status": "passing",
-      "evidence": "acceptance-verifier 7/7 全 pass（Playwright 實測）：done-list 新→舊排序（#3 在最上、#1 在最下）；組數>2 加 scrollable class 且 scrollHeight>clientHeight（max-height 88px overflow-y auto）、主按鈕仍在畫面；≤2 組不捲動；編輯某列時解除 scrollable（編輯表單完整可見）；跨動作草稿清除（換動作後 scrollable 恢復）。codex-review 1 P2 已修（finish/endWorkout 清 editDraft，避免殘留使 scrollable 永久失效）。sw v12。commit 1fdcf0d + P2 fix。uv run pytest 152、ruff clean。E2E verify_f20.py。"
+      "evidence": "acceptance-verifier 7/7 全 pass（Playwright 實測）：done-list 新→舊排序（#3 在最上、#1 在最下）；組數>2 加 scrollable class 且 scrollHeight>clientHeight（max-height 88px overflow-y auto）、主按鈕仍在畫面；≤2 組不捲動；編輯某列時解除 scrollable（編輯表單完整可見）；跨動作草稿清除（換動作後 scrollable 恢復）。codex-review 1 P2 已修（finish/endWorkout 清 editDraft，避免殘留使 scrollable 永久失效）。sw v12。commit 1fdcf0d + P2 fix。uv run pytest 152、ruff clean。E2E verify_f20.py。",
+      "acceptance": "logger（開練）頁的「已完成的組」清單一律新→舊排序（最新一組在最上面、最舊在最下）；當組數 > 2 時該清單區塊改固定高度（約 2 列）＋內部 overflow-y 上下捲動，使下方 steppers 與主按鈕不因組數增加被往下推走；編輯某列時該清單不受高度限制（展開的 steppers 編輯表單完整可見）；組數 ≤ 2 時照常完整顯示、不捲動。E2E 驗：記 3 組後最新組（#3）在清單最上、done-list 內部可捲動（scrollHeight > clientHeight）、編輯時清單不再受高度限制。Ryan 2026-07-19 簽核。"
     },
     {
       "id": "F21",
       "name": "課表編輯：動作清單捲動＋加動作懸浮視窗（單選確定加入）",
-      "acceptance": "編輯課表畫面的動作清單（.tpl-items）固定高度（約 2 個動作高，超過再捲動）＋內部 overflow-y 捲動，使「儲存課表／加動作」等按鈕不因動作數增加被推走；「＋ 加動作」改為開啟懸浮視窗（CSS overlay modal，非瀏覽器原生彈窗）：內含搜尋輸入、可捲動的動作清單、「確定加入」與「取消」；視窗內單選——點一個動作標為選中（再點別的換選中），按「確定加入」才把選中的動作加進課表並關閉視窗，未選中時「確定加入」停用；「取消」或關閉視窗不加入任何動作；已在課表裡的動作不列出（維持一動作一次）；搜尋即時過濾清單不打斷輸入。E2E 驗：開視窗→搜尋→選一個→確定加入→動作進課表且視窗關閉、未選時確定加入無效、取消不加入、清單可捲動。Ryan 2026-07-19 簽核（單選確定加入；清單高度 2026-07-19 二次調整為約 3 個動作高）。",
       "status": "passing",
-      "evidence": "acceptance-verifier 10/10 全 pass（Playwright + httpx 實測）：加動作開 .modal-overlay 懸浮視窗（搜尋+可捲動清單+確定加入+取消）；單選（.selected 唯一、換選）；未選確定加入停用；確定加入才進課表並關窗；取消/點遮罩不加入；已加動作不重複列出；搜尋即時過濾不失焦；選取後搜尋排除該項→確定加入停用（P2-1）；tpl-items 約 1 動作高 scrollable、儲存鈕不被推走；儲存整份課表迴歸 OK。codex-review 3 P2 已修（modal 選取就地更新不重繪、搜尋排除選取即清、tpl-items 保存/還原捲動位置）＋開窗重置搜尋小修。sw v13。commits HEAD 串 c556d32 等。uv run pytest 152、ruff clean。E2E verify_f21.py。（2026-07-19 依 Ryan 回饋把清單高度由約 1 個調為約 3 個動作高，>3 才捲動；E2E 重驗。）"
+      "evidence": "acceptance-verifier 10/10 全 pass（Playwright + httpx 實測）：加動作開 .modal-overlay 懸浮視窗（搜尋+可捲動清單+確定加入+取消）；單選（.selected 唯一、換選）；未選確定加入停用；確定加入才進課表並關窗；取消/點遮罩不加入；已加動作不重複列出；搜尋即時過濾不失焦；選取後搜尋排除該項→確定加入停用（P2-1）；tpl-items 約 1 動作高 scrollable、儲存鈕不被推走；儲存整份課表迴歸 OK。codex-review 3 P2 已修（modal 選取就地更新不重繪、搜尋排除選取即清、tpl-items 保存/還原捲動位置）＋開窗重置搜尋小修。sw v13。commits HEAD 串 c556d32 等。uv run pytest 152、ruff clean。E2E verify_f21.py。（2026-07-19 依 Ryan 回饋把清單高度由約 1 個調為約 3 個動作高，>3 才捲動；E2E 重驗。）",
+      "acceptance": "編輯課表畫面的動作清單（.tpl-items）固定高度（約 2 個動作高，超過再捲動）＋內部 overflow-y 捲動，使「儲存課表／加動作」等按鈕不因動作數增加被推走；「＋ 加動作」改為開啟懸浮視窗（CSS overlay modal，非瀏覽器原生彈窗）：內含搜尋輸入、可捲動的動作清單、「確定加入」與「取消」；視窗內單選——點一個動作標為選中（再點別的換選中），按「確定加入」才把選中的動作加進課表並關閉視窗，未選中時「確定加入」停用；「取消」或關閉視窗不加入任何動作；已在課表裡的動作不列出（維持一動作一次）；搜尋即時過濾清單不打斷輸入。E2E 驗：開視窗→搜尋→選一個→確定加入→動作進課表且視窗關閉、未選時確定加入無效、取消不加入、清單可捲動。Ryan 2026-07-19 簽核（單選確定加入；清單高度 2026-07-19 二次調整為約 3 個動作高）。"
     },
     {
       "id": "F22",
       "name": "課表加動作視窗：部位篩選（同 logger picker）",
-      "acceptance": "課表編輯的加動作懸浮視窗（F21）新增部位（muscle_group）篩選 chips，行為同 logger picker（臨時加動作）：視窗內顯示動作庫的部位 chips，點某部位只列該部位的動作、再點同一個取消篩選（回全部）；部位篩選與搜尋可並用（兩者同時套用）；每次開窗重置部位篩選（同搜尋重置）；部位篩選只縮清單、不影響已在課表的動作去重與單選確定加入流程。E2E 驗：開窗→點某部位→清單只剩該部位動作→再點回全部；部位篩選下仍可選動作按確定加入、加進課表。Ryan 2026-07-19 簽核。",
       "status": "passing",
-      "evidence": "acceptance-verifier 8/8 全 pass（Playwright + httpx 實測）：加動作視窗有部位 chips（6 部位）；點部位縮清單（total 35→9、chip .on 唯一）；再點同部位取消回全部；部位＋搜尋可並用且搜尋框不失焦；篩選下可選動作按確定加入、存檔課表含該動作；開窗重置部位篩選；去重仍生效。codex-review 1 P2 已修（部位 chip 改就地更新不整頁重繪，避免與進行中搜尋 callback 競態）。sw v14。commit 串含 F22 impl + P2 fix。uv run pytest 152、ruff clean。E2E verify_f22.py。"
+      "evidence": "acceptance-verifier 8/8 全 pass（Playwright + httpx 實測）：加動作視窗有部位 chips（6 部位）；點部位縮清單（total 35→9、chip .on 唯一）；再點同部位取消回全部；部位＋搜尋可並用且搜尋框不失焦；篩選下可選動作按確定加入、存檔課表含該動作；開窗重置部位篩選；去重仍生效。codex-review 1 P2 已修（部位 chip 改就地更新不整頁重繪，避免與進行中搜尋 callback 競態）。sw v14。commit 串含 F22 impl + P2 fix。uv run pytest 152、ruff clean。E2E verify_f22.py。",
+      "acceptance": "課表編輯的加動作懸浮視窗（F21）新增部位（muscle_group）篩選 chips，行為同 logger picker（臨時加動作）：視窗內顯示動作庫的部位 chips，點某部位只列該部位的動作、再點同一個取消篩選（回全部）；部位篩選與搜尋可並用（兩者同時套用）；每次開窗重置部位篩選（同搜尋重置）；部位篩選只縮清單、不影響已在課表的動作去重與單選確定加入流程。E2E 驗：開窗→點某部位→清單只剩該部位動作→再點回全部；部位篩選下仍可選動作按確定加入、加進課表。Ryan 2026-07-19 簽核。"
     },
     {
       "id": "F23",
       "name": "選動作畫面：臨時加動作清單固定高度捲動（約 4 個）",
-      "acceptance": "logger 選動作（picker）畫面的臨時加動作清單（一般動作庫挑選清單 .exercise-list.pick-list，非今日菜單 .menu-list）固定高度（約 4 個動作高）＋內部 overflow-y 捲動，使頁面版面不因動作庫長而被往下推、下方『← 回首頁』按鈕位置穩定；今日菜單清單不受此影響。搜尋/部位篩選仍作用於此清單。E2E 驗：picker 一般動作清單可捲動（scrollHeight>clientHeight）、回首頁按鈕在畫面內、今日菜單清單不被套用固定高度。Ryan 2026-07-19 簽核（約 4 個）。",
       "status": "passing",
-      "evidence": "E2E verify_f23.py PASS：picker 一般動作清單 .pick-list 固定高度可捲動（scrollHeight>clientHeight）、回首頁鈕在畫面內、部位篩選後清單高度不收縮（clientHeight 維持 248px，按鈕不上移）；pick-list class 只套一般清單故今日菜單 .menu-list 不受影響（CSS 選擇器保證）。codex-review 1 P2 已修（max-height→固定 height，篩選少項時不收縮）。sw v17。純 CSS 捲動 cap（機制同 F20/F21）：以 E2E＋codex-review 為證，未另跑跨模型驗收（提比例）。uv run pytest 152、ruff clean。"
+      "evidence": "E2E verify_f23.py PASS：picker 一般動作清單 .pick-list 固定高度可捲動（scrollHeight>clientHeight）、回首頁鈕在畫面內、部位篩選後清單高度不收縮（clientHeight 維持 248px，按鈕不上移）；pick-list class 只套一般清單故今日菜單 .menu-list 不受影響（CSS 選擇器保證）。codex-review 1 P2 已修（max-height→固定 height，篩選少項時不收縮）。sw v17。純 CSS 捲動 cap（機制同 F20/F21）：以 E2E＋codex-review 為證，未另跑跨模型驗收（提比例）。uv run pytest 152、ruff clean。",
+      "acceptance": "logger 選動作（picker）畫面的臨時加動作清單（一般動作庫挑選清單 .exercise-list.pick-list，非今日菜單 .menu-list）固定高度（約 4 個動作高）＋內部 overflow-y 捲動，使頁面版面不因動作庫長而被往下推、下方『← 回首頁』按鈕位置穩定；今日菜單清單不受此影響。搜尋/部位篩選仍作用於此清單。E2E 驗：picker 一般動作清單可捲動（scrollHeight>clientHeight）、回首頁按鈕在畫面內、今日菜單清單不被套用固定高度。Ryan 2026-07-19 簽核（約 4 個）。"
     },
     {
       "id": "F24",
       "name": "畫面顯示版本號",
-      "acceptance": "畫面上顯示目前 app 版本號（與 sw.js shell 版本一致），讓使用者辨識手機載入的是哪一版、判斷快取是否過期。顯示於首頁與 setup 頁角落，小字不干擾操作。版本字串來源為前端 shell 內常數（隨 shell 一起被 service worker 快取，因此過期快取會顯示舊版號——正是用來偵測未更新的機制）。改版時此常數與 sw.js CACHE_NAME 一起遞增。來源：2026-07-19 Ryan 反映手機看不到新功能、需要能判斷版本。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。state.js 匯出 APP_VERSION 常數（隨 shell 被 SW 快取，過期會顯示舊版號）；app.js versionTag() 顯示於 setup 與 home 頁角落（小字低調 .version-tag）；app.css 加樣式；sw.js CACHE_NAME v18→v19、APP_VERSION 同步 v19。E2E scratchpad verify_f24.py：setup 與 home 皆顯示 v19（ALL PASS）；全套 161 passed、ruff clean；F10 E2E 回歸 ALL PASS。"
+      "evidence": "2026-07-19 完成。state.js 匯出 APP_VERSION 常數（隨 shell 被 SW 快取，過期會顯示舊版號）；app.js versionTag() 顯示於 setup 與 home 頁角落（小字低調 .version-tag）；app.css 加樣式；sw.js CACHE_NAME v18→v19、APP_VERSION 同步 v19。E2E scratchpad verify_f24.py：setup 與 home 皆顯示 v19（ALL PASS）；全套 161 passed、ruff clean；F10 E2E 回歸 ALL PASS。",
+      "acceptance": "畫面上顯示目前 app 版本號（與 sw.js shell 版本一致），讓使用者辨識手機載入的是哪一版、判斷快取是否過期。顯示於首頁與 setup 頁角落，小字不干擾操作。版本字串來源為前端 shell 內常數（隨 shell 一起被 service worker 快取，因此過期快取會顯示舊版號——正是用來偵測未更新的機制）。改版時此常數與 sw.js CACHE_NAME 一起遞增。來源：2026-07-19 Ryan 反映手機看不到新功能、需要能判斷版本。"
     },
     {
       "id": "F25",
       "name": "自訂動作入口進課表加動作視窗",
-      "acceptance": "課表編輯的「＋加動作」懸浮視窗內新增「＋自訂動作」入口，點開建立自訂動作的視窗（疊在加動作視窗上層）；picker（選動作）現有的自訂動作入口保留（兩處都能建）。建立成功後新動作立即出現在加動作視窗的可選清單並被預選，可直接「確定加入」課表；取消則回到加動作視窗。建立視窗行為與 picker 一致（中文名必填、英文名/部位選填、自體重、重複就地提示、走 POST /api/exercises）。實作上兩處共用同一元件（custom-exercise.js），不重複表單邏輯。來源：2026-07-19 Ryan 要求自訂動作也放到課表加動作視窗。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。抽出共用元件 app/static/js/custom-exercise.js（自我包含：錯誤就地顯示、不動父層重繪），picker（app.js pickerCustomModal）與課表編輯（templates.js templateCustomModal）共用；課表「加動作」視窗內加「＋自訂動作」入口，開建立視窗疊在上層，建立成功重載可選清單並預選新動作可直接「確定加入」。picker 入口保留（兩處都有）。sw.js SHELL 加 /js/custom-exercise.js、CACHE_NAME v19→v20、APP_VERSION 同步 v20。E2E scratchpad verify_f25.py R1–R5 全 PASS（入口+疊層、建立後預選+確認鈕啟用、加入課表、後端建立、picker 入口仍在）；F10 picker 回歸 ALL PASS、F24 版本號回歸 v20；全套 161 passed、ruff clean。codex-review 完成：1 條 P2（templateCustomModal 刷新失敗未 fallback，同 picker 舊 P2）已修（loadPickable 失敗改用建立回傳值補進清單）；無 P0/P1。修後 F25 E2E 仍 ALL PASS、ruff clean。sw.js v20→v21、APP_VERSION v21。"
+      "evidence": "2026-07-19 完成。抽出共用元件 app/static/js/custom-exercise.js（自我包含：錯誤就地顯示、不動父層重繪），picker（app.js pickerCustomModal）與課表編輯（templates.js templateCustomModal）共用；課表「加動作」視窗內加「＋自訂動作」入口，開建立視窗疊在上層，建立成功重載可選清單並預選新動作可直接「確定加入」。picker 入口保留（兩處都有）。sw.js SHELL 加 /js/custom-exercise.js、CACHE_NAME v19→v20、APP_VERSION 同步 v20。E2E scratchpad verify_f25.py R1–R5 全 PASS（入口+疊層、建立後預選+確認鈕啟用、加入課表、後端建立、picker 入口仍在）；F10 picker 回歸 ALL PASS、F24 版本號回歸 v20；全套 161 passed、ruff clean。codex-review 完成：1 條 P2（templateCustomModal 刷新失敗未 fallback，同 picker 舊 P2）已修（loadPickable 失敗改用建立回傳值補進清單）；無 P0/P1。修後 F25 E2E 仍 ALL PASS、ruff clean。sw.js v20→v21、APP_VERSION v21。",
+      "acceptance": "課表編輯的「＋加動作」懸浮視窗內新增「＋自訂動作」入口，點開建立自訂動作的視窗（疊在加動作視窗上層）；picker（選動作）現有的自訂動作入口保留（兩處都能建）。建立成功後新動作立即出現在加動作視窗的可選清單並被預選，可直接「確定加入」課表；取消則回到加動作視窗。建立視窗行為與 picker 一致（中文名必填、英文名/部位選填、自體重、重複就地提示、走 POST /api/exercises）。實作上兩處共用同一元件（custom-exercise.js），不重複表單邏輯。來源：2026-07-19 Ryan 要求自訂動作也放到課表加動作視窗。"
     },
     {
       "id": "F26",
       "name": "課表列表與編輯頁顯示格式優化",
-      "acceptance": "課表列表每張卡片：左側琥珀 accent 條；標題列右側顯示份量摘要「N 動作 · M 組」（M＝各動作 default_sets 總和，等寬數字）；動作以 tag 呈現，每個 tag 帶琥珀色「×組數」，取代原本「·」串接的純文字。沿用既有深色/琥珀設計語言，不引入新字體或框架。編輯/刪除功能與兩段刪除確認不變。來源：2026-07-19 Ryan 要求改課表顯示格式。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。templates.js templateRow 改版：左側琥珀 accent、標題列右側「N 動作·M 組」份量摘要（mono）、動作改 tag 帶琥珀「×組數」；app.css 對應 .tpl-head/.tpl-meta/.tpl-tags/.tpl-tag。編輯/刪除與兩段確認不變。sw.js v21→v22、APP_VERSION v22。E2E verify_f26.py 4/4 PASS（份量摘要、tag×組數、t-sets 數、編輯導航）；F25 回歸 ALL PASS；ruff clean。純顯示改動（markup+CSS 無邏輯），未跑 codex-review。 ｜ 追加：編輯頁 itemRow 同語言化——琥珀 accent、名稱獨立一行（中英並列、別名省略號不換行）、控制列組數 stepper 靠左＋↑↓✕ 靠右（刪除拉開防誤觸）、自訂休息 number input 白底改深色。sw.js v22→v23、APP_VERSION v23。F25/F26 回歸 ALL PASS、ruff clean。純顯示改動。"
+      "evidence": "2026-07-19 完成。templates.js templateRow 改版：左側琥珀 accent、標題列右側「N 動作·M 組」份量摘要（mono）、動作改 tag 帶琥珀「×組數」；app.css 對應 .tpl-head/.tpl-meta/.tpl-tags/.tpl-tag。編輯/刪除與兩段確認不變。sw.js v21→v22、APP_VERSION v22。E2E verify_f26.py 4/4 PASS（份量摘要、tag×組數、t-sets 數、編輯導航）；F25 回歸 ALL PASS；ruff clean。純顯示改動（markup+CSS 無邏輯），未跑 codex-review。 ｜ 追加：編輯頁 itemRow 同語言化——琥珀 accent、名稱獨立一行（中英並列、別名省略號不換行）、控制列組數 stepper 靠左＋↑↓✕ 靠右（刪除拉開防誤觸）、自訂休息 number input 白底改深色。sw.js v22→v23、APP_VERSION v23。F25/F26 回歸 ALL PASS、ruff clean。純顯示改動。",
+      "acceptance": "課表列表每張卡片：左側琥珀 accent 條；標題列右側顯示份量摘要「N 動作 · M 組」（M＝各動作 default_sets 總和，等寬數字）；動作以 tag 呈現，每個 tag 帶琥珀色「×組數」，取代原本「·」串接的純文字。沿用既有深色/琥珀設計語言，不引入新字體或框架。編輯/刪除功能與兩段刪除確認不變。來源：2026-07-19 Ryan 要求改課表顯示格式。"
     },
     {
       "id": "F27",
       "name": "課表編輯未儲存離開提醒（beforeunload＋返回確認）",
-      "acceptance": "在課表編輯畫面有未儲存變更（草稿與進場時不同：名稱、動作、組數、休息任一改動）時，重整頁面／關閉分頁／離開網站前，透過瀏覽器原生 beforeunload 跳出確認警告，避免手滑丟失未儲存編輯。無變更、或已離開編輯畫面（含儲存後返回列表）時不攔截；其他畫面（記錄每組即時寫入、體重/狀態表單 POST 即存）無未儲存資料，不受影響。註：行動瀏覽器（尤其 iOS Safari）對 beforeunload 原生提示支援有限，可能不顯示。另：app 內點「← 課表列表」返回時，若有未儲存變更先跳自訂確認視窗（沿用 app 慣例，不用瀏覽器 confirm），可選「捨棄並離開」或「繼續編輯」。來源：2026-07-19 Ryan 要求離開/重整未儲存時跳警告。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。①beforeunload（window 級，重整/關閉）：hasUnsavedTemplate() 比對草稿快照 vs 進場基準，未儲存時 preventDefault。②app 內返回確認：點「← 課表列表」若未儲存 → 自訂 .confirm-modal（捨棄並離開／繼續編輯），非瀏覽器 confirm。codex-review 完成、2 P2 已修：P2①休息欄位加 oninput 即時寫草稿（Chrome 先 beforeunload 後 change，否則打字未失焦重整會漏警告）；P2②controllerchange 設 refreshing 後加 setTimeout 復原，避免 beforeunload 取消重載後 latch 卡住讓 F14 自動更新永久失效。sw.js v25、APP_VERSION v25。E2E：verify_f27.py（beforeunload＋休息打字回歸）、verify_f27b.py（返回確認 4/4）皆 ALL PASS；F25/F26 回歸 ALL PASS、pytest 161、ruff clean。註：行動瀏覽器（尤其 iOS Safari）beforeunload 支援有限；app 內返回確認不受此限、各平台皆有效。"
+      "evidence": "2026-07-19 完成。①beforeunload（window 級，重整/關閉）：hasUnsavedTemplate() 比對草稿快照 vs 進場基準，未儲存時 preventDefault。②app 內返回確認：點「← 課表列表」若未儲存 → 自訂 .confirm-modal（捨棄並離開／繼續編輯），非瀏覽器 confirm。codex-review 完成、2 P2 已修：P2①休息欄位加 oninput 即時寫草稿（Chrome 先 beforeunload 後 change，否則打字未失焦重整會漏警告）；P2②controllerchange 設 refreshing 後加 setTimeout 復原，避免 beforeunload 取消重載後 latch 卡住讓 F14 自動更新永久失效。sw.js v25、APP_VERSION v25。E2E：verify_f27.py（beforeunload＋休息打字回歸）、verify_f27b.py（返回確認 4/4）皆 ALL PASS；F25/F26 回歸 ALL PASS、pytest 161、ruff clean。註：行動瀏覽器（尤其 iOS Safari）beforeunload 支援有限；app 內返回確認不受此限、各平台皆有效。",
+      "acceptance": "在課表編輯畫面有未儲存變更（草稿與進場時不同：名稱、動作、組數、休息任一改動）時，重整頁面／關閉分頁／離開網站前，透過瀏覽器原生 beforeunload 跳出確認警告，避免手滑丟失未儲存編輯。無變更、或已離開編輯畫面（含儲存後返回列表）時不攔截；其他畫面（記錄每組即時寫入、體重/狀態表單 POST 即存）無未儲存資料，不受影響。註：行動瀏覽器（尤其 iOS Safari）對 beforeunload 原生提示支援有限，可能不顯示。另：app 內點「← 課表列表」返回時，若有未儲存變更先跳自訂確認視窗（沿用 app 慣例，不用瀏覽器 confirm），可選「捨棄並離開」或「繼續編輯」。來源：2026-07-19 Ryan 要求離開/重整未儲存時跳警告。"
     },
     {
       "id": "F28",
       "name": "刪除課表確認視窗",
-      "acceptance": "課表列表點某課表的「刪除」→ 跳自訂確認視窗（顯示該課表名稱、提示無法復原、刪除／取消兩鈕），取代原本易誤觸的兩段式紅鍵。取消→關視窗、課表保留；刪除→呼叫 DELETE、重載列表、該課表消失。沿用 app 深色 modal 慣例、不用瀏覽器 confirm。防雙擊（tpl.busy）。來源：2026-07-19 Ryan 要求刪除課表多一層確認。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。templates.js：templateRow 的刪除鍵改為開確認視窗（tpl.confirmDeleteId 記目標）；deleteTemplateModal 顯示課表名稱＋無法復原提示，刪除/取消兩鈕，防雙擊 tpl.busy，刪除後 openTemplates 重載並清旗標。移除原兩段式紅鍵邏輯。sw.js v25→v26、APP_VERSION v26。E2E verify_f28.py 3/3 PASS（確認視窗含名稱且課表未消失、取消保留、刪除移除且後端消失）；F26 回歸 ALL PASS、ruff clean。codex-review 完成：無問題（未發現本次新增的功能性問題，符合驗收）。"
+      "evidence": "2026-07-19 完成。templates.js：templateRow 的刪除鍵改為開確認視窗（tpl.confirmDeleteId 記目標）；deleteTemplateModal 顯示課表名稱＋無法復原提示，刪除/取消兩鈕，防雙擊 tpl.busy，刪除後 openTemplates 重載並清旗標。移除原兩段式紅鍵邏輯。sw.js v25→v26、APP_VERSION v26。E2E verify_f28.py 3/3 PASS（確認視窗含名稱且課表未消失、取消保留、刪除移除且後端消失）；F26 回歸 ALL PASS、ruff clean。codex-review 完成：無問題（未發現本次新增的功能性問題，符合驗收）。",
+      "acceptance": "課表列表點某課表的「刪除」→ 跳自訂確認視窗（顯示該課表名稱、提示無法復原、刪除／取消兩鈕），取代原本易誤觸的兩段式紅鍵。取消→關視窗、課表保留；刪除→呼叫 DELETE、重載列表、該課表消失。沿用 app 深色 modal 慣例、不用瀏覽器 confirm。防雙擊（tpl.busy）。來源：2026-07-19 Ryan 要求刪除課表多一層確認。"
     },
     {
       "id": "F29",
       "name": "選動作/今日菜單加結束訓練按鈕",
-      "acceptance": "picker（選動作／今日菜單）底部新增「結束訓練」按鈕，可直接結束當前訓練回首頁，不必先挑動作進 logger 才能收工。行為與 logger 的「收工」相同（只清 client 狀態、已記錄的組留在 server）。與「← 回首頁」並列且語意不同：回首頁保留訓練可續、結束訓練則清掉。實作上抽出共用的 endWorkout（logger 收工與此共用）。來源：2026-07-19 Ryan 要求今日菜單加結束訓練按鈕。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。app.js 把 endWorkout 從 renderLogger 抽到 module 級（function 宣告 hoist），logger「收工」與 picker「結束訓練」共用；renderPicker 底部加 .picker-foot（← 回首頁＋結束訓練 btn-danger 並排），app.css 加 .picker-foot 樣式（同 .logger-foot）。sw.js v26→v27、APP_VERSION v27。E2E verify_f29.py 3/3 PASS（今日菜單有結束訓練鈕、按下回首頁且訓練清空＝首頁鈕變「開練」、對照回首頁不結束＝「繼續訓練」）；logger 收工回歸 PASS（記一組→收工→首頁「開練」）；ruff clean。codex-review 完成：無問題（共用 endWorkout 行為與原 logger 一致）。"
+      "evidence": "2026-07-19 完成。app.js 把 endWorkout 從 renderLogger 抽到 module 級（function 宣告 hoist），logger「收工」與 picker「結束訓練」共用；renderPicker 底部加 .picker-foot（← 回首頁＋結束訓練 btn-danger 並排），app.css 加 .picker-foot 樣式（同 .logger-foot）。sw.js v26→v27、APP_VERSION v27。E2E verify_f29.py 3/3 PASS（今日菜單有結束訓練鈕、按下回首頁且訓練清空＝首頁鈕變「開練」、對照回首頁不結束＝「繼續訓練」）；logger 收工回歸 PASS（記一組→收工→首頁「開練」）；ruff clean。codex-review 完成：無問題（共用 endWorkout 行為與原 logger 一致）。",
+      "acceptance": "picker（選動作／今日菜單）底部新增「結束訓練」按鈕，可直接結束當前訓練回首頁，不必先挑動作進 logger 才能收工。行為與 logger 的「收工」相同（只清 client 狀態、已記錄的組留在 server）。與「← 回首頁」並列且語意不同：回首頁保留訓練可續、結束訓練則清掉。實作上抽出共用的 endWorkout（logger 收工與此共用）。來源：2026-07-19 Ryan 要求今日菜單加結束訓練按鈕。"
     },
     {
       "id": "F30",
       "name": "課表編輯草稿自動存與還原",
-      "acceptance": "編輯課表時未儲存的內容自動存進 localStorage（改動即存、切背景與卸載前補存）；重新開啟 app（重整/關閉分頁/被 OS 殺掉再開）若有草稿則靜默還原進課表編輯畫面、帶回未存內容（沿用 workout 靜默還原範式）。存檔成功或離開編輯（含捨棄離開）即清草稿——只有被中斷才留。壞草稿資料不擋啟動。此為手機上比 beforeunload 更可靠的防丟失機制（與 F27 並存：F27 桌機攔截、返回確認；F30 手機還原）。來源：2026-07-19 Ryan 選擇自動存草稿＋還原方向。",
       "status": "passing",
-      "evidence": "2026-07-19 完成。templates.js：saveTemplateDraft/restoreTemplateDraft/clearTemplateDraft（localStorage key liftlog.templateDraft，存 {editing, savedSnapshot}）；renderTemplateEdit 每次重繪存草稿、backToList 清草稿。app.js：啟動 restoreActiveWorkout 後 restoreTemplateDraft（有草稿→靜默還原進編輯）；visibilitychange(hidden)＋beforeunload 補存（手機最可靠時機）。只在 hasUnsavedTemplate 才存、壞資料清掉不擋啟動。sw.js v27→v28、APP_VERSION v28。E2E verify_f30.py 4/4 PASS（改組數→reload→還原 5 組；存檔/捨棄離開/乾淨編輯→reload→不還原）；F27/F27b/F28/F26 回歸 PASS、pytest 161、ruff clean。與 F27 並存：F27 桌機 beforeunload 攔截＋返回確認，F30 手機還原。codex-review 完成、2 P2 已修：①saveTemplateDraft 在編輯畫面回到基準時清草稿（否則撤銷的改動重整會復活）；②restoreTemplateDraft 嚴格驗證欄位型別（name 為 string、items 每筆 exercise_id/default_sets 為 number 且 name_zh/name_en/muscle_group 為 string），壞草稿丟棄不卡啟動。E2E 加 R5/R6 覆蓋，全 6 條 PASS。sw.js v28→v29、APP_VERSION v29。"
+      "evidence": "2026-07-19 完成。templates.js：saveTemplateDraft/restoreTemplateDraft/clearTemplateDraft（localStorage key liftlog.templateDraft，存 {editing, savedSnapshot}）；renderTemplateEdit 每次重繪存草稿、backToList 清草稿。app.js：啟動 restoreActiveWorkout 後 restoreTemplateDraft（有草稿→靜默還原進編輯）；visibilitychange(hidden)＋beforeunload 補存（手機最可靠時機）。只在 hasUnsavedTemplate 才存、壞資料清掉不擋啟動。sw.js v27→v28、APP_VERSION v28。E2E verify_f30.py 4/4 PASS（改組數→reload→還原 5 組；存檔/捨棄離開/乾淨編輯→reload→不還原）；F27/F27b/F28/F26 回歸 PASS、pytest 161、ruff clean。與 F27 並存：F27 桌機 beforeunload 攔截＋返回確認，F30 手機還原。codex-review 完成、2 P2 已修：①saveTemplateDraft 在編輯畫面回到基準時清草稿（否則撤銷的改動重整會復活）；②restoreTemplateDraft 嚴格驗證欄位型別（name 為 string、items 每筆 exercise_id/default_sets 為 number 且 name_zh/name_en/muscle_group 為 string），壞草稿丟棄不卡啟動。E2E 加 R5/R6 覆蓋，全 6 條 PASS。sw.js v28→v29、APP_VERSION v29。",
+      "acceptance": "編輯課表時未儲存的內容自動存進 localStorage（改動即存、切背景與卸載前補存）；重新開啟 app（重整/關閉分頁/被 OS 殺掉再開）若有草稿則靜默還原進課表編輯畫面、帶回未存內容（沿用 workout 靜默還原範式）。存檔成功或離開編輯（含捨棄離開）即清草稿——只有被中斷才留。壞草稿資料不擋啟動。此為手機上比 beforeunload 更可靠的防丟失機制（與 F27 並存：F27 桌機攔截、返回確認；F30 手機還原）。來源：2026-07-19 Ryan 選擇自動存草稿＋還原方向。"
     },
     {
       "id": "F31",
       "name": "休息結束 Web Push 通知",
-      "acceptance": "休息開始時排定「休息結束」推播；到點手機跳通知＋震動，人在別的 app 也收得到，不用回網頁看時間。首頁「🔔 休息提醒」開關要權限＋訂閱（Android Chrome；iPhone 需加主畫面）。繼續下一組/換動作/收工會取消未觸發的通知。未開啟或伺服器未設金鑰＝完全 no-op、不影響訓練。註：真正的浮動視窗手機網頁做不到，改以推播達成「離開網頁也被通知」的目的。來源：2026-07-20 Ryan 要倒數能離開網頁在別 app 操作、時間到通知。",
       "status": "passing",
-      "evidence": "2026-07-20 完成。後端 pywebpush＋VAPID（金鑰在 .env、gitignore）＋PushSubscription＋in-process asyncio 排程器＋4 endpoints；前端 sw.js push/notificationclick、push.js（權限/訂閱/排程 best-effort）、首頁「🔔 休息提醒」開關、startRestTimer 排程/stopRestTimer 取消。sw.js v31、APP_VERSION v31。codex-review 完成、1 P1＋2 P2 全修：P1 pywebpush 的 vapid_private_key 直接傳 DER b64url（原本轉 PEM 會 ValueError、真實送出全掛——mock 掉 _send_one 才漏測；已補格式回歸測試）；P2 push.js 把 schedule/cancel 串成 promise 鏈序列化（防慢網亂序誤推）；P2 cycleRestHint 休息中改秒數依新剩餘時間重排推播。test_push.py 12 條＋全套 pytest 過、ruff clean。E2E verify_f31.py 4/4、logger/F29 回歸 PASS。2026-07-20 Ryan Android 真機確認：休息倒數結束、切到別 app 仍收到通知＋震動，送達正常 → passing。"
+      "evidence": "2026-07-20 完成。後端 pywebpush＋VAPID（金鑰在 .env、gitignore）＋PushSubscription＋in-process asyncio 排程器＋4 endpoints；前端 sw.js push/notificationclick、push.js（權限/訂閱/排程 best-effort）、首頁「🔔 休息提醒」開關、startRestTimer 排程/stopRestTimer 取消。sw.js v31、APP_VERSION v31。codex-review 完成、1 P1＋2 P2 全修：P1 pywebpush 的 vapid_private_key 直接傳 DER b64url（原本轉 PEM 會 ValueError、真實送出全掛——mock 掉 _send_one 才漏測；已補格式回歸測試）；P2 push.js 把 schedule/cancel 串成 promise 鏈序列化（防慢網亂序誤推）；P2 cycleRestHint 休息中改秒數依新剩餘時間重排推播。test_push.py 12 條＋全套 pytest 過、ruff clean。E2E verify_f31.py 4/4、logger/F29 回歸 PASS。2026-07-20 Ryan Android 真機確認：休息倒數結束、切到別 app 仍收到通知＋震動，送達正常 → passing。",
+      "acceptance": "休息開始時排定「休息結束」推播；到點手機跳通知＋震動，人在別的 app 也收得到，不用回網頁看時間。首頁「🔔 休息提醒」開關要權限＋訂閱（Android Chrome；iPhone 需加主畫面）。繼續下一組/換動作/收工會取消未觸發的通知。未開啟或伺服器未設金鑰＝完全 no-op、不影響訓練。註：真正的浮動視窗手機網頁做不到，改以推播達成「離開網頁也被通知」的目的。來源：2026-07-20 Ryan 要倒數能離開網頁在別 app 操作、時間到通知。"
     },
     {
       "id": "F32",
       "name": "換動作後保留本次已做組數",
-      "acceptance": "同一次訓練（未按收工/結束訓練）中，換動作離開某動作後再回到它，先前做的組要仍留在 done-list（可續刪/續編、編號接續），不得被清空、也不得被 last-sets 誤標成「上次」。回到已做過的動作時，「上次」提示仍要顯示，但查的是**前一次**訓練（排除進行中的 workout），不是把本次的組誤標成上次；查不到前一次才退回顯示本次摘要。切到全新（本次未做過）的動作維持原行為：done-list 空、顯示「第一次做這個動作」。收工/結束訓練後清除本次鏡射。來源：2026-07-20 Ryan 反映換動作會把原本訓練內組數變成上次動作。",
       "status": "passing",
-      "evidence": "2026-07-20 完成。state 加 doneByExercise:{exerciseId:[sets]}（納入 saveActiveWorkout/restoreActiveWorkout/clearActiveWorkout，收工清空）；pickExercise 若鏡射有組→還原本次組、hint 標「本次」而非「上次」並跳過 lastSets；logSet/deleteDoneSet/saveEditDoneSet 後 rememberDoneSets 鏡射同步。「上次」提示改查前一次訓練：last-sets 加 exclude_workout 參數（service last_sets(exclude_workout_id) 過濾掉進行中 workout），pickExercise 一律帶 state.workoutId → done-list 顯示本次組、hint 顯示前一次訓練值（查無前一次才退回本次摘要）。sw.js v33、APP_VERSION v33。codex-review 1 P1+1 P2 皆修：P1 syncQueue 補傳成功換 server id、discardFailed 捨棄失敗組都經 reconcileDoneSets 掃全鏡射同步並持久化（否則換動作復活無 id 舊 payload，刪除不刪 server、編輯撞 client_uuid 冪等）；P2 pickExercise 偵測 setCounts>0 但鏡射空（v31→v32 升級）→ workoutDetail 回填。後端 test_api_workouts 加 2 條（exclude_workout 回前一次、只有本次時回空）。E2E verify_f32.py 8/8：A0 首選顯示上次 50、T1 換動作回來保留 2 組、T2 上次顯示前一次 50（非本次 60）、T3 續接第 3 組、T4 全新動作維持第一次、T5 升級回填 done-row 3＋上次仍 50、T6 離線記錄→補傳→換回→刪除真的刪到 server（server_remaining=0）。「上次查前一次」refinement 再跑 codex-review、2 P2 已修：①resume 分支 lastSets 的 catch 只吞離線（status 0），401/5xx 重拋交 guard（否則 token 失效不導回 setup）；②pickExercise 兩處 await 後加 state.exercise!==exercise 過期守衛（await 期間已換動作/結束訓練就丟棄，不把畫面拉回 logger）。全套 pytest 175 過、ruff clean、F31 logger 回歸 4/4。"
+      "evidence": "2026-07-20 完成。state 加 doneByExercise:{exerciseId:[sets]}（納入 saveActiveWorkout/restoreActiveWorkout/clearActiveWorkout，收工清空）；pickExercise 若鏡射有組→還原本次組、hint 標「本次」而非「上次」並跳過 lastSets；logSet/deleteDoneSet/saveEditDoneSet 後 rememberDoneSets 鏡射同步。「上次」提示改查前一次訓練：last-sets 加 exclude_workout 參數（service last_sets(exclude_workout_id) 過濾掉進行中 workout），pickExercise 一律帶 state.workoutId → done-list 顯示本次組、hint 顯示前一次訓練值（查無前一次才退回本次摘要）。sw.js v33、APP_VERSION v33。codex-review 1 P1+1 P2 皆修：P1 syncQueue 補傳成功換 server id、discardFailed 捨棄失敗組都經 reconcileDoneSets 掃全鏡射同步並持久化（否則換動作復活無 id 舊 payload，刪除不刪 server、編輯撞 client_uuid 冪等）；P2 pickExercise 偵測 setCounts>0 但鏡射空（v31→v32 升級）→ workoutDetail 回填。後端 test_api_workouts 加 2 條（exclude_workout 回前一次、只有本次時回空）。E2E verify_f32.py 8/8：A0 首選顯示上次 50、T1 換動作回來保留 2 組、T2 上次顯示前一次 50（非本次 60）、T3 續接第 3 組、T4 全新動作維持第一次、T5 升級回填 done-row 3＋上次仍 50、T6 離線記錄→補傳→換回→刪除真的刪到 server（server_remaining=0）。「上次查前一次」refinement 再跑 codex-review、2 P2 已修：①resume 分支 lastSets 的 catch 只吞離線（status 0），401/5xx 重拋交 guard（否則 token 失效不導回 setup）；②pickExercise 兩處 await 後加 state.exercise!==exercise 過期守衛（await 期間已換動作/結束訓練就丟棄，不把畫面拉回 logger）。全套 pytest 175 過、ruff clean、F31 logger 回歸 4/4。",
+      "acceptance": "同一次訓練（未按收工/結束訓練）中，換動作離開某動作後再回到它，先前做的組要仍留在 done-list（可續刪/續編、編號接續），不得被清空、也不得被 last-sets 誤標成「上次」。回到已做過的動作時，「上次」提示仍要顯示，但查的是**前一次**訓練（排除進行中的 workout），不是把本次的組誤標成上次；查不到前一次才退回顯示本次摘要。切到全新（本次未做過）的動作維持原行為：done-list 空、顯示「第一次做這個動作」。收工/結束訓練後清除本次鏡射。來源：2026-07-20 Ryan 反映換動作會把原本訓練內組數變成上次動作。"
     },
     {
       "id": "F33",
       "name": "日曆明細＋體重清單卡片化（收斂到 F26 琥珀 accent 語言）",
-      "acceptance": "把兩處舊的 hairline 帳本式堆疊收斂到 F26 已確立的「琥珀 accent 條＋卡片」語言，只動 markup 外層 wrapper 與 CSS、不改任何互動邏輯。【日曆當日明細】① 同一動作的組收進一個視覺區塊：左緣琥珀脊（--led-dim）＋動作名為標頭，其下每組為一列；② 移除每列全寬 border-bottom 的帳本橫線，改以間距/區塊分界（動作與動作之間靠新的脊塊自然分界）；③ 每組列的編輯（✎ stepper）／刪除（🗑 單擊）與 F19 多選批次刪除、F18 狀態行內編輯全部照舊可用（行為零改動）。【體重頁紀錄清單】④ .body-list 收進一張 .body-card（與上方兩張圖表卡片語言一致）、移除 bm-row 的帳本橫線；⑤ 每列的編輯（POST 覆蓋）／單擊刪除照舊可用。【共通】⑥ 數字維持 mono 主角色（--text）、脊與標頭為暗色配角（--text-dim / --led-dim），不新增字體、不引入框架或圖表庫；⑦ 深色對比可讀（沿用既有 tokens）；⑧ 改 static 資產→ sw.js CACHE_NAME 與 state.js APP_VERSION 同步遞增（v34→v35）；⑨ 既有 E2E 回歸不破：logger（verify_f19_logger/f20/f32）、日曆刪除/編輯（F16/F18/F19 對應）、體重（F11/F17）跑過為綠。來源：2026-07-20 Ryan 覺得日曆／體重頁下方堆疊顯示可以更乾淨；選定方向 A（動作卡＋琥珀脊、拿掉帳本橫線）。",
       "status": "passing",
-      "evidence": "2026-07-20 完成。方向 A：日曆明細每動作收進 .cal-ex-block（2px 琥珀脊 --led-dim），移除 .cal-detail-row 帳本 border-bottom、動作間靠脊塊分界；體重紀錄清單容器改 .body-card body-list、移除 .bm-row 橫線（與上方圖表卡一致）。sw.js/APP_VERSION v34→v35。codex-review 1 P2 已修：跨當日所有 workouts 先彙整同動作的組再建區塊（原 per-workout 迴圈會讓同日多 workout 含相同動作產生重複同名區塊，違反『一個動作一個視覺區塊』）。E2E verify_f33.py R1–R6 全 PASS（脊區塊=2 塊即使橫跨 2 個同日 workout＝驗到 P2 修正、組列 border-bottom=0、刪一組互動存活 4→3、清單 body-card+底色 rgb(26,28,33)、bm-row border-bottom=0、刪一筆體重 2→1）；pytest 175 過、ruff clean；截圖 Ryan 目視 OK。"
+      "evidence": "2026-07-20 完成。方向 A：日曆明細每動作收進 .cal-ex-block（2px 琥珀脊 --led-dim），移除 .cal-detail-row 帳本 border-bottom、動作間靠脊塊分界；體重紀錄清單容器改 .body-card body-list、移除 .bm-row 橫線（與上方圖表卡一致）。sw.js/APP_VERSION v34→v35。codex-review 1 P2 已修：跨當日所有 workouts 先彙整同動作的組再建區塊（原 per-workout 迴圈會讓同日多 workout 含相同動作產生重複同名區塊，違反『一個動作一個視覺區塊』）。E2E verify_f33.py R1–R6 全 PASS（脊區塊=2 塊即使橫跨 2 個同日 workout＝驗到 P2 修正、組列 border-bottom=0、刪一組互動存活 4→3、清單 body-card+底色 rgb(26,28,33)、bm-row border-bottom=0、刪一筆體重 2→1）；pytest 175 過、ruff clean；截圖 Ryan 目視 OK。",
+      "acceptance": "把兩處舊的 hairline 帳本式堆疊收斂到 F26 已確立的「琥珀 accent 條＋卡片」語言，只動 markup 外層 wrapper 與 CSS、不改任何互動邏輯。【日曆當日明細】① 同一動作的組收進一個視覺區塊：左緣琥珀脊（--led-dim）＋動作名為標頭，其下每組為一列；② 移除每列全寬 border-bottom 的帳本橫線，改以間距/區塊分界（動作與動作之間靠新的脊塊自然分界）；③ 每組列的編輯（✎ stepper）／刪除（🗑 單擊）與 F19 多選批次刪除、F18 狀態行內編輯全部照舊可用（行為零改動）。【體重頁紀錄清單】④ .body-list 收進一張 .body-card（與上方兩張圖表卡片語言一致）、移除 bm-row 的帳本橫線；⑤ 每列的編輯（POST 覆蓋）／單擊刪除照舊可用。【共通】⑥ 數字維持 mono 主角色（--text）、脊與標頭為暗色配角（--text-dim / --led-dim），不新增字體、不引入框架或圖表庫；⑦ 深色對比可讀（沿用既有 tokens）；⑧ 改 static 資產→ sw.js CACHE_NAME 與 state.js APP_VERSION 同步遞增（v34→v35）；⑨ 既有 E2E 回歸不破：logger（verify_f19_logger/f20/f32）、日曆刪除/編輯（F16/F18/F19 對應）、體重（F11/F17）跑過為綠。來源：2026-07-20 Ryan 覺得日曆／體重頁下方堆疊顯示可以更乾淨；選定方向 A（動作卡＋琥珀脊、拿掉帳本橫線）。"
     },
     {
       "id": "F34",
       "name": "日曆明細動作收合/展開＋選取鈕收進 head",
-      "acceptance": "在 F33 的琥珀脊區塊上加收合/展開，並把多選入口收進當日明細 head，純前端 markup＋CSS、互動邏輯沿用。【動作收合/展開】① 每個 .cal-ex-block 預設收合，只顯示動作名＋摘要（組數 · 最重組，最重組＝weight_kg 最大的一組、平手取 reps 多者，顯示 weight×reps）＋展開指示（收合 ▸／展開 ▾）；② 點該塊標頭切換展開/收合；展開才顯示各組 .cal-detail-row.set（含既有 ✎ 編輯／🗑 刪除）；③ 進「選取」多選模式時所有塊自動展開（否則無組可勾），退出多選恢復先前收合狀態；④ 收合/展開＝純前端畫面狀態（存在 cal 內，切日/切月重置無妨）。【選取鈕收進 head】⑤ 「選取」入口從獨立 .cal-select-bar 移到當日明細 head（日期／噸位那列）右側，低調 icon-text（如「☑ 選取」）、不再獨占一列；進多選模式時 head 顯示「取消」，底部批次刪除條改為琥珀填色（--led，btn-primary 樣式，取代原 danger-red），停用態（未選取時）淡化不可按。【共通】⑥ 不新增字體/框架；深色對比可讀；F16–F19 的每組編輯/刪除、多選批次刪除、F18 狀態行內編輯行為全部不變；⑦ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v35→v36；⑧ 回歸：verify_f33 的脊區塊/卡片結構仍成立（收合後展開可見組列）、logger／日曆刪除編輯／體重 E2E 綠、pytest＋ruff 綠。來源：2026-07-20 Ryan 要同動作先收合、點了再展開，且多選『選取』鈕更好看；拍板：預設全收合、收合帶摘要（組數·最重組）、選取鈕併進 head。 【2026-07-23 重新簽核：原⑤把一直是 danger-red 的批次條誤描為「琥珀（現狀不變）」自相矛盾，Ryan 拍板真的改成琥珀。】",
       "status": "passing",
-      "evidence": "E2E verify_f34.py 12/12 PASS（收合/展開、摘要=組數·最重組平手取reps多、選取鈕進head、caret 對比 10.48:1、批次條琥珀填色 rgb(255,176,32)、切日重置）；pytest 175 passed cov 98%、ruff clean；回歸 F33/F18/F19logger+calendar/F20/F32/F11/F17 全綠；/codex-review 無 findings；codex-verify 跨模型 8/8 pass（r1 抓 caret 對比 fail、r2 抓 ⑤ 規格矛盾，均修正後 r3 全 pass，報告 scratchpad/codex-verify-F34-r3.md）。⑤ 於 2026-07-23 重新簽核為琥珀批次條。"
+      "evidence": "E2E verify_f34.py 12/12 PASS（收合/展開、摘要=組數·最重組平手取reps多、選取鈕進head、caret 對比 10.48:1、批次條琥珀填色 rgb(255,176,32)、切日重置）；pytest 175 passed cov 98%、ruff clean；回歸 F33/F18/F19logger+calendar/F20/F32/F11/F17 全綠；/codex-review 無 findings；codex-verify 跨模型 8/8 pass（r1 抓 caret 對比 fail、r2 抓 ⑤ 規格矛盾，均修正後 r3 全 pass，報告 scratchpad/codex-verify-F34-r3.md）。⑤ 於 2026-07-23 重新簽核為琥珀批次條。",
+      "acceptance": "在 F33 的琥珀脊區塊上加收合/展開，並把多選入口收進當日明細 head，純前端 markup＋CSS、互動邏輯沿用。【動作收合/展開】① 每個 .cal-ex-block 預設收合，只顯示動作名＋摘要（組數 · 最重組，最重組＝weight_kg 最大的一組、平手取 reps 多者，顯示 weight×reps）＋展開指示（收合 ▸／展開 ▾）；② 點該塊標頭切換展開/收合；展開才顯示各組 .cal-detail-row.set（含既有 ✎ 編輯／🗑 刪除）；③ 進「選取」多選模式時所有塊自動展開（否則無組可勾），退出多選恢復先前收合狀態；④ 收合/展開＝純前端畫面狀態（存在 cal 內，切日/切月重置無妨）。【選取鈕收進 head】⑤ 「選取」入口從獨立 .cal-select-bar 移到當日明細 head（日期／噸位那列）右側，低調 icon-text（如「☑ 選取」）、不再獨占一列；進多選模式時 head 顯示「取消」，底部批次刪除條改為琥珀填色（--led，btn-primary 樣式，取代原 danger-red），停用態（未選取時）淡化不可按。【共通】⑥ 不新增字體/框架；深色對比可讀；F16–F19 的每組編輯/刪除、多選批次刪除、F18 狀態行內編輯行為全部不變；⑦ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v35→v36；⑧ 回歸：verify_f33 的脊區塊/卡片結構仍成立（收合後展開可見組列）、logger／日曆刪除編輯／體重 E2E 綠、pytest＋ruff 綠。來源：2026-07-20 Ryan 要同動作先收合、點了再展開，且多選『選取』鈕更好看；拍板：預設全收合、收合帶摘要（組數·最重組）、選取鈕併進 head。 【2026-07-23 重新簽核：原⑤把一直是 danger-red 的批次條誤描為「琥珀（現狀不變）」自相矛盾，Ryan 拍板真的改成琥珀。】"
     },
     {
       "id": "F35",
@@ -314,6 +314,20 @@
       "status": "passing",
       "evidence": "verify_f45.py（本機 Playwright E2E）5/5 PASS：①✎ 開 .cal-edit-modal、無 .cal-detail-row.editing、含 steppers＋累度軸 ②帶入原值 50kg/5下/累度7 ③儲存→自動關＋PATCH 生效（52.5×6）＋明細刷新 ④取消／點遮罩關閉且未寫入。ruff 全過；pytest 189 passed；codex review 一則 P2（儲存後刷新失敗會誤關 modal）已修——改為 PATCH 成功即關再刷新。",
       "acceptance": "① 點某組的 ✎ → 開懸浮 modal（`.modal-overlay` 內含 `.cal-edit-modal`），不再有行內編輯列（`.cal-detail-row.editing` 不存在），日曆明細版面不被表單撐開。② modal 內容：標題「編輯 #<set_number>」＋該組動作名、KG／REPS steppers、累度軸（皆帶入該組原值；rpe 為空時預設輕鬆）、『儲存』與『取消』。③ 按『儲存』→ PATCH 該組後 modal 自動關閉、日曆即時刷新（明細顯示新值、當月熱力圖噸位跟著更新）。④ 按『取消』或點遮罩空白處 → 關閉 modal 且該組維持原值（未送出）。⑤ 送出中（editSubmitting）儲存與取消停用、點遮罩不關（防競態，同 F43/F44 補記 modal）；多選模式（selectMode）下不顯示編輯 modal。⑥ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v45→v46；既有 F1–F44 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①③④。 【2026-07-25 簽核：Ryan 要日曆內的動作更新也改成懸浮式。】"
+    },
+    {
+      "id": "F46",
+      "name": "日曆補記 modal：依部位篩選動作",
+      "status": "passing",
+      "evidence": "verify_f46.py（本機 Playwright E2E）6/6 PASS：①chips 涵蓋 6 個部位 ②點部位只剩該部位、chip 亮起、再點取消 ③部位＋關鍵字 AND 且搜尋框不失焦、文字保留 ⑤關閉再開／F44 退一步皆重置。ruff 全過。",
+      "acceptance": "① 補記 modal 的選動作態，搜尋框上方出現部位 chips（`.cal-add-modal .chips .chip`），內容＝動作庫既有 muscle_group 去重，沿用既有 .chip 樣式與語意（再點同一顆＝取消篩選、回全部）。② 點某部位 → 下方清單只剩該部位的動作。③ 部位篩選與搜尋字串同時生效（AND：符合部位且符合關鍵字才列出）。④ 切換 chip 與打字都是清單就地更新（不整頁重繪）：搜尋框不失焦、已輸入文字保留、chip 的 on 狀態同步。⑤ 關閉 modal、F44 退一步、切日/切月 → 部位篩選重置為全部。⑥ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v46→v47；既有 F1–F45 行為不變。E2E 涵蓋 ①②③⑤。 【2026-07-25 簽核：Ryan 要日曆新增動作也能用部位選。】"
+    },
+    {
+      "id": "F47",
+      "name": "日曆補記：選課表批次新增（逐列確認後一次記錄）",
+      "status": "passing",
+      "evidence": "verify_f47.py（本機 Playwright E2E）7/7 PASS：①模式切換預設「單一動作」②用課表→列課表→批次態 3 列預設全勾 ③上次最重組帶入 62.5×6、無紀錄 20×8、組數＝default_sets(3/2/1) ④取消勾第 3 列後「全部記錄」→ 自動關、只寫 3+2 組、set_number 1..3／rpe 6、明細 2 區塊＋熱力圖上色、再跑一次接續為 1..6 ⑥未來日無入口。迴歸 F43/F44/F45 E2E 全綠、pytest 189 passed、ruff 全過。codex review 兩則已修：P1（空白日部分失敗重試會重建 workout 撞 409 → workoutId 存進批次草稿沿用）、P2（課表快取跨畫面過期 → 重進日曆失效快取）。",
+      "acceptance": "① 補記 modal 的選動作態頂部有模式切換 `.cal-add-mode`：「單一動作」（預設，行為＝F43–F46 現況不變）與「用課表」。② 切到「用課表」→ 列出所有課表（`.cal-tpl-item`）；點一張 → 進入批次確認態 `.cal-add-modal.batch`：課表每個動作一列 `.cal-batch-row`，含勾選框（預設全勾）、動作名、KG／REPS steppers、組數 stepper（預設＝該課表項目的 default_sets，下限 1）。列數多時清單可垂直捲動，不撐破 modal。③ 預設值：重量／次數帶入該動作「上次紀錄」（`/api/exercises/{id}/last-sets` 的最重一組）；查無紀錄或查詢失敗 → 一般動作 20kg、自體重動作 0，8 下。累度一律預設輕鬆（rpe 6）。④ 按『全部記錄』→ 對每個勾選動作依其組數逐組寫入選定日的 workout（沿用當日既有 workout，沒有才建立；同 F41 規則），set_number 由該動作既有組數接續；成功後自動關閉 modal 並刷新日曆（當月熱力圖＋當日明細）。全部取消勾選時『全部記錄』停用。⑤ 每組草稿的 client_uuid 建立時固定、重試沿用（伺服器對重複 client_uuid 冪等去重）；送出中『全部記錄』與『取消』停用、點遮罩不關；送出過程出錯 → modal 不關、已寫入的保留、可直接重試而不重複寫入。⑥ 未來日期仍不顯示補記入口；全程不改變 state.workoutId。⑦ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v47→v48；既有 F1–F46 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①②③④。 【2026-07-25 簽核：Ryan 選「先展開清單讓我逐個確認」＋累度一律預設輕鬆。】"
     }
   ]
 }
