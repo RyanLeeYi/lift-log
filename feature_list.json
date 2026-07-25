@@ -300,6 +300,13 @@
       "status": "passing",
       "evidence": "commit ec625bd（含 codex-review 兩修）。E2E scratchpad/verify_f43.py 9/9：① >3 動作出 .cal-ex-scroll 溢出可捲、≤3 不套容器、噸位/狀態/入口不被捲入；② 入口開 .modal-overlay（非內嵌）、點遮罩空白關；③ modal 內搜尋選動作+steppers+累度軸+自體重預設負重 0；④ 記這組自動關 modal+日曆即時刷新+set_number 接續+未來日無入口+不動 state.workoutId；加驗 P2-1 捲動後展開 scrollTop 保留（before=18/after=18）。codex-review 兩條 P2 均修：P2-1 捲軸位置流失（cal.exScrollTop+rAF 還原）、P2-2 modal 送出中競態（closeAddModal if(addSubmitting) return，同 addSet 防重入 pattern）。完成定義 pytest 189 passed+ruff clean（fix 後親跑）。跨-context 驗收：acceptance-verifier 執行中明訊『All acceptance items verified』（已逐條驗完 acceptance，於最後 ruff/pytest 收尾階段被使用者要求停止以節省時間；22+ 版腳本卡在點日曆格 selector 摩擦，非產品問題）。sw.js/state.js v43→v44。",
       "acceptance": "日曆明細兩項改進。① 日曆當日**動作區塊 > 3 個**時，動作列表段套固定高度＋垂直捲軸（比照 logger done-list 的 .scrollable）；≤3 個維持原樣不捲；噸位 head、當日狀態列、補記入口不被捲入（只捲動作區塊那段）。② F41 補記改懸浮式：『＋新增動作』入口保留在日曆明細（僅一顆按鈕、不佔版面），點它 → 開懸浮 modal（照 templates F21 的 .modal-overlay/.modal），不再內嵌把明細推長；點遮罩空白處或『取消』關閉 modal。③ modal 內：搜尋框選動作（比對 name_zh/name_en/別名）→ 重量/次數 steppers ＋ 累度軸（沿用 F40，預設輕鬆）→『記這組』；自體重動作預設負重 0。④ 按『記這組』→ 送出後**自動關閉 modal**，日曆即時刷新（當月熱力圖噸位＋當日明細，新組出現在對應動作區塊）；要再記就再點入口；未來日期不顯示入口；全程不改變 state.workoutId。移除舊的內嵌 .cal-add recording 態與『完成/換動作』連續記那套。⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v43→v44；既有 F1–F42 行為不變、不新增框架/圖表庫。E2E 涵蓋 ①②③④。 【2026-07-25 簽核：Ryan 要日曆超過三個動作變捲軸、補記像編輯課表那樣懸浮不佔版面；連續記體驗改為『記一組就自動關 modal』。】"
+    },
+    {
+      "id": "F44",
+      "name": "日曆補記 modal：取消鍵改為『退一步』（移除多餘的換動作）",
+      "status": "passing",
+      "evidence": "verify_f44.py（本機 Playwright E2E）6/6 PASS：①記錄態無「換動作」按鈕 ②取消＝退回選動作態（modal 仍開、搜尋字清空、draft 丟棄→重選為 20kg/8下/輕鬆）③選動作態取消關閉 modal 回日曆、點遮罩空白行為不變 ＋迴歸「記這組仍自動關 modal 並寫入一組」。ruff check 全過；codex review（--uncommitted）無 findings。",
+      "acceptance": "① 補記 modal 記錄態（已選動作）不再有『換動作』按鈕（`.cal-add-modal.recording` 內找不到文字為『換動作』的按鈕）。② 記錄態的『取消』＝退回選動作態：點下後 modal 仍開著（`.modal-overlay` 存在）、回到搜尋框＋動作清單（`.cal-add-search` 出現、steppers 消失）、搜尋字串清空、該次未送出的 draft 丟棄（重新選同一動作時是全新預設值：一般動作 20kg／自體重 0、8 下、累度輕鬆）。③ 選動作態的『取消』＝真正關閉 modal 回到日曆（`.modal-overlay` 消失，日曆明細照舊顯示）；點遮罩空白處行為不變（關閉 modal）。④ 送出中（addSubmitting）兩態的取消一律停用，防競態；『記這組』成功仍自動關 modal（F43 行為不變）。⑤ 改 static → sw.js CACHE_NAME 與 state.js APP_VERSION v44→v45；既有 F1–F43 行為不變。E2E 涵蓋 ①②③。 【2026-07-25 簽核：Ryan 指出換動作多餘，取消應是退一步、選動作態的取消才是離開日曆補記。】"
     }
   ]
 }

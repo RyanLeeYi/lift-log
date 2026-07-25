@@ -360,6 +360,16 @@ function addBlock(rerender) {
   ];
 }
 
+// F44：記錄態的『取消』＝退一步（丟棄這次的 draft、回到選動作），不是離開補記。
+// 真正離開日曆補記由選動作態的『取消』（closeAddModal）負責。
+function backToPicker(rerender) {
+  if (cal.addSubmitting) return; // 與 closeAddModal 同一防競態理由
+  cal.addExercise = null;
+  cal.addDraft = null;
+  cal.addSearch = "";
+  rerender();
+}
+
 function closeAddModal(rerender) {
   // Codex P2：送出中不可關/重開——否則使用者可在 addSet await 期間關掉再重開、選新動作，
   // 舊請求成功後的清理會清掉新開 modal 的選取與輸入。送出成功會自動關（addSet 內處理）。
@@ -372,7 +382,7 @@ function closeAddModal(rerender) {
 }
 
 // F43：補記懸浮 modal（照 templates F21 的 .modal-overlay/.modal），不佔日曆版面。
-// 記一組即自動關（addSet 成功後關）。點遮罩空白處或『取消』關閉。
+// 記一組即自動關（addSet 成功後關）。記錄態『取消』＝退回選動作（F44）；選動作態『取消』或點遮罩空白＝關閉。
 function addModal(guard, rerender) {
   if (!cal.addOpen || !cal.selected || cal.selectMode || cal.selected > calToday()) return [];
   let inner;
@@ -410,11 +420,6 @@ function addModal(guard, rerender) {
     inner = el("div", { class: "modal cal-add-modal recording" }, [
       el("div", { class: "modal-head" }, [
         el("span", { class: "ex-name" }, [exerciseName(cal.addExercise)]),
-        el("button", {
-          class: "btn btn-ghost sm",
-          ...(cal.addSubmitting ? { disabled: "" } : {}), // 送出中不可換動作（配合 closeAddModal 防競態）
-          onclick: () => { if (cal.addSubmitting) return; cal.addExercise = null; cal.addDraft = null; rerender(); },
-        }, ["換動作"]),
       ]),
       el("div", { class: "steppers" }, [
         stepper(cal.addExercise.is_bodyweight ? "負重 KG" : "KG", d.weight,
@@ -433,7 +438,7 @@ function addModal(guard, rerender) {
         el("button", {
           class: "btn btn-ghost sm modal-cancel",
           ...(cal.addSubmitting ? { disabled: "" } : {}), // 送出中停用取消（防競態；成功會自動關）
-          onclick: () => closeAddModal(rerender),
+          onclick: () => backToPicker(rerender), // F44：退一步回選動作，不離開 modal
         }, ["取消"]),
       ]),
     ]);
