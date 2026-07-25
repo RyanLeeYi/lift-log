@@ -11,6 +11,7 @@ const body = {
   metrics: [], // 升冪 [{date, weight_kg, body_fat_pct}]
   savedFlash: null, // 剛存成功的訊息（一次性）
   saving: false, // 防雙擊：送出中不再受理（教訓同 logSet／課表儲存）
+  formOpen: false, // F54：記錄表單收進懸浮視窗——是否開啟
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
   editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
   metric: "weight", // F53：圖表與紀錄清單顯示哪一項（weight|fat）；不持久化，進畫面一律回體重
@@ -40,6 +41,7 @@ export async function openBody() {
   body.savedFlash = null;
   body.editDate = null;
   body.form = null; // 進畫面回到預設今天
+  body.formOpen = false; // F54：進畫面時視窗關著
   body.metric = "weight"; // F53：不記憶選擇（Ryan 決定），每次進來都是體重
   body.rowsScroll = { weight: 0, fat: 0 }; // 進畫面從頂端
 }
@@ -152,6 +154,15 @@ export function renderBody(rerender, goHome, guard) {
     body.form = { date: dateInput.value, weight: weightInput.value, fat: fatInput.value };
   };
 
+  // F54 review P2-2／P3-4：三條關窗路徑（遮罩／取消／成功）收斂成一支——原本只有「取消」清 state.error，
+  // 用遮罩關窗會留下一條與當下無關的紅色錯誤掛在畫面上（還把版面撐高、擴大矮螢幕的溢出）。
+  // 草稿也在這裡清：「關窗即無草稿」是不變式，比「開窗時補救」可靠（同 F49 P2-1 的收斂做法）。
+  const closeLogModal = () => {
+    body.formOpen = false;
+    body.form = null;
+    state.error = null;
+  };
+
   const save = async () => {
     if (body.saving) return;
     // 未明示選日→用提交當下 todayIso()（跨午夜正確落今天）；明示選過某日→用該日
@@ -183,7 +194,7 @@ export function renderBody(rerender, goHome, guard) {
         dateSel === todayIso()
           ? "已記錄——同日重送會覆蓋更新"
           : `已補記 ${dateSel}——同日重送會覆蓋更新`;
-      body.form = null; // 成功後清草稿 → 下次回到預設今天
+      closeLogModal(); // 成功才關窗（含清草稿與錯誤）；失敗（拋錯）不關，輸入留在視窗裡可直接重試
     } finally {
       body.saving = false;
     }
@@ -332,23 +343,22 @@ export function renderBody(rerender, goHome, guard) {
     el("header", { class: "topbar" }, [el("h1", {}, ["體重"])]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(body.savedFlash ? [el("div", { class: "body-saved" }, [body.savedFlash])] : []),
-    el("div", { class: "body-form" }, [
-      el("label", { class: "bm-date-field" }, [
-        el("span", { class: "bm-date-label" }, ["日期"]),
-        dateInput,
-      ]),
-      weightInput,
-      fatInput,
-      el(
-        "button",
-        {
-          class: "btn btn-primary",
-          ...(body.saving ? { disabled: "" } : {}),
-          onclick: () => guard(save),
+    // F54：表單收進懸浮視窗，畫面只留入口鈕——原本這塊佔 231px，是 F53「清單填滿」在矮螢幕
+    // 做不到的主因（/body 固定區塊 584px）
+    el(
+      "button",
+      {
+        class: "btn btn-primary body-log-open",
+        // 純同步狀態變更，不需要 guard（guard 開頭本來就清 state.error，包起來只是雜訊；review P3-5）
+        onclick: () => {
+          body.form = null; // ⑥ 每次開窗從乾淨狀態（日期回今天、體重帶最新值）
+          state.error = null;
+          body.formOpen = true;
+          rerender();
         },
-        ["✓ 記錄"],
-      ),
-    ]),
+      },
+      ["＋ 記錄"],
+    ),
     el("div", { class: "body-card" }, [
       el("div", { class: "body-card-head" }, [toggle]),
       chartHost,
@@ -362,5 +372,56 @@ export function renderBody(rerender, goHome, guard) {
         ])]
       : []),
     el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
+    // F54：記錄視窗（overlay）。錯誤訊息在視窗內自帶一份——遮罩會蓋住畫面上的 error-banner（F49 P2-2）
+    ...(body.formOpen
+      ? [
+          el(
+            "div",
+            {
+              class: "modal-overlay",
+              onclick: (e) => {
+                if (e.target !== e.currentTarget) return;
+                if (body.saving) return; // 送出中不關（同 F43 P2-2）
+                closeLogModal(); // review P2-2：三條關窗路徑共用，遮罩關窗也要清錯誤與草稿
+                rerender();
+              },
+            },
+            [
+              el("div", { class: "modal body-log-modal" }, [
+                el("div", { class: "modal-head" }, ["記錄體重"]),
+                ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+                el("div", { class: "body-form" }, [
+                  el("label", { class: "bm-date-field" }, [
+                    el("span", { class: "bm-date-label" }, ["日期"]),
+                    dateInput,
+                  ]),
+                  weightInput,
+                  fatInput,
+                ]),
+                el("div", { class: "modal-actions" }, [
+                  el(
+                    "button",
+                    {
+                      class: "btn btn-primary",
+                      ...(body.saving ? { disabled: "" } : {}),
+                      onclick: () => guard(save),
+                    },
+                    ["✓ 記錄"],
+                  ),
+                  el(
+                    "button",
+                    {
+                      class: "btn btn-ghost",
+                      ...(body.saving ? { disabled: "" } : {}),
+                      onclick: () => { closeLogModal(); rerender(); },
+                    },
+                    ["取消"],
+                  ),
+                ]),
+              ]),
+            ],
+          ),
+        ]
+      : []),
   ]);
 }

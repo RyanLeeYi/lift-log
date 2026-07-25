@@ -1,11 +1,11 @@
 # session handoff
 
-最後更新：2026-07-26（F48–F53 六個 feature 收工；F54 已簽核方向待動工）
+最後更新：2026-07-26（F48–F54 七個 feature 收工）
 
 ## 現況
 
-**53/53 feature passing**，線上 **v54**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
-公開 sw.js 已是 v54）。本輪完成：
+**54/54 feature passing**，線上 **v55**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
+公開 sw.js 已是 v55）。本輪完成：
 
 - **F48** 課表三處清單超過兩項改捲動（列表頁／挑課表／今日菜單）
 - **F49** 有課表時「臨時加動作」收成一顆入口鈕＋懸浮視窗（自由訓練維持攤開、點動作即進 logger）
@@ -15,6 +15,8 @@
 - **F52** 編輯頁加動作視窗高度穩定（搜尋篩選時不再縮短位移）＋`.tpl-items` 併入細捲軸共用樣式＋
   四畫面改掛 `fills` marker class（CSS 兩處重複的選擇器清單合成一條）
 - **F53** 體重頁改 toggle 切換體重／體脂（圖表＋紀錄清單一起切）＋紀錄清單填滿剩餘空間
+- **F54** 體重頁輸入表單收進懸浮視窗（畫面只留「＋ 記錄」）——固定區塊 584→408px，
+  清單實得空間 844: 177→316px、**667: 55→139px**（F53 做不到填滿的螢幕現在可以）
 
 ## ⚠ Codex 額度用盡 → 本輪 review 改由 Claude 執行
 
@@ -46,24 +48,35 @@ E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`
 - 判「畫面有沒有釘死高度」不要拿 computed height 跟 `viewport − padding` 比：某些高度下 `height:auto` 的
   內容高度剛好等於該值（F53 在 667 踩到）。看行為——頁面是否可捲、清單是否被拉伸
 - 驗「切換有沒有整頁重繪」不要看焦點（點按鈕本來就會帶走焦點），在容器上打 `dataset` 標記看節點是否被替換
+- **批次字串替換一律加 `assert count == 1`**（F54 教訓）：pattern 寫錯（`onclick: () =>` vs `onclick: (e) =>`）
+  時 `str.replace` 會無聲跳過，程式看起來改了其實沒改，只有 E2E 抓到
+- **功能改善會讓舊測試變成「空跑」而不是變紅**（F54 教訓）：F53 的捲動測試因清單變高、資料不再溢出而
+  `before=0`，斷言裡有「前提條件成立」（`before > 0`）才抓得到——這類檢查值得常態放進斷言
 
 ## 下一步 / 待辦
 
-0. **F54 已定方向待動工（Ryan 拍板）**：/body 的輸入表單（日期＋體重＋體脂＋記錄鈕，佔 231px）收進懸浮視窗，
-   畫面只留一顆「＋ 記錄」（同 F49 的做法）。動機：F53 實測 /body 固定區塊 584px，667 級螢幕的紀錄清單只剩
-   55px、560 高放不下；表單一移走就騰出 231px，屆時矮螢幕也能填滿（F53 的 732px 門檻可望下修）。
-   動工前要先寫 acceptance 給 Ryan 簽核。
-1. **F53 留下的規格模糊待裁決**：體脂頁籤「只列有體脂的日子」是實作解讀（acceptance ② 沒明說）。後果是
+0. **F53 留下的規格模糊待裁決**：體脂頁籤「只列有體脂的日子」是實作解讀（acceptance ② 沒明說）。後果是
    沒量體脂的日子在該頁籤看不到也改不到，要補記得切回體重頁籤。另一案是「全部日子都列、沒體脂顯示 —」。
-2. **手機實機掃 F44–F53**：F47 批次列在小螢幕的捲動與誤觸；F49 視窗「點即進」會不會誤觸；F50 四處清單的
+1. **手機實機掃 F44–F54**：F47 批次列在小螢幕的捲動與誤觸；F49 視窗「點即進」會不會誤觸；F50 四處清單的
    高度手感（min-height 下限與 `.pick-modal` 的 80dvh 是我定的，不合手就改那幾行）。
-3. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（**現 6 筆**）。
+2. MVP 收官（預定 8/1）：對 PLAN 成功指標、跑 `/harness-retro` 檢討 `.harness/failures.jsonl`（**現 6 筆**）。
+3. **未修的 UX 落差（verifier 發現，未列 feature）**：`save()` 設 `body.saving = true` 後沒立即 rerender，
+   送出期間按鈕的 `disabled` 沒反映到 DOM——防雙擊功能有效（實測 1 個 POST），但視覺上看不出已停用。
+   同型問題可能存在於其他 `saving` 旗標的畫面（課表儲存、logSet），要處理先加 feature。
 3. **F50 acceptance ⑥ 的規格 bug（待 Ryan 決定）**：⑥ 寫「⏳ 待同步提示出現時清單讓位」，但
    `syncStatusLine()` 只在 home／logger 呼叫，該提示在這三個畫面永遠不出現。已用 error-banner 驗到等效行為
    並判 PASS，但條文本身描述了不存在的現狀（同 F34 那類）。要更正就回簽核，不自己改寫。
 4. Android app 方案未定（`docs/decisions/android-app-evaluation.md` 傾向 Capacitor，等 Ryan 拍板）。
 5. 把關鍵回歸 E2E 從 scratchpad 收進 repo `tests/e2e/`（acceptance-verifier 建議，未列入 feature）——本輪
    確實出事：驗收者的腳本同名覆寫掉 `verify_f48.py`，得重寫一份。
+
+## 版面門檻算式的鐵則（F50–F54 累積，動 /body 或 .fills 畫面前先讀）
+
+`@media (max-height: N)` 的 N **必須** = 固定區塊 ＋ 最壞情況的額外區塊 ＋ 清單 min-height ＋ `.app` padding 28。
+三次踩坑：①F53 門檻 700 少算清單下限 → 701–732 死帶 ②F54 門檻 556 少算 flash／error-banner（成功記錄一定有
+flash）→ 557–592 死帶 ③註解裡的數字散在兩處、只改一處（F54 P3-1）。現在 /body 的算式集中在 `app.css` 那段
+註解，是唯一來源；`.body-list` 的 min-height 上方只留指向它的提示。矮螢幕退讓一律用 `flex: none`（吃回內容高），
+**不要**把 min-height 設 0（會讓卡片塌成只剩標頭、子節點下限穿出卡片＝F53 P1-1 的破圖）。
 
 ## 卡點
 
