@@ -59,7 +59,10 @@ function monthsAgo(d, months) {
 }
 
 function datesFor(range) {
-  if (range.kind === "custom") return { from: range.from, to: range.to };
+  // review P3-3：preset 一旦被 loadRange 解析過就帶著 from/to——直接用它，不再重算 new Date()。
+  // 否則「/body 開著跨過午夜 → 切體重/體脂頁籤（paint 不重新查資料）」會讓 domain 前進一天，
+  // foot 顯示一組從未被查詢過的區間、最舊的點還會被 clamp 壓到左緣
+  if (range.from && range.to) return { from: range.from, to: range.to };
   return { from: isoOf(monthsAgo(new Date(), range.months)), to: todayIso() };
 }
 
@@ -82,7 +85,8 @@ async function loadRange(newRange) {
   const seq = ++reqSeq;
   const data = await api.listBodyMetrics({ from, to });
   if (seq !== reqSeq) return; // 較舊但較慢的回應——丟棄
-  body.range = newRange;
+  // 連同「實際查詢用的 from/to」一起存：foot 與 x 軸從此等於真正查過的區間（review P3-3）
+  body.range = { ...newRange, from, to };
   body.metrics = data;
 }
 
@@ -104,9 +108,18 @@ function latestMetric() {
   return body.metrics[body.metrics.length - 1] || null;
 }
 
+// 日期字串 → 天數。以 **UTC 午夜** 為基準（不是正午），手動 split 而不用 `new Date(iso)`——後者會把
+// 字串當 UTC 解析，再用本地 getter 取值就會差一天。UTC 午夜必為 86400000 的整數倍，除完是精確整數。
+// review P3-4：非法字串會回 NaN，呼叫端要擋（NaN 會讓整條 polyline 的 points 失效、不只壞那一點）
+function dayNum(iso) {
+  const [y, m, d] = String(iso).split("-").map(Number);
+  return Date.UTC(y, m - 1, d) / 86400000;
+}
+
 // F53：圖表卡內容（不含 toggle 列）——切換時就地替換這一塊，不整頁重繪
-function chartBody(points, unit) {
-  // points 升冪 [{date, value}]；自縮放，min/max 與起訖日期標示。
+// F57：x 軸改為時間比例，domain＝當前選取區間（不是資料首末點）
+function chartBody(points, unit, domain) {
+  // points 升冪 [{date, value}]；y 自縮放，min/max 標示。
   // 體脂沒量的日子已在呼叫端被 filter 掉＝有記的點才連線（F8 既有行為，F53 沿用）
   if (points.length === 0) {
     return [el("p", { class: "body-empty" }, ["還沒有紀錄"])];
@@ -118,33 +131,58 @@ function chartBody(points, unit) {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
-  const x = (i) =>
-    points.length === 1 ? w / 2 : pad + (i * (w - pad * 2)) / (points.length - 1);
+  // F57：水平位置＝日期在區間內的比例。等距索引會讓「中間停記兩個月」看起來像等速變化（斜率騙人），
+  // 用區間當 domain 還能看出「區間前半沒資料」這件事。domain 跨度為 0（from=to／單日）時畫在中央。
+  const d0 = dayNum(domain.from);
+  const d1 = dayNum(domain.to);
+  // review P3-4：domain 解析不出數字（例如日期格式變動）時退回「全部畫在中央」，
+  // 而不是讓 NaN 汙染 points 讓整條線消失
+  const dspan = Number.isFinite(d0) && Number.isFinite(d1) ? d1 - d0 : 0;
+  const x = (iso) => {
+    if (dspan <= 0) return w / 2;
+    const ratio = (dayNum(iso) - d0) / dspan;
+    // clamp 是純防禦：同源查詢下點必在 domain 內，唯一例外是「頁面開著跨過午夜後切頁籤」
+    // （已由 P3-3 的 resolved from/to 消除）。留著是為了避免 x 跑出 viewBox 讓 SVG 破圖
+    return pad + Math.min(1, Math.max(0, Number.isFinite(ratio) ? ratio : 0.5)) * (w - pad * 2);
+  };
   const y = (v) => h - pad - ((v - min) * (h - pad * 2)) / span;
   const pts = points
-    .map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`)
+    .map((p) => `${x(p.date).toFixed(1)},${y(p.value).toFixed(1)}`)
     .join(" ");
   const last = points[points.length - 1];
 
   const chart = el("div", { class: "body-chart" });
   // 只嵌自家 API 的數值（Number 化過），無使用者字串——innerHTML 安全
+  // F57 review P2-1（Ryan 拍板）：點數少時每點畫小圓。時間軸下「資料跨度 << 區間」會讓折線塌成右緣
+  // 一根 0.3px 豎線（例如 3Y 區間只有兩天資料），斜率資訊歸零；小圓讓「有幾筆、落在哪」仍看得見。
+  // 門檻 30：再多點就會糊成一片，反而不如純線條乾淨。
+  const dots =
+    points.length <= 30
+      ? points
+          .map((p) => `<circle cx="${x(p.date).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="2" fill="currentColor" opacity="0.75"/>`)
+          .join("")
+      : "";
   chart.innerHTML =
     `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
     `<polyline points="${pts}" fill="none" stroke="currentColor" ` +
     `stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>` +
-    `<circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(last.value).toFixed(1)}" ` +
+    dots +
+    `<circle cx="${x(last.date).toFixed(1)}" cy="${y(last.value).toFixed(1)}" ` +
     `r="3" fill="currentColor"/>` +
     "</svg>";
 
   return [
     el("div", { class: "body-card-latest" }, [
       el("span", { class: "n latest" }, [`${last.value} ${unit}`]),
+      // review P3-5：標出最新值是「哪天量的」——底部起訖是區間邊界，兩者語意不同
+      el("span", { class: "latest-date" }, [last.date.slice(5).replace("-", "/")]),
     ]),
     chart,
+    // F57：起訖改顯示「區間」邊界而非資料首末點——x 軸的 domain 就是區間，兩者要一致
     el("div", { class: "body-card-foot" }, [
-      el("span", {}, [points[0].date]),
+      el("span", {}, [domain.from]),
       el("span", { class: "n" }, [`${min}–${max} ${unit}`]),
-      el("span", {}, [last.date]),
+      el("span", {}, [domain.to]),
     ]),
   ];
 }
@@ -339,8 +377,9 @@ export function renderBody(rerender, goHome, guard) {
   };
 
   // 兩序列各自先篩選再取最後 N 點——體脂記得稀疏時，先切再篩會丟掉仍屬最近的體脂點
-  // review P3-4：slice(-CHART_POINTS) 會靜默丟掉最舊的點。3Y preset 約 1096 天碰不到 1200，
-  // 只有「自訂 > 1200 天」才觸發，屆時 .body-card-foot 顯示的起始日是第一個被畫出的點（非區間起點）
+  // slice(-CHART_POINTS) 會靜默丟掉最舊的點（3Y preset 約 1096 天碰不到 1200，只有「自訂 > 1200 天」觸發）。
+  // F57 起 foot 顯示的是 domain 邊界，所以被丟掉的點在 x 軸左側呈現為空白——看不出是「沒資料」還是
+  // 「被丟棄」，這是已知降級（F56 P3-4 已接受）
   const weightPoints = body.metrics
     .map((m) => ({ date: m.date, value: m.weight_kg }))
     .slice(-CHART_POINTS);
@@ -376,7 +415,9 @@ export function renderBody(rerender, goHome, guard) {
 
   function paint() {
     const isFat = body.metric === "fat";
-    chartHost.replaceChildren(...chartBody(isFat ? fatPoints : weightPoints, isFat ? "%" : "kg"));
+    chartHost.replaceChildren(
+      ...chartBody(isFat ? fatPoints : weightPoints, isFat ? "%" : "kg", datesFor(body.range)),
+    );
     // 體脂頁籤只列有體脂的日子（沒量的日子在該頁籤沒有數值可顯示；要補記就切回體重頁籤編輯那天）
     const rows = [...body.metrics].reverse().filter((m) => !isFat || m.body_fat_pct != null);
     rowsHost.replaceChildren(
