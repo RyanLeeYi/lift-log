@@ -1,18 +1,42 @@
 # session handoff
 
-最後更新：2026-07-27 晚場（F61 Capacitor 殼實作完成，卡在真機驗證）
+最後更新：2026-07-27 晚場（**F61 完成並驗收通過**，Android app 版可安裝可用）
 
-## 現況（7/27 晚場）
+## 現況（7/27 晚場收工）
 
-**60/60 passing ＋ F61 實作完成但仍 failing**（acceptance ②④⑦ 未收）。線上 web 版仍是 v61，
-**原始碼已是 v62、尚未部署**——F61 動到 `app/static/`（新增 `env.js`、api.js 加 base URL 前綴），
-web 行為不變但版號已升，下次部署要一起上。
+**61/64 passing**，剩 F62–F64（Android 通知三階段，**acceptance 都還沒簽核凍結**）。
+線上 **v62 已部署**（本場為了讓 app 版的跨域請求過 CORS，restart 了 lift-log 服務）。
 
-### 接手第一件事
+**Android app 已可用**：release-signed APK 裝在 Ryan 的 Galaxy Note 10+（SM-N9750, Android 12）上，
+完整流程（設 token → 記一組 → 日曆看得到）真機跑通。
 
-**接上手機跑 `adb devices`**，確認狀態是 `device` 不是 `unauthorized`。F61 只剩真機那一關。
-本場已註冊 **mobile-mcp**（user scope，`npx -y @mobilenext/mobile-mcp@latest`），重啟 session 後
-可直接用它驅動手機做 ④ 的驗證（截圖／點擊／讀 accessibility tree），不必再請 Ryan 手動照步驟走。
+### 下一場開場
+
+F62 動工前**先逐條走 acceptance 再簽核**——F61 這場證明了這一步的價值（①–⑦ 走完變 ①–⑨）。
+F62 的既有草稿寫的是「app 版走本機通知、web 版維持 F31 Web Push，同一份前端兩條路徑」，
+而 F61 已經把 `pushSupported()` 在 app 版關掉了，草稿的 ④ 要據此重寫。
+
+**mobile-mcp 已註冊**（user scope，`npx -y @mobilenext/mobile-mcp@latest`）：手機接著時可直接截圖／點擊
+驅動真機驗證，F62–F64 都會用到。手機連線的坑見下方。
+
+### Android 工具鏈現況（都已設好，不必重做）
+
+- Android Studio 2026.1.2.10 ＋ 內含 OpenJDK 21.0.10；`JAVA_HOME`／`ANDROID_HOME`／`ANDROID_SDK_ROOT`
+  已寫進使用者環境變數，PATH 有 `platform-tools` 與 `jbr\bin`
+- SDK 是舊工具鏈留下的（platform-35、build-tools 35/36），**授權先前已接受**
+- keystore：`%USERPROFILE%\.android-keys\lift-log-release.jks`（alias `liftlog`），
+  `android/keystore.properties` 已建且被 gitignore。**金鑰遺失＝無法對同一顆 app 發更新**
+- 建置：`.\android\gradlew.bat -p android assembleRelease`（~1m40s，3.1 MB）；
+  改前端後**必須先 `npx cap sync android`**，否則 APK 內還是舊畫面
+
+### 真機連線的坑（下次直接照做，省 20 分鐘）
+
+1. **USB 埠要插主機板後方**——插前面板時 `adb devices` 一直是 `offline`，`device` 狀態撐不過一次 install
+2. `offline` ≠ `unauthorized`：前者是手機端 daemon 沒回應，`adb reconnect offline` 可推它進 `unauthorized`，
+   這時手機才會跳授權框（**螢幕要解鎖才看得到**）
+3. 授權後裝置會重新列舉，短暫從 `adb devices` 消失，等幾秒就回來
+4. 用 `adb shell input tap` 打座標時**鍵盤彈出會推移版面**——盲點會打到鍵盤區、把雜字元灌進輸入框
+   （本場踩到，結果是 401「Token 無效」）。每次輸入後先截圖確認座標再點
 
 ### F61 已完成（commit `07716d6` ＋ `58e23d9`）
 
@@ -33,13 +57,15 @@ web 行為不變但版號已升，下次部署要一起上。
 - **Debug APK 已建置成功**（`gradlew -p android assembleDebug`，2m16s，4.02 MB）。解開確認
   `assets/public/` 含完整前端（含 `env.js`），APK 內 `APP_VERSION` = v62 與原始碼一致（⑤ 在打包版成立）
 
-### F61 未完成的三條
+### F61 驗收（①–⑨ 全 pass，已改 passing）
 
-| 條目 | 卡在哪 |
-|---|---|
-| ② release-signed APK | 等 ⑦ 的 keystore。指令與路徑已驗過，keystore 就位後一分鐘的事 |
-| ④ 真機安裝可用 | `adb devices` 空的，手機還沒接 |
-| ⑦ keystore | 要 Ryan 決定密碼。`keytool` 指令在 `docs/android-build-setup.md` §6，**密碼只進密碼管理器** |
+**驗收者是 acceptance-verifier（同模型 fresh context），不是跨模型**——先派了 `/codex-verify`，
+但跑太久被 Ryan喊停中止（無報告產出、工作樹未被動過），改走 `agents.md` 的 fallback。
+驗收者自己重跑 pytest 200／ruff／E2E 14/14／`assembleRelease`＋`apksigner verify`，
+自己操作真機走完流程，事後清掉自己造的 workout 68／set 158。
+
+⚠ **④ 有一處分工縫隙**：驗收者是在**已有 token** 的狀態下驗的，沒重跑「首次輸入 token」。
+那步由實作者在 debug／release 兩次全新安裝時各驗過一次——鏈是完整的，但不是同一個人一次走完。
 
 ### 驗證與 review（本場）
 
