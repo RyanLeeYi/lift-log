@@ -33,11 +33,21 @@ Android Studio → **Tools → SDK Manager** → **SDK Tools** 分頁，確認�
 [Environment]::SetEnvironmentVariable("ANDROID_SDK_ROOT", "$env:LOCALAPPDATA\Android\Sdk", "User")
 ```
 
-再把這兩個目錄加進使用者 PATH：
+**`JAVA_HOME` 也要設**。Android Studio 內含 JBR，但那是 IDE 內部用的——在外部 PowerShell 直接跑
+`gradlew.bat` 找不到它，會停在 `JAVA_HOME is not set and no 'java' command could be found`：
+
+```powershell
+[Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Android\Android Studio\jbr", "User")
+```
+
+（若 Studio 裝在別的位置，以實際的 `...\Android Studio\jbr` 為準。）
+
+再把這幾個目錄加進使用者 PATH：
 
 ```
 %LOCALAPPDATA%\Android\Sdk\platform-tools
 %LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\bin
+%JAVA_HOME%\bin
 ```
 
 **改完必須開新的終端機**，舊視窗不會吃到新變數。
@@ -62,7 +72,8 @@ node --version                 # v22 以上
 adb --version                  # 有輸出
 sdkmanager --list | Select-Object -First 5
 echo $env:ANDROID_HOME         # 新終端機印得出路徑
-java -version                  # Android Studio 帶的 JDK
+echo $env:JAVA_HOME            # 指向 Android Studio 的 jbr
+java -version                  # 有輸出（沒有的話 gradlew 會直接失敗）
 ```
 
 ---
@@ -103,22 +114,25 @@ keyPassword=<你的 key 密碼>
 npx cap sync android
 ```
 
-產出 release-signed APK：
+產出 release-signed APK（**在 repo 根目錄執行**，不用先 `cd`）：
 
 ```powershell
-cd android
-.\gradlew assembleRelease
+.\android\gradlew.bat -p android assembleRelease
 ```
 
 APK 位置：`android\app\build\outputs\apk\release\app-release.apk`
 
-裝到手機：
+裝到手機（同樣在 repo 根目錄）：
 
 ```powershell
 adb install -r android\app\build\outputs\apk\release\app-release.apk
 ```
 
-除錯用（不需金鑰、可搭配 Chrome DevTools 遠端偵錯）：`.\gradlew assembleDebug`。
+⚠ 若你習慣先 `cd android` 再跑 `.\gradlew assembleRelease`，安裝路徑要跟著少一層，
+改成 `adb install -r app\build\outputs\apk\release\app-release.apk`——否則會解析成
+`android\android\...` 而找不到檔案。上面用 `-p android` 就是為了避免這個目錄陷阱。
+
+除錯用（不需金鑰、可搭配 Chrome DevTools 遠端偵錯）：`.\android\gradlew.bat -p android assembleDebug`。
 
 ## 8. 看 app 的 log
 
@@ -139,8 +153,8 @@ web 版靠 sw.js 換版自動到位（F13/F14/F24），**app 版沒有這條鏈*
 1. 改 `app/static/`
 2. 升版號（`sw.js` 的 `CACHE_NAME` ＋ `state.js` 的 `APP_VERSION` 兩處）
 3. `npx cap sync android`
-4. `cd android; .\gradlew assembleRelease`
-5. `adb install -r ...`
+4. `.\android\gradlew.bat -p android assembleRelease`
+5. `adb install -r android\app\build\outputs\apk\release\app-release.apk`
 
 App 只有 API 打向公開站，**後端改版不需要重出 APK**。
 

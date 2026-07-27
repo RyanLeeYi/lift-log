@@ -32,7 +32,7 @@ Android 建置與簽章步驟見 `docs/android-build-setup.md`。
 
 ## 已知限制（Android app 版）
 
-- **沒有自動更新**：前端改版後必須 `npx cap sync android` → `gradlew assembleRelease` → 重裝 APK。
+- **沒有自動更新**：前端改版後必須 `npx cap sync android` → `gradlew -p android assembleRelease` → 重裝 APK。
   web 版的 sw.js 換版更新鏈對 app 版不成立。後端改版不受影響，不需重出 APK。
 - **休息通知目前在 app 版失效**：F31 的 Web Push 依賴 Service Worker，而 app 版不註冊 SW，
   因此 `pushSupported()` 一律回 false（不是靜默失敗，是明確停用）。改由 F62 的原生本機通知接手。
