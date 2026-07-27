@@ -1,7 +1,7 @@
 # 決策文件：lift-log 是否／如何做成 Android app
 
-- **日期**：2026-07-20
-- **狀態**：評估中（待決策）
+- **日期**：2026-07-20（2026-07-27 更新狀態）
+- **狀態**：**已決議 —— 走方案 B（Capacitor），做到階段 4（浮動視窗）**。Ryan 於 2026/07/27 拍板，已拆成 `feature_list.json` 的 F61–F64。§5 的四個未決事項處置：①做到階段 4 ②散佈採 sideload ③建置環境待安裝，步驟見 `docs/android-build-setup.md` ④採建議做法——app 版走本機通知、web 版續用 F31 Web Push。vault 側決策紀錄為 D6
 - **背景**：lift-log 目前是自架 PWA（FastAPI 後端＋原生 JS 前端＋Service Worker，經 Cloudflare Tunnel 對外）。F31 剛做完 Web Push 休息通知。使用者主力在 Android。
 - **決策問題**：要不要把 lift-log 做成 Android app？若要，走哪條路、範圍多大？
 

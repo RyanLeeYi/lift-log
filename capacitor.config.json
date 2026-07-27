@@ -1,0 +1,11 @@
+{
+  "appId": "com.ryanleeyi.liftlog",
+  "appName": "lift-log",
+  "webDir": "app/static",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

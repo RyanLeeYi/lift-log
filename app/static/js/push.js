@@ -2,11 +2,15 @@
 // 休息排程/取消交後端（in-process 排程器）。排程/取消一律 best-effort，失敗不擾訓練。
 
 import { api } from "./api.js";
+import { isNativeApp } from "./env.js";
 
 const PUSH_FLAG = "liftlog.pushEnabled";
 
+// F61：app 版一律回 false。原生殼不註冊 SW，`navigator.serviceWorker.ready` 會**永遠不 resolve**，
+// enablePush 會卡死在那一行而不是報錯。休息通知由 F62 的本機通知接手（README 已知限制）。
 export function pushSupported() {
   return (
+    !isNativeApp() &&
     "serviceWorker" in navigator &&
     "PushManager" in window &&
     "Notification" in window

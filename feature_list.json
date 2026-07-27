@@ -419,6 +419,34 @@
       "status": "passing",
       "evidence": "2026-07-27：上一場（7/26）程式碼已落地但一次都沒驗過，本場只做驗證未重寫。實作者 E2E `verify_f60_own.py` **9/9 PASS**（4 列收合摘要含自體重「負重 0kg」、點標頭展開／收合可多列並存、點勾選框只切勾選態不動展開態、stepper 調整後摘要就地更新為 `22.5kg × 9 × 3 組` 且清單 scrollTop 472→472 不變、390×844 與 360×640 皆 4 列全可見不需捲動、「取消」退回課表清單、重開全收合、全部記錄只寫勾選列）；pytest 195、ruff clean、F49 補記 modal 回歸 17/17。\n**腳本修正（非實作缺陷）**：E2E 最後一條用了不存在的 `/api/workouts/{id}/sets`，改為 `GET /api/workouts/{id}` 取 `sets` 欄位。\n**跨模型 review（`/codex-review`，Codex 額度已恢復）無 findings**——Codex 自行重跑 F60 E2E、F49 回歸與 195 項 pytest 後確認無 correctness／regression 問題。\n**跨模型驗收（`/codex-verify`）①–⑦ 全 pass**，且 `git status` 零改動（驗收者未越權）。它額外驗到實作者腳本沒涵蓋的兩件事：①有歷史紀錄的動作預設值確實取最重組（`42.5kg × 11`），非只驗無歷史的 20×8 ②**部分失敗重試路徑**——刻意讓第 2 組回 500 後重試，workout POST 總數仍為 1、UUID 序列 `[A,B,A,B,C]` 證明沿用而非重建（F47 那條 P1 的回歸防線仍在）。\n上場列的三個風險全數被證偽：③ 的 `closest('.batch-pick')` 擋冒泡後勾選態真的變了（true→false、class 加 `off`、展開態不動）；`paint()` 每次 replaceChildren 重建整列對連點與 caret 同步無害；⑤ 收合列實測高 24px（標頭）、清單 190px，遠低於 360×640 的預算。",
       "acceptance": "① 批次確認清單每列**預設只一行**：勾選框＋動作名＋摘要「20kg × 8 × 3 組」＋展開指示（▸／▾）。自體重動作摘要顯示「負重 0kg × …」。\n② 點該列標頭**展開**成現有的 stepper 區（KG／REPS ＋ 組數 −1／+1），再點收合；可同時展開多列；開啟批次確認時**預設全部收合**。\n③ 勾選框仍獨立可點——**點勾選框（或其 label 區）不觸發展開／收合**，只切勾選態（同 F34 日曆明細標頭開關的範式）。\n④ 摘要數字隨 stepper／組數調整**即時更新**：就地更新該列，不整頁重繪、不收合展開狀態、不重置清單捲動位置。摘要不獨立存狀態，一律從 row 讀（避免「同一份事實存兩處」）。\n⑤ 一屏可見完整列數明顯增加：4 個動作的課表在 **390×844 與 360×640 全部收合時全數完整可見、不需捲動**（現況只看得到 1 列）；且不溢出容器、不疊住底部按鈕。\n⑥ 既有行為不變：F47 的預設值（上次最重組／否則 20kg×8、組數＝`default_sets`）、全部取消勾選時「全部記錄」停用（`disabled` 需反映在 DOM）、送出中防雙擊、client_uuid 沿用與失敗保留 workout id 不重建、「取消」先退回課表清單、F43 modal 與捲軸範式；既有 E2E 回歸全綠。\n⑦ sw.js `CACHE_NAME` 與 state.js `APP_VERSION` 由 v60 同步遞增為 **v61**。"
+    },
+    {
+      "id": "F61",
+      "name": "Capacitor 殼：可安裝的 Android APK（階段 1）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "① repo 內有 Capacitor 專案：`capacitor.config.*` 與 `android/` 原生專案，`package.json` 只含 Capacitor 相依，**不引入前端打包器**（維持 CLAUDE.md『前端無框架無打包器』約束）。appId = `com.ryanleeyi.liftlog`。\n② 文件化的建置指令可在 Ryan 的 Windows 機器產出 **release-signed APK**，步驟寫進 `docs/android-build-setup.md`。\n③ 載入來源採**資產打包**（`webDir` 指向 `app/static`，`npx cap sync` 將資產複製進 APK），**不使用 `server.url`**（Capacitor 官方明文標示 server.url 非生產用途）。API 改走可設定的 base URL：app 版指向公開站，web 版維持相對路徑、行為不變。\n④ APK 安裝到 Ryan 的 Android 真機後啟動可用：完成 token 設定、記錄一組、日曆看得到該組。\n⑤ 畫面角落顯示的 `APP_VERSION` 等於建置當下的原始碼版本（打包版沒有遠端 sw.js 可對照，F24 的線上比對機制不適用於 app 版）。\n⑥ **web 版行為零改變**：pytest 全過、ruff clean、既有 E2E 回歸綠；`app/static/` 與後端的檔案改動需逐項列出並說明理由。\n⑦ keystore 以 `keytool` 產生，路徑進 `.gitignore`，保管位置記錄在文件（**金鑰不得進 repo**）。\n⑧ 後端 CORS 只開給 Capacitor 的 origin（`https://localhost`、`capacitor://localhost`），允許 `Authorization` header；不得使用 `allow_origins=[\"*\"]`。\n⑨ **已知限制寫進 README**：前端改版需重新 build 並重裝 APK（app 版沒有 F13/F14/F24 的自動更新鏈）；F31 的 Web Push 休息通知在 app 版失效，由 F62 的本機通知接手。"
+    },
+    {
+      "id": "F62",
+      "name": "原生本機通知取代休息 Web Push（app 版，階段 2）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① app 版休息倒數改用 `@capacitor/local-notifications` 於**手機端排程**，不經伺服器。\n② 真機驗證：開始休息後切到別的 app／鎖屏，時間到收到通知；**伺服器關掉也照常觸發**（這是相對 F31 的關鍵增益，須實測）。\n③ 提前按「繼續下一組」或換動作／結束訓練時，已排程的通知被取消，不會事後亂響。\n④ 執行環境偵測：在 Capacitor 原生殼內走本機通知，在瀏覽器走 F31 Web Push，**同一份前端碼兩條路徑**，web 版行為不變。\n⑤ 通知權限未授權時有明確引導，不靜默失敗。\n⑥ F31 的伺服器端排程器與 `PushSubscription` 保留給 web 版，不刪除。\n⑦ 回歸：F31 的既有測試全綠。"
+    },
+    {
+      "id": "F63",
+      "name": "前景服務＋通知列常駐倒數（階段 3）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① 開始休息時啟動 Android 前景服務，通知列常駐顯示剩餘秒數並**每秒更新**。\n② 真機驗證：不開 app 也看得到剩幾秒；倒數歸零後通知轉為「休息結束」樣式。\n③ 停止／換動作／結束訓練會結束前景服務，通知列不留殘影。\n④ 省電模式與螢幕關閉下仍準時（真機實測，須記錄測試機型與 Android 版本）。\n⑤ `POST_NOTIFICATIONS` 與 `FOREGROUND_SERVICE` 權限宣告完整，Android 14+ 的 foreground service type 正確標註。\n⑥ 與 F62 不重複通知（同一次休息只有一組通知行為）。"
+    },
+    {
+      "id": "F64",
+      "name": "浮動視窗倒數 overlay（階段 4）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① 自寫 Capacitor plugin 以 `SYSTEM_ALERT_WINDOW` 顯示可拖曳的浮動倒數視窗，浮在其他 app 之上。\n② 權限未授予時導引使用者到系統設定頁授權，拒絕時**優雅退回 F63 的通知列倒數**，不當機不空白。\n③ 真機驗證：切到別的 app（例如音樂／YouTube）仍看得到倒數，可拖曳移動、可點擊關閉。\n④ 休息結束後 overlay 自動消失；app 被系統殺掉時 overlay 不殘留。\n⑤ **已知限制寫進 README**：需手動授權、Play Store 上架會被嚴審（本專案採 sideload，不受影響）。\n⑥ 不影響 F62／F63 既有行為，且 web 版完全不受此 feature 影響。"
     }
   ]
 }

@@ -1,4 +1,7 @@
 // REST client：所有請求帶 Bearer token；錯誤統一丟 ApiError（含 server 的 {error} 訊息）。
+// 路徑一律以 / 開頭；apiBase() 在 web 版回空字串（同源相對路徑），app 版回公開站（F61 ③）。
+
+import { apiBase } from "./env.js";
 
 const TOKEN_KEY = "liftlog.token";
 
@@ -20,7 +23,7 @@ export function setToken(token) {
 async function request(method, path, body) {
   let resp;
   try {
-    resp = await fetch(path, {
+    resp = await fetch(apiBase() + path, {
       method,
       headers: {
         Authorization: `Bearer ${getToken()}`,

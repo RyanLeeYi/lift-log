@@ -7,3 +7,10 @@ __pycache__/
 htmlcov/
 .coverage
 .harness/
+
+# F61 Capacitor / Android
+node_modules/
+# 簽章金鑰一律不進 repo（F61 ⑦）；保管位置寫在 docs/android-build-setup.md
+*.jks
+*.keystore
+keystore.properties

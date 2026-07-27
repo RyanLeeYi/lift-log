@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">lift-log</string>
+    <string name="title_activity_main">lift-log</string>
+    <string name="package_name">com.ryanleeyi.liftlog</string>
+    <string name="custom_url_scheme">com.ryanleeyi.liftlog</string>
+</resources>

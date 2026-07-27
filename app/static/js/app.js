@@ -6,6 +6,7 @@ import { captureBodyScroll, openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
 import { el, rpePicker, stepper } from "./dom.js";
+import { isNativeApp } from "./env.js";
 import {
   detailReturnScreen,
   openExerciseDetail,
@@ -1214,7 +1215,10 @@ function render() {
 
 // ---------- 啟動 ----------
 
-if ("serviceWorker" in navigator) {
+// F61：app 版不註冊 SW——資產已打包在 APK 內，殼快取毫無用處，反而多一層可能供出舊資產的來源；
+// F13/F14/F24 的線上更新鏈本來就只對 web 版成立（app 版改版靠重 build，見 README 已知限制）。
+// 離線寫入不受影響：佇列在 js/queue.js 走 IndexedDB，與 SW 無關。
+if (!isNativeApp() && "serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {
     /* SW 註冊失敗不影響線上使用 */
   });

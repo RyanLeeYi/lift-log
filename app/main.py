@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
@@ -16,6 +17,15 @@ from app.seed import seed_exercises
 
 STATIC_DIR = Path(__file__).parent / "static"
 MCP_MOUNT = "/mcp"  # middleware 的路徑改寫與 mount 共用，兩處不得漂移
+
+# F61 ⑧：Capacitor 原生殼的 WebView origin。打包版資產由 APK 內載入，
+# 與公開站不同源，故需 CORS；web 版仍是同源請求，不受影響。
+# 白名單寫死兩個值即可——**不得改成萬用字元**，那等於任何網頁都能帶著使用者的
+# 瀏覽器打這個 API（單人系統只靠 Bearer token 擋，沒有第二道防線）。
+CAPACITOR_ORIGINS = [
+    "https://localhost",  # Capacitor 8 Android 預設 scheme
+    "capacitor://localhost",  # 舊版／iOS 沿用
+]
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -33,6 +43,13 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="lift-log", lifespan=mcp_app.lifespan)
     app.state.settings = settings
     app.state.session_factory = session_factory
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CAPACITOR_ORIGINS,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
     @app.middleware("http")
     async def normalize_mcp_path(request, call_next):  # type: ignore[no-untyped-def]
