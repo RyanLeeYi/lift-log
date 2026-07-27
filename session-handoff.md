@@ -1,11 +1,23 @@
 # session handoff
 
-最後更新：2026-07-26（F48–F59 十二個 feature 收工；**F60 實作已落地但未驗證**，Claude 額度撞 90% 線收工）
+最後更新：2026-07-27（F60 驗證＋跨模型 review／驗收全過，改 passing 並部署）
 
 ## 現況
 
-**59/59 feature passing**，線上 **v60**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
-公開 sw.js 已是 v60）。本輪完成：
+**60/60 feature passing**，線上 **v61**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
+公開 sw.js 已是 v61）。
+
+**本場（7/27）只做一件事：把上一場留下的 F60 驗完。** 未寫新功能、未重寫既有實作。
+- E2E `verify_f60_own.py` **9/9**（腳本自身一處 bug：用了不存在的 `/api/workouts/{id}/sets`，改讀
+  `GET /api/workouts/{id}` 的 `sets` 欄位。**是腳本錯不是實作錯**）、F49 回歸 17/17、pytest 195、ruff clean
+- **Codex 額度已恢復**（7d 53%），故 review／驗收都回到跨模型：`/codex-review` **無 findings**、
+  `/codex-verify` **①–⑦ 全 pass** 且事後 `git status` 零改動
+- codex-verify 驗到實作者腳本沒涵蓋的兩件事，值得記住：①有歷史的動作預設值確實取最重組（42.5kg × 11），
+  實作者腳本只驗了無歷史的 20×8 ②**部分失敗重試路徑**——第 2 組回 500 後重試，workout POST 仍為 1、
+  UUID 序列 `[A,B,A,B,C]` 證明沿用不重建（F47 那條 P1 的回歸防線還在）
+- 上一場列的三個風險全被證偽（勾選態真的變、`paint()` 重建整列對連點無害、收合列實測僅 24px）
+
+## 前一場（7/26）完成：
 
 - **F48** 課表三處清單超過兩項改捲動（列表頁／挑課表／今日菜單）
 - **F49** 有課表時「臨時加動作」收成一顆入口鈕＋懸浮視窗（自由訓練維持攤開、點動作即進 logger）
@@ -27,17 +39,14 @@
   不可用會自動退檔。可用性規則＝「起始日在資料範圍內」＋「第一個完整涵蓋所有資料的檔位」
 - **F59** 動作表現頁套用同一套檔位停用（`first_session_date` 掛在既有 history 回應、不新增端點）
 
-## 🚧 F60 進行中（下一個 session 從這裡接手）
-
-**狀態：`failing`，程式碼已寫完、E2E 腳本已寫好但一次都沒跑過。** 別把它當完成品，也別重寫——
-先跑驗證，紅了再修。中斷原因：Claude Session 額度 91%（usage-guard 收工線），不是卡點。
+## ✅ F60（7/26 實作、7/27 驗收通過）
 
 **F60 是什麼**：用課表批次新增的每列預設**摺疊成一行摘要**（勾選＋動作名＋「20kg × 8 × 3 組」＋▸），
 點標頭才展開既有的 KG／REPS steppers ＋組數控制。動機是實測資料：4 個動作的課表每列高 **259px**、
 390×844 下清單可視 439px、內容 1065px → **一屏只看得到 1 列**，要捲三屏才確認得完，
 違背 F47「先展開讓人逐列確認」的本意。設計由 Ryan 從四個選項中選定（摺疊摘要＋點開微調）。
 
-**已改的檔案**（未 review、未驗收）：
+**改了哪些檔案**：
 - `feature_list.json` F60 條目（acceptance ①–⑦ 已簽核＝**凍結**，不得改寫）
 - `app/static/js/calendar.js`：新增 `batchRowNode(row, onCheckChange)`（整列**就地重畫** paint，
   不呼叫整頁 rerender——否則清單捲動位置與其他列的展開態會被沖掉）；`openBatch` 每列加 `open: false`；
@@ -47,36 +56,30 @@
   `.batch-pick` 底下移出（動作名現在點了會展開，不再切勾選）並加 ellipsis
 - v60 → **v61**（sw.js CACHE_NAME ＋ state.js APP_VERSION 兩處都已改）
 
-**已跑過的**：`ruff` clean、`node --check calendar.js` 通過。**沒跑的**：E2E、pytest 子集、review、驗收、deploy。
+**實作時列出、7/27 驗證後全數證偽的三個風險**（留著當範例：實作者的疑慮值得寫下來讓驗證去回答）：
+- ③ 的「點勾選不展開」靠 `e.target.closest('.batch-pick')` 擋冒泡 → 實測勾選態 true→false、class 加 `off`、
+  展開態不動，**不是「兩個都被擋掉」**
+- `paint()` 每次 `replaceChildren` 重建整列（含正在被按的 stepper 按鈕）→ 連點與 caret 同步實測無異常
+- ⑤ 收合列高度預估 ~42px → 實測標頭 24px、4 列清單共 190px，360×640 也全可見（ellipsis 有效，未換行）
 
-**接手步驟**：
-1. `PYTHONUTF8=1 uv run python <scratchpad>/verify_f60_own.py`（腳本在 scratchpad，涵蓋 ①–⑦；
-   捲動相關斷言刻意用 dispatchEvent 而非真 click，理由見腳本註解）
-2. 回歸 `verify_f49_own.py`（同一個補記 modal）
-3. Claude fresh-context review（Codex 額度到 **7/29 07:26** 才回來）→ acceptance-verifier → 改 passing → deploy → commit
+## Codex 額度（狀態已變，7/27 更新）
 
-**實作時已想過、留給驗證去證實的三個風險**：
-- ③ 的「點勾選不展開」靠 `e.target.closest('.batch-pick')` 擋冒泡；label 與 input 各發一次 click，
-  兩者都在 `.batch-pick` 內所以都被擋——要驗「勾選態真的變了」而不只是「沒展開」
-- `paint()` 每次 `replaceChildren` 重建整列（含正在被按的 stepper 按鈕）。click 已派發完才重建，
-  理論上無害，但連點與 caret 同步要實測
-- ⑤ 的收合列高度預估 ~42px（padding 8×2 ＋ 單行 24 ＋ border 2），4 列含 gap ~198px
-  遠低於 360×640 的 52dvh＝333px。若動作名在窄螢幕換行，這條會直接破——ellipsis 就是為此加的
+7/26 那場 Codex 額度用盡，F49／F50／F51–F59 的 review 都是 **Claude fresh-context subagent**（同模型跨 context，
+獨立性弱於 Codex）。**7/27 Codex 已恢復**（7d 53%），F60 的 review 與驗收都走回跨模型。
 
-## ⚠ Codex 額度用盡 → 本輪 review 改由 Claude 執行
+**若想補跨模型審**：範圍是 commit `c67c89d`..`c52edb9`（F49–F59 的前端 diff），那段只有同模型 review 過。
 
-`codex exec review` 回報額度用盡（**7/29 07:26 恢復**），`/code-review` 是 user-triggered、agent 叫不動。
-Ryan 指示「就直接由 claude 審」，故 F49／F50 的 review 都是 **Claude fresh-context subagent**（同模型跨 context，
-獨立性弱於 Codex，已知並接受）。**7/29 之後若想補一次跨模型審，範圍是 commit c67c89d 之後的前端 diff。**
-
-規則缺口（收官時值得寫進全域 memory）：`agents.md` 的額度 fallback 假設兩邊不會同時見底，但這次 Codex 先掛、
+規則缺口（收官時值得寫進全域 memory）：`agents.md` 的額度 fallback 假設兩邊不會同時見底，但 7/26 是 Codex 先掛、
 Claude 側唯一退路又只能使用者手動觸發，等於檢查側開天窗。需要一條「兩邊都不可用時怎麼辦」。
 
 ## 驗證
 
 E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`（17 條）／`verify_f50_own.py`（14 條）／
-`verify_f51_own.py`（7 條），
-跑法 `PYTHONUTF8=1 uv run python <script>`。本輪三支全綠、pytest 189、ruff clean、verify_f42 19/19。
+`verify_f51_own.py`（7 條）／`verify_f60_own.py`（9 條），
+跑法 `PYTHONUTF8=1 uv run python <script>`。7/27 實跑：f60 9/9、f49 17/17、pytest 195、ruff clean。
+
+⚠ **腳本散在各 session 的 scratchpad**（路徑含 session id，換 session 要自己去舊目錄撈）。這正是待辦第 5 條
+「收進 repo `tests/e2e/`」要解的問題——本場又踩一次：接手時得先從 7/26 的 scratchpad 複製 f60／f49 過來。
 
 **測試慣例（三次踩過才定下來，寫 UI E2E 前先讀）**：
 - 驗「狀態保留」類行為，捲動一律用真實滾輪且**刻意用非邊界值**——設成最大值會與失敗態結果重合，測試永遠綠（F48）
