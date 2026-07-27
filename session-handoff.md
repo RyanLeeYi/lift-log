@@ -1,8 +1,73 @@
 # session handoff
 
-最後更新：2026-07-27（F60 驗證＋跨模型 review／驗收全過，改 passing 並部署）
+最後更新：2026-07-27 晚場（F61 Capacitor 殼實作完成，卡在真機驗證）
 
-## 現況
+## 現況（7/27 晚場）
+
+**60/60 passing ＋ F61 實作完成但仍 failing**（acceptance ②④⑦ 未收）。線上 web 版仍是 v61，
+**原始碼已是 v62、尚未部署**——F61 動到 `app/static/`（新增 `env.js`、api.js 加 base URL 前綴），
+web 行為不變但版號已升，下次部署要一起上。
+
+### 接手第一件事
+
+**接上手機跑 `adb devices`**，確認狀態是 `device` 不是 `unauthorized`。F61 只剩真機那一關。
+本場已註冊 **mobile-mcp**（user scope，`npx -y @mobilenext/mobile-mcp@latest`），重啟 session 後
+可直接用它驅動手機做 ④ 的驗證（截圖／點擊／讀 accessibility tree），不必再請 Ryan 手動照步驟走。
+
+### F61 已完成（commit `07716d6` ＋ `58e23d9`）
+
+- **acceptance ①–⑨ 已簽核凍結**（原草稿是 ①–⑦，本場逐條走過後改寫）。**最大的變更是 ③**：
+  原定用 `server.url` 指公開站，查證後發現 Capacitor 官方 config 文件明寫 *"This is not intended for
+  use in production"*，live-reload 指南甚至叫人別把它 commit。Ryan 改判**資產打包進 APK**。
+  代價是 app 版沒有 F13/F14/F24 的自動更新鏈（改前端＝重 build 重裝），已寫進 README
+- 打包路線連帶推翻了同源假設，衍生三處實作：①`js/env.js` 偵測 `window.Capacitor` → `api.js` 加 base URL
+  前綴（web 版回空字串，行為零改變）②後端 CORS 白名單只放 `https://localhost`／`capacitor://localhost`
+  ③app 版不註冊 SW
+- **app 版 `pushSupported()` 強制回 false**：不註冊 SW 的話 `navigator.serviceWorker.ready`
+  **永遠不 resolve**，`enablePush()` 會卡死在那一行而不是報錯。這是實作中才浮出來的坑，不是規格寫的
+- release 簽章設定已進 `android/app/build.gradle`：讀 `android/keystore.properties`（已 gitignore），
+  **檔案不存在時 release build 產出未簽章 APK**——刻意的，讓漏放金鑰在 build 當下就暴露
+- 環境（本場裝好）：Android Studio 2026.1.2.10 ＋ 內含 **OpenJDK 21.0.10**；`JAVA_HOME`／`ANDROID_HOME`／
+  `ANDROID_SDK_ROOT` 已寫進使用者環境變數，PATH 補了 `platform-tools` 與 `jbr\bin`。
+  SDK 是舊工具鏈留下的（platform-35、build-tools 35/36），**授權先前已接受**，`sdkmanager --licenses` 可省
+- **Debug APK 已建置成功**（`gradlew -p android assembleDebug`，2m16s，4.02 MB）。解開確認
+  `assets/public/` 含完整前端（含 `env.js`），APK 內 `APP_VERSION` = v62 與原始碼一致（⑤ 在打包版成立）
+
+### F61 未完成的三條
+
+| 條目 | 卡在哪 |
+|---|---|
+| ② release-signed APK | 等 ⑦ 的 keystore。指令與路徑已驗過，keystore 就位後一分鐘的事 |
+| ④ 真機安裝可用 | `adb devices` 空的，手機還沒接 |
+| ⑦ keystore | 要 Ryan 決定密碼。`keytool` 指令在 `docs/android-build-setup.md` §6，**密碼只進密碼管理器** |
+
+### 驗證與 review（本場）
+
+- **新增 `tests/e2e/verify_f61.py`（14/14）**——順手開了 repo 的 `tests/e2e/`，待辦第 5 條踏出第一步。
+  驗 web／app 兩種環境的分歧：API 前綴、SW 註冊與否、`pushSupported()`、版號兩處一致
+- **模擬的界線要記住**：app 版是靠 `add_init_script` 注入 `window.Capacitor`，頁面仍由本機供檔，
+  origin 不是真的 `https://localhost`。**驗的是前端分支邏輯，不是真機行為**——所以 ④ 無可取代
+- 兩個 Playwright 眉角：`route.continue_(url=...)` **不能改協定**（https→http），要自己 fetch 再 fulfill；
+  斷言別停在「有發出請求」，直接 `import('/js/api.js')` 做一次真往返，否則 1 個請求也算綠（前提太弱）
+- pytest **200**（新增 `tests/test_cors.py` 5 條，TDD 先紅後綠）、ruff clean、F60 9/9 與 F49 17/17 回歸綠
+- **`/codex-review` 跨模型：2 findings，都在建置文件、都成立**——P1 Android Studio 的 JBR 不在外部
+  PowerShell 的 PATH 上，照原文件跑 `gradlew` 會停在 `JAVA_HOME is not set`；P2 `cd android` 之後再用
+  `android\app\build\...` 會解析成 `android\android\...`。已修（commit `58e23d9`）並用實際 build 驗證。
+  **程式碼本身零 findings**
+
+### 本場的流程教訓
+
+- **「已定案」不等於「查證過」**：③ 的 `server.url` 是前一場拍板的，但官方文件明文反對。動工前花一次
+  Context7 查證就翻掉了整個載入策略——**在寫第一行 code 前查，比寫完再查便宜太多**
+- **acceptance 逐條走過會長出新條目**：①–⑦ 走完變 ①–⑨，多出的 ⑧（CORS）⑨（README 已知限制）都是
+  「改用打包路線」的必然後果，簽核前沒人想到。Ryan 選「先逐條走一遍再簽」是對的
+- **winget 靜默安裝會卡在看不見的 UAC**：`--silent` 裝 Android Studio 時，installer 程序跑了 32 分鐘、
+  `Program Files` 半個檔案都沒有。非互動 session 過不了提權，只能請 Ryan 自己執行安裝檔
+  （檔案已下載完，不必重抓）。這台機器上還有一支 7/23 起就卡住的 VS Code `CodeSetup`，同一種症狀
+
+---
+
+## 前一場（7/27 早場）現況
 
 **60/60 feature passing**，線上 **v61**，已 deploy（mission-control restart lift-log；本機與公開 `/health` 皆 200、
 公開 sw.js 已是 v61）。
@@ -123,9 +188,11 @@ E2E 腳本在 scratchpad：`verify_f48_own.py`（11 條）／`verify_f49_own.py`
 3. **F50 acceptance ⑥ 的規格 bug（待 Ryan 決定）**：⑥ 寫「⏳ 待同步提示出現時清單讓位」，但
    `syncStatusLine()` 只在 home／logger 呼叫，該提示在這三個畫面永遠不出現。已用 error-banner 驗到等效行為
    並判 PASS，但條文本身描述了不存在的現狀（同 F34 那類）。要更正就回簽核，不自己改寫。
-4. Android app 方案未定（`docs/decisions/android-app-evaluation.md` 傾向 Capacitor，等 Ryan 拍板）。
-5. 把關鍵回歸 E2E 從 scratchpad 收進 repo `tests/e2e/`（acceptance-verifier 建議，未列入 feature）——本輪
-   確實出事：驗收者的腳本同名覆寫掉 `verify_f48.py`，得重寫一份。
+4. ~~Android app 方案未定~~ **已拍板 Capacitor**（`docs/decisions/capacitor-vs-native-android.md`），
+   F61 實作完成、F62–F64 仍 failing 且 acceptance **未簽核凍結**（動工前要先逐條走過，見 F61 的教訓）。
+5. 把關鍵回歸 E2E 從 scratchpad 收進 repo `tests/e2e/`——**已開頭**：`tests/e2e/verify_f61.py` 進了 repo。
+   f48–f60 那批仍散在舊 session 的 scratchpad（`.../1145a883-.../scratchpad/`、`.../23fb3bcb-.../scratchpad/`），
+   要搬趁早，那些目錄不保證長存。
 
 ## 版面門檻算式的鐵則（F50–F56 累積，動 /body 或 .fills 畫面前先讀）
 
