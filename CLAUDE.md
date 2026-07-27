@@ -23,6 +23,20 @@
 3. 不做 feature_list 之外的事；發現該做的新事項 → 先加進 list 標 failing，不直接做
 4. session 結束前更新 `session-handoff.md`（L2 起）
 5. 收官（session 結束）時檢查 `git status` + 未推 commit：程式碼有改動就 commit 並 push（remote：https://github.com/RyanLeeYi/lift-log）
+6. **feature 改 passing 後出一顆 APK 丟 Google Drive**（Ryan 用來隨時裝新版）：
+
+   ```powershell
+   npx cap sync android                                   # 漏掉這步 APK 內還是舊畫面
+   .\android\gradlew.bat -p android assembleRelease
+   Copy-Item android\app\build\outputs\apk\release\app-release.apk `
+     "G:\我的雲端硬碟\lift-log-apk\lift-log-<版號>-<feature id>.apk"
+   ```
+
+   - 目的地是 **`G:\我的雲端硬碟`**（真正的 Google Drive）。**不要**用 `OneDrive\Desktop\GoogleDrive`
+     ——那個資料夾在 OneDrive 裡面，只是名字叫 GoogleDrive，丟進去不會上 Google Drive
+   - 檔名帶版號與 feature id（例 `lift-log-v62-F61.apk`），舊檔保留當回退用
+   - **只動後端的 feature 不必出 APK**（app 版資產打包在 APK 內、API 打公開站，後端改版直接生效）；
+     動到 `app/static/` 就要出
 
 ## 專案特有約束
 
