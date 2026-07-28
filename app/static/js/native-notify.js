@@ -230,6 +230,24 @@ export async function disableRestOverlay() {
   localStorage.removeItem(OVERLAY_FLAG);
 }
 
+// F69 ③：回報「現在看不看得到 app 內的 REST 卡片」。
+//
+// render() 每秒都會跑，同值不重送——每秒打一次 bridge 沒有意義，也讓原生那邊每秒重算顯示。
+// 這裡只管「卡片可見性」這一個位元；app 前不前景由原生的 ActivityLifecycleCallbacks 判定。
+let lastCardVisible = null;
+
+export function syncRestCardVisible(visible) {
+  const api = restTimerPlugin();
+  const value = Boolean(visible);
+  if (!api?.setRestCardVisible || value === lastCardVisible) return;
+  lastCardVisible = value;
+  try {
+    api.setRestCardVisible({ visible: value })?.catch?.(() => {});
+  } catch {
+    /* 舊版 APK 沒有這個方法：overlay 退回 F64 的行為（休息期間一直顯示），不致命 */
+  }
+}
+
 // 回傳 true＝前景服務接手了（呼叫端就不要再排本機通知）
 export async function startForegroundRest(seconds) {
   const api = restTimerPlugin();

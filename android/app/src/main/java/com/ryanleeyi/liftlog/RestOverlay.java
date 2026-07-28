@@ -5,6 +5,8 @@ import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -40,7 +42,36 @@ final class RestOverlay {
      */
     private static boolean dismissed;
 
+    // ---------- F69：顯示條件的四個輸入 ----------
+    //
+    // 規則收斂在 shouldShow() 一處（acceptance ①）。散在各呼叫點的話，
+    // 「兩邊都沒有」這種最糟的失敗（⑥）會從某條沒人想到的路徑漏出來。
+
+    /** 這輪休息是否還在跑（服務啟動時 true，停止／歸零時 false）。 */
+    private static boolean active;
+    /** app 是否在前景。來源是 ActivityLifecycleCallbacks，不是 WebView（②）。 */
+    private static boolean appForeground;
+    /** 當前畫面看不看得到 app 內的 REST 卡片。由前端在切畫面時回報（③）。 */
+    private static boolean restCardVisible;
+    private static int remaining;
+
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
     private RestOverlay() {}
+
+    /**
+     * 所有進入點都先繞到 main thread。
+     *
+     * <p>2026-07-28 模擬器實測抓到的 crash：Capacitor 的 plugin 方法跑在 `CapacitorPlugins`
+     * 執行緒，F69 的 setRestCardVisible 從那裡建立 view，之後服務的 CountDownTimer 在 main
+     * thread 更新同一個 view →「Only the original thread that created a view hierarchy can
+     * touch its views」直接閃退。view 一律只能在 main thread 碰，所以收斂在這一個閘門，
+     * 而不是要求每個呼叫端自己記得（記不住的那次就是 crash）。
+     */
+    private static void onMain(Runnable action) {
+        if (Looper.myLooper() == Looper.getMainLooper()) action.run();
+        else MAIN.post(action);
+    }
 
     /** Android 6 起 SYSTEM_ALERT_WINDOW 是「特殊權限」，宣告了也要使用者逐 app 手動開。 */
     static boolean permitted(Context context) {
@@ -48,18 +79,82 @@ final class RestOverlay {
         return Settings.canDrawOverlays(context);
     }
 
-    static synchronized void show(Context context, int seconds) {
-        if (!permitted(context)) return; // ②：沒授權就安靜不畫，通知列倒數照常（不當機不空白）
-        if (dismissed) return; // 這輪休息使用者已經關掉了，改秒數不該讓它復活
+    /**
+     * F69 ①④⑥：唯一的顯示判斷。
+     *
+     * <p>「app 在前景」**且**「畫面上有 REST 卡片」＝使用者已經看得到倒數 → 藏。其餘都顯示。
+     * 手動關閉（④）優先於一切自動顯示。
+     */
+    private static boolean shouldShow() {
+        if (!active || dismissed) return false;
+        return !(appForeground && restCardVisible);
+    }
+
+    /** 服務啟動／停止這輪休息。 */
+    static void setActive(Context context, boolean value, int seconds) {
+        onMain(() -> {
+            active = value;
+            if (value) remaining = seconds;
+            apply(context);
+        });
+    }
+
+    /** ②：app 切到前景／背景。 */
+    static void setAppForeground(Context context, boolean value) {
+        onMain(() -> {
+            appForeground = value;
+            apply(context);
+        });
+    }
+
+    /** ③：前端切畫面時回報 REST 卡片是否可見。 */
+    static void setRestCardVisible(Context context, boolean value) {
+        onMain(() -> {
+            restCardVisible = value;
+            apply(context);
+        });
+    }
+
+    static void update(Context context, int remainingSeconds) {
+        onMain(() -> {
+            remaining = remainingSeconds;
+            if (label != null) label.setText(text(remainingSeconds));
+            apply(context);
+        });
+    }
+
+    /** 使用者按 ✕：關掉顯示，並記住這輪休息不要再自己冒出來（倒數照常走完）。 */
+    static void dismiss(Context context) {
+        onMain(() -> {
+            dismissed = true;
+            apply(context);
+        });
+    }
+
+    /** 把 {@link #shouldShow()} 的結論落到實際的 window 上。重複呼叫安全。 */
+    private static void apply(Context context) {
+        if (shouldShow()) {
+            attach(context);
+        } else {
+            detach(context);
+        }
+    }
+
+    private static String text(int seconds) {
+        return String.format("⏱ %d:%02d", seconds / 60, seconds % 60);
+    }
+
+    private static void attach(Context context) {
+        if (!permitted(context)) return; // 沒授權就安靜不畫，通知列倒數照常（不當機不空白）
         if (view != null) {
-            update(seconds);
+            label.setText(text(remaining));
             return;
         }
         try {
             view = buildView(context);
             params = buildParams(context);
             windowManager(context).addView(view, params);
-            update(seconds);
+            label.setText(text(remaining));
         } catch (Exception e) {
             // OEM（例如 Samsung）可能在授權之外再擋一層，或 token 失效 —— 加不上就退回只有通知列
             view = null;
@@ -67,24 +162,23 @@ final class RestOverlay {
         }
     }
 
-    static synchronized void update(int remainingSeconds) {
-        if (label == null) return;
-        label.setText(String.format("⏱ %d:%02d", remainingSeconds / 60, remainingSeconds % 60));
-    }
-
-    /** 使用者按 ✕：關掉顯示，並記住這輪休息不要再自己冒出來（③ 的倒數照常走完）。 */
-    static synchronized void dismiss(Context context) {
-        hide(context);
-        dismissed = true;
-    }
-
     /**
-     * ④：移除 view。重複呼叫安全——ACTION_STOP、onFinish、onDestroy 都會走到這裡。
+     * F64 ④：這輪休息結束——移除 view 並把所有狀態歸零。
+     * 重複呼叫安全；ACTION_STOP、onFinish、onDestroy 都會走到這裡。
      *
-     * <p>同時清掉 {@link #dismissed}：這些呼叫點都代表「這輪休息結束了」，下一輪要重新顯示。
+     * <p>{@link #dismissed} 也在這裡清掉：這些呼叫點都代表「這輪結束了」，下一輪要重新顯示。
      */
-    static synchronized void hide(Context context) {
-        dismissed = false;
+    static void hide(Context context) {
+        onMain(() -> {
+            dismissed = false;
+            active = false;
+            restCardVisible = false;
+            detach(context);
+        });
+    }
+
+    /** 只收起 window，不動狀態——F69 的「暫時藏起來」（這輪休息還在跑）。 */
+    private static void detach(Context context) {
         if (view == null) return;
         try {
             windowManager(context).removeViewImmediate(view);

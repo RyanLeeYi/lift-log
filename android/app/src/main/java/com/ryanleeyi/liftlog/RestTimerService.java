@@ -69,7 +69,9 @@ public class RestTimerService extends Service {
         // F64 ③：overlay 與通知列倒數並存——這裡只是多開一個顯示面，
         // 沒授權或使用者關掉 overlay 都不影響下面的倒數
         if (intent != null && intent.getBooleanExtra(EXTRA_OVERLAY, false)) {
-            RestOverlay.show(this, seconds);
+            // F69：這裡只宣告「這輪休息要顯示 overlay」，真的畫不畫由 RestOverlay 的
+            // shouldShow() 決定（app 在前景又看得到 REST 卡片時就先藏著）
+            RestOverlay.setActive(this, true, seconds);
         }
         startTimer(seconds);
         // 不用 START_STICKY：休息被系統中斷後自己復活沒有意義（剩餘秒數已經不對了），
@@ -95,7 +97,7 @@ public class RestTimerService extends Service {
                 int remaining = (int) Math.ceil(remainingMs / 1000.0);
                 notifyUpdate(buildNotification(remaining, false));
                 // F64 ①：overlay 的秒數也由這裡推——WebView 在背景會被節流，畫不動
-                RestOverlay.update(remaining);
+                RestOverlay.update(RestTimerService.this, remaining);
             }
 
             @Override

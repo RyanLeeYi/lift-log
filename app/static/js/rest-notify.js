@@ -20,6 +20,7 @@ import {
   restOverlayEnabled as nativeOverlayEnabled,
   restOverlaySupported as nativeOverlaySupported,
   scheduleNativeRest,
+  syncRestCardVisible as syncNativeRestCardVisible,
   startForegroundRest,
   stopForegroundRest,
 } from "./native-notify.js";
@@ -78,6 +79,11 @@ export async function enableRestOverlay() {
 
 export async function disableRestOverlay() {
   if (native()) await disableNativeOverlay();
+}
+
+// F69：畫面切換時回報 REST 卡片是否可見。web 版沒有浮動視窗＝no-op。
+export function syncRestCardVisible(visible) {
+  if (native()) syncNativeRestCardVisible(visible);
 }
 
 export async function disableRestNotify() {

@@ -33,6 +33,7 @@ import {
   restOverlayEnabled,
   restOverlaySupported,
   scheduleRestNotify,
+  syncRestCardVisible,
 } from "./rest-notify.js";
 import {
   discardFailed,
@@ -54,6 +55,7 @@ import {
 } from "./templates.js";
 import {
   APP_VERSION,
+  DEFAULT_REST_HINT_SECONDS,
   clearActiveWorkout,
   exerciseAlias,
   exerciseName,
@@ -1050,6 +1052,10 @@ function renderPicker() {
 function startRestTimer() {
   state.restStartedAt = Date.now();
   restAlerted = false;
+  // F70：目標秒數當場快照——之後換動作時倒數基準才不會跟著新動作的參考值跳掉
+  state.restTargetSeconds = state.exercise
+    ? restHintFor(state.exercise.id)
+    : DEFAULT_REST_HINT_SECONDS;
   // F31/F62：排定「休息結束」提醒（切到別的 app 也收得到）；未開通知＝no-op
   if (state.exercise) scheduleRestNotify(restHintFor(state.exercise.id));
   if (restTicker) clearInterval(restTicker);
@@ -1071,7 +1077,10 @@ function stopRestTimer() {
   if (restTicker) clearInterval(restTicker);
   restTicker = null;
   state.restStartedAt = null;
-  cancelRestNotify(); // F31/F62：休息被使用者結束（繼續下一組/換動作/收工）→ 取消未觸發的提醒
+  state.restTargetSeconds = null; // F70：目標秒數的快照跟著這輪休息一起結束
+  // F31/F62：休息被使用者結束（繼續下一組／收工／登出）→ 取消未觸發的提醒。
+  // F70 起「換動作」不再走這裡——換個地方看不算休息結束。
+  cancelRestNotify();
 }
 
 function cycleRestHint(exerciseId) {
@@ -1081,6 +1090,9 @@ function cycleRestHint(exerciseId) {
   const next = picks[(picks.indexOf(current) + 1) % picks.length];
   state.restHintOverrides = { ...state.restHintOverrides, [exerciseId]: next };
   saveActiveWorkout();
+  // F70：快照要在算 remaining **之前**更新——restRemainingSeconds 現在以快照為準，
+  // 慢一步就會拿舊基準算出剩餘秒數，畫面與重排的提醒各對各的（等於把 F62 那個 P2 放回來）
+  if (state.restStartedAt !== null) state.restTargetSeconds = next;
   const remaining = restRemainingSeconds();
   if ((remaining ?? -1) > 0) restAlerted = false; // 目標調長回到未到點：重新武裝提醒
   // F31/F62：休息進行中改秒數 → 依新剩餘時間重排，否則仍照舊秒數響（Codex P2）
@@ -1104,7 +1116,9 @@ function renderLogger() {
         weight_kg: state.weightKg,
         reps: state.reps,
         rpe: state.rpe, // F40：累度軸一律有值（6–10），新組必帶 rpe
-        // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）
+        // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）。
+        // F70 ③ 不必在這裡加第二條來源：休息中按鈕一律是「繼續下一組」，
+        // 所以「休息還在跑就直接記組」在 UI 上不存在——跨畫面回來記組仍會先經過凍結那一步。
         ...(state.pendingRestSeconds != null ? { rest_seconds: state.pendingRestSeconds } : {}),
       };
       let saved;
@@ -1140,7 +1154,8 @@ function renderLogger() {
   };
 
   const finish = () => {
-    stopRestTimer();
+    // F70 ①：換動作**不再**結束休息——「換個地方看」不等於「休息結束」。
+    // 倒數、通知列與浮動視窗照常走完；真正結束休息的只有「繼續下一組」與收工（②）。
     state.pendingRestSeconds = null; // 換動作：未用的凍結休息值不跨動作帶
     editDraft = null; // 離開 logger 清編輯草稿，否則殘留會讓下個動作的 scrollable 失效（F20/Codex P2）
     state.exercise = null;
@@ -1386,6 +1401,9 @@ function render() {
   };
   root.replaceChildren(screens[state.screen]());
   syncWakeLock(); // fire-and-forget：logger 畫面取得、其他畫面釋放
+  // F69 ①③：浮動視窗只在看不到 app 內倒數時出現。判準跟畫面本身綁在一起——
+  // REST 卡片就是在 logger 且休息中才畫，這裡照抄同一個條件，不另立一套（另立就會走鐘）
+  syncRestCardVisible(state.screen === "logger" && state.restStartedAt !== null);
 }
 
 // F67：查有沒有新版。失敗一律當作沒有更新（checkForUpdate 內部吞掉），

@@ -3,7 +3,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v75";
+export const APP_VERSION = "v77";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -21,6 +21,7 @@ export const state = {
   doneByExercise: {}, // F32 {exerciseId:[sets]}——本次 workout 各動作已做組的鏡射；換動作後回到該動作原樣還原，不被誤標成「上次」
   setCounts: {}, // {exerciseId: 本次 workout 已記組數} —— 回頭選同動作時 set_number 接續
   restStartedAt: null, // ms timestamp；null = 計時器未啟動（＝就緒態，按鈕顯示「完成這組」）
+  restTargetSeconds: null, // F70：這輪休息的目標秒數（休息開始時快照；改秒數時同步）——換動作後倒數基準不跳
   restHintOverrides: {}, // {exerciseId: 秒}——R10 訓練中臨時調整，僅本次 workout、不寫回課表
   pendingRestSeconds: null, // F15：按「繼續下一組」凍結的休息秒數，寫進下一組後清空（transient，不持久化）
   muscleFilter: null,
@@ -100,8 +101,14 @@ export function restHintFor(exerciseId) {
 }
 
 export function restRemainingSeconds() {
-  // 剩餘秒數（可為負＝超時）；計時器未跑或不在動作內回 null
+  // 剩餘秒數（可為負＝超時）；計時器未跑回 null
   const elapsed = restElapsedSeconds();
-  if (elapsed === null || !state.exercise) return null;
-  return restHintFor(state.exercise.id) - elapsed;
+  if (elapsed === null) return null;
+  // F70：目標秒數在休息開始時就快照下來（restTargetSeconds），不再每次都問「當前動作」——
+  // 休息中換動作時 state.exercise 會變成別的動作甚至 null，跟著問就會讓倒數基準跳掉，
+  // 或整個算不出來（那正是 ① 之前做不到的原因）。改秒數時 cycleRestHint 會同步這個快照。
+  const target = state.restTargetSeconds
+    ?? (state.exercise ? restHintFor(state.exercise.id) : null);
+  if (target === null) return null;
+  return target - elapsed;
 }

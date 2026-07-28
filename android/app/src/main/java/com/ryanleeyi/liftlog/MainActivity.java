@@ -14,6 +14,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdatePlugin.class);
         // F63：休息倒數前景服務（通知列常駐顯示剩餘秒數）
         registerPlugin(RestTimerPlugin.class);
+        // F69 ②：浮動視窗要知道 app 在不在前景。用 Activity 生命週期而非 WebView 的
+        // visibilitychange——後者在 app 進背景後會被節流，正是最需要它的那一刻最不可靠
+        AppForegroundTracker.register(getApplication());
         super.onCreate(savedInstanceState);
     }
 }

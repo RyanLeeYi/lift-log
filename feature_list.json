@@ -479,9 +479,16 @@
     {
       "id": "F69",
       "name": "浮動計時只在看不到 app 內倒數時顯示",
-      "status": "failing",
-      "evidence": "",
+      "status": "passing",
+      "evidence": "（2026-07-28 v77）自動化：pytest 205、ruff clean、verify_f69.py 21/21；回歸 f62 34/34・f63 20/20・f64 28/28・f67 20/20・f68 29/29・f70 18/18。\n實作：RestOverlay 的顯示規則收斂成 shouldShow()（active && !dismissed && !(appForeground && restCardVisible)）；app 前景與否來自 AppForegroundTracker（ActivityLifecycleCallbacks，非 WebView 的 visibilitychange）；REST 卡片可見性由前端在 render() 尾端回報（同值不重送）。\n模擬器實測（Pixel 9 / Android 16，v77）：① 休息中停在計時頁→無浮動視窗；切到桌面→自己出現且續跑（0:41）；回到 app→消失（dumpsys window 只剩 MainActivity）；F70 之後補驗 app 內切頁：換動作到選動作頁→浮動視窗出現（0:43）、回計時頁→消失且 REST 卡片續算（00:23）。⑤ 離開 app 讓倒數歸零→無 crash、通知轉「休息結束」、overlay 自動消失。\n裝置實測抓到並修掉的 crash（E2E 測不到）：Capacitor plugin 方法跑在 CapacitorPlugins 執行緒，從那裡建立的 view 被 main thread 的 onTick 更新 → CalledFromWrongThreadException 閃退。修法：RestOverlay 所有進入點經 onMain() 繞回 main looper，並加進 verify_f69 的靜態檢查。",
       "acceptance": "（Ryan 2026-07-28 簽核凍結）\n① 休息倒數期間，浮動視窗只在看不到 app 內 REST 卡片時顯示：「app 在前景」且「當前畫面有 REST 卡片」→ 藏；其餘（切出 app、回桌面、鎖螢幕、在 app 內切到課表／日曆／體重／動作表現／首頁）→ 顯示。\n② 「app 是否在前景」由原生 ActivityLifecycleCallbacks（onActivityResumed／onActivityPaused）判定，不得依賴 WebView 的 visibilitychange——app 進背景後 JS 會被節流，把判斷放在會被凍住的地方等於不可靠。\n③ 「當前畫面有沒有 REST 卡片」由前端在畫面切換時通知 plugin（此時 app 在前景、沒有節流，用 JS 是安全的）。\n④ 手動關閉優先：按 ✕ 關掉後，這一輪休息不再因為切頁或切出 app 而自動冒出來（F64 的 dismissed 行為保留且優先於 ① 的自動顯示）。\n⑤ 休息結束、服務停止、app 被殺掉時仍不殘留（F64 ④ 的三條路徑不得被 F69 破壞）。\n⑥ 顯示與隱藏允許一次畫面更新的延遲，但不得出現「兩邊都沒有」：任何時刻，REST 卡片與浮動視窗至少看得到一個（除非使用者自己按了 ✕）。\n⑦ 不影響 F62／F63 通知列倒數；web 版完全不受影響。\n⑧ 驗收方式：模擬器實測（切出 app／回到 app／app 內切頁三種轉換各驗一次，dumpsys window 為證）＋ Ryan 實機確認切出／切回的實際觀感。"
+    },
+    {
+      "id": "F70",
+      "name": "休息倒數跨畫面存活",
+      "status": "passing",
+      "evidence": "（2026-07-28 v77）自動化：verify_f70.py 18/18（走真實 UI 流程並回頭打 API 查寫進資料庫的 rest_seconds）；pytest 205、ruff clean、既有 E2E 全綠。\n實作：換動作不再 stopRestTimer（①）；restTargetSeconds 在休息開始時快照、改秒數時同步（④——否則換動作後倒數基準會跟著新動作的參考值跳掉）；② 的三條取消路徑（繼續下一組／結束訓練／401）未動。\n③ 實測：第二組寫入 rest_seconds=6s vs 實際經過 6s；第一組仍不帶。實作上不需要第二條來源——休息中按鈕一律是「繼續下一組」，所以「休息還在跑就直接記組」在 UI 上不存在（我一度加了 fallback，發現是死碼後移除）。\n⑥ 模擬器實測：休息中換動作 → 浮動視窗出現在選動作頁、倒數不中斷；回計時頁 → 視窗消失、REST 卡片依實際經過時間續算。\n規格來源：F69 驗收時發現凍結的 ① 描述了不可達狀態（離開計時頁會取消休息），回報後 Ryan 決定改行為而非改規格，另立此條。",
+      "acceptance": "（Ryan 2026-07-28 簽核凍結）\n① 休息進行中離開計時頁（返回換動作、去課表／日曆／體重／動作表現）不再取消倒數：倒數、通知列、浮動視窗都照常走完。\n② 仍然取消的路徑不變：「繼續下一組」（這就是休息結束的動作）、「收工／結束訓練」（訓練結束）、401 登出（狀態不可信）。只有「換個地方看」不取消，「訓練狀態改變」照樣取消。\n③ 休息中換到別的動作、在新動作的計時頁記下一組時，F15 的休息值語意不變：記錄的休息秒數仍是「這一組與上一組之間實際經過的時間」，不因中途切頁而失真。\n④ 回到計時頁時，REST 卡片顯示的剩餘秒數與實際經過時間一致（不是從離開那一刻凍結）。\n⑤ 休息歸零時，即使人不在計時頁，通知與（若開啟）浮動視窗仍照常提醒——F62／F63 既有行為不得破壞。\n⑥ F69 ① 的「app 內切到別的頁面 → 浮動視窗出現」在 F70 之後成為可達狀態，並實測通過。\n⑦ 不影響 web 版既有行為（web 沒有浮動視窗，但倒數跨畫面存活的行為兩邊一致）。\n⑧ 驗收方式：模擬器實測（休息中換動作 → 浮動視窗出現、倒數不中斷 → 記下一組 → 檢查記錄的休息秒數合理）＋ pytest／E2E 回歸。"
     }
   ]
 }

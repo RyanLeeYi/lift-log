@@ -62,6 +62,19 @@ public class RestTimerPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * F69 ③：前端在切畫面時回報「現在看不看得到 app 內的 REST 卡片」。
+     *
+     * <p>只有這一件事交給 JS——呼叫時 app 必然在前景、沒有節流。app 前不前景則由原生的
+     * ActivityLifecycleCallbacks 判定（見 AppForegroundTracker）。
+     */
+    @PluginMethod
+    public void setRestCardVisible(PluginCall call) {
+        RestOverlay.setRestCardVisible(getContext(),
+            Boolean.TRUE.equals(call.getBoolean("visible", false)));
+        call.resolve();
+    }
+
     @PluginMethod
     public void start(PluginCall call) {
         Integer seconds = call.getInt("seconds");

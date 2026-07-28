@@ -80,7 +80,11 @@ def manifest_and_source_checks() -> None:
           "④ view 握把是 static（新服務實例也關得掉，比照 F63 ③）")
     # Codex review P2（2026-07-28）：按 ✕ 之後改休息秒數會重下 ACTION_START，
     # 沒有這個旗標 overlay 就自己復活，吃掉使用者剛表達的意圖。
-    check("dismissed" in overlay and "if (dismissed) return" in overlay,
+    # F69 之後這條規則搬進 shouldShow()（顯示判斷收斂成一處），所以檢查它在**判斷本體**裡，
+    # 而不是綁在某個實作字面上——綁字面的檢查會在無害重構時假性 fail。
+    should_show = overlay.split("boolean shouldShow()")[1].split("\n    }")[0] \
+        if "boolean shouldShow()" in overlay else ""
+    check("dismissed" in should_show,
           "③ 手動關掉後同一輪休息不會自己復活（改秒數重啟服務也一樣）")
     check("dismissed = false" in overlay,
           "③ 下一輪休息會重新顯示（服務停止／歸零時清掉 dismissed）")
