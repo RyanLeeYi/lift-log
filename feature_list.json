@@ -447,6 +447,20 @@
       "status": "failing",
       "evidence": "",
       "acceptance": "（待 Ryan 簽核，尚未凍結）\n① 自寫 Capacitor plugin 以 `SYSTEM_ALERT_WINDOW` 顯示可拖曳的浮動倒數視窗，浮在其他 app 之上。\n② 權限未授予時導引使用者到系統設定頁授權，拒絕時**優雅退回 F63 的通知列倒數**，不當機不空白。\n③ 真機驗證：切到別的 app（例如音樂／YouTube）仍看得到倒數，可拖曳移動、可點擊關閉。\n④ 休息結束後 overlay 自動消失；app 被系統殺掉時 overlay 不殘留。\n⑤ **已知限制寫進 README**：需手動授權、Play Store 上架會被嚴審（本專案採 sideload，不受影響）。\n⑥ 不影響 F62／F63 既有行為，且 web 版完全不受此 feature 影響。"
+    },
+    {
+      "id": "F65",
+      "name": "通知 channel 被單獨關閉時也要擋下（app 版）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① 使用者長按通知選「關閉這類通知」、或在設定關掉 Capacitor 的 default channel 時，app 版的休息提醒開關要顯示「關」並給引導，不得靜默失敗。\n② 判定來源：`LocalNotifications.listChannels()` 的 importance ≠ IMPORTANCE_NONE，與既有的 areEnabled() 一起構成 granted。\n③ E2E 補回歸情境：app 層通知允許但 channel importance 為 0。\n背景：F62 的 code review（2026-07-28）指出 areEnabled() 與 POST_NOTIFICATIONS 都是 app 層級，看不到單一 channel 被關；使用者被吵到時的第一直覺就是長按關掉那類通知。"
+    },
+    {
+      "id": "F66",
+      "name": "休息倒數持久化：app 被重啟後倒數與提醒不消失",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① `state.restStartedAt` 納入 saveActiveWorkout 的持久化 payload。\n② app 被系統回收或重啟後回到 logger，倒數依實際經過時間續算（非重置）。\n③ app 版：還原時依剩餘秒數重新排定本機通知；已超時則不排。\n④ 若無法還原（資料過舊等），畫面要有明確提示，不得靜默沒有倒數。\n背景：F62 的 code review（2026-07-28）指出倒數本來就不持久化，app 一被重啟倒數與已排定通知都消失且畫面無任何提示。此為 F62 之前就存在的行為。"
     }
   ]
 }
