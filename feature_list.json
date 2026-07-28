@@ -432,7 +432,7 @@
       "name": "原生本機通知取代休息 Web Push（app 版，階段 2）",
       "status": "failing",
       "evidence": "",
-      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① app 版休息倒數改用 `@capacitor/local-notifications` 於**手機端排程**，不經伺服器。\n② 真機驗證：開始休息後切到別的 app／鎖屏，時間到收到通知；**伺服器關掉也照常觸發**（這是相對 F31 的關鍵增益，須實測）。\n③ 提前按「繼續下一組」或換動作／結束訓練時，已排程的通知被取消，不會事後亂響。\n④ 執行環境偵測：在 Capacitor 原生殼內走本機通知，在瀏覽器走 F31 Web Push，**同一份前端碼兩條路徑**，web 版行為不變。\n⑤ 通知權限未授權時有明確引導，不靜默失敗。\n⑥ F31 的伺服器端排程器與 `PushSubscription` 保留給 web 版，不刪除。\n⑦ 回歸：F31 的既有測試全綠。"
+      "acceptance": "① app 版休息倒數改用 `@capacitor/local-notifications` 於**手機端排程**，不經伺服器；web 版維持 F31 Web Push。\n② 真機驗證（Galaxy Note 10+ / Android 12）：開始休息後切到別的 app 或鎖屏，時間到收到通知；**手機開飛航模式（伺服器不可達）時仍照常觸發**——這是相對 F31 的關鍵增益，須實測。\n③ **準時性**：倒數歸零到通知出現的誤差 ≤ 5 秒，於**螢幕關閉**狀態實測。Android 12 起對精確鬧鐘（exact alarm）有限制，若需 `SCHEDULE_EXACT_ALARM` 或 `allowWhileIdle` 才做得到，實作要處理並在 README 說明限制。\n④ **app 版要有自己的通知開關 UI**：F61 已把 app 版 `pushSupported()` 設為 false，原生殼目前沒有任何通知入口。F62 需補上獨立的開關與狀態顯示（開／關、目前是否可發通知），web 版的 F31 UI 與行為不變。\n⑤ 通知被關閉時有明確引導文案，不靜默失敗。**驗收情境為「使用者在系統設定關閉通知」**（Android 12 可驗）；Android 13+ 的 `POST_NOTIFICATIONS` 執行期授權框實作要寫，但**不列入本 feature 驗收條件**（Ryan 的測試機是 Android 12，觸發不到該路徑）。\n⑥ 取消路徑完整：提前「繼續下一組」、換動作、結束訓練、改休息秒數 → 已排程的通知被取消，不會事後亂響（對照 F31 既有取消點 `app.js:899`、`913–914`）。\n⑦ F31 的伺服器端排程器與 `PushSubscription` 保留給 web 版，不刪除；F31 既有測試全綠，pytest／ruff 全過。"
     },
     {
       "id": "F63",

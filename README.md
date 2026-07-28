@@ -34,8 +34,13 @@ Android 建置與簽章步驟見 `docs/android-build-setup.md`。
 
 - **沒有自動更新**：前端改版後必須 `npx cap sync android` → `gradlew -p android assembleRelease` → 重裝 APK。
   web 版的 sw.js 換版更新鏈對 app 版不成立。後端改版不受影響，不需重出 APK。
-- **休息通知目前在 app 版失效**：F31 的 Web Push 依賴 Service Worker，而 app 版不註冊 SW，
-  因此 `pushSupported()` 一律回 false（不是靜默失敗，是明確停用）。改由 F62 的原生本機通知接手。
+- **休息通知在 app 版走本機通知**（F62）：F31 的 Web Push 依賴 Service Worker，而 app 版不註冊 SW，
+  因此改由 `@capacitor/local-notifications` 在**手機端**排程——伺服器關掉或沒網路時照樣會響。
+  兩個 Android 系統限制：
+  - **精確鬧鐘**：Android 12 起需要 `SCHEDULE_EXACT_ALARM`（已宣告）。使用者若在系統設定關閉「精確通知」，
+    倒數會被系統延後，且**關閉的當下 app 會被重啟、已排定的通知被清掉**。app 內的開關會顯示「開（可能延遲）」提醒。
+  - **Doze 模式**：`allowWhileIdle` 的通知每 9 分鐘只能觸發一次。休息間隔通常 60–180 秒遠短於此，
+    但若手機長時間閒置進入深度 Doze，連續兩次提醒之間仍可能被系統壓下。
 - **開啟需要網路**：資產雖然打包在本機，但資料一律來自公開站。離線時已記錄的組會進 IndexedDB
   佇列（與 SW 無關，照常運作），恢復連線後自動補傳。
 - **sideload 安裝**：不上架 Play Store，靠 `adb install`。簽章金鑰遺失就無法對同一顆 app 發更新。

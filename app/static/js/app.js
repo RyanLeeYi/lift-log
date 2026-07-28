@@ -12,14 +12,17 @@ import {
   openExerciseDetail,
   renderExerciseDetail,
 } from "./exercise-detail.js";
+// F62：休息提醒改走 rest-notify 這層統一入口（web＝F31 Web Push／app＝手機端本機通知）
 import {
-  cancelRestPush,
-  disablePush,
-  enablePush,
-  pushEnabled,
-  pushSupported,
-  scheduleRestPush,
-} from "./push.js";
+  cancelRestNotify,
+  disableRestNotify,
+  enableRestNotify,
+  refreshRestNotifyState,
+  restNotifyDelayed,
+  restNotifyEnabled,
+  restNotifySupported,
+  scheduleRestNotify,
+} from "./rest-notify.js";
 import {
   discardFailed,
   enqueueSet,
@@ -352,26 +355,34 @@ function renderHome() {
       },
       ["⚖️ 體重"],
     ),
-    // F31：休息結束推播開關（不支援的瀏覽器不顯示）
-    ...(pushSupported()
+    // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
+    // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js
+    ...(restNotifySupported()
       ? [
           el(
             "button",
             {
-              class: `btn push-toggle${pushEnabled() ? " on" : ""}`,
+              class: `btn push-toggle${restNotifyEnabled() ? " on" : ""}`,
               onclick: () =>
                 guard(async () => {
-                  if (pushEnabled()) {
-                    await disablePush();
+                  if (restNotifyEnabled()) {
+                    await disableRestNotify();
                     render();
                     return;
                   }
-                  const res = await enablePush();
+                  const res = await enableRestNotify();
                   if (res.ok) render();
                   else showError(res.reason);
                 }),
             },
-            [pushEnabled() ? "🔔 休息提醒：開" : "🔔 休息提醒：關"],
+            [
+              restNotifyEnabled()
+                ? // F62 ③：精確鬧鐘被關時倒數會被系統延後，講出來而不是讓使用者以為壞了
+                  restNotifyDelayed()
+                  ? "🔔 休息提醒：開（可能延遲）"
+                  : "🔔 休息提醒：開"
+                : "🔔 休息提醒：關",
+            ],
           ),
         ]
       : []),
@@ -875,8 +886,8 @@ function renderPicker() {
 function startRestTimer() {
   state.restStartedAt = Date.now();
   restAlerted = false;
-  // F31：排定「休息結束」推播（切到別的 app 也收得到）；未開通知＝no-op
-  if (state.exercise) scheduleRestPush(restHintFor(state.exercise.id));
+  // F31/F62：排定「休息結束」提醒（切到別的 app 也收得到）；未開通知＝no-op
+  if (state.exercise) scheduleRestNotify(restHintFor(state.exercise.id));
   if (restTicker) clearInterval(restTicker);
   restTicker = setInterval(() => {
     const led = document.querySelector(".rest-led");
@@ -896,7 +907,7 @@ function stopRestTimer() {
   if (restTicker) clearInterval(restTicker);
   restTicker = null;
   state.restStartedAt = null;
-  cancelRestPush(); // F31：休息被使用者結束（繼續下一組/換動作/收工）→ 取消未觸發的推播
+  cancelRestNotify(); // F31/F62：休息被使用者結束（繼續下一組/換動作/收工）→ 取消未觸發的提醒
 }
 
 function cycleRestHint(exerciseId) {
@@ -908,10 +919,10 @@ function cycleRestHint(exerciseId) {
   saveActiveWorkout();
   const remaining = restRemainingSeconds();
   if ((remaining ?? -1) > 0) restAlerted = false; // 目標調長回到未到點：重新武裝提醒
-  // F31：休息進行中改秒數 → 依新剩餘時間重排推播，否則後端仍照舊秒數推（Codex P2）
+  // F31/F62：休息進行中改秒數 → 依新剩餘時間重排，否則仍照舊秒數響（Codex P2）
   if (state.restStartedAt !== null) {
-    if (remaining !== null && remaining > 0) scheduleRestPush(remaining);
-    else cancelRestPush();
+    if (remaining !== null && remaining > 0) scheduleRestNotify(remaining);
+    else cancelRestNotify();
   }
 }
 
@@ -1257,6 +1268,12 @@ document.addEventListener("visibilitychange", () => {
 });
 
 restoreActiveWorkout();
+// F62：app 版的通知權限／精確鬧鐘狀態是非同步查詢，但 render() 是同步的——
+// 啟動時先查一次填進 cache，查完重繪讓開關顯示真實狀態（web 版是同步判定，這裡 no-op）。
+// 也涵蓋官方警告的情境：使用者關掉精確通知會讓 app 重啟並清掉已排定的通知。
+refreshRestNotifyState().then(() => {
+  if (state.screen === "home") render();
+});
 if (!getToken()) {
   state.screen = "setup";
   render();
