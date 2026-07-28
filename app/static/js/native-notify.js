@@ -157,3 +157,48 @@ export async function cancelNativeRest() {
     /* 沒有待觸發的通知時某些版本會拋錯，無妨 */
   }
 }
+
+// ---------- F63：前景服務倒數（通知列常駐） ----------
+//
+// ⑥ 的分工：前景服務可用時由它負責整段休息（含歸零時把同一則通知改成「休息結束」），
+// **此時不排 F62 的本機通知**——一次休息只有一則通知行為。啟不動就退回 F62。
+//
+// 為什麼倒數放原生：JS 計時器在 app 進背景後會被系統節流，通知列的秒數會不準或停住。
+
+function restTimerPlugin() {
+  return globalThis.Capacitor?.Plugins?.RestTimer ?? null;
+}
+
+let foregroundActive = false; // 這次休息是否已交給前景服務
+
+export function restTimerActive() {
+  return foregroundActive;
+}
+
+// 回傳 true＝前景服務接手了（呼叫端就不要再排本機通知）
+export async function startForegroundRest(seconds) {
+  const api = restTimerPlugin();
+  if (!api || !nativeNotifyEnabled()) return false;
+  try {
+    const { available } = await api.available();
+    if (!available) return false;
+    await api.start({ seconds });
+    foregroundActive = true;
+    return true;
+  } catch {
+    // Android 12+ 背景啟動前景服務可能被擋——安靜退回 F62，不擾訓練
+    foregroundActive = false;
+    return false;
+  }
+}
+
+export async function stopForegroundRest() {
+  const api = restTimerPlugin();
+  foregroundActive = false;
+  if (!api) return;
+  try {
+    await api.stop();
+  } catch {
+    /* 沒在跑就停不掉，無妨 */
+  }
+}

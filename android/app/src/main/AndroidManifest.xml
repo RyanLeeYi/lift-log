@@ -24,6 +24,17 @@
 
         </activity>
 
+        <!-- F63：休息倒數的前景服務。foregroundServiceType 必須與程式碼裡
+             startForeground(..., FOREGROUND_SERVICE_TYPE_SPECIAL_USE) 一致，否則 Android 14+ 會直接拋錯 -->
+        <service
+            android:name=".RestTimerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="訓練休息倒數：在通知列常駐顯示剩餘秒數，使用者不必開著 app" />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -49,4 +60,10 @@
     <!-- F67 自我更新：下載回來的 APK 要交給系統安裝器。宣告不等於拿到——
          Android 8+ 使用者還要逐 app 允許「安裝未知應用程式」，程式內以 canRequestPackageInstalls() 檢查 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- F63 休息倒數前景服務：通知列常駐顯示剩餘秒數 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14+ 要求依型別各自宣告權限。選 specialUse 而非 shortService：
+         後者上限 3 分鐘，休息臨時調長就會被系統斷掉（2026-07-28 簽核時決定） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 </manifest>

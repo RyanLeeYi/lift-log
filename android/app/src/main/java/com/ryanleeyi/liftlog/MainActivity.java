@@ -12,6 +12,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NotifyStatusPlugin.class);
         // F67：自我更新（查版本、下載 APK、喚起系統安裝器）
         registerPlugin(AppUpdatePlugin.class);
+        // F63：休息倒數前景服務（通知列常駐顯示剩餘秒數）
+        registerPlugin(RestTimerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

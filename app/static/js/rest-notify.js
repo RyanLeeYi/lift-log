@@ -16,6 +16,8 @@ import {
   refreshNativeNotifyState,
   requestNativeExactAlarm,
   scheduleNativeRest,
+  startForegroundRest,
+  stopForegroundRest,
 } from "./native-notify.js";
 import {
   cancelRestPush,
@@ -60,11 +62,23 @@ export async function disableRestNotify() {
 }
 
 export function scheduleRestNotify(seconds) {
-  if (native()) scheduleNativeRest(seconds);
-  else scheduleRestPush(seconds);
+  if (!native()) {
+    scheduleRestPush(seconds);
+    return;
+  }
+  // F63 ⑥：優先交給前景服務（通知列看得到剩幾秒）；它接手就不排 F62 的本機通知，
+  // 一次休息只有一則通知行為。啟不動（權限被關、Android 12+ 背景限制）才退回 F62。
+  startForegroundRest(seconds).then((taken) => {
+    if (!taken) scheduleNativeRest(seconds);
+  });
 }
 
 export function cancelRestNotify() {
-  if (native()) cancelNativeRest();
-  else cancelRestPush();
+  if (!native()) {
+    cancelRestPush();
+    return;
+  }
+  // 兩邊都收：不知道這次是誰接手的（也可能兩者都沒排），一起取消最省心且無害
+  stopForegroundRest();
+  cancelNativeRest();
 }

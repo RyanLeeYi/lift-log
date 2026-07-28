@@ -69,7 +69,9 @@ def start_server(port: int, db: Path) -> subprocess.Popen:
 # 不能當唯一事實來源。測試要能讓 perm=granted 與 sysOn=false 同時成立，那正是靜默失敗的組合。
 FAKE_PLUGIN = """
 (perm, exact, sysOn) => {
-  window.__ln = { schedule: [], cancel: [], requested: 0, openedSettings: 0, exactRequested: 0 };
+  window.__ln = { schedule: [], cancel: [], requested: 0, openedSettings: 0,
+                  exactRequested: 0, fgStarts: [], fgStops: 0 };
+  window.__fgAvailable = false;  // 預設不接手＝維持 F62 既有行為，既有斷言不受影響
   window.__sysOn = sysOn;
   window.__exact = exact;
   window.Capacitor = {
@@ -92,6 +94,13 @@ FAKE_PLUGIN = """
       },
       NotifyStatus: {
         openSettings: async () => { window.__ln.openedSettings += 1; },
+      },
+      // F63：前景服務。window.__fgAvailable 控制它接不接手，
+      // 用來驗 ⑥ 的分工（接手就不排本機通知，啟不動才退回 F62）
+      RestTimer: {
+        available: async () => ({ available: window.__fgAvailable }),
+        start: async (opts) => { window.__ln.fgStarts.push(opts); },
+        stop: async () => { window.__ln.fgStops += 1; },
       },
     },
   };
