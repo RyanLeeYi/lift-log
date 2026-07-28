@@ -5,7 +5,12 @@ import { api, ApiError, getToken, setToken } from "./api.js";
 import { captureBodyScroll, openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
-import { checkForUpdate, downloadAndInstall } from "./app-update.js";
+import {
+  checkForUpdate,
+  dismissUpdate,
+  downloadAndInstall,
+  isDismissed,
+} from "./app-update.js";
 import { el, rpePicker, stepper } from "./dom.js";
 import { isNativeApp } from "./env.js";
 import {
@@ -69,6 +74,8 @@ let editDraft = null; // {key, weight, reps, rpe} 正在行內編輯的草稿
 // 只影響首頁顯示，訓練流程完全不碰。
 let pendingUpdate = null;
 let updateProgress = null;
+let updateModalOpen = false; // F68：視窗開著（自動彈或由橫幅／版號點開）
+let updateFlash = null; // F68 ⑦：手動檢查後的短暫提示（「已是最新版」）
 
 function setRowKey(s) {
   return s.id != null ? `id:${s.id}` : `uuid:${s.client_uuid}`;
@@ -94,7 +101,31 @@ function fmtRest(remaining) {
 
 // F24：畫面角落的版本標記——手機載入哪版一眼可辨（快取過期會顯示舊版號）
 function versionTag() {
-  return el("div", { class: "version-tag" }, [APP_VERSION]);
+  // F68 ⑦：app 版的版號可點＝手動檢查更新（剛出新版時不必等下次開 app）。
+  // web 版維持純文字：那邊部署完自動到位，沒有「檢查更新」這回事。
+  if (!isNativeApp()) return el("div", { class: "version-tag" }, [APP_VERSION]);
+  return el(
+    "button",
+    {
+      class: "version-tag version-tag-btn",
+      onclick: () =>
+        guard(async () => {
+          const update = await checkForUpdate();
+          if (update) {
+            pendingUpdate = update;
+            updateModalOpen = true; // 手動檢查到的更新直接開視窗，不受 ② 的靜音影響
+          } else {
+            updateFlash = "已是最新版";
+            setTimeout(() => {
+              updateFlash = null;
+              if (state.screen === "home") render();
+            }, 2000);
+          }
+          render();
+        }),
+    },
+    [APP_VERSION],
+  );
 }
 
 // ---------- R10 Wake Lock：訓練畫面不鎖屏，倒數提醒才收得到 ----------
@@ -362,35 +393,21 @@ function renderHome() {
       },
       ["⚖️ 體重"],
     ),
-    // F67 ③：有新版才顯示，且只在首頁——logger 與其他畫面不打斷訓練
+    // F67 ③／F68 ③：有新版才顯示，且只在首頁——logger 與其他畫面不打斷訓練。
+    // F68 起這顆是「稍後再說之後的常駐入口」，點它重新開視窗（不直接下載）。
     ...(pendingUpdate
       ? [
           el(
             "button",
             {
               class: "btn update-banner",
-              // 照專案慣例用條件展開——`disabled: false` 在 HTML 裡仍然是停用（有屬性就算數），
-              // 會讓橫幅永遠點不下去
-              ...(updateProgress !== null ? { disabled: "" } : {}),
-              onclick: () =>
-                guard(async () => {
-                  updateProgress = 0;
-                  render();
-                  const res = await downloadAndInstall(pendingUpdate, (ratio) => {
-                    updateProgress = ratio;
-                    const bar = document.querySelector(".update-banner");
-                    // 就地更新文字：整頁重繪會在下載期間狂閃
-                    if (bar) bar.textContent = `⬇ 下載中 ${Math.round(ratio * 100)}%`;
-                  });
-                  updateProgress = null;
-                  if (!res.ok) showError(res.reason);
-                  else render();
-                }),
+              onclick: () => {
+                updateModalOpen = true;
+                render();
+              },
             },
             [
-              updateProgress !== null
-                ? `⬇ 下載中 ${Math.round(updateProgress * 100)}%`
-                : `⬆ 有新版 v${pendingUpdate.versionCode}（${(pendingUpdate.sizeBytes / 1048576).toFixed(1)} MB）——點此更新`,
+              `⬆ 有新版 v${pendingUpdate.versionCode}（${(pendingUpdate.sizeBytes / 1048576).toFixed(1)} MB）`,
             ],
           ),
         ]
@@ -434,7 +451,83 @@ function renderHome() {
         ]
       : []),
     versionTag(),
+    // F68 ⑦：手動檢查後沒有新版的短暫提示
+    ...(updateFlash ? [el("div", { class: "update-flash" }, [updateFlash])] : []),
+    // F68 ①④：更新視窗只掛在首頁——其他畫面即使有新版也不會被打斷
+    ...(updateModalOpen && pendingUpdate ? [updateModal()] : []),
   ]);
+}
+
+// F68：更新視窗。內容與下載進度都在視窗內（⑤），下載邏輯沿用 F67 的原生路徑不重做。
+function updateModal() {
+  const mb = (pendingUpdate.sizeBytes / 1048576).toFixed(1);
+  const downloading = updateProgress !== null;
+  const confirmBtn = el(
+    "button",
+    {
+      class: "btn btn-primary",
+      // 條件展開：`disabled: false` 在 HTML 仍算停用（F67 踩過）
+      ...(downloading ? { disabled: "" } : {}),
+      onclick: () =>
+        guard(async () => {
+          updateProgress = 0;
+          render();
+          const res = await downloadAndInstall(pendingUpdate, (ratio) => {
+            updateProgress = ratio;
+            // 就地更新文字：下載期間整頁重繪會讓視窗狂閃
+            const label = document.querySelector(".update-progress");
+            if (label) label.textContent = `下載中 ${Math.round(ratio * 100)}%`;
+          });
+          updateProgress = null;
+          if (!res.ok) {
+            updateModalOpen = false; // 讓錯誤訊息看得到（error-banner 在視窗底下）
+            showError(res.reason);
+            return;
+          }
+          render();
+        }),
+    },
+    [downloading ? "下載中…" : "立即更新"],
+  );
+  return el(
+    "div",
+    {
+      class: "modal-overlay",
+      onclick: (e) => {
+        // 下載中點遮罩不關窗——關了進度就看不到了
+        if (e.target === e.currentTarget && !downloading) {
+          dismissUpdate(pendingUpdate.versionCode);
+          updateModalOpen = false;
+          render();
+        }
+      },
+    },
+    [
+      el("div", { class: "modal update-modal" }, [
+        el("div", { class: "modal-head" }, [`有新版 v${pendingUpdate.versionCode}`]),
+        el("div", { class: "update-progress" }, [
+          downloading ? `下載中 ${Math.round(updateProgress * 100)}%` : `檔案大小 ${mb} MB`,
+        ]),
+        el("div", { class: "modal-actions" }, [
+          confirmBtn,
+          el(
+            "button",
+            {
+              class: "btn btn-ghost modal-cancel",
+              ...(downloading ? { disabled: "" } : {}),
+              onclick: () => {
+                // ② 記住的是版號：出更新的版本時要重新提醒
+                dismissUpdate(pendingUpdate.versionCode);
+                updateModalOpen = false;
+                render();
+              },
+            },
+            ["稍後再說"],
+          ),
+        ]),
+      ]),
+    ],
+  );
 }
 
 // ---------- templateSelect（開練：挑今日課表） ----------
@@ -1277,6 +1370,8 @@ function runUpdateCheck() {
   checkForUpdate().then((update) => {
     if (!update) return;
     pendingUpdate = update;
+    // F68 ①②：沒被「稍後再說」靜音過的版本就自動彈窗；靜音過的只留橫幅當入口
+    if (!isDismissed(update.versionCode)) updateModalOpen = true;
     if (state.screen === "home") render();
   });
 }

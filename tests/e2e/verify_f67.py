@@ -136,6 +136,25 @@ def setup_and_home(page) -> None:
     page.wait_for_timeout(1200)
 
 
+def dismiss_modal(page) -> None:
+    """F68 起有更新時會自動彈視窗蓋住首頁——先收起來才點得到底下的東西。
+
+    F67 的條文（③ 顯示、④ 點了會下載安裝）目的不變，只是手段多了一層視窗，
+    所以這裡改的是測試路徑而非凍結條文（見 handoff 的「上游 feature 讓下游測試失效」）。
+    """
+    later = page.get_by_role("button", name="稍後再說")
+    if later.count():
+        later.click()
+        page.wait_for_timeout(300)
+
+
+def start_update_from_banner(page) -> None:
+    """經由橫幅 → 視窗 → 立即更新，走完 F68 之後的更新路徑。"""
+    page.locator(".update-banner").click()
+    page.wait_for_timeout(300)
+    page.get_by_role("button", name="立即更新").click()
+
+
 def main() -> int:
     port = free_port()
     db = REPO / f"liftlog_f67_e2e_{port}.db"
@@ -165,13 +184,14 @@ def main() -> int:
             ctx = browser.new_context(viewport=PHONE)
             page = native(ctx.new_page(), base, current=64)
             setup_and_home(page)
+            dismiss_modal(page)
             banner = page.locator(".update-banner")
             check(banner.count() == 1, f"③ app 版有新版時首頁顯示橫幅（{banner.count()}）")
             text = banner.inner_text() if banner.count() else ""
             check("v99" in text, f"③ 橫幅帶伺服器版號：{text!r}")
             check("MB" in text, "③ 橫幅顯示下載大小")
 
-            # ③ 只在首頁：進到選動作畫面後不得出現
+            # ③ 只在首頁：進到選動作畫面後不得出現（視窗已於上方收起）
             page.get_by_role("button").first.click()  # 開練
             page.wait_for_timeout(800)
             check(page.locator(".update-banner").count() == 0,
@@ -183,13 +203,16 @@ def main() -> int:
             page = native(ctx.new_page(), base, current=99)
             setup_and_home(page)
             check(page.locator(".update-banner").count() == 0, "③ 版本相同時不顯示橫幅")
+            check(page.get_by_role("button", name="立即更新").count() == 0,
+                  "③ 版本相同時也不會彈視窗")
             ctx.close()
 
             # ④ 點擊 → 下載（帶 token）並喚起安裝器
             ctx = browser.new_context(viewport=PHONE)
             page = native(ctx.new_page(), base, current=64)
             setup_and_home(page)
-            page.locator(".update-banner").click()
+            dismiss_modal(page)
+            start_update_from_banner(page)
             page.wait_for_timeout(1200)
             au = page.evaluate("() => window.__au")
             check(len(au["downloads"]) == 1, f"④ 觸發一次下載（{len(au['downloads'])}）")
@@ -205,7 +228,8 @@ def main() -> int:
             ctx = browser.new_context(viewport=PHONE)
             page = native(ctx.new_page(), base, current=64, can_install=False)
             setup_and_home(page)
-            page.locator(".update-banner").click()
+            dismiss_modal(page)
+            start_update_from_banner(page)
             page.wait_for_timeout(1000)
             au = page.evaluate("() => window.__au")
             check(au["openedSettings"] >= 1, "⑤ 未授權時實際開啟「安裝未知應用程式」設定頁")

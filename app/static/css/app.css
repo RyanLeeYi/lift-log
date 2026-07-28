@@ -444,6 +444,12 @@ body {
    這是好消息不是錯誤。下載中禁點，避免重複觸發。 */
 .update-banner { border-color: var(--led); color: var(--led); }
 .update-banner[disabled] { opacity: .6; }
+/* F68：更新視窗與手動檢查。視窗沿用 .modal-overlay/.modal，這裡只補內容排版。 */
+.update-modal { text-align: center; }
+.update-progress { color: var(--muted); margin: 8px 0 4px; }
+.version-tag-btn { background: none; border: none; padding: 4px 8px; cursor: pointer; }
+/* 手動檢查「已是最新版」的短暫提示——不佔版面高度，淡出前浮在版號上方 */
+.update-flash { text-align: center; color: var(--muted); font-size: 13px; margin-top: 4px; }
 /* F24 版本標記：小字、低調、置中，不干擾操作 */
 .version-tag {
   text-align: center;

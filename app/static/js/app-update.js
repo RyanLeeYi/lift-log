@@ -65,3 +65,15 @@ export async function downloadAndInstall(update, onProgress) {
     listener?.remove?.();
   }
 }
+
+// F68 ②：使用者對「某個版本」按過稍後再說就別再自動彈。記版號而不是布林——
+// 出更新的版本時必須重新提醒，否則按一次就永遠靜音了。
+const DISMISS_KEY = "liftlog.updateDismissed";
+
+export function isDismissed(versionCode) {
+  return Number(localStorage.getItem(DISMISS_KEY) || 0) >= versionCode;
+}
+
+export function dismissUpdate(versionCode) {
+  localStorage.setItem(DISMISS_KEY, String(versionCode));
+}
