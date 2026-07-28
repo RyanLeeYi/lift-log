@@ -45,6 +45,12 @@ public class RestTimerService extends Service {
         if (ACTION_STOP.equals(action)) {
             stopTimer();
             stopForegroundCompat();
+            // ③：不能只靠 stopForeground() 的副作用。倒數自然歸零時 onFinish() 已經 stopSelf()，
+            // 此時再送 ACTION_STOP 會建立一個**全新的服務實例**——它從沒 startForeground() 過，
+            // 對前一個實例貼出的通知毫無作用，「休息結束」就永久殘留在通知列。
+            // 直接 cancel 才涵蓋兩種情況（2026-07-28 驗收抓到；提前取消的路徑原本就正常，
+            // 所以我自己只測了那一條沒發現）。
+            cancelNotification();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -132,6 +138,11 @@ public class RestTimerService extends Service {
         channel.setDescription("訓練休息時在通知列顯示剩餘秒數");
         channel.setShowBadge(false);
         manager.createNotificationChannel(channel);
+    }
+
+    private void cancelNotification() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        manager.cancel(NOTIFICATION_ID);
     }
 
     private void notifyUpdate(Notification notification) {

@@ -80,6 +80,13 @@ def manifest_and_source_checks() -> None:
     check("STOP_FOREGROUND_DETACH" in svc,
           "② 歸零時保留同一則通知改成「休息結束」（detach 而非 remove）")
     check("setOnlyAlertOnce" in svc, "① 倒數期間不每秒叮一聲（只有結束才提醒）")
+    # ③ 的回歸（2026-07-28 驗收抓到）：倒數自然歸零後服務已 stopSelf，之後的 ACTION_STOP
+    # 會建立新實例，它的 stopForeground() 對前一則通知無效——必須直接 cancel。
+    # 這是靜態檢查，真正的行為只有裝置能驗（見 docstring 的界線說明）。
+    marker = "ACTION_STOP.equals(action)"
+    stop_branch = svc.split(marker)[1].split("}")[0] if marker in svc else ""
+    check("cancelNotification()" in stop_branch,
+          "③ ACTION_STOP 分支直接 cancel 通知（不只依賴 stopForeground 的副作用）")
 
     main_activity = (java_dir / "MainActivity.java").read_text(encoding="utf-8")
     check("RestTimerPlugin.class" in main_activity, "① RestTimerPlugin 已註冊")
