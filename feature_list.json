@@ -461,6 +461,13 @@
       "status": "failing",
       "evidence": "",
       "acceptance": "（待 Ryan 簽核，尚未凍結）\n① `state.restStartedAt` 納入 saveActiveWorkout 的持久化 payload。\n② app 被系統回收或重啟後回到 logger，倒數依實際經過時間續算（非重置）。\n③ app 版：還原時依剩餘秒數重新排定本機通知；已超時則不排。\n④ 若無法還原（資料過舊等），畫面要有明確提示，不得靜默沒有倒數。\n背景：F62 的 code review（2026-07-28）指出倒數本來就不持久化，app 一被重啟倒數與已排定通知都消失且畫面無任何提示。此為 F62 之前就存在的行為。"
+    },
+    {
+      "id": "F67",
+      "name": "app 內自動偵測新版並更新（sideload 自我更新）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "① `versionCode` 與 `versionName` 由 `app/static/js/state.js` 的 `APP_VERSION` 推導（v64 → versionCode 64／versionName \"64\"），不再寫死 1。build 時自動帶入，兩處不得漂移。\n② 後端新增 `GET /api/app/latest`（需 token），回 `{version_code, version_name, url, size_bytes}`；APK 由後端供檔（需 token）。\n③ app 版啟動時比對自身 versionCode 與伺服器版本，**只在首頁**顯示可點的更新橫幅（logger／其他畫面不打斷）；版本相同或查詢失敗時**完全不顯示**，不干擾訓練。\n④ 點擊更新 → app 內下載 APK（帶 token）到私有目錄，顯示進度，下載完喚起系統安裝器（FileProvider ＋ `ACTION_VIEW`），使用者確認後完成升級並保留既有資料與設定。\n⑤ 權限：宣告 `REQUEST_INSTALL_PACKAGES`；安裝前用 `canRequestPackageInstalls()` 檢查，未授權時**直接開系統的「安裝未知應用程式」設定頁**（與 F62 ⑤ 同一套處置，不只丟一句文案）。\n⑥ 失敗要明確不靜默：下載中斷、磁碟空間不足、簽章不符、伺服器無新版——各有可辨識的訊息，且不會留下半截檔案。\n⑦ **web 版完全不受影響**：不顯示更新橫幅、不載入任何相關程式碼；pytest／ruff／既有 E2E 全綠。\n⑧ 建置流程文件化：出 APK 後把檔案放進服務目錄並更新版本資訊的步驟寫進 `CLAUDE.md` 規則 6 與 `docs/android-build-setup.md`。"
     }
   ]
 }
