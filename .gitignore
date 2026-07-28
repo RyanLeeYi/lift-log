@@ -17,3 +17,6 @@ keystore.properties
 
 # F67：APK 發佈目錄（自我更新的來源）。二進位檔不進版控，內容由建置流程放入
 release/
+
+# Android Studio 安裝器的暫存檔（只含本機 SDK 路徑，無用）
+inst_user_settings.tmp
