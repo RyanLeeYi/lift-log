@@ -31,6 +31,14 @@ final class RestOverlay {
     private static View view;
     private static TextView label;
     private static WindowManager.LayoutParams params;
+    /**
+     * 使用者在**這一輪休息中**按過 ✕。
+     *
+     * <p>沒有這個旗標的話：關掉 overlay 後只要改休息秒數（前端會重下一次 ACTION_START），
+     * overlay 就自己跑回來，等於吃掉使用者剛表達的意圖（2026-07-28 Codex review P2）。
+     * 旗標在服務停止／倒數結束時清掉——那是新一輪休息，重新顯示才合理。
+     */
+    private static boolean dismissed;
 
     private RestOverlay() {}
 
@@ -42,6 +50,7 @@ final class RestOverlay {
 
     static synchronized void show(Context context, int seconds) {
         if (!permitted(context)) return; // ②：沒授權就安靜不畫，通知列倒數照常（不當機不空白）
+        if (dismissed) return; // 這輪休息使用者已經關掉了，改秒數不該讓它復活
         if (view != null) {
             update(seconds);
             return;
@@ -63,8 +72,19 @@ final class RestOverlay {
         label.setText(String.format("⏱ %d:%02d", remainingSeconds / 60, remainingSeconds % 60));
     }
 
-    /** ④：移除 view。重複呼叫安全——ACTION_STOP、onFinish、onDestroy 都會走到這裡。 */
+    /** 使用者按 ✕：關掉顯示，並記住這輪休息不要再自己冒出來（③ 的倒數照常走完）。 */
+    static synchronized void dismiss(Context context) {
+        hide(context);
+        dismissed = true;
+    }
+
+    /**
+     * ④：移除 view。重複呼叫安全——ACTION_STOP、onFinish、onDestroy 都會走到這裡。
+     *
+     * <p>同時清掉 {@link #dismissed}：這些呼叫點都代表「這輪休息結束了」，下一輪要重新顯示。
+     */
     static synchronized void hide(Context context) {
+        dismissed = false;
         if (view == null) return;
         try {
             windowManager(context).removeViewImmediate(view);
@@ -108,7 +128,7 @@ final class RestOverlay {
         close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         close.setPadding(dp(context, 12), 0, dp(context, 4), 0);
         // ③：關掉的是「顯示」不是「倒數」——通知列的倒數與提醒照常走完
-        close.setOnClickListener(v -> hide(context));
+        close.setOnClickListener(v -> dismiss(context));
         root.addView(close);
 
         root.setOnTouchListener(new DragListener(context));

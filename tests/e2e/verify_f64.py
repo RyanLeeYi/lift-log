@@ -78,6 +78,12 @@ def manifest_and_source_checks() -> None:
     # view 的握把若放在實例欄位，新實例就關不掉舊 view → overlay 永久殘留。
     check(re.search(r"private\s+static\s+\w*\s*View\s+view", overlay) is not None,
           "④ view 握把是 static（新服務實例也關得掉，比照 F63 ③）")
+    # Codex review P2（2026-07-28）：按 ✕ 之後改休息秒數會重下 ACTION_START，
+    # 沒有這個旗標 overlay 就自己復活，吃掉使用者剛表達的意圖。
+    check("dismissed" in overlay and "if (dismissed) return" in overlay,
+          "③ 手動關掉後同一輪休息不會自己復活（改秒數重啟服務也一樣）")
+    check("dismissed = false" in overlay,
+          "③ 下一輪休息會重新顯示（服務停止／歸零時清掉 dismissed）")
 
     svc = (JAVA_DIR / "RestTimerService.java").read_text(encoding="utf-8")
     check("EXTRA_OVERLAY" in svc, "② overlay 是否顯示由呼叫端決定（EXTRA_OVERLAY）")
