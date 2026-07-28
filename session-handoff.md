@@ -11,6 +11,44 @@ web 行為不變但版號升了兩版，下次部署要一起上）。
 **Android app 現況**：release-signed APK（`lift-log-v64-F62.apk`）已上 Google Drive；
 休息倒數在手機端排程，伺服器關掉／飛航模式也照響。
 
+### 下一場開場（F67 卡在部署，指令都備好了）
+
+**F67 程式碼完成但 status 仍 failing**，因為還沒部署也還沒真機驗 ④⑤。
+本場在「準備部署」時撞到用量門檻（5h 92%）收工，**刻意沒做到一半**——
+線上換了版但 APK 沒進發佈目錄的話，Ryan 手機上的 app 會看到殘缺狀態。
+
+Ryan 已經裝好 v65，**他要的是一顆 v66 讓他實測整條更新流程**。照這個順序做：
+
+1. **`.env` 加 `LIFTLOG_RELEASE_DIR`**（絕對路徑，避免服務的 cwd 與 repo 不同找不到 APK）：
+   `LIFTLOG_RELEASE_DIR=C:/Users/user/OneDrive/Desktop/SideProject/lift-log/release`
+   （本場查過 `.env` 目前只有 `LIFTLOG_TOKEN` 與 `LIFTLOG_DB`）
+2. **出 v66**：`state.js` 的 `APP_VERSION` 與 `sw.js` 的 `CACHE_NAME` 同步升到 v66 →
+   `npx cap sync android` → `gradlew -p android assembleRelease` →
+   `cp .../app-release.apk release/lift-log-v66.apk`（**v65 留著**，`_latest_apk` 取版號最大值）
+3. **部署**：`mission-control restart lift-log`（會一併把 v63–v66 的前端變更推上 web 版，線上目前還是 v62）
+4. **驗線上端點**：帶 token 打 `/api/app/latest`，應回 `version_code: 66`；`/api/app/apk` 應下載得到檔案
+5. **請 Ryan 開 app**：v65 應顯示「⬆ 有新版 v66」→ 點擊 → 首次會要求允許「安裝未知應用程式」
+   （app 會直接把他帶到設定頁）→ 授權後回來再點 → 下載進度 → 系統安裝器 → 裝完版號變 v66
+6. 真機 ④⑤ 過了才跑驗收、才改 passing
+
+### F67 已完成的部分（commit `7deddf0`）
+
+- ① **versionCode 不再寫死**：由 `state.js` 的 `APP_VERSION` 推導，讀不到就讓 build 失敗。
+  已用 `aapt2 dump badging` 確認 APK 內是 `versionCode='65' versionName='65'`（先前每顆都是 1，
+  在系統眼中全是同一版，**任何更新流程都不可能成立**）
+- ② `GET /api/app/latest` 與 `/api/app/apk`，都要 token；發佈目錄**用數值比大小**（字串排序會讓 v9 贏過 v65）
+- ④ 下載與安裝放在原生 plugin（`AppUpdatePlugin.java`）：APK 有數 MB，走 JS bridge 會被迫 base64
+  且拿不到串流進度。失敗一律刪掉半截檔案
+- ⑤ 未授權安裝時直接開系統的「安裝未知應用程式」設定頁（與 F62 ⑤ 同一套處置）
+- 測試：pytest **205**（新增 `tests/test_app_release.py` 5 條）、ruff clean、
+  `verify_f67.py` **20/20**、F62 34/34 與 F61 14/14 回歸綠
+
+**E2E 抓到兩個實作 bug（都不是測試問題）**：
+1. **首次設定 token 的人看不到更新**——開機就查更新，但那時還在 setup 畫面沒有 token，
+   401 被吞掉之後再也不查。已改成設定完 token 也查一次
+2. **橫幅點不下去**——`disabled: false` 在 HTML 裡仍算停用（有屬性就算數）。
+   專案慣例是條件展開 `...(cond ? { disabled: "" } : {})`，沒照著寫才出事
+
 ### 下一場開場
 
 1. **先部署**：線上還是 v62，原始碼 v64（`mission-control restart lift-log`）
