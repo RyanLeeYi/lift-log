@@ -1,12 +1,11 @@
 # session handoff
 
-最後更新：2026-07-28（**F61＋F62 完成並驗收通過**，app 版休息提醒改為手機端本機通知）
+最後更新：2026-07-28（**F61–F63、F67、F68 完成**；app 會自我更新，休息倒數在通知列）
 
 ## 現況（7/28 收工）
 
-**62/66 passing**，剩 F63、F64（通知階段 3/4）與 F65、F66（F62 review 長出來的），
-**四條的 acceptance 都還沒簽核凍結**。線上 web 版 **v62**，原始碼已到 **v64**（F62 動了 `app/static/`，
-web 行為不變但版號升了兩版，下次部署要一起上）。
+**65/68 passing**，剩 **F64**（浮動視窗倒數，acceptance 未簽核）、F65、F66（F62 review 長出來的，未簽核）。
+線上與原始碼同為 **v73**，已部署。`release/` 有 v65–v73（自我更新的來源，取版號最大，舊檔可回退）。
 
 **Android app 現況**：release-signed APK（`lift-log-v64-F62.apk`）已上 Google Drive；
 休息倒數在手機端排程，伺服器關掉／飛航模式也照響。
@@ -41,6 +40,41 @@ F67 驗收耗時 **51 分鐘**（重跑三套 E2E）。F68 起刻意縮範圍—
 F61／F62 註明採信實作者紀錄。結果：**7 分鐘**，而且抓到了前一次沒抓到的 ⑤ fail。
 複驗用 **SendMessage 接續同一個驗收者的 context**（不是新開），它記得自己上次的判準，2 分鐘完成。
 判準：**改到共用模組就把範圍放回去**，只動呈現層就縮。
+
+### F63 完成（7/28）：休息倒數進了通知列
+
+前景服務（`RestTimerService` ＋ `RestTimerPlugin`）在通知列常駐顯示剩餘秒數，手機可以放口袋。
+**倒數在原生層 CountDownTimer 跑**，不靠 WebView——JS 計時器一進背景就被節流，而背景正是這功能存在的理由。
+型別選 `specialUse` 而非 `shortService`（後者 3 分鐘上限，休息調長會被系統斷掉）。
+⑥ 的分工：前景服務接手時**不排** F62 的本機通知，歸零時由同一則通知自己轉成「休息結束」。
+
+**②④ 回簽核接受模擬器**（原文寫真機）：② 是系統層行為、模擬器與真機無差；④ 在模擬器 Doze
+（`mWakefulness=Dozing`、`deviceidle IDLE`）下誤差 -1 秒。
+⚠ **但 ④ 真正想防的風險模擬器測不到**——OEM 省電策略（Samsung 尤其積極）可能殺掉前景服務。
+**真機省電行為列為後續待辦**：Ryan 若在健身房發現倒數被殺掉，那會是一條新 feature
+（大概是引導使用者把 lift-log 加進電池最佳化白名單）。
+
+#### 這輪最重要的教訓：我測的是我想像中的流程
+
+驗收第一輪判 ③ **fail**，抓到我完全沒測到的路徑：**倒數自然歸零後**再按「繼續下一組」，
+「休息結束」通知永久殘留。根因是 Android 服務生命週期——`onFinish()` 已 `stopSelf()`，
+之後的 `ACTION_STOP` 會建立**全新服務實例**，它從未 `startForeground()`，
+其 `stopForeground(REMOVE)` 對前一實例貼出的通知無效。
+我自己在模擬器上測的是「提前取消」（那條本來就正常），所以沒發現。
+
+**兩條路徑的程式碼看起來完全對稱**（都送 `ACTION_STOP`），差別只在時序。
+修法：`ACTION_STOP` 一律 `NotificationManager.cancel(NOTIFICATION_ID)`，不依賴 `stopForeground()` 的副作用。
+
+這與 F68 ⑤ 同族：**測試覆蓋的是實作者想像中的使用方式**。往後寫 E2E／自驗先問一句
+「使用者最常走的那條路徑，我測了嗎」。
+
+#### 另一個我自己造成的險情：build 腳本前一步失敗沒有中止
+
+版號 bump 用了 PowerShell 裡的 inline python，跳脫字元寫壞導致**整段沒執行**（SyntaxError），
+但後續的 `cap sync` 與 gradle **照跑**，產出 v72 的內容卻被複製成 `release/lift-log-v73.apk`。
+若沒發現，F67 會告訴 Ryan「有新版 v73」，裝到的卻是 v72，**且不會有任何錯誤訊息**
+（系統只看 APK 內的 versionCode，檔名不管）。已刪除重做並以 `aapt2 dump badging` 確認 versionCode=73。
+**教訓：多步驟建置腳本要讓前一步失敗中止後續**；版號 bump 改用獨立的 Bash heredoc 較可靠。
 
 ### 下一場開場
 
