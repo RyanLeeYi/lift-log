@@ -13,6 +13,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -32,8 +33,8 @@ final class RestOverlay {
 
     private static View view;
     private static TextView label;
-    private static TextView pauseButton; // F71 ①：⏸／▶ 兩態共用同一顆
-    private static TextView stopButton; // F73：鬧鐘響著時要轉警示色
+    private static ImageView pauseButton; // F71 ①：暫停／繼續兩態共用同一顆
+    private static ImageView stopButton; // F73：鬧鐘響著時要轉警示色
     /** F71：暫停狀態。兩邊（app 內卡片與這裡）必須顯示一致，否則使用者不知道該信誰。 */
     private static boolean paused;
     private static WindowManager.LayoutParams params;
@@ -60,6 +61,9 @@ final class RestOverlay {
     private static int remaining;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    /** F74：Android 的最小觸控目標。視覺上的圖示比這小，但可按的範圍不能小於它。 */
+    private static final int TOUCH_TARGET_DP = 48;
+    private static final int BUTTON_GAP_DP = 8;
 
     private RestOverlay() {}
 
@@ -128,7 +132,9 @@ final class RestOverlay {
     static void setPaused(Context context, boolean value) {
         onMain(() -> {
             paused = value;
-            if (pauseButton != null) pauseButton.setText(paused ? "▶" : "⏸");
+            if (pauseButton != null) {
+                pauseButton.setImageResource(paused ? R.drawable.ic_rest_play : R.drawable.ic_rest_pause);
+            }
             applyAlarmTint(remaining < 0 && !paused); // F73 ③：暫停中不算「響著」
             apply(context);
         });
@@ -160,7 +166,7 @@ final class RestOverlay {
         }
         GradientDrawable highlight = new GradientDrawable();
         highlight.setColor(Color.parseColor("#FF5252"));
-        highlight.setCornerRadius(dp(stopButton.getContext(), 14));
+        highlight.setCornerRadius(dp(stopButton.getContext(), 24)); // F74：配合 48dp 的方形觸控區
         stopButton.setBackground(highlight);
     }
 
@@ -251,11 +257,13 @@ final class RestOverlay {
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setGravity(Gravity.CENTER_VERTICAL);
-        root.setPadding(dp(context, 14), dp(context, 8), dp(context, 8), dp(context, 8));
+        // F74 ③：按鈕自己已經有 48dp 高，root 的垂直 padding 收掉，
+        // 免得視窗整體變成一大塊——維持單列藥丸造型
+        root.setPadding(dp(context, 14), dp(context, 2), dp(context, 6), dp(context, 2));
 
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(Color.parseColor("#E6111827"));
-        bg.setCornerRadius(dp(context, 20));
+        bg.setCornerRadius(dp(context, 26)); // F74：高度變大，圓角跟著調才還是藥丸
         root.setBackground(bg);
 
         label = new TextView(context);
@@ -264,7 +272,7 @@ final class RestOverlay {
         root.addView(label);
 
         // F71 ①：暫停／繼續。原生先動手（服務要立刻停），再回報前端讓畫面跟上（⑥）
-        pauseButton = iconButton(context, paused ? "▶" : "⏸", v -> {
+        pauseButton = iconButton(context, paused ? R.drawable.ic_rest_play : R.drawable.ic_rest_pause, v -> {
             if (paused) {
                 RestTimerService.resume(context);
                 setPaused(context, false);
@@ -278,25 +286,54 @@ final class RestOverlay {
         root.addView(pauseButton);
 
         // F71 ④：停止＝結束這段休息（等同繼續下一組），通知與視窗一起收掉
-        stopButton = iconButton(context, "⏹", v -> {
+        stopButton = iconButton(context, R.drawable.ic_rest_stop, v -> {
             RestTimerPlugin.emit("stop");
             RestTimerService.stop(context);
         });
         root.addView(stopButton);
 
         // F64 ③／F71 ⑤：✕ 關掉的是「顯示」不是「倒數」——通知列的倒數與提醒照常走完
-        root.addView(iconButton(context, "✕", v -> dismiss(context)));
+        root.addView(iconButton(context, R.drawable.ic_rest_close, v -> dismiss(context)));
 
         root.setOnTouchListener(new DragListener(context));
         return root;
     }
 
-    private static TextView iconButton(Context context, String text, View.OnClickListener onClick) {
-        TextView button = new TextView(context);
-        button.setText(text);
-        button.setTextColor(Color.parseColor("#9CA3AF"));
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        button.setPadding(dp(context, 10), dp(context, 4), dp(context, 10), dp(context, 4));
+    /**
+     * F74：每顆按鈕的可觸控區域固定 48dp × 48dp（Android 標準），彼此間距 8dp。
+     *
+     * <p>加大的理由不是規範好看：使用情境是**剛做完一組、手是濕的、站在健身房裡**，
+     * 而按錯 ✕（只收起顯示）與 ⏹（結束整段休息）的後果完全不同。原本 16sp 文字加
+     * 上下 4dp padding 只有約 29dp 高，兩顆之間又只隔 10dp。
+     */
+    private static ImageView iconButton(Context context, int drawableRes, View.OnClickListener onClick) {
+        ImageView button = new ImageView(context);
+        button.setImageResource(drawableRes);
+        // F76 ④：用 tint 上色——vector drawable 吃得到，emoji 吃不到（那正是換掉它的原因）
+        button.setImageTintList(android.content.res.ColorStateList.valueOf(
+            Color.parseColor("#9CA3AF")));
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        int inset = dp(context, 12); // 48dp 觸控區裡放 24dp 圖示
+        button.setPadding(inset, inset, inset, inset);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            dp(context, TOUCH_TARGET_DP), dp(context, TOUCH_TARGET_DP));
+        lp.setMarginStart(dp(context, BUTTON_GAP_DP));
+        button.setLayoutParams(lp);
+        // F74 ④：按下時給回饋，且只改外觀不動版面（改尺寸會讓旁邊的鈕跟著跳）
+        button.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    v.setAlpha(0.5f);
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    v.setAlpha(1f);
+                    break;
+                default:
+                    break;
+            }
+            return false; // 不吃掉事件，OnClickListener 照常收得到
+        });
         button.setOnClickListener(onClick);
         return button;
     }

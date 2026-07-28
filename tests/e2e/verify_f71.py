@@ -154,23 +154,23 @@ def main() -> int:
             page = native(ctx.new_page(), base)
             setup_and_home(page)
             start_free_workout(page)
-            page.get_by_role("button", name="✓ 完成這組").click()
+            page.get_by_role("button", name="完成這組").click()
             page.wait_for_timeout(900)
 
-            check(page.get_by_role("button", name="⏸ 暫停").count() == 1,
+            check(page.locator(".rest-controls").get_by_role("button", name="暫停").count() == 1,
                   "① 計時頁有暫停鈕")
-            check(page.get_by_role("button", name="⏹ 停止").count() == 1,
+            check(page.locator(".rest-controls").get_by_role("button", name="停止").count() == 1,
                   "① 計時頁有停止鈕")
 
             page.wait_for_timeout(2200)
             before = rest_state(page)["elapsed"]
-            page.get_by_role("button", name="⏸ 暫停").click()
+            page.locator(".rest-controls").get_by_role("button", name="暫停").click()
             page.wait_for_timeout(300)
             r = rest_state(page)
             check(r["paused"] is True, "② 暫停狀態成立")
             check(any(c[0] == "pause" for c in page.evaluate("() => window.__f71.calls")),
                   "① 暫停有同步到原生（通知列與浮動視窗才會一致）")
-            check(page.get_by_role("button", name="▶ 繼續").count() == 1,
+            check(page.locator(".rest-controls").get_by_role("button", name="繼續").count() == 1,
                   "② 暫停後按鈕變成「繼續」")
 
             page.wait_for_timeout(2500)  # 暫停期間：這 2.5 秒不該被計入
@@ -179,7 +179,7 @@ def main() -> int:
                   f"③ 暫停期間計時凍結（暫停前 {before}s → 等 2.5s 後 {r2['elapsed']}s）")
             check(r2["remaining"] == rest_state(page)["remaining"], "② 剩餘秒數同樣凍結")
 
-            page.get_by_role("button", name="▶ 繼續").click()
+            page.locator(".rest-controls").get_by_role("button", name="繼續").click()
             page.wait_for_timeout(1500)
             r3 = rest_state(page)
             check(r3["paused"] is False, "② 繼續後回到計時中")
@@ -188,16 +188,16 @@ def main() -> int:
                   f"③ 接續後仍不含暫停的 2.5 秒（{r3['elapsed']}s，含暫停會 >4s）")
 
             elapsed_at_stop = rest_state(page)["elapsed"]
-            page.get_by_role("button", name="⏹ 停止").click()
+            page.locator(".rest-controls").get_by_role("button", name="停止").click()
             page.wait_for_timeout(500)
             r4 = rest_state(page)
             check(r4["started"] is False, "④ 停止＝結束這段休息")
-            check(page.get_by_role("button", name="✓ 完成這組").count() == 1,
+            check(page.get_by_role("button", name="完成這組").count() == 1,
                   "④ 按鈕回到「完成這組」")
             check(any(c[0] == "stop" for c in page.evaluate("() => window.__f71.calls")),
                   "④ 停止有同步到原生（通知與浮動視窗一起收掉）")
 
-            page.get_by_role("button", name="✓ 完成這組").click()
+            page.get_by_role("button", name="完成這組").click()
             page.wait_for_timeout(1200)
             sets = []
             for w in api(base, "/api/workouts"):
@@ -211,9 +211,9 @@ def main() -> int:
                   f"③ rest_seconds 不含暫停期間（記錄 {got}s vs 計時中累計 {elapsed_at_stop}s）")
 
             # ⑥ 原生→前端：浮動視窗按暫停時，前端要跟著變（走事件，不是輪詢）
-            page.get_by_role("button", name="⏹ 停止").click()
+            page.locator(".rest-controls").get_by_role("button", name="停止").click()
             page.wait_for_timeout(300)
-            page.get_by_role("button", name="✓ 完成這組").click()
+            page.get_by_role("button", name="完成這組").click()
             page.wait_for_timeout(900)
             page.evaluate("() => window.__f71.listeners['restControl']({ action: 'pause' })")
             page.wait_for_timeout(400)
@@ -232,13 +232,16 @@ def main() -> int:
             page.wait_for_selector("input", timeout=10_000)
             setup_and_home(page)
             start_free_workout(page)
-            page.get_by_role("button", name="✓ 完成這組").click()
+            page.get_by_role("button", name="完成這組").click()
             page.wait_for_timeout(900)
-            check(page.get_by_role("button", name="⏸ 暫停").count() == 1, "⑧ web 版也有暫停鈕")
-            page.get_by_role("button", name="⏸ 暫停").click()
+            check(
+                page.locator(".rest-controls").get_by_role("button", name="暫停").count() == 1,
+                "⑧ web 版也有暫停鈕",
+            )
+            page.locator(".rest-controls").get_by_role("button", name="暫停").click()
             page.wait_for_timeout(300)
             check(rest_state(page)["paused"] is True, "⑧ web 版暫停可用（純前端計時）")
-            page.get_by_role("button", name="⏹ 停止").click()
+            page.locator(".rest-controls").get_by_role("button", name="停止").click()
             page.wait_for_timeout(300)
             check(rest_state(page)["started"] is False, "⑧ web 版停止可用")
             ctx.close()

@@ -56,7 +56,7 @@ def start_free_workout(page) -> None:
 
 
 def log_one_set(page) -> None:
-    page.get_by_role("button", name="✓ 完成這組").click()
+    page.get_by_role("button", name="完成這組").click()
     page.wait_for_timeout(900)
 
 

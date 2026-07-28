@@ -12,6 +12,8 @@ import {
   isDismissed,
 } from "./app-update.js";
 import { el, rpePicker, stepper } from "./dom.js";
+// F76：結構性圖示一律走這裡（emoji 是彩色字形，跨平台不一致且吃不到 CSS 顏色）
+import { icon, iconLabel } from "./icons.js";
 import { isNativeApp } from "./env.js";
 import {
   detailReturnScreen,
@@ -264,7 +266,11 @@ function syncStatusLine() {
   const { pending, failed } = state.queue;
   if (pending === 0 && failed === 0) return [];
   const parts = [];
-  if (pending > 0) parts.push(el("span", { class: "sync-pending" }, [`⏳ 待同步 ${pending} 組`]));
+  if (pending > 0) {
+    parts.push(el("span", { class: "sync-pending" }, [
+      icon("hourglass", { size: 14 }), ` 待同步 ${pending} 組`,
+    ]));
+  }
   if (failed > 0) {
     parts.push(
       el(
@@ -280,7 +286,7 @@ function syncStatusLine() {
               render();
             }),
         },
-        [`⚠ 同步失敗 ${failed} 組（點此捨棄）`],
+        [icon("warning", { size: 14 }), ` 同步失敗 ${failed} 組（點此捨棄）`],
       ),
     );
   }
@@ -303,7 +309,7 @@ function renderSetup() {
     runUpdateCheck(); // F67：剛設好 token 才查得動——開機那次在 setup 畫面必然 401
   };
   return el("section", { class: "screen setup" }, [
-    el("div", { class: "mark" }, ["🏋️"]),
+    el("div", { class: "mark" }, [icon("dumbbell", { size: 44, label: "lift-log" })]),
     el("h1", {}, ["lift-log"]),
     el("p", {}, ["輸入 API token 開始使用（存在這支手機上）"]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
@@ -372,7 +378,7 @@ function renderHome() {
             render();
           }),
       },
-      ["📋 課表"],
+      [iconLabel("clipboard", "課表")],
     ),
     el(
       "button",
@@ -385,7 +391,7 @@ function renderHome() {
             render();
           }),
       },
-      ["📅 日曆"],
+      [iconLabel("calendar", "日曆")],
     ),
     el(
       "button",
@@ -401,7 +407,7 @@ function renderHome() {
             render();
           }),
       },
-      ["📈 動作表現"],
+      [iconLabel("trending", "動作表現")],
     ),
     el(
       "button",
@@ -414,7 +420,7 @@ function renderHome() {
             render();
           }),
       },
-      ["⚖️ 體重"],
+      [iconLabel("scale", "體重")],
     ),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
     // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js
@@ -444,12 +450,15 @@ function renderHome() {
                 }),
             },
             [
-              restNotifyEnabled()
-                ? // F62 ③：精確鬧鐘被關時倒數會被系統延後，講出來而不是讓使用者以為壞了
-                  restNotifyDelayed()
-                  ? "🔔 休息提醒：開（可能延遲，點此修正）"
-                  : "🔔 休息提醒：開"
-                : "🔔 休息提醒：關",
+              iconLabel(
+                "bell",
+                restNotifyEnabled()
+                  ? // F62 ③：精確鬧鐘被關時倒數會被系統延後，講出來而不是讓使用者以為壞了
+                    restNotifyDelayed()
+                    ? "休息提醒：開（可能延遲，點此修正）"
+                    : "休息提醒：開"
+                  : "休息提醒：關",
+              ),
             ],
           ),
         ]
@@ -474,7 +483,7 @@ function renderHome() {
                   else showError(res.reason);
                 }),
             },
-            [restOverlayEnabled() ? "🪟 浮動計時：開" : "🪟 浮動計時：關"],
+            [iconLabel("window", `浮動計時：${restOverlayEnabled() ? "開" : "關"}`)],
           ),
         ]
       : []),
@@ -783,7 +792,7 @@ function exerciseRow(mainBtn, exercise, from) {
     el(
       "button",
       { class: "btn detail-link", "aria-label": "動作表現", onclick: () => openDetail(exercise, from) },
-      ["📈"],
+      [icon("trending", { size: 18, label: "動作表現" })],
     ),
   ]);
 }
@@ -1277,9 +1286,15 @@ function renderLogger() {
       ]);
     }
     const queued = state.queueStatus[s.client_uuid]; // pending | failed | undefined（已同步）
-    const mark = queued === "pending" ? " ⏳" : queued === "failed" ? " ⚠" : "";
+    // F76：同步狀態標示改向量圖示——emoji 在不同 Android 版本長相不一，而這裡要一眼分辨
+    // 「還在傳」與「傳失敗」，兩者的後果差很多
+    const mark = queued === "pending"
+      ? [icon("hourglass", { size: 14, label: "待同步" })]
+      : queued === "failed"
+        ? [icon("warning", { size: 14, label: "同步失敗" })]
+        : [];
     return el("div", { class: `done-row${queued ? ` ${queued}` : ""}` }, [
-      el("span", {}, [`#${s.set_number}${mark}`]),
+      el("span", { class: "set-no" }, [`#${s.set_number}`, ...mark]),
       el("span", { class: "n" }, [
         `${s.weight_kg} kg × ${s.reps}${s.rpe ? `  @${s.rpe}` : ""}`,
       ]),
@@ -1289,12 +1304,12 @@ function renderLogger() {
           editDraft = { key, weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
           render();
         },
-      }, ["✎"]),
+      }, [icon("pencil", { size: 18, label: "編輯這組" })]),
       el("button", {
         // F19：單擊即刪（軟刪／未同步移出佇列，資料非真的消失），不再兩段式確認
         class: "btn icon-btn del-set",
         onclick: () => guard(() => deleteDoneSet(s)),
-      }, ["🗑"]),
+      }, [icon("trash", { size: 18, label: "刪除這組" })]),
     ]);
   };
 
@@ -1313,7 +1328,7 @@ function renderLogger() {
       el("button", {
         class: "btn detail-link logger-detail", "aria-label": "動作表現",
         onclick: () => openDetail(exercise, "logger"),
-      }, ["📈"]),
+      }, [icon("trending", { size: 18, label: "動作表現" })]),
     ]),
     el("div", { class: "last-hint" }, [state.lastHint || "第一次做這個動作"]),
     el("div", { class: "rest-hint-row" }, [
@@ -1327,7 +1342,7 @@ function renderLogger() {
             render();
           },
         },
-        [`⏱ 休息 ${restHintFor(exercise.id)}s`],
+        [iconLabel("timer", `休息 ${restHintFor(exercise.id)}s`)],
       ),
     ]),
     el(
@@ -1354,7 +1369,7 @@ function renderLogger() {
             el(
               "button",
               { class: "btn btn-ghost", onclick: () => guard(togglePauseRest) },
-              [restPaused() ? "▶ 繼續" : "⏸ 暫停"],
+              [restPaused() ? iconLabel("play", "繼續") : iconLabel("pause", "暫停")],
             ),
             el(
               "button",
@@ -1368,7 +1383,7 @@ function renderLogger() {
                 }`,
                 onclick: () => guard(stopRestFromUi),
               },
-              ["⏹ 停止"],
+              [iconLabel("stop", "停止")],
             ),
           ]),
         ]
@@ -1398,7 +1413,7 @@ function renderLogger() {
         ...(state.submitting ? { disabled: "" } : {}),
         onclick: () => guard(state.restStartedAt ? continueNext : logSet),
       },
-      [state.restStartedAt ? "繼續下一組" : "✓ 完成這組"],
+      [state.restStartedAt ? el("span", {}, ["繼續下一組"]) : iconLabel("check", "完成這組")],
     ),
     // F42：底部『換動作』『收工』已移除——換動作改左上←，結束訓練走 picker 的『結束訓練』
   ]);

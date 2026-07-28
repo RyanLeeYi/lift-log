@@ -74,7 +74,7 @@ def main() -> int:
             page.wait_for_selector("input", timeout=10_000)
             setup_and_home(page)
             start_free_workout(page)
-            page.get_by_role("button", name="✓ 完成這組").click()
+            page.get_by_role("button", name="完成這組").click()
             page.wait_for_timeout(900)
 
             stop_btn = page.locator(".rest-controls .stop-rest")
@@ -96,15 +96,15 @@ def main() -> int:
                   f"① 響著時停止鈕轉警示色（{cls}）")
 
             # ③ 暫停中不算響著
-            page.get_by_role("button", name="⏸ 暫停").click()
+            page.get_by_role("button", name="暫停").click()
             page.wait_for_timeout(600)
             cls = page.locator(".rest-controls .stop-rest").get_attribute("class") or ""
             check("alarming" not in cls, f"③ 暫停中不變色（{cls}）")
 
             # ⑤ 停止之後回到就緒態（F72 行為未被破壞）
-            page.get_by_role("button", name="⏹ 停止").click()
+            page.get_by_role("button", name="停止").click()
             page.wait_for_timeout(600)
-            check(page.get_by_role("button", name="✓ 完成這組").count() == 1,
+            check(page.get_by_role("button", name="完成這組").count() == 1,
                   "⑤ 停止後回到就緒態（F71／F72 行為不變）")
             ctx.close()
             browser.close()

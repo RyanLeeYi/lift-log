@@ -3,11 +3,11 @@
 :root {
   --bg: #0e0f12;          /* 橡膠地板黑 */
   --card: #1a1c21;
-  --card-edge: #2a2d33;
+  --card-edge: #69717d;   /* F75：對比 3.89:1（原 #2a2d33 只有 1.39，明亮環境看不見卡片邊界） */
   --text: #f2f0eb;
   --text-dim: #9a9689;
   --led: #ffb020;         /* 琥珀 LED：計時器與主要動作 */
-  --led-dim: #7a5510;
+  --led-dim: #b8862a;     /* F75：對比 5.92:1（原 #7a5510 只有 2.86，而它用在 12px 的 REST 標籤上） */
   --danger: #e5484d;
   --mono: "SF Mono", "Roboto Mono", Consolas, "Courier New", monospace;
   --sans: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
@@ -87,9 +87,20 @@ body {
   font-size: 14px;
 }
 
+/* F76：圖示與文字的標準組合。圖示尺寸走 token（sm/md），線寬統一 2、顏色吃 currentColor，
+   所以深色主題與各狀態（danger、dim）都自動正確。 */
+.icon { flex: none; vertical-align: -0.15em; }
+/* 組號與同步標示同一行，圖示不撐開行高 */
+.set-no { display: inline-flex; align-items: center; gap: 4px; }
+.icon-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  /* 與純文字按鈕視覺一致：圖示不撐高行高 */
+  line-height: 1;
+}
+.setup .mark { display: flex; justify-content: center; color: var(--led); }
+
 /* ---------- setup（首次 token） ---------- */
 .setup { justify-content: center; gap: 18px; text-align: center; }
-.setup .mark { font-size: 44px; }
 .setup p { color: var(--text-dim); font-size: 14px; }
 .setup input {
   background: var(--card);
@@ -148,7 +159,9 @@ body {
 .exercise-row { display: flex; gap: 8px; align-items: stretch; }
 .exercise-row .exercise-item { flex: 1; }
 .detail-link {
-  flex: none; padding: 0 14px; font-size: 18px;
+  /* F77 ①：詳情入口與主鍵並排，點錯就是進了別的畫面 */
+  flex: none; padding: 0 14px; min-width: 48px; min-height: 44px; font-size: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
   background: var(--card); border: 1px solid var(--card-edge); color: var(--led);
 }
 /* F23：選動作畫面的臨時加動作清單固定約 4 個動作高＋內部捲動（今日菜單 .menu-list 不受影響）。
@@ -161,9 +174,11 @@ body {
 .exercise-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .exercise-head h2 { font-size: 24px; font-weight: 700; }
 .exercise-head .alias { color: var(--text-dim); font-size: 14px; }
-.exercise-head .logger-detail { min-height: 40px; }
+.exercise-head .logger-detail { min-width: 48px; min-height: 44px; } /* F77 ① */
 /* F42：左上返回箭頭——回動作選擇 picker */
-.exercise-head .logger-back { min-height: 40px; font-size: 22px; padding: 4px 10px; flex: 0 0 auto; }
+.exercise-head .logger-back {
+  min-width: 44px; min-height: 44px; font-size: 22px; padding: 4px 10px; flex: 0 0 auto;
+}
 .exercise-head .exercise-head-name { flex: 1; min-width: 0; }
 .last-hint {
   color: var(--text-dim);
@@ -209,6 +224,8 @@ body {
 }
 /* R10 參考休息 chip：常駐可點，循環快選值（僅本次） */
 .rest-hint-row { display: flex; justify-content: flex-end; }
+/* F77 ①：休息秒數 chip 是訓練中會反覆點的（循環 60/90/120/180） */
+.rest-hint-row .rest-hint { min-height: 44px; display: inline-flex; align-items: center; }
 
 /* 數字步進器：kg / reps */
 .steppers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: auto; }
@@ -251,8 +268,11 @@ body {
 }
 .rpe-ticks { display: flex; gap: 4px; }
 .rpe-tick {
+  /* F77 ①：五個停點是直接用手指點的（拖 slider 之外的第二條路），高度要達 44px。
+     視覺上仍是矮矮一排，靠 min-height 撐出可按範圍。 */
   flex: 1; border: 1px solid var(--card-edge); background: transparent;
-  color: var(--text-dim); border-radius: 8px; font-size: 12px; padding: 7px 0; cursor: pointer;
+  color: var(--text-dim); border-radius: 8px; font-size: 12px; padding: 7px 0;
+  min-height: 44px; cursor: pointer;
 }
 .rpe-tick.on { color: #14100a; background: var(--led); border-color: var(--led); font-weight: 700; }
 
@@ -280,7 +300,8 @@ body {
 /* F20：組數 > 2 時固定約 2 列高度、內部上下捲動——下方 steppers/主按鈕位置不被推走 */
 .done-list.scrollable { max-height: 88px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .done-row {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  /* F77 ③：兩顆圖示鈕之間至少 8px——擴大觸控區之後相鄰邊界更近，間距不能省 */
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
   color: var(--text-dim);
   font-family: var(--mono);
   font-size: 14px;
@@ -289,8 +310,10 @@ body {
 }
 .done-row .n { color: var(--text); flex: 1; }
 /* F16 行內編輯/刪除 */
+/* F77 ②：組列的編輯與刪除相鄰、後果完全不同（改一個數字 vs 刪掉整組），
+   所以這對是優先處理的目標。視覺尺寸維持小巧，靠 min-width/height 撐出 44px 可按範圍。 */
 .done-row .icon-btn {
-  flex: none; padding: 2px 8px; min-height: 32px; font-size: 15px;
+  flex: none; padding: 2px 8px; min-width: 44px; min-height: 44px; font-size: 15px;
   background: transparent; border: 1px solid var(--card-edge);
 }
 /* 編輯態：展開成 steppers 迷你表單（與記錄新組同款控制項，觸控友善） */
@@ -298,7 +321,7 @@ body {
 .done-row.editing .edit-head { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
 .done-row.editing .edit-actions { display: flex; gap: 10px; }
 .done-row.editing .edit-actions .btn { flex: 1; }
-.done-row .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
+.done-row .btn.sm { padding: 6px 10px; min-height: 44px; font-size: 14px; }
 
 /* F29：picker 底部（回首頁＋結束訓練）並排 */
 .picker-foot { display: flex; gap: 10px; }
@@ -400,7 +423,7 @@ body {
 }
 .tpl-item-move { display: flex; gap: 6px; }
 .tpl-item-move .tpl-item-del { margin-left: 6px; } /* 刪除與 ↑↓ 拉開，避免誤觸 */
-.tpl-item .chip { padding: 6px 12px; font-size: 15px; border-radius: 10px; }
+.tpl-item .chip { padding: 6px 12px; min-height: 44px; font-size: 15px; border-radius: 10px; }
 .tpl-item .chip:disabled { opacity: .3; cursor: default; }
 /* R10 參考休息列：佔滿整行 */
 .tpl-item-rest { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -455,7 +478,7 @@ body {
 /* F68：更新視窗與版號入口。視窗沿用 .modal-overlay/.modal，這裡只補內容排版。 */
 .update-modal { text-align: center; }
 .update-progress { color: var(--muted); margin: 8px 0 4px; }
-.version-tag-btn { background: none; border: none; padding: 4px 8px; cursor: pointer;
+.version-tag-btn { background: none; border: none; padding: 12px 16px; cursor: pointer;
   font: inherit; color: inherit; }
 /* 有新版時版號自己就是提示（`v67 → v68`）——回簽核拿掉了獨立的更新橫幅 */
 .version-tag-btn.has-update { color: var(--led); }
@@ -600,7 +623,7 @@ body {
 .cal-edit-modal .modal-head .ex-name { color: var(--led); font-weight: 700; }
 .cal-edit-modal .modal-head .setno { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
 .cal-edit-modal .modal-actions .cal-edit-save { flex: 1; }
-.cal-detail-row .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
+.cal-detail-row .btn.sm { padding: 6px 10px; min-height: 44px; font-size: 14px; }
 /* F19 多選批次刪除 */
 .cal-detail-row.selectable { cursor: pointer; padding-left: 8px; }
 .cal-detail-row.selectable .check { flex: none; font-size: 16px; }
@@ -764,7 +787,7 @@ body {
 }
 .cal-status.editing .edit-actions { display: flex; gap: 10px; }
 .cal-status.editing .edit-actions .btn { flex: 1; }
-.cal-status .btn.sm { padding: 6px 10px; min-height: 36px; font-size: 14px; }
+.cal-status .btn.sm { padding: 6px 10px; min-height: 44px; font-size: 14px; }
 
 /* ---------- 體重體脂（F8） ---------- */
 .body-form { display: flex; flex-direction: column; gap: 10px; }
@@ -874,7 +897,7 @@ body {
   background: var(--bg); color: var(--text);
   border: 1px solid var(--card-edge); border-radius: 6px;
 }
-.bm-row .btn.sm { flex: none; padding: 6px 10px; min-height: 34px; font-size: 13px; }
+.bm-row .btn.sm { flex: none; padding: 6px 10px; min-height: 44px; font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; }

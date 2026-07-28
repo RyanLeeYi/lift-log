@@ -1,0 +1,10 @@
+<!-- F76 ⑤：浮動視窗的暫停圖示。用 vector drawable 而非 emoji ⏸——
+     emoji 是彩色字形，tint 不到（2026-07-28 實測 setTextColor 對它無效）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M7,4h3a1,1 0 0 1 1,1v14a1,1 0 0 1 -1,1H7a1,1 0 0 1 -1,-1V5a1,1 0 0 1 1,-1z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M14,4h3a1,1 0 0 1 1,1v14a1,1 0 0 1 -1,1h-3a1,1 0 0 1 -1,-1V5a1,1 0 0 1 1,-1z" />
+</vector>
