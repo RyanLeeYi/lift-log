@@ -129,7 +129,8 @@ def verify_web(page, base: str) -> None:
         "async () => {"
         "  const rn = await import('/js/rest-notify.js');"
         "  const p = await import('/js/push.js');"
-        "  return { rn: rn.restNotifySupported(), push: p.pushSupported(), delayed: rn.restNotifyDelayed() };"
+        "  return { rn: rn.restNotifySupported(), push: p.pushSupported(),"
+        "           delayed: rn.restNotifyDelayed() };"
         "}"
     )
     check(same["rn"] == same["push"],
