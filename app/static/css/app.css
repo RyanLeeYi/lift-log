@@ -440,14 +440,13 @@ body {
 .confirm-text { color: var(--text-dim); font-size: 14px; line-height: 1.5; }
 /* F31 休息提醒開關：開啟時琥珀邊框點出狀態 */
 .push-toggle.on { border-color: var(--led); color: var(--led); }
-/* F67：更新橫幅。用 --led 的強調色讓它在首頁一眼看得到，但不是紅色警示——
-   這是好消息不是錯誤。下載中禁點，避免重複觸發。 */
-.update-banner { border-color: var(--led); color: var(--led); }
-.update-banner[disabled] { opacity: .6; }
-/* F68：更新視窗與手動檢查。視窗沿用 .modal-overlay/.modal，這裡只補內容排版。 */
+/* F68：更新視窗與版號入口。視窗沿用 .modal-overlay/.modal，這裡只補內容排版。 */
 .update-modal { text-align: center; }
 .update-progress { color: var(--muted); margin: 8px 0 4px; }
-.version-tag-btn { background: none; border: none; padding: 4px 8px; cursor: pointer; }
+.version-tag-btn { background: none; border: none; padding: 4px 8px; cursor: pointer;
+  font: inherit; color: inherit; }
+/* 有新版時版號自己就是提示（`v67 → v68`）——回簽核拿掉了獨立的更新橫幅 */
+.version-tag-btn.has-update { color: var(--led); }
 /* 手動檢查「已是最新版」的短暫提示——不佔版面高度，淡出前浮在版號上方 */
 .update-flash { text-align: center; color: var(--muted); font-size: 13px; margin-top: 4px; }
 /* F24 版本標記：小字、低調、置中，不干擾操作 */

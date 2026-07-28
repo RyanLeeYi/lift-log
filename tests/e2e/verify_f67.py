@@ -148,9 +148,13 @@ def dismiss_modal(page) -> None:
         page.wait_for_timeout(300)
 
 
-def start_update_from_banner(page) -> None:
-    """經由橫幅 → 視窗 → 立即更新，走完 F68 之後的更新路徑。"""
-    page.locator(".update-banner").click()
+def start_update_from_entry(page) -> None:
+    """經由版號入口 → 視窗 → 立即更新，走完 F68 之後的更新路徑。
+
+    F68 回簽核拿掉了獨立的更新橫幅，入口併進首頁角落的版號（`v66 → v99`）。
+    F67 ③④ 的目的（看得到更新、點了會下載安裝）不變，改的是路徑不是條文。
+    """
+    page.locator(".version-tag-btn").click()
     page.wait_for_timeout(300)
     page.get_by_role("button", name="立即更新").click()
 
@@ -174,7 +178,7 @@ def main() -> int:
             page.goto(base, wait_until="domcontentloaded")
             page.wait_for_selector("input", timeout=10_000)
             setup_and_home(page)
-            check(page.locator(".update-banner").count() == 0, "⑦ web 版首頁沒有更新橫幅")
+            check(page.locator(".version-tag-btn").count() == 0, "⑦ web 版版號不可點、無更新入口")
             check(page.evaluate(
                 "async () => (await import('/js/app-update.js')).checkForUpdate()") is None,
                 "⑦ web 版 checkForUpdate 回 null（不查、不顯示）")
@@ -185,24 +189,24 @@ def main() -> int:
             page = native(ctx.new_page(), base, current=64)
             setup_and_home(page)
             dismiss_modal(page)
-            banner = page.locator(".update-banner")
-            check(banner.count() == 1, f"③ app 版有新版時首頁顯示橫幅（{banner.count()}）")
-            text = banner.inner_text() if banner.count() else ""
-            check("v99" in text, f"③ 橫幅帶伺服器版號：{text!r}")
-            check("MB" in text, "③ 橫幅顯示下載大小")
+            entry = page.locator(".version-tag-btn.has-update")
+            check(entry.count() == 1, f"③ 有新版時首頁版號變成更新入口（{entry.count()}）")
+            text = entry.inner_text() if entry.count() else ""
+            check("v99" in text, f"③ 入口帶伺服器版號：{text!r}")
 
             # ③ 只在首頁：進到選動作畫面後不得出現（視窗已於上方收起）
             page.get_by_role("button").first.click()  # 開練
             page.wait_for_timeout(800)
-            check(page.locator(".update-banner").count() == 0,
-                  "③ 離開首頁後橫幅消失（訓練中不打斷）")
+            check(page.locator(".version-tag-btn.has-update").count() == 0,
+                  "③ 離開首頁後更新入口消失（訓練中不打斷）")
             ctx.close()
 
             # ③ 已是最新 → 不顯示
             ctx = browser.new_context(viewport=PHONE)
             page = native(ctx.new_page(), base, current=99)
             setup_and_home(page)
-            check(page.locator(".update-banner").count() == 0, "③ 版本相同時不顯示橫幅")
+            check(page.locator(".version-tag-btn.has-update").count() == 0,
+                  "③ 版本相同時版號不標更新")
             check(page.get_by_role("button", name="立即更新").count() == 0,
                   "③ 版本相同時也不會彈視窗")
             ctx.close()
@@ -212,7 +216,7 @@ def main() -> int:
             page = native(ctx.new_page(), base, current=64)
             setup_and_home(page)
             dismiss_modal(page)
-            start_update_from_banner(page)
+            start_update_from_entry(page)
             page.wait_for_timeout(1200)
             au = page.evaluate("() => window.__au")
             check(len(au["downloads"]) == 1, f"④ 觸發一次下載（{len(au['downloads'])}）")
@@ -229,7 +233,7 @@ def main() -> int:
             page = native(ctx.new_page(), base, current=64, can_install=False)
             setup_and_home(page)
             dismiss_modal(page)
-            start_update_from_banner(page)
+            start_update_from_entry(page)
             page.wait_for_timeout(1000)
             au = page.evaluate("() => window.__au")
             check(au["openedSettings"] >= 1, "⑤ 未授權時實際開啟「安裝未知應用程式」設定頁")

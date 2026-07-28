@@ -101,19 +101,28 @@ function fmtRest(remaining) {
 
 // F24：畫面角落的版本標記——手機載入哪版一眼可辨（快取過期會顯示舊版號）
 function versionTag() {
-  // F68 ⑦：app 版的版號可點＝手動檢查更新（剛出新版時不必等下次開 app）。
+  // F68 ③⑦：app 版的版號身兼三職——顯示目前版本、提示有新版（`v67 → v68`）、
+  // 以及手動檢查的入口。原本另有一條更新橫幅，2026-07-28 回簽核拿掉：
+  // 兩個入口重疊，而提示併進版號就不必多佔一行版面。
   // web 版維持純文字：那邊部署完自動到位，沒有「檢查更新」這回事。
   if (!isNativeApp()) return el("div", { class: "version-tag" }, [APP_VERSION]);
+  const hasUpdate = pendingUpdate !== null;
   return el(
     "button",
     {
-      class: "version-tag version-tag-btn",
+      class: `version-tag version-tag-btn${hasUpdate ? " has-update" : ""}`,
       onclick: () =>
         guard(async () => {
+          // 已經知道有更新就直接開窗，不必再問一次伺服器
+          if (pendingUpdate) {
+            updateModalOpen = true; // 手動開啟不受 ② 的靜音影響
+            render();
+            return;
+          }
           const update = await checkForUpdate();
           if (update) {
             pendingUpdate = update;
-            updateModalOpen = true; // 手動檢查到的更新直接開視窗，不受 ② 的靜音影響
+            updateModalOpen = true;
           } else {
             updateFlash = "已是最新版";
             setTimeout(() => {
@@ -124,7 +133,7 @@ function versionTag() {
           render();
         }),
     },
-    [APP_VERSION],
+    [hasUpdate ? `${APP_VERSION} → v${pendingUpdate.versionCode}` : APP_VERSION],
   );
 }
 
@@ -393,25 +402,6 @@ function renderHome() {
       },
       ["⚖️ 體重"],
     ),
-    // F67 ③／F68 ③：有新版才顯示，且只在首頁——logger 與其他畫面不打斷訓練。
-    // F68 起這顆是「稍後再說之後的常駐入口」，點它重新開視窗（不直接下載）。
-    ...(pendingUpdate
-      ? [
-          el(
-            "button",
-            {
-              class: "btn update-banner",
-              onclick: () => {
-                updateModalOpen = true;
-                render();
-              },
-            },
-            [
-              `⬆ 有新版 v${pendingUpdate.versionCode}（${(pendingUpdate.sizeBytes / 1048576).toFixed(1)} MB）`,
-            ],
-          ),
-        ]
-      : []),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
     // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js
     ...(restNotifySupported()

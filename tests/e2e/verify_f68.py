@@ -67,19 +67,24 @@ def main() -> int:
             dismissed = page.evaluate("() => localStorage.getItem('liftlog.updateDismissed')")
             check(dismissed == "99", f"② 記住的是版本號而非布林（{dismissed!r}）")
 
-            # ③ 關閉後首頁仍有橫幅當入口，點它可再開視窗
-            check(page.locator(".update-banner").count() == 1, "③ 關閉後橫幅仍在（常駐入口）")
-            page.locator(".update-banner").click()
+            # ③ 關閉後不留橫幅，提示與入口都併進版號
+            check(page.locator(".update-banner").count() == 0, "③ 不再有獨立的更新橫幅")
+            entry = page.locator(".version-tag-btn.has-update")
+            check(entry.count() == 1, "③ 版號標示有新版（提示與入口合一）")
+            check("v99" in entry.inner_text(),
+                  f"③ 版號顯示目標版本：{entry.inner_text()!r}")
+            entry.click()
             page.wait_for_timeout(400)
-            check(modal(page).count() == 1, "③ 點橫幅可重新開啟視窗——稍後再說不是死路")
+            check(modal(page).count() == 1, "③ 點版號可重新開啟視窗——稍後再說不是死路")
             page.get_by_role("button", name="稍後再說").click()
             page.wait_for_timeout(300)
 
             # ④ 只在首頁：進到別的畫面不得有視窗或橫幅
             page.get_by_role("button").first.click()  # 開練
             page.wait_for_timeout(900)
-            check(modal(page).count() == 0 and page.locator(".update-banner").count() == 0,
-                  "④ 離開首頁後視窗與橫幅都不出現（訓練中不打斷）")
+            check(modal(page).count() == 0
+                  and page.locator(".version-tag-btn.has-update").count() == 0,
+                  "④ 離開首頁後視窗與更新入口都不出現（訓練中不打斷）")
             ctx.close()
 
             # ② 同一版本重開 app 不再自動彈（靜音只對該版本）
@@ -88,7 +93,8 @@ def main() -> int:
             page.evaluate("() => localStorage.setItem('liftlog.updateDismissed', '99')")
             setup_and_home(page)
             check(modal(page).count() == 0, "② 同一版本已按過稍後再說 → 不再自動彈")
-            check(page.locator(".update-banner").count() == 1, "② 但橫幅仍在（還能主動更新）")
+            check(page.locator(".version-tag-btn.has-update").count() == 1,
+                  "② 但版號仍標著有新版（還能主動更新）")
 
             # ② 出現更新的版本 → 重新自動彈
             page.evaluate("() => localStorage.setItem('liftlog.updateDismissed', '70')")
@@ -102,6 +108,8 @@ def main() -> int:
             page = native(ctx.new_page(), base, current=99)
             setup_and_home(page)
             check(page.locator(".version-tag-btn").count() == 1, "⑦ app 版版號是可點的按鈕")
+            check(page.locator(".version-tag-btn.has-update").count() == 0,
+                  "⑦ 沒有更新時版號不標示（純版號）")
             page.locator(".version-tag-btn").click()
             page.wait_for_timeout(600)
             flash = page.locator(".update-flash")

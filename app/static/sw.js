@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v68"; // F68 驗證用釋出：讓 v67 有東西可更新，實測視窗流程（前端無功能變更）（改此處務必同步 state.js 的 APP_VERSION）
+const CACHE_NAME = "liftlog-shell-v69"; // F68 ③ 回簽核：拿掉更新橫幅，提示與入口併進可點的版號（v68 → v69）（改此處務必同步 state.js 的 APP_VERSION）
 const SHELL = [
   "/",
   "/css/app.css",
