@@ -1,11 +1,33 @@
 # session handoff
 
-最後更新：2026-07-28（**F61–F63、F67、F68 完成**；app 會自我更新，休息倒數在通知列）
+最後更新：2026-07-28（**F64 實作完成、卡在 ⑤-b 等 Ryan 實機回報**；休息倒數可浮在其他 app 之上）
 
 ## 現況（7/28 收工）
 
-**65/68 passing**，剩 **F64**（浮動視窗倒數，acceptance 未簽核）、F65、F66（F62 review 長出來的，未簽核）。
-線上與原始碼同為 **v73**，已部署。`release/` 有 v65–v73（自我更新的來源，取版號最大，舊檔可回退）。
+**65/68 passing**。**F64 的程式碼已完成並驗過，但 status 仍是 failing**——凍結的 acceptance ⑤-b
+明定「Samsung 的 OEM overlay 限制由 Ryan 實機回報，不由實作者判 pass」，那條還沒有證據。
+其餘 ①②③④⑤⑥⑦ 全部 pass（自動化由 Codex 跨模型跑、裝置層由 acceptance-verifier 在模擬器實測）。
+另剩 F65、F66（F62 review 長出來的，acceptance 未簽核）。
+線上與原始碼同為 **v75**，已部署。`release/` 有 v65–v73、v75（自我更新的來源，取版號最大，舊檔可回退）。
+
+### 下一步（Ryan 回來要做的第一件事）
+
+裝 `lift-log-v75-F64.apk`（Google Drive，或在 app 內點版號更新），到「浮動計時」按開 →
+授權「顯示在其他應用程式上層」→ 記一組 → 切去別的 app 看倒數還在不在。
+**回報結果就能結掉 ⑤-b**：能看到＝F64 改 passing；被 Samsung 擋掉＝那是新 feature（引導加入電池／浮動視窗白名單），
+不是把 acceptance 改鬆。
+
+### F64 完成（7/28 深夜）：休息倒數浮到其他 app 之上
+
+`RestOverlay.java` 用 `TYPE_APPLICATION_OVERLAY` 畫一顆可拖曳的小藥丸，秒數由 `RestTimerService`
+既有的原生 CountDownTimer 推——**不是**由 WebView 每秒 call 過去（overlay 的使用情境必然是背景，
+JS 計時器那時已被節流）。overlay 與 F63 的通知列倒數**並存**：關掉 overlay 不會停掉倒數。
+
+兩個踩過的坑，都與 F63 ③ 同源（狀態的握把放錯層）：
+- **view 握把必須是 static**：倒數歸零後服務已 stopSelf，後續 ACTION_STOP 會建立新實例，
+  握把放實例欄位就關不掉舊 view
+- **Codex review P2**：按 ✕ 關掉後改休息秒數 → 前端重下 ACTION_START → overlay 自己復活。
+  修法是 `dismissed` 旗標，服務停止／歸零時清除（下一輪休息才重新顯示）
 
 **Android app 現況**：release-signed APK（`lift-log-v64-F62.apk`）已上 Google Drive；
 休息倒數在手機端排程，伺服器關掉／飛航模式也照響。
