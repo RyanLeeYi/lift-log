@@ -3,11 +3,12 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v64"; // F62：休息提醒改走 rest-notify 分流＋review 修正（前景 refresh、精確鬧鐘授權入口）（改此處務必同步 state.js 的 APP_VERSION）
+const CACHE_NAME = "liftlog-shell-v65"; // F67：app 內自我更新（新增 app-update.js）（改此處務必同步 state.js 的 APP_VERSION）
 const SHELL = [
   "/",
   "/css/app.css",
   "/js/api.js",
+  "/js/app-update.js",
   "/js/app.js",
   "/js/body.js",
   "/js/calendar.js",

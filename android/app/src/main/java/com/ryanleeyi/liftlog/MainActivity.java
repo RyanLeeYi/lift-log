@@ -10,6 +10,8 @@ public class MainActivity extends BridgeActivity {
         // F62：自寫 plugin，回答「系統層是否允許本 app 發通知」——
         // Capacitor 的 checkPermissions 在 Android 12 以下答不了這件事（見 NotifyStatusPlugin）
         registerPlugin(NotifyStatusPlugin.class);
+        // F67：自我更新（查版本、下載 APK、喚起系統安裝器）
+        registerPlugin(AppUpdatePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

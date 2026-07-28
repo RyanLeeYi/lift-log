@@ -14,3 +14,6 @@ node_modules/
 *.jks
 *.keystore
 keystore.properties
+
+# F67：APK 發佈目錄（自我更新的來源）。二進位檔不進版控，內容由建置流程放入
+release/

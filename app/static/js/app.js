@@ -5,6 +5,7 @@ import { api, ApiError, getToken, setToken } from "./api.js";
 import { captureBodyScroll, openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
+import { checkForUpdate, downloadAndInstall } from "./app-update.js";
 import { el, rpePicker, stepper } from "./dom.js";
 import { isNativeApp } from "./env.js";
 import {
@@ -64,6 +65,10 @@ let wakeLockPending = false; // request 進行中——完成時要重驗畫面�
 let restAlerted = false; // 本段休息是否已提醒過；調長目標後重新武裝
 // F16/F19 done-list 行內編輯/單擊刪除（key＝已同步組的 id，未同步組退回 client_uuid）
 let editDraft = null; // {key, weight, reps, rpe} 正在行內編輯的草稿
+// F67：可用的更新（null＝沒有或還沒查完）與下載進度（0–1，null＝未在下載）。
+// 只影響首頁顯示，訓練流程完全不碰。
+let pendingUpdate = null;
+let updateProgress = null;
 
 function setRowKey(s) {
   return s.id != null ? `id:${s.id}` : `uuid:${s.client_uuid}`;
@@ -241,6 +246,7 @@ function renderSetup() {
     await loadExercises(""); // 驗證 token 可用，順便預載動作庫
     state.screen = "home";
     render();
+    runUpdateCheck(); // F67：剛設好 token 才查得動——開機那次在 setup 畫面必然 401
   };
   return el("section", { class: "screen setup" }, [
     el("div", { class: "mark" }, ["🏋️"]),
@@ -356,6 +362,39 @@ function renderHome() {
       },
       ["⚖️ 體重"],
     ),
+    // F67 ③：有新版才顯示，且只在首頁——logger 與其他畫面不打斷訓練
+    ...(pendingUpdate
+      ? [
+          el(
+            "button",
+            {
+              class: "btn update-banner",
+              // 照專案慣例用條件展開——`disabled: false` 在 HTML 裡仍然是停用（有屬性就算數），
+              // 會讓橫幅永遠點不下去
+              ...(updateProgress !== null ? { disabled: "" } : {}),
+              onclick: () =>
+                guard(async () => {
+                  updateProgress = 0;
+                  render();
+                  const res = await downloadAndInstall(pendingUpdate, (ratio) => {
+                    updateProgress = ratio;
+                    const bar = document.querySelector(".update-banner");
+                    // 就地更新文字：整頁重繪會在下載期間狂閃
+                    if (bar) bar.textContent = `⬇ 下載中 ${Math.round(ratio * 100)}%`;
+                  });
+                  updateProgress = null;
+                  if (!res.ok) showError(res.reason);
+                  else render();
+                }),
+            },
+            [
+              updateProgress !== null
+                ? `⬇ 下載中 ${Math.round(updateProgress * 100)}%`
+                : `⬆ 有新版 v${pendingUpdate.versionCode}（${(pendingUpdate.sizeBytes / 1048576).toFixed(1)} MB）——點此更新`,
+            ],
+          ),
+        ]
+      : []),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
     // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js
     ...(restNotifySupported()
@@ -1232,6 +1271,16 @@ function render() {
   syncWakeLock(); // fire-and-forget：logger 畫面取得、其他畫面釋放
 }
 
+// F67：查有沒有新版。失敗一律當作沒有更新（checkForUpdate 內部吞掉），
+// 所以不需要 catch，也不會因為伺服器沒發佈版本就在畫面上留下錯誤。
+function runUpdateCheck() {
+  checkForUpdate().then((update) => {
+    if (!update) return;
+    pendingUpdate = update;
+    if (state.screen === "home") render();
+  });
+}
+
 // ---------- 啟動 ----------
 
 // F61：app 版不註冊 SW——資產已打包在 APK 內，殼快取毫無用處，反而多一層可能供出舊資產的來源；
@@ -1291,6 +1340,9 @@ restoreActiveWorkout();
 refreshRestNotifyState().then(() => {
   if (state.screen === "home") render();
 });
+// F67：查有沒有新版（見上方 runUpdateCheck 的說明）。只在已有 token 時查——
+// setup 畫面查一定 401，而且那次失敗會讓首次設定的人到下次開 app 才看得到更新。
+if (getToken()) runUpdateCheck();
 if (!getToken()) {
   state.screen = "setup";
   render();

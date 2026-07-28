@@ -17,6 +17,9 @@ class Settings(BaseSettings):
         default="./liftlog.db",
         validation_alias=AliasChoices("LIFTLOG_DB", "db_path"),
     )
+    # F67 app 自我更新：release APK 的存放目錄。build 完把 lift-log-v<N>.apk 放進來，
+    # 伺服器就會把它當成最新版供 app 下載（目錄不存在＝沒有可更新的版本，不是錯誤）。
+    release_dir: str = "./release"
     # F31 Web Push（休息結束通知）：缺任一則推播功能停用、其餘照常運作
     vapid_private_key: str = ""  # PKCS8 DER 的 base64url（.env 單行）
     vapid_public_key: str = ""  # 未壓縮公鑰點 base64url＝前端 applicationServerKey

@@ -6,7 +6,16 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from app.api import body_metrics, daily_status, exercises, push, stats, templates, workouts
+from app.api import (
+    app_release,
+    body_metrics,
+    daily_status,
+    exercises,
+    push,
+    stats,
+    templates,
+    workouts,
+)
 from app.config import Settings
 from app.db import make_engine
 from app.errors import register_error_handlers
@@ -82,6 +91,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(body_metrics.router)
     app.include_router(daily_status.router)
     app.include_router(push.router)
+    app.include_router(app_release.router)  # F67：app 版自我更新的版本查詢與 APK 供檔
     app.mount(MCP_MOUNT, mcp_app)
     # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/* 與 /mcp
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

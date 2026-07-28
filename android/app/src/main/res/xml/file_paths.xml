@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!-- F67：下載回來的 APK 放這裡，交給系統安裝器需要透過 FileProvider 授權讀取 -->
+    <external-files-path name="updates" path="updates/" />
 </paths>

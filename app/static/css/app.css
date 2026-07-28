@@ -440,6 +440,10 @@ body {
 .confirm-text { color: var(--text-dim); font-size: 14px; line-height: 1.5; }
 /* F31 休息提醒開關：開啟時琥珀邊框點出狀態 */
 .push-toggle.on { border-color: var(--led); color: var(--led); }
+/* F67：更新橫幅。用 --led 的強調色讓它在首頁一眼看得到，但不是紅色警示——
+   這是好消息不是錯誤。下載中禁點，避免重複觸發。 */
+.update-banner { border-color: var(--led); color: var(--led); }
+.update-banner[disabled] { opacity: .6; }
 /* F24 版本標記：小字、低調、置中，不干擾操作 */
 .version-tag {
   text-align: center;

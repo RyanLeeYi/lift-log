@@ -90,6 +90,8 @@ export const api = {
   listDailyStatus: (start, end) => request("GET", `/api/daily-status?start=${start}&end=${end}`),
   logDailyStatus: (payload) => request("POST", "/api/daily-status", payload), // F18 編輯＝同日覆蓋
   deleteDailyStatus: (dateIso) => request("DELETE", `/api/daily-status/${dateIso}`), // F18 硬刪
+  // F67：app 版自我更新——伺服器上最新的 APK 版本（沒有發佈版本時回 404）
+  appLatest: () => request("GET", "/api/app/latest"),
   // F31 Web Push（休息結束通知）
   pushPublicKey: () => request("GET", "/api/push/public-key"),
   pushSubscribe: (sub) => request("POST", "/api/push/subscribe", sub),

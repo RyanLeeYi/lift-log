@@ -146,15 +146,26 @@ Chrome 開 `chrome://inspect` 也能直接對真機的 WebView 下中斷點（de
 
 ---
 
-## 改版流程（app 版沒有自動更新）
+## 改版流程
 
-web 版靠 sw.js 換版自動到位（F13/F14/F24），**app 版沒有這條鏈**：
+web 版靠 sw.js 換版自動到位（F13/F14/F24）。app 版沒有商店的更新鏈，改由 **F67 的自我更新**接手：
 
 1. 改 `app/static/`
-2. 升版號（`sw.js` 的 `CACHE_NAME` ＋ `state.js` 的 `APP_VERSION` 兩處）
+2. 升版號（`sw.js` 的 `CACHE_NAME` ＋ `state.js` 的 `APP_VERSION` 兩處）。
+   **`versionCode` 會自動跟著 `APP_VERSION` 走**（v65 → 65），不要手動改 `build.gradle`——
+   讀不到就直接讓 build 失敗，寧可現在爆，也不要產出一顆更新不了的 APK
 3. `npx cap sync android`
 4. `.\android\gradlew.bat -p android assembleRelease`
-5. `adb install -r android\app\build\outputs\apk\release\app-release.apk`
+5. **放進發佈目錄**讓 app 自己抓得到：
+   `Copy-Item android\app\build\outputs\apk\release\app-release.apk release\lift-log-v65.apk`
+6. 手機上開 app → 首頁出現「⬆ 有新版 v65」→ 點它就會下載並喚起安裝器
+   （第一次會要求允許「安裝未知應用程式」，app 會直接把你帶到那個設定頁）
+
+`release/` 是自我更新的唯一來源：`GET /api/app/latest` 取目錄裡**版號最大**的 APK。
+檔名不符 `lift-log-v<數字>.apk` 會被忽略；舊檔可以留著（取最大值而非最新 mtime，方便回退）。
+
+接著線時 `adb install -r android\app\build\outputs\apk\release\app-release.apk` 仍然更快——
+F67 是給不在電腦旁的時候用的。
 
 App 只有 API 打向公開站，**後端改版不需要重出 APK**。
 

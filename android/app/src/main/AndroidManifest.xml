@@ -45,4 +45,8 @@
     <!-- Android 12 起沒有這條，排定的通知不保證準時（系統會為了省電延後觸發）。
          休息倒數差幾十秒就失去意義，所以這條是 F62 ③ 的必要條件 -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- F67 自我更新：下載回來的 APK 要交給系統安裝器。宣告不等於拿到——
+         Android 8+ 使用者還要逐 app 允許「安裝未知應用程式」，程式內以 canRequestPackageInstalls() 檢查 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
