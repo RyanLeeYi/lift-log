@@ -76,6 +76,7 @@ let pendingUpdate = null;
 let updateProgress = null;
 let updateModalOpen = false; // F68：視窗開著（自動彈或由橫幅／版號點開）
 let updateFlash = null; // F68 ⑦：手動檢查後的短暫提示（「已是最新版」）
+let updateError = null; // F68 ⑤：更新失敗的訊息，顯示在視窗內（不是關窗再用頁面 banner）
 
 function setRowKey(s) {
   return s.id != null ? `id:${s.id}` : `uuid:${s.client_uuid}`;
@@ -470,8 +471,10 @@ function updateModal() {
           });
           updateProgress = null;
           if (!res.ok) {
-            updateModalOpen = false; // 讓錯誤訊息看得到（error-banner 在視窗底下）
-            showError(res.reason);
+            // ⑤：失敗訊息留在視窗內。原本關窗改用頁面層級 error-banner，
+            // 驗收判定與條文不符（2026-07-28）——關掉視窗等於把使用者踢出他正在做的事
+            updateError = res.reason;
+            render();
             return;
           }
           render();
@@ -488,6 +491,7 @@ function updateModal() {
         if (e.target === e.currentTarget && !downloading) {
           dismissUpdate(pendingUpdate.versionCode);
           updateModalOpen = false;
+          updateError = null;
           render();
         }
       },
@@ -495,6 +499,7 @@ function updateModal() {
     [
       el("div", { class: "modal update-modal" }, [
         el("div", { class: "modal-head" }, [`有新版 v${pendingUpdate.versionCode}`]),
+        ...(updateError ? [el("div", { class: "error-banner" }, [updateError])] : []),
         el("div", { class: "update-progress" }, [
           downloading ? `下載中 ${Math.round(updateProgress * 100)}%` : `檔案大小 ${mb} MB`,
         ]),
@@ -509,6 +514,7 @@ function updateModal() {
                 // ② 記住的是版號：出更新的版本時要重新提醒
                 dismissUpdate(pendingUpdate.versionCode);
                 updateModalOpen = false;
+                updateError = null; // 下次開窗不要看到上一輪的錯誤
                 render();
               },
             },

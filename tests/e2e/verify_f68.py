@@ -128,6 +128,25 @@ def main() -> int:
             check(modal(page).count() == 1, "⑦ 手動檢查到新版會開視窗，不受稍後再說的靜音影響")
             ctx.close()
 
+            # ⑤ 失敗訊息必須留在視窗內（2026-07-28 驗收抓到：原實作關窗改用頁面 banner，
+            # 而條文寫的是「呈現在視窗內」。這條當時完全沒有測試覆蓋，24/24 全綠也沒攔到）
+            ctx = browser.new_context(viewport=PHONE)
+            page = native(ctx.new_page(), base, current=64, can_install=False)
+            setup_and_home(page)
+            check(modal(page).count() == 1, "（前提）視窗已自動彈出")
+            page.get_by_role("button", name="立即更新").click()
+            page.wait_for_timeout(900)
+            check(modal(page).count() == 1,
+                  "⑤ 下載失敗後視窗**不關閉**（使用者不被踢出當下的動作）")
+            in_modal = page.locator(".update-modal .error-banner")
+            check(in_modal.count() == 1,
+                  f"⑤ 失敗訊息呈現在視窗內（視窗內 error-banner {in_modal.count()} 個）")
+            check("設定" in (in_modal.inner_text() if in_modal.count() else ""),
+                  f"⑤ 訊息可辨識：{in_modal.inner_text() if in_modal.count() else '(無)'}")
+            check(page.locator(".update-progress").count() == 1,
+                  "⑤ 進度區塊仍在視窗內（回到「檔案大小」狀態，可重試）")
+            ctx.close()
+
             # ⑧ web 版：不彈視窗、版號不可點
             ctx = browser.new_context(viewport=PHONE)
             page = ctx.new_page()
