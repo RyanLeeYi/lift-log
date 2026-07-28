@@ -1,6 +1,33 @@
 # session handoff
 
-最後更新：2026-07-28（**F64／F69／F70／F71／F72／F73 完成**；鬧鐘響時停止鈕會變色指路）
+最後更新：2026-07-28（**UI/UX 審視修正 F74–F77 完成**；圖示全面向量化、對比與觸控目標達標）
+
+## 現況（7/28 UI 稽核後）
+
+**75/77 passing**，剩 F65、F66（acceptance 未簽核）。線上與原始碼同為 **v81**，已部署；
+`lift-log-v81-UI.apk` 已上 Google Drive。
+
+### 這輪的來源：ui-ux-pro-max skill
+
+裝在 `~/.claude/skills/ui-ux-pro-max`（原始碼 clone 在 `~/.claude/vendor/`，MIT）。
+用它審視全 app 後開了四條：
+
+- **F74**：浮動視窗按鈕 48dp 觸控區 ＋ 8dp 間距。原本約 29dp——**濕手在健身房按錯
+  ✕（收起）和 ⏹（結束休息）後果完全不同**
+- **F75**：兩個 token 對比不合格。`--led-dim` 2.86→5.92（它用在 12px 的 REST 標籤，
+  小字加低對比最糟）、`--card-edge` 1.39→3.89（明亮環境看不見卡片邊界）
+- **F76**：結構性 emoji 全面改向量。web 用 `app/static/js/icons.js`（Lucide 路徑內嵌、
+  `currentColor`、線寬統一），原生用 4 個 vector drawable + tint。
+  **新模組要記得列進 `sw.js` 的 SHELL**——專案既有測試會抓（離線時載不到）
+- **F77**：所有按鈕觸控區 ≥44px。**用 Playwright 量 boundingBox 才抓到三處 CSS 看不出來的**：
+  RPE 五個停點 68×32、休息秒數 chip 110×40、動作表現入口 48×40
+
+**副作用**：圖示換掉後按鈕的無障礙名稱從「✓ 完成這組」變成「完成這組」，
+verify_f70/f71/f73 的選擇器要跟著改；`name="繼續"` 還會同時命中「繼續下一組」
+（get_by_role 是子字串比對），已收斂到 `.rest-controls` 範圍內。
+
+**沒照做的一項**：skill 建議字型換 Barlow Condensed。現行系統字 ＋ 等寬數字在手機上
+載入快、數字對齊好，換 Google Fonts 多一次網路請求且離線 fallback 難看——維持原樣。
 
 ## 現況（7/28 深夜四度收工）
 
