@@ -1,8 +1,30 @@
 # session handoff
 
-最後更新：2026-07-28（**F64 實作完成、卡在 ⑤-b 等 Ryan 實機回報**；休息倒數可浮在其他 app 之上）
+最後更新：2026-07-28（**F64／F69／F70 完成**；浮動計時只在看不到 app 內倒數時出現，休息跨畫面存活）
 
-## 現況（7/28 收工）
+## 現況（7/28 深夜收工）
+
+**68/70 passing**，剩 F65、F66（acceptance 未簽核）。線上與原始碼同為 **v77**，已部署；
+`lift-log-v77-F69-F70.apk` 已上 Google Drive。
+
+### F69／F70：浮動計時的最終行為
+
+- **F69**：浮動視窗只在「看不到 app 內 REST 卡片」時出現——切出 app、鎖螢幕、或在 app 內切到別的頁面。
+  規則收斂在 `RestOverlay.shouldShow()` 一處；app 前不前景由 `AppForegroundTracker`
+  （ActivityLifecycleCallbacks）判定，**不用** WebView 的 visibilitychange（背景會被節流）。
+- **F70**：離開計時頁不再取消休息。只有「繼續下一組」「結束訓練」「401 登出」會結束休息。
+  倒數目標在休息開始時快照（`state.restTargetSeconds`），否則換動作後基準會跟著新動作的參考值跳掉。
+
+**F70 是驗收 F69 時長出來的**：F69 凍結的 ① 寫了「app 內切頁 → 浮動視窗出現」，
+但實測發現離開計時頁本來就會 `stopRestTimer()`——那個狀態根本不可達。回報後 Ryan 決定改行為，
+另立 F70 而不是把 acceptance 改鬆。
+
+**裝置實測抓到、E2E 測不到的 crash**：Capacitor 的 plugin 方法跑在 `CapacitorPlugins` 執行緒，
+F69 從那裡建立 overlay 的 view，之後服務的 `CountDownTimer.onTick` 在 main thread 更新它 →
+`CalledFromWrongThreadException` 直接閃退。修法是 `RestOverlay` 所有進入點經 `onMain()`
+繞回 main looper。**碰 view 的原生程式碼一律要問「我現在在哪條執行緒」**。
+
+## 舊現況（7/28 稍早）
 
 **65/68 passing**。**F64 的程式碼已完成並驗過，但 status 仍是 failing**——凍結的 acceptance ⑤-b
 明定「Samsung 的 OEM overlay 限制由 Ryan 實機回報，不由實作者判 pass」，那條還沒有證據。
