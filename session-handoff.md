@@ -1,23 +1,62 @@
 # session handoff
 
-最後更新：2026-07-27 晚場（**F61 完成並驗收通過**，Android app 版可安裝可用）
+最後更新：2026-07-28（**F61＋F62 完成並驗收通過**，app 版休息提醒改為手機端本機通知）
 
-## 現況（7/27 晚場收工）
+## 現況（7/28 收工）
 
-**61/64 passing**，剩 F62–F64（Android 通知三階段，**acceptance 都還沒簽核凍結**）。
-線上 **v62 已部署**（本場為了讓 app 版的跨域請求過 CORS，restart 了 lift-log 服務）。
+**62/66 passing**，剩 F63、F64（通知階段 3/4）與 F65、F66（F62 review 長出來的），
+**四條的 acceptance 都還沒簽核凍結**。線上 web 版 **v62**，原始碼已到 **v64**（F62 動了 `app/static/`，
+web 行為不變但版號升了兩版，下次部署要一起上）。
 
-**Android app 已可用**：release-signed APK 裝在 Ryan 的 Galaxy Note 10+（SM-N9750, Android 12）上，
-完整流程（設 token → 記一組 → 日曆看得到）真機跑通。
+**Android app 現況**：release-signed APK（`lift-log-v64-F62.apk`）已上 Google Drive；
+休息倒數在手機端排程，伺服器關掉／飛航模式也照響。
 
 ### 下一場開場
 
-F62 動工前**先逐條走 acceptance 再簽核**——F61 這場證明了這一步的價值（①–⑦ 走完變 ①–⑨）。
-F62 的既有草稿寫的是「app 版走本機通知、web 版維持 F31 Web Push，同一份前端兩條路徑」，
-而 F61 已經把 `pushSupported()` 在 app 版關掉了，草稿的 ④ 要據此重寫。
+1. **先部署**：線上還是 v62，原始碼 v64（`mission-control restart lift-log`）
+2. F63 動工前**先逐條走 acceptance 再簽核**——F61／F62 兩場都證明了這步會長出新條目
+3. **Codex 額度用盡到 8/2 04:04 UTC**（7d 96%、credits 0）。這段期間 review 與驗收只能用同模型
+   fresh context，獨立性較弱。F62 的 review 與驗收都是這樣跑的，想補跨模型審就是 8/2 之後的事
 
 **mobile-mcp 已註冊**（user scope，`npx -y @mobilenext/mobile-mcp@latest`）：手機接著時可直接截圖／點擊
-驅動真機驗證，F62–F64 都會用到。手機連線的坑見下方。
+驅動真機驗證。手機連線的坑見下方。**Android 16 模擬器（AVD `Pixel_9`）也可用**——
+Ryan 遠端時手機是圖形鎖無法解鎖，模擬器是唯一能互動的裝置，且能驗到 Android 13+ 的權限路徑。
+
+### F62（7/28 完成）：休息提醒改走手機端本機通知
+
+**做了什麼**：新增 `js/rest-notify.js` 當統一入口——web 走 F31 Web Push、app 走
+`@capacitor/local-notifications`；分流只在這個檔案發生，`app.js` 只認一個入口。
+app 版補上自己的通知開關（F61 之後原生殼原本沒有任何通知入口）。
+Manifest 加 `POST_NOTIFICATIONS` 與 `SCHEDULE_EXACT_ALARM`。
+
+**真機／模擬器實測**：飛航模式＋鎖屏照響（Ryan 隨身手機）；Android 16 模擬器上
+倒數歸零到通知出現差 **5 毫秒**（精確鬧鐘 `window=0`、螢幕關閉）。
+
+**這場最重要的教訓——真機抓到 E2E 抓不到的 bug**：
+出現過「開關顯示開、通知被系統丟掉」（`NotificationRecord` 有進去、`appops POST_NOTIFICATION: ignore`）。
+**假 plugin 的 E2E 永遠抓不到**，因為假 plugin 是照實作者對規格的理解寫的——我誤讀了
+`checkPermissions()` 的語意，假 plugin 就跟著誤讀，測試自然全綠。與 F36「測試編碼了同一個 bug」同族，
+這次換成「模擬物件編碼了同一個誤解」。**凡是用假物件替身的 E2E，都要問一句：它有沒有可能只是複製了我的誤解？**
+
+**根因我第一次講錯了，值得記著**：`checkPermissions()` 在 Android 13 以下**會**查 `areNotificationsEnabled()`，
+真正查不到系統開關的是 13+ 讀 `POST_NOTIFICATIONS` 那條。症狀屬實、修正方向也對（改用 `areEnabled()` 當
+唯一事實來源），但敘述錯誤。**觀察到症狀不等於找到根因**。
+
+**review（同模型 fresh context）抓到 1 HIGH + 4 MEDIUM，全部成立**：
+- HIGH：原生殼切回前景**不重載頁面**，權限 cache 從開機起可陳舊 → ⑤ 的靜默失敗會從
+  「去系統設定改完再切回來」這條路復活。已掛 `visibilitychange` refresh
+- MEDIUM：自寫 plugin 查不到時**靜默退回** `checkPermissions()`＝把舊 bug 放回來且畫面無跡象
+- MEDIUM：精確鬧鐘只在按鈕寫「可能延遲」卻**沒有出路** → 改成可點擊直接開系統授權頁
+- MEDIUM ×2 → 列為 F65／F66，不在 F62 裡順手做掉
+
+**Android 版本差異（你手機驗不到，換手機會遇到）**：Android 12 安裝即自動授予精確鬧鐘；
+**13+ 不再自動授予**，要手動開「鬧鐘與提醒」，未開時按鈕顯示「開（可能延遲，點此修正）」。
+
+### 我在真機測試上犯過的兩個錯（下次先自檢）
+
+1. **盲點座標**：鍵盤彈出會推移版面，照舊座標點下去會打進鍵盤區、把雜字元灌進輸入框（結果是 401）
+2. **沒先確認狀態就操作**：重新授權後開關**本來就已恢復成開**，我又點一次把它關掉，
+   然後把「沒收到通知」誤判成 bug。差點寫成實作缺陷回報
 
 ### Android 工具鏈現況（都已設好，不必重做）
 
