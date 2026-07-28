@@ -63,9 +63,13 @@ def start_server(port: int, db: Path) -> subprocess.Popen:
 
 # 假 plugin：把每次呼叫記進 window.__ln，讓測試斷言參數。
 # display 由 window.__perm 控制，才能同時驗「已授權」與「被拒」兩條路。
+#
+# `sysOn` 模擬「系統層通知開關」——2026-07-28 真機抓到的坑：Android 13 以下
+# checkPermissions() 一律回 granted，即使使用者在系統設定關掉通知。所以測試要能讓
+# perm=granted 與 sysOn=false 同時成立，那正是當時靜默失敗的組合。
 FAKE_PLUGIN = """
-(perm, exact) => {
-  window.__ln = { schedule: [], cancel: [], requested: 0 };
+(perm, exact, sysOn) => {
+  window.__ln = { schedule: [], cancel: [], requested: 0, openedSettings: 0 };
   window.Capacitor = {
     isNativePlatform: () => true,
     getPlatform: () => 'android',
@@ -76,6 +80,10 @@ FAKE_PLUGIN = """
         checkExactNotificationSetting: async () => ({ exact_alarm: exact }),
         schedule: async (opts) => { window.__ln.schedule.push(opts); },
         cancel: async (opts) => { window.__ln.cancel.push(opts); },
+      },
+      NotifyStatus: {
+        enabled: async () => ({ enabled: sysOn }),
+        openSettings: async () => { window.__ln.openedSettings += 1; },
       },
     },
   };
@@ -131,8 +139,9 @@ def verify_web(page, base: str) -> None:
           "⑦ web 版沒有 Capacitor bridge（分流判定的前提成立）")
 
 
-def verify_native(page, base: str, perm: str, exact: str) -> dict:
-    page.add_init_script(FAKE_PLUGIN.strip().join(["(", f")({perm!r}, {exact!r})"]))
+def verify_native(page, base: str, perm: str, exact: str, sys_on: bool = True) -> dict:
+    args = f"({perm!r}, {exact!r}, {str(sys_on).lower()})"
+    page.add_init_script(FAKE_PLUGIN.strip().join(["(", f"){args}"]))
     page.goto(base, wait_until="domcontentloaded")
     page.wait_for_selector("input", timeout=10_000)
     return page.evaluate(
@@ -207,6 +216,19 @@ def main() -> int:
             c = verify_native(ctx.new_page(), base, "granted", "denied")
             ctx.close()
             check(c["delayed"] is True, "③ 精確鬧鐘被關時 restNotifyDelayed 為 true（UI 會標示）")
+
+            # 情境 D（2026-07-28 真機抓到的回歸）：checkPermissions 說 granted，
+            # 但使用者在系統設定關掉了通知。舊版會顯示「開」然後靜默失敗。
+            ctx = browser.new_context(viewport=PHONE)
+            dd = verify_native(ctx.new_page(), base, "granted", "granted", sys_on=False)
+            ctx.close()
+            check(dd["after"] is False,
+                  "⑤ 系統關閉通知時開關不會顯示成「開」（真機抓到的靜默失敗，已修）")
+            check(dd["res"]["ok"] is False, "⑤ 此情境 enableRestNotify 回 ok=false")
+            check(dd["ln"]["openedSettings"] >= 1,
+                  "⑤ 引導不只一句話——實際開啟系統通知設定頁")
+            check(len(dd["ln"]["schedule"]) == 0,
+                  "⑤ 系統關閉通知時不排程（排了也只會被系統丟掉）")
 
             browser.close()
     finally:

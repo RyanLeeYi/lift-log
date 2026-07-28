@@ -13,6 +13,37 @@ function plugin() {
   return globalThis.Capacitor?.Plugins?.LocalNotifications ?? null;
 }
 
+// F62 修正（2026-07-28 真機抓到）：`LocalNotifications.checkPermissions()` 在 Android 13 以下
+// **一律回 granted**，看不到「使用者在系統設定把通知關掉」。那時 app 照樣排程、系統照樣丟掉
+// （appops POST_NOTIFICATION: ignore），開關卻顯示「開」＝⑤ 禁止的靜默失敗。
+// NotifyStatusPlugin 直接問 areNotificationsEnabled()，兩個版本區間都準。
+function statusPlugin() {
+  return globalThis.Capacitor?.Plugins?.NotifyStatus ?? null;
+}
+
+// 系統層是否真的允許發通知。沒有自寫 plugin 的舊 APK 回 null（呼叫端退回 checkPermissions）。
+async function systemNotificationsEnabled() {
+  const api = statusPlugin();
+  if (!api) return null;
+  try {
+    const res = await api.enabled();
+    return Boolean(res?.enabled);
+  } catch {
+    return null;
+  }
+}
+
+// ⑤ 的「明確引導」不能只有一句話——把使用者送到該去的設定頁。
+export async function openNativeNotifySettings() {
+  const api = statusPlugin();
+  if (!api) return;
+  try {
+    await api.openSettings();
+  } catch {
+    /* 開不了設定頁不致命，文案已說明路徑 */
+  }
+}
+
 export function nativeNotifyAvailable() {
   return plugin() !== null;
 }
@@ -42,6 +73,9 @@ export async function refreshNativeNotifyState() {
   } catch {
     granted = false;
   }
+  // 系統層的通知開關是最終否決權：Android 13+ 兩者會一致，12 以下只有這個問得到真話
+  const systemOn = await systemNotificationsEnabled();
+  if (systemOn !== null) granted = granted && systemOn;
   try {
     // Android 12+ 專有；舊版會拋錯，視同不受限
     const setting = await api.checkExactNotificationSetting();
@@ -66,8 +100,10 @@ export async function enableNativeNotify() {
   }
   await refreshNativeNotifyState();
   if (!granted || !cache.granted) {
-    // Android 12 不會跳授權框，走到這裡代表使用者在系統設定關掉了通知
-    return { ok: false, reason: "通知被關閉——到「設定 → 應用程式 → lift-log → 通知」開啟" };
+    // Android 12 不會跳授權框，走到這裡代表使用者在系統設定關掉了通知 →
+    // 直接把他送到設定頁，不要只丟一句話（⑤ 的「明確引導、不靜默失敗」）
+    await openNativeNotifySettings();
+    return { ok: false, reason: "通知被系統關閉——已為你開啟設定頁，打開後回來再按一次" };
   }
   localStorage.setItem(FLAG, "1");
   return { ok: true };
