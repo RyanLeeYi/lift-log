@@ -66,4 +66,9 @@
     <!-- Android 14+ 要求依型別各自宣告權限。選 specialUse 而非 shortService：
          後者上限 3 分鐘，休息臨時調長就會被系統斷掉（2026-07-28 簽核時決定） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- F64 浮動計時視窗。Android 6+ 這是「特殊權限」：宣告了也不會自動取得，
+         使用者要在「顯示在其他應用程式上層」逐 app 手動開，程式內以 canDrawOverlays() 檢查。
+         Play Store 對此權限審查嚴格——本專案採 sideload，不受影響（README 有記） -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 </manifest>

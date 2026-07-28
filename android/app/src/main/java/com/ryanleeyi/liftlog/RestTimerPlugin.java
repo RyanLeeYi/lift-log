@@ -1,6 +1,9 @@
 package com.ryanleeyi.liftlog;
 
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 
 import androidx.core.app.NotificationManagerCompat;
 
@@ -30,6 +33,35 @@ public class RestTimerPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /** F64 ②：overlay 是「特殊權限」，宣告了也要使用者逐 app 手動開，前端據此顯示開關狀態。 */
+    @PluginMethod
+    public void overlayPermitted(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("granted", RestOverlay.permitted(getContext()));
+        call.resolve(result);
+    }
+
+    /**
+     * F64 ②：把使用者送到系統的「顯示在其他應用程式上層」授權頁。
+     *
+     * <p>不等待結果——這個設定頁沒有回傳值，使用者授權後回到 app 再按一次開關即可
+     * （與 F62 通知授權的處置一致：不猜、以下次查詢的實際狀態為準）。
+     */
+    @PluginMethod
+    public void requestOverlayPermission(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        } catch (Exception e) {
+            // 少數 ROM 沒有這個設定頁：讓前端知道，文案才不會叫人去一個開不了的地方
+            call.reject("開不了浮動視窗授權頁：" + e.getMessage());
+            return;
+        }
+        call.resolve();
+    }
+
     @PluginMethod
     public void start(PluginCall call) {
         Integer seconds = call.getInt("seconds");
@@ -37,8 +69,9 @@ public class RestTimerPlugin extends Plugin {
             call.reject("start 需要正整數的 seconds");
             return;
         }
+        boolean overlay = Boolean.TRUE.equals(call.getBoolean("overlay", false));
         try {
-            RestTimerService.start(getContext(), seconds);
+            RestTimerService.start(getContext(), seconds, overlay);
             call.resolve();
         } catch (Exception e) {
             // Android 12+ 對背景啟動前景服務有限制；啟不起來要讓前端知道好退回 F62

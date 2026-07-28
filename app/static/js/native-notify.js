@@ -76,6 +76,9 @@ export function nativeExactAlarmOff() {
 
 // 啟動時與每次切換後呼叫。查不到就當作沒授權（保守），不讓 UI 顯示假的「開」。
 export async function refreshNativeNotifyState() {
+  // F64：overlay 授權會在 app 外被改（使用者跳去設定頁開／關），與通知同一時機重查。
+  // F62 review 的教訓：回到前景不重查就會顯示過期狀態，變成靜默失敗。
+  await refreshOverlayGranted();
   const api = plugin();
   if (!api) {
     cache = { granted: false, exact: false };
@@ -175,6 +178,58 @@ export function restTimerActive() {
   return foregroundActive;
 }
 
+// ---------- F64：浮動計時視窗（overlay） ----------
+//
+// overlay 不是獨立的計時器，只是同一個前景服務的第二個顯示面（③）：關掉它、沒授權、
+// 或使用者根本沒開，通知列的倒數都照樣走完。所以這裡只管「要不要畫」這一個位元。
+
+const OVERLAY_FLAG = "liftlog.restOverlayEnabled";
+let overlayGranted = false; // 系統是否允許畫在其他 app 上（授權狀態，非使用者意願）
+
+export function restOverlaySupported() {
+  return restTimerPlugin() !== null;
+}
+
+// 使用者開了 ＋ 系統允許。缺一都不畫（不顯示假的「開」）。
+export function restOverlayEnabled() {
+  return localStorage.getItem(OVERLAY_FLAG) === "1" && overlayGranted;
+}
+
+async function refreshOverlayGranted() {
+  const api = restTimerPlugin();
+  if (!api?.overlayPermitted) {
+    overlayGranted = false;
+    return false;
+  }
+  try {
+    const res = await api.overlayPermitted();
+    overlayGranted = Boolean(res?.granted);
+  } catch {
+    overlayGranted = false; // 查不到就當沒授權（與 F62 的保守判定一致）
+  }
+  return overlayGranted;
+}
+
+// ②：未授權時把人送到系統設定頁，並誠實回報失敗——不留假的「開」。
+export async function enableRestOverlay() {
+  const api = restTimerPlugin();
+  if (!api) return { ok: false, reason: "此環境不支援浮動視窗" };
+  if (await refreshOverlayGranted()) {
+    localStorage.setItem(OVERLAY_FLAG, "1");
+    return { ok: true };
+  }
+  try {
+    await api.requestOverlayPermission();
+  } catch {
+    return { ok: false, reason: "這台裝置沒有浮動視窗授權頁——休息倒數仍會顯示在通知列" };
+  }
+  return { ok: false, reason: "請在設定裡允許「顯示在其他應用程式上層」，回來再按一次" };
+}
+
+export async function disableRestOverlay() {
+  localStorage.removeItem(OVERLAY_FLAG);
+}
+
 // 回傳 true＝前景服務接手了（呼叫端就不要再排本機通知）
 export async function startForegroundRest(seconds) {
   const api = restTimerPlugin();
@@ -182,7 +237,7 @@ export async function startForegroundRest(seconds) {
   try {
     const { available } = await api.available();
     if (!available) return false;
-    await api.start({ seconds });
+    await api.start({ seconds, overlay: restOverlayEnabled() });
     foregroundActive = true;
     return true;
   } catch {

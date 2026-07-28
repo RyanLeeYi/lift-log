@@ -22,12 +22,16 @@ import {
 import {
   cancelRestNotify,
   disableRestNotify,
+  disableRestOverlay,
   enableRestNotify,
+  enableRestOverlay,
   refreshRestNotifyState,
   requestRestNotifyExact,
   restNotifyDelayed,
   restNotifyEnabled,
   restNotifySupported,
+  restOverlayEnabled,
+  restOverlaySupported,
   scheduleRestNotify,
 } from "./rest-notify.js";
 import {
@@ -438,6 +442,30 @@ function renderHome() {
                   : "🔔 休息提醒：開"
                 : "🔔 休息提醒：關",
             ],
+          ),
+        ]
+      : []),
+    // F64：浮動計時視窗。只在 app 版出現，且必須先開休息提醒——
+    // overlay 是前景服務的第二個顯示面，服務沒跑就沒有秒數可畫
+    ...(restOverlaySupported() && restNotifyEnabled()
+      ? [
+          el(
+            "button",
+            {
+              class: `btn push-toggle${restOverlayEnabled() ? " on" : ""}`,
+              onclick: () =>
+                guard(async () => {
+                  if (restOverlayEnabled()) {
+                    await disableRestOverlay();
+                    render();
+                    return;
+                  }
+                  const res = await enableRestOverlay();
+                  if (res.ok) render();
+                  else showError(res.reason);
+                }),
+            },
+            [restOverlayEnabled() ? "🪟 浮動計時：開" : "🪟 浮動計時：關"],
           ),
         ]
       : []),

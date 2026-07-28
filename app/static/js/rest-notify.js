@@ -9,12 +9,16 @@ import { isNativeApp } from "./env.js";
 import {
   cancelNativeRest,
   disableNativeNotify,
+  disableRestOverlay as disableNativeOverlay,
   enableNativeNotify,
+  enableRestOverlay as enableNativeOverlay,
   nativeExactAlarmOff,
   nativeNotifyAvailable,
   nativeNotifyEnabled,
   refreshNativeNotifyState,
   requestNativeExactAlarm,
+  restOverlayEnabled as nativeOverlayEnabled,
+  restOverlaySupported as nativeOverlaySupported,
   scheduleNativeRest,
   startForegroundRest,
   stopForegroundRest,
@@ -55,6 +59,25 @@ export async function enableRestNotify() {
 // ③ 的出路：精確鬧鐘被關時開系統授權頁。web 版無此概念＝no-op。
 export async function requestRestNotifyExact() {
   if (native()) await requestNativeExactAlarm();
+}
+
+// F64：浮動計時視窗。web 版沒有這個概念（瀏覽器畫不到其他 app 之上），一律回報不支援。
+export function restOverlaySupported() {
+  return native() ? nativeOverlaySupported() : false;
+}
+
+export function restOverlayEnabled() {
+  return native() ? nativeOverlayEnabled() : false;
+}
+
+export async function enableRestOverlay() {
+  return native()
+    ? enableNativeOverlay()
+    : { ok: false, reason: "瀏覽器版沒有浮動視窗" };
+}
+
+export async function disableRestOverlay() {
+  if (native()) await disableNativeOverlay();
 }
 
 export async function disableRestNotify() {

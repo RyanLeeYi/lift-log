@@ -28,6 +28,8 @@ public class RestTimerService extends Service {
     public static final String ACTION_START = "com.ryanleeyi.liftlog.REST_START";
     public static final String ACTION_STOP = "com.ryanleeyi.liftlog.REST_STOP";
     public static final String EXTRA_SECONDS = "seconds";
+    /** F64：這次休息要不要同時畫浮動視窗。使用者沒開就是 false，行為與 F64 之前完全一致。 */
+    public static final String EXTRA_OVERLAY = "overlay";
 
     private static final String CHANNEL_ID = "rest-timer";
     private static final int NOTIFICATION_ID = 2001; // 與 F62 的 1001 分開，兩者不會互相取代
@@ -51,6 +53,7 @@ public class RestTimerService extends Service {
             // 直接 cancel 才涵蓋兩種情況（2026-07-28 驗收抓到；提前取消的路徑原本就正常，
             // 所以我自己只測了那一條沒發現）。
             cancelNotification();
+            RestOverlay.hide(this); // F64 ④：overlay 不留在螢幕上
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -63,6 +66,11 @@ public class RestTimerService extends Service {
 
         ensureChannel();
         startForegroundCompat(buildNotification(seconds, false));
+        // F64 ③：overlay 與通知列倒數並存——這裡只是多開一個顯示面，
+        // 沒授權或使用者關掉 overlay 都不影響下面的倒數
+        if (intent != null && intent.getBooleanExtra(EXTRA_OVERLAY, false)) {
+            RestOverlay.show(this, seconds);
+        }
         startTimer(seconds);
         // 不用 START_STICKY：休息被系統中斷後自己復活沒有意義（剩餘秒數已經不對了），
         // 而 ④「app 被殺掉不留殘影」也要求它安靜地消失
@@ -72,6 +80,9 @@ public class RestTimerService extends Service {
     @Override
     public void onDestroy() {
         stopTimer();
+        // F64 ④ 的第二條路徑：系統回收服務時也要收掉 overlay。
+        // 與 ACTION_STOP 那條各自獨立——F63 ③ 的教訓就是只顧一條路徑會留殘影
+        RestOverlay.hide(this);
         super.onDestroy();
     }
 
@@ -83,12 +94,15 @@ public class RestTimerService extends Service {
                 // 每秒更新同一則通知（相同 id ＝ 就地更新，不會堆疊）
                 int remaining = (int) Math.ceil(remainingMs / 1000.0);
                 notifyUpdate(buildNotification(remaining, false));
+                // F64 ①：overlay 的秒數也由這裡推——WebView 在背景會被節流，畫不動
+                RestOverlay.update(remaining);
             }
 
             @Override
             public void onFinish() {
                 // ②：同一則通知轉為「休息結束」，不另發新通知
                 notifyUpdate(buildNotification(0, true));
+                RestOverlay.hide(RestTimerService.this); // F64 ④：休息結束 overlay 自動消失
                 // 服務結束但通知留著讓使用者看得到——detach 而非 remove
                 stopForegroundKeepNotification();
                 stopSelf();
@@ -178,10 +192,11 @@ public class RestTimerService extends Service {
         }
     }
 
-    static void start(Context context, int seconds) {
+    static void start(Context context, int seconds, boolean overlay) {
         Intent intent = new Intent(context, RestTimerService.class)
             .setAction(ACTION_START)
-            .putExtra(EXTRA_SECONDS, seconds);
+            .putExtra(EXTRA_SECONDS, seconds)
+            .putExtra(EXTRA_OVERLAY, overlay);
         context.startForegroundService(intent);
     }
 
