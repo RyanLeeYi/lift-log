@@ -22,6 +22,48 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "RestTimer")
 public class RestTimerPlugin extends Plugin {
 
+    /**
+     * F71 ⑥：原生→前端的唯一出口。
+     *
+     * <p>前端訂閱 `restControl` 事件；浮動視窗按下暫停／繼續／停止時由這裡送出去。
+     * 用事件而不是讓前端輪詢——app 在背景時輪詢會被節流，而「人在別的 app 裡按浮動視窗」
+     * 正是最需要它可靠的那一刻。
+     *
+     * <p>前端不在（WebView 已被回收）時 instance 為 null，送不出去也無妨：⑦ 只要求
+     * 服務與通知照常反應，畫面狀態等回到 app 再重新產生。
+     */
+    private static RestTimerPlugin instance;
+
+    static void emit(String action) {
+        RestTimerPlugin plugin = instance;
+        if (plugin == null) return;
+        JSObject data = new JSObject();
+        data.put("action", action);
+        plugin.notifyListeners("restControl", data);
+    }
+
+    @Override
+    public void load() {
+        instance = this;
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (instance == this) instance = null;
+    }
+
+    @PluginMethod
+    public void pause(PluginCall call) {
+        RestTimerService.pause(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void resume(PluginCall call) {
+        RestTimerService.resume(getContext());
+        call.resolve();
+    }
+
     /** 前景服務能不能用：通知被系統關掉時它啟得起來但看不到，等同不可用。 */
     @PluginMethod
     public void available(PluginCall call) {

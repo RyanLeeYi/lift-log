@@ -265,6 +265,40 @@ export async function startForegroundRest(seconds) {
   }
 }
 
+// ---------- F71：暫停／繼續，以及原生端（浮動視窗）按鈕的回傳 ----------
+
+export async function pauseForegroundRest() {
+  const api = restTimerPlugin();
+  if (!api?.pause) return;
+  try {
+    await api.pause();
+  } catch {
+    /* 服務沒在跑：畫面狀態仍以前端為準 */
+  }
+}
+
+export async function resumeForegroundRest() {
+  const api = restTimerPlugin();
+  if (!api?.resume) return;
+  try {
+    await api.resume();
+  } catch {
+    /* 同上 */
+  }
+}
+
+// ⑥：原生→前端一律走事件。**不輪詢**——app 在背景時輪詢會被節流，
+// 而「人在別的 app 裡按浮動視窗」正是最需要它可靠的那一刻。
+export function onNativeRestControl(handler) {
+  const api = restTimerPlugin();
+  if (!api?.addListener) return;
+  try {
+    api.addListener("restControl", (event) => handler(event?.action));
+  } catch {
+    /* 舊版 APK 沒有這個事件：退回只有 app 內控制得動，不致命 */
+  }
+}
+
 export async function stopForegroundRest() {
   const api = restTimerPlugin();
   foregroundActive = false;

@@ -25,14 +25,17 @@ import {
   disableRestOverlay,
   enableRestNotify,
   enableRestOverlay,
+  pauseRestNotify,
   refreshRestNotifyState,
   requestRestNotifyExact,
+  resumeRestNotify,
   restNotifyDelayed,
   restNotifyEnabled,
   restNotifySupported,
   restOverlayEnabled,
   restOverlaySupported,
   scheduleRestNotify,
+  subscribeRestControl,
   syncRestCardVisible,
 } from "./rest-notify.js";
 import {
@@ -60,10 +63,13 @@ import {
   exerciseAlias,
   exerciseName,
   getLang,
+  pauseRest,
   restElapsedSeconds,
   restHintFor,
+  restPaused,
   restRemainingSeconds,
   restoreActiveWorkout,
+  resumeRest,
   saveActiveWorkout,
   state,
   toggleLang,
@@ -1051,6 +1057,8 @@ function renderPicker() {
 
 function startRestTimer() {
   state.restStartedAt = Date.now();
+  state.restAccumulatedMs = 0; // F71：新的一輪休息，累計歸零
+  state.restResumedAt = state.restStartedAt;
   restAlerted = false;
   // F70：目標秒數當場快照——之後換動作時倒數基準才不會跟著新動作的參考值跳掉
   state.restTargetSeconds = state.exercise
@@ -1073,10 +1081,35 @@ function startRestTimer() {
   }, 1000);
 }
 
+// F71 ①②：暫停／繼續。前端是狀態的事實來源，原生那半（通知列、浮動視窗）跟著同步，
+// 這樣兩邊顯示才會一致——各自為政就會出現「畫面說暫停、通知還在跳」。
+async function togglePauseRest() {
+  if (state.restStartedAt === null) return;
+  if (restPaused()) {
+    resumeRest();
+    restAlerted = false; // 繼續後重新武裝提醒
+    await resumeRestNotify();
+  } else {
+    pauseRest();
+    await pauseRestNotify();
+  }
+  render();
+}
+
+// F71 ④：停止＝結束這段休息，等同「繼續下一組」——已累計的秒數凍結給下一組（F15 語意不變）。
+async function stopRestFromUi() {
+  if (state.restStartedAt === null) return;
+  state.pendingRestSeconds = restElapsedSeconds();
+  stopRestTimer();
+  render();
+}
+
 function stopRestTimer() {
   if (restTicker) clearInterval(restTicker);
   restTicker = null;
   state.restStartedAt = null;
+  state.restAccumulatedMs = 0; // F71
+  state.restResumedAt = null;
   state.restTargetSeconds = null; // F70：目標秒數的快照跟著這輪休息一起結束
   // F31/F62：休息被使用者結束（繼續下一組／收工／登出）→ 取消未觸發的提醒。
   // F70 起「換動作」不再走這裡——換個地方看不算休息結束。
@@ -1293,7 +1326,7 @@ function renderLogger() {
         }`,
       },
       [
-        el("span", { class: "label" }, ["REST"]),
+        el("span", { class: "label" }, [restPaused() ? "PAUSED" : "REST"]),
         el("span", { class: "digits" }, [
           state.restStartedAt
             ? fmtRest(restRemainingSeconds())
@@ -1301,6 +1334,24 @@ function renderLogger() {
         ]),
       ],
     ),
+    // F71 ①：暫停／繼續與停止。只在休息中出現——沒在休息時這兩顆沒有意義，
+    // 而且底部的「✓ 完成這組」本來就是那個狀態下唯一該按的東西
+    ...(state.restStartedAt
+      ? [
+          el("div", { class: "rest-controls" }, [
+            el(
+              "button",
+              { class: "btn btn-ghost", onclick: () => guard(togglePauseRest) },
+              [restPaused() ? "▶ 繼續" : "⏸ 暫停"],
+            ),
+            el(
+              "button",
+              { class: "btn btn-ghost", onclick: () => guard(stopRestFromUi) },
+              ["⏹ 停止"],
+            ),
+          ]),
+        ]
+      : []),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...syncStatusLine(),
     // F20：新→舊排序（最新在最上）；組數 > 2 時固定高度內部捲動（編輯中不限高，讓編輯表單完整可見）
@@ -1476,6 +1527,18 @@ restoreActiveWorkout();
 // app 被重啟後倒數與已排定的通知都會消失且畫面無提示。那是 F62 之前就有的行為，不在本 feature 範圍。
 refreshRestNotifyState().then(() => {
   if (state.screen === "home") render();
+});
+// F71 ⑥：原生端（浮動視窗）的暫停／繼續／停止回傳。只訂閱一次，事件驅動不輪詢。
+// 前端仍是狀態的事實來源——原生只回報「使用者按了什麼」，實際的計時狀態在這裡改。
+subscribeRestControl((action) => {
+  if (state.restStartedAt === null) return;
+  if (action === "pause" && !restPaused()) pauseRest();
+  else if (action === "resume" && restPaused()) resumeRest();
+  else if (action === "stop") {
+    state.pendingRestSeconds = restElapsedSeconds(); // ④：等同繼續下一組
+    stopRestTimer();
+  } else return;
+  render();
 });
 // F67：查有沒有新版（見上方 runUpdateCheck 的說明）。只在已有 token 時查——
 // setup 畫面查一定 401，而且那次失敗會讓首次設定的人到下次開 app 才看得到更新。

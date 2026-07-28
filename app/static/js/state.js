@@ -3,7 +3,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v77";
+export const APP_VERSION = "v78";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -21,6 +21,10 @@ export const state = {
   doneByExercise: {}, // F32 {exerciseId:[sets]}——本次 workout 各動作已做組的鏡射；換動作後回到該動作原樣還原，不被誤標成「上次」
   setCounts: {}, // {exerciseId: 本次 workout 已記組數} —— 回頭選同動作時 set_number 接續
   restStartedAt: null, // ms timestamp；null = 計時器未啟動（＝就緒態，按鈕顯示「完成這組」）
+  // F71：休息時間改成「累計計時中的時間」，不能再用 now - restStartedAt 直接算——
+  // 暫停期間不計入（acceptance ③），而 rest_seconds 是會寫進訓練資料的欄位。
+  restAccumulatedMs: 0, // 先前各段「計時中」的總和
+  restResumedAt: null, // 這一段計時開始的時間戳；null = 目前暫停中
   restTargetSeconds: null, // F70：這輪休息的目標秒數（休息開始時快照；改秒數時同步）——換動作後倒數基準不跳
   restHintOverrides: {}, // {exerciseId: 秒}——R10 訓練中臨時調整，僅本次 workout、不寫回課表
   pendingRestSeconds: null, // F15：按「繼續下一組」凍結的休息秒數，寫進下一組後清空（transient，不持久化）
@@ -84,9 +88,28 @@ export function clearActiveWorkout() {
   state.restHintOverrides = {};
 }
 
+// F71 ③：只算「計時中」的時間，暫停的那幾段不計入。
 export function restElapsedSeconds() {
   if (state.restStartedAt === null) return null;
-  return Math.round((Date.now() - state.restStartedAt) / 1000);
+  const running = state.restResumedAt === null ? 0 : Date.now() - state.restResumedAt;
+  return Math.round((state.restAccumulatedMs + running) / 1000);
+}
+
+export function restPaused() {
+  return state.restStartedAt !== null && state.restResumedAt === null;
+}
+
+/** F71 ②：暫停——把這一段累加起來，之後 restElapsedSeconds 就不再往前走。 */
+export function pauseRest() {
+  if (state.restStartedAt === null || state.restResumedAt === null) return;
+  state.restAccumulatedMs += Date.now() - state.restResumedAt;
+  state.restResumedAt = null;
+}
+
+/** F71 ②：繼續——開新的一段，從剩餘秒數接續（不重頭算）。 */
+export function resumeRest() {
+  if (state.restStartedAt === null || state.restResumedAt !== null) return;
+  state.restResumedAt = Date.now();
 }
 
 // ---------- R10 參考休息：倒數的基準值 ----------

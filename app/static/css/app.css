@@ -189,6 +189,11 @@ body {
   color: var(--led);
   text-shadow: 0 0 14px rgba(255, 176, 32, .45);
 }
+/* F71：休息倒數的暫停／停止。放在 LED 下方一列，兩顆等寬——
+   訓練中是單手操作，按鈕小或位置跳動都會按錯。 */
+.rest-controls { display: flex; gap: 8px; margin-top: 8px; }
+.rest-controls .btn { flex: 1; padding: 10px 0; }
+
 /* R10 倒數超時：LED 轉紅提示（配合震動；iOS 只有這個） */
 .rest-led.over { border-color: #ff5252; }
 .rest-led.over .digits {

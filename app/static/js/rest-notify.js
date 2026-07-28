@@ -15,14 +15,17 @@ import {
   nativeExactAlarmOff,
   nativeNotifyAvailable,
   nativeNotifyEnabled,
+  onNativeRestControl,
+  pauseForegroundRest,
   refreshNativeNotifyState,
   requestNativeExactAlarm,
   restOverlayEnabled as nativeOverlayEnabled,
   restOverlaySupported as nativeOverlaySupported,
+  resumeForegroundRest,
   scheduleNativeRest,
-  syncRestCardVisible as syncNativeRestCardVisible,
   startForegroundRest,
   stopForegroundRest,
+  syncRestCardVisible as syncNativeRestCardVisible,
 } from "./native-notify.js";
 import {
   cancelRestPush,
@@ -79,6 +82,20 @@ export async function enableRestOverlay() {
 
 export async function disableRestOverlay() {
   if (native()) await disableNativeOverlay();
+}
+
+// F71 ①：暫停／繼續要同步到原生那半（通知列與浮動視窗），web 版沒有那半＝no-op。
+export async function pauseRestNotify() {
+  if (native()) await pauseForegroundRest();
+}
+
+export async function resumeRestNotify() {
+  if (native()) await resumeForegroundRest();
+}
+
+// F71 ⑥：訂閱原生端（浮動視窗）按下的暫停／繼續／停止。web 版沒有來源＝no-op。
+export function subscribeRestControl(handler) {
+  if (native()) onNativeRestControl(handler);
 }
 
 // F69：畫面切換時回報 REST 卡片是否可見。web 版沒有浮動視窗＝no-op。

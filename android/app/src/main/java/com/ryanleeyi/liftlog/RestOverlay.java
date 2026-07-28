@@ -32,6 +32,9 @@ final class RestOverlay {
 
     private static View view;
     private static TextView label;
+    private static TextView pauseButton; // F71 ①：⏸／▶ 兩態共用同一顆
+    /** F71：暫停狀態。兩邊（app 內卡片與這裡）必須顯示一致，否則使用者不知道該信誰。 */
+    private static boolean paused;
     private static WindowManager.LayoutParams params;
     /**
      * 使用者在**這一輪休息中**按過 ✕。
@@ -103,6 +106,7 @@ final class RestOverlay {
     static void setAppForeground(Context context, boolean value) {
         onMain(() -> {
             appForeground = value;
+            if (value && restCardVisible) dismissed = false; // F71 ⑩：同上
             apply(context);
         });
     }
@@ -111,6 +115,19 @@ final class RestOverlay {
     static void setRestCardVisible(Context context, boolean value) {
         onMain(() -> {
             restCardVisible = value;
+            // F71 ⑩：✕ 只是「現在別擋我」，效力到你回頭看見 app 內的倒數為止——
+            // 那一刻解除，之後再離開計時頁就會再出現。解除當下不會彈出來，
+            // 因為此時 shouldShow() 本來就是 false（卡片可見）。
+            if (value && appForeground) dismissed = false;
+            apply(context);
+        });
+    }
+
+    /** F71 ①：暫停狀態變了——換掉按鈕圖示。狀態本身由服務與前端各自維護。 */
+    static void setPaused(Context context, boolean value) {
+        onMain(() -> {
+            paused = value;
+            if (pauseButton != null) pauseButton.setText(paused ? "▶" : "⏸");
             apply(context);
         });
     }
@@ -172,6 +189,7 @@ final class RestOverlay {
         onMain(() -> {
             dismissed = false;
             active = false;
+            paused = false;
             restCardVisible = false;
             detach(context);
         });
@@ -187,6 +205,7 @@ final class RestOverlay {
         }
         view = null;
         label = null;
+        pauseButton = null;
         params = null;
     }
 
@@ -216,17 +235,41 @@ final class RestOverlay {
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         root.addView(label);
 
-        TextView close = new TextView(context);
-        close.setText("✕");
-        close.setTextColor(Color.parseColor("#9CA3AF"));
-        close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        close.setPadding(dp(context, 12), 0, dp(context, 4), 0);
-        // ③：關掉的是「顯示」不是「倒數」——通知列的倒數與提醒照常走完
-        close.setOnClickListener(v -> dismiss(context));
-        root.addView(close);
+        // F71 ①：暫停／繼續。原生先動手（服務要立刻停），再回報前端讓畫面跟上（⑥）
+        pauseButton = iconButton(context, paused ? "▶" : "⏸", v -> {
+            if (paused) {
+                RestTimerService.resume(context);
+                setPaused(context, false);
+                RestTimerPlugin.emit("resume");
+            } else {
+                RestTimerService.pause(context);
+                setPaused(context, true);
+                RestTimerPlugin.emit("pause");
+            }
+        });
+        root.addView(pauseButton);
+
+        // F71 ④：停止＝結束這段休息（等同繼續下一組），通知與視窗一起收掉
+        root.addView(iconButton(context, "⏹", v -> {
+            RestTimerPlugin.emit("stop");
+            RestTimerService.stop(context);
+        }));
+
+        // F64 ③／F71 ⑤：✕ 關掉的是「顯示」不是「倒數」——通知列的倒數與提醒照常走完
+        root.addView(iconButton(context, "✕", v -> dismiss(context)));
 
         root.setOnTouchListener(new DragListener(context));
         return root;
+    }
+
+    private static TextView iconButton(Context context, String text, View.OnClickListener onClick) {
+        TextView button = new TextView(context);
+        button.setText(text);
+        button.setTextColor(Color.parseColor("#9CA3AF"));
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        button.setPadding(dp(context, 10), dp(context, 4), dp(context, 10), dp(context, 4));
+        button.setOnClickListener(onClick);
+        return button;
     }
 
     private static WindowManager.LayoutParams buildParams(Context context) {

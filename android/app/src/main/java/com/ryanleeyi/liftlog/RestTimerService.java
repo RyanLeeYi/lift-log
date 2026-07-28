@@ -30,11 +30,16 @@ public class RestTimerService extends Service {
     public static final String EXTRA_SECONDS = "seconds";
     /** F64：這次休息要不要同時畫浮動視窗。使用者沒開就是 false，行為與 F64 之前完全一致。 */
     public static final String EXTRA_OVERLAY = "overlay";
+    /** F71 ②：暫停與繼續。倒數凍結、通知改成暫停樣式，到點提醒不觸發。 */
+    public static final String ACTION_PAUSE = "com.ryanleeyi.liftlog.REST_PAUSE";
+    public static final String ACTION_RESUME = "com.ryanleeyi.liftlog.REST_RESUME";
 
     private static final String CHANNEL_ID = "rest-timer";
     private static final int NOTIFICATION_ID = 2001; // 與 F62 的 1001 分開，兩者不會互相取代
 
     private CountDownTimer timer;
+    private int remainingSeconds; // 目前剩餘秒數——暫停時要記住，繼續時從這裡接續
+    private boolean paused;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -58,6 +63,22 @@ public class RestTimerService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (ACTION_PAUSE.equals(action)) {
+            // 只停計時器，服務與通知都留著——使用者要看得到「暫停中，剩餘 X」
+            stopTimer();
+            paused = true;
+            RestOverlay.setPaused(this, true);
+            notifyUpdate(buildNotification(remainingSeconds, false));
+            return START_NOT_STICKY;
+        }
+
+        if (ACTION_RESUME.equals(action)) {
+            paused = false;
+            RestOverlay.setPaused(this, false);
+            startTimer(remainingSeconds); // ②：從剩餘秒數接續，不重頭算
+            return START_NOT_STICKY;
+        }
+
         int seconds = intent == null ? 0 : intent.getIntExtra(EXTRA_SECONDS, 0);
         if (seconds <= 0) {
             stopSelf();
@@ -65,6 +86,8 @@ public class RestTimerService extends Service {
         }
 
         ensureChannel();
+        paused = false;
+        remainingSeconds = seconds;
         startForegroundCompat(buildNotification(seconds, false));
         // F64 ③：overlay 與通知列倒數並存——這裡只是多開一個顯示面，
         // 沒授權或使用者關掉 overlay 都不影響下面的倒數
@@ -95,6 +118,7 @@ public class RestTimerService extends Service {
             public void onTick(long remainingMs) {
                 // 每秒更新同一則通知（相同 id ＝ 就地更新，不會堆疊）
                 int remaining = (int) Math.ceil(remainingMs / 1000.0);
+                remainingSeconds = remaining;
                 notifyUpdate(buildNotification(remaining, false));
                 // F64 ①：overlay 的秒數也由這裡推——WebView 在背景會被節流，畫不動
                 RestOverlay.update(RestTimerService.this, remaining);
@@ -124,10 +148,11 @@ public class RestTimerService extends Service {
         PendingIntent contentIntent = launch == null ? null : PendingIntent.getActivity(
             this, 0, launch, PendingIntent.FLAG_IMMUTABLE);
 
-        String title = finished ? "休息結束" : "休息中";
+        String title = finished ? "休息結束" : (paused ? "休息暫停" : "休息中");
         String text = finished
             ? "時間到，繼續下一組！"
-            : String.format("剩餘 %d:%02d", remainingSeconds / 60, remainingSeconds % 60);
+            : String.format(paused ? "已暫停・剩餘 %d:%02d" : "剩餘 %d:%02d",
+                remainingSeconds / 60, remainingSeconds % 60);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -200,6 +225,14 @@ public class RestTimerService extends Service {
             .putExtra(EXTRA_SECONDS, seconds)
             .putExtra(EXTRA_OVERLAY, overlay);
         context.startForegroundService(intent);
+    }
+
+    static void pause(Context context) {
+        context.startService(new Intent(context, RestTimerService.class).setAction(ACTION_PAUSE));
+    }
+
+    static void resume(Context context) {
+        context.startService(new Intent(context, RestTimerService.class).setAction(ACTION_RESUME));
     }
 
     static void stop(Context context) {
