@@ -466,8 +466,15 @@
       "id": "F67",
       "name": "app 內自動偵測新版並更新（sideload 自我更新）",
       "status": "failing",
-      "evidence": "",
+      "evidence": "2026-07-28：pytest 205（新增 tests/test_app_release.py 5 條，TDD 先紅後綠）、ruff clean；E2E tests/e2e/verify_f67.py **20/20**；回歸 verify_f62.py 34/34、verify_f61.py 14/14。① `aapt2 dump badging` 確認 APK 內 `versionCode='66' versionName='66'`（先前每顆都寫死 1，在系統眼中全是同一版，任何更新流程都不可能成立）；build.gradle 讀不到 APP_VERSION 就讓 build 失敗。② 線上實測（部署後）：`/api/app/latest` 回 `{version_code:66, size_bytes:3281759}`、`/api/app/apk` 回 200 且 3,281,759 bytes、檔頭為 `PK`，無 token 打 latest 回 **401**；發佈目錄用數值比大小（E2E 驗 v9 不會贏過 v65）。③ E2E：有新版才顯示、版本相同不顯示、離開首頁即消失（訓練中不打斷）、查詢失敗回 null 不顯示錯誤。④⑤ **真機 PASS（Ryan 2026-07-28 實測）**：v65 收到「有新版 v66」→ 點擊後 app **自動跳出**「安裝未知應用程式」設定頁（⑤）→ 授權後回來下載並由系統安裝器完成升級（④），更新成功。⑥ E2E：未授權時不下載並給可辨識訊息；無發佈版本時後端回 404、前端據此不顯示（不是錯誤）；原生層下載失敗一律刪除半截檔案。⑦ web 版首頁無更新橫幅、checkForUpdate 回 null；pytest／ruff／既有 E2E 全綠。⑧ 發佈步驟已寫進 CLAUDE.md 規則 6 與 docs/android-build-setup.md（release/ 為自我更新唯一來源、檔名格式、versionCode 自動推導不要手改）。 【E2E 抓到的兩個實作 bug，皆已修並成為回歸】①首次設定 token 者看不到更新——開機時仍在 setup 畫面、查詢必然 401 被吞掉，之後不再查；已改成設定完 token 也查一次。②`disabled: false` 在 HTML 仍算停用，橫幅點不下去；改用專案慣例的條件展開。 【外觀回饋】Ryan 期待的是懸浮置中視窗而非橫幅——凍結條文 ③ 寫的就是橫幅，實作未偏離規格，屬新需求，已另立 F68 走簽核，不回頭改寫 F67。",
       "acceptance": "① `versionCode` 與 `versionName` 由 `app/static/js/state.js` 的 `APP_VERSION` 推導（v64 → versionCode 64／versionName \"64\"），不再寫死 1。build 時自動帶入，兩處不得漂移。\n② 後端新增 `GET /api/app/latest`（需 token），回 `{version_code, version_name, url, size_bytes}`；APK 由後端供檔（需 token）。\n③ app 版啟動時比對自身 versionCode 與伺服器版本，**只在首頁**顯示可點的更新橫幅（logger／其他畫面不打斷）；版本相同或查詢失敗時**完全不顯示**，不干擾訓練。\n④ 點擊更新 → app 內下載 APK（帶 token）到私有目錄，顯示進度，下載完喚起系統安裝器（FileProvider ＋ `ACTION_VIEW`），使用者確認後完成升級並保留既有資料與設定。\n⑤ 權限：宣告 `REQUEST_INSTALL_PACKAGES`；安裝前用 `canRequestPackageInstalls()` 檢查，未授權時**直接開系統的「安裝未知應用程式」設定頁**（與 F62 ⑤ 同一套處置，不只丟一句文案）。\n⑥ 失敗要明確不靜默：下載中斷、磁碟空間不足、簽章不符、伺服器無新版——各有可辨識的訊息，且不會留下半截檔案。\n⑦ **web 版完全不受影響**：不顯示更新橫幅、不載入任何相關程式碼；pytest／ruff／既有 E2E 全綠。\n⑧ 建置流程文件化：出 APK 後把檔案放進服務目錄並更新版本資訊的步驟寫進 `CLAUDE.md` 規則 6 與 `docs/android-build-setup.md`。"
+    },
+    {
+      "id": "F68",
+      "name": "更新提示改為懸浮置中視窗（app 版）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① F67 的首頁更新橫幅改為懸浮置中視窗，沿用專案既有的 modal 樣式（F49／F54 那套）。\n② 視窗要能關閉（「稍後再說」），且**記住使用者對該版本的選擇**——同一版不再重複打擾，直到出現更新版本。\n③ 彈出時機待定（開 app 即彈／保留入口鈕點了才彈），簽核時決定。\n④ 仍**只在首頁**：logger 與其他畫面不得被打斷（沿用 F67 ③ 的約束）。\n⑤ 下載進度與失敗訊息在視窗內呈現；F67 的下載與安裝路徑不變、不重做。\n背景：2026-07-28 Ryan 實測 F67 後回饋「以為會是懸浮的置中視窗而不是按鈕」。F67 凍結條文 ③ 明寫橫幅，實作未偏離規格，故列為新需求而非 F67 的缺陷。"
     }
   ]
 }
