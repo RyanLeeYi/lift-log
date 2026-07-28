@@ -34,6 +34,7 @@ import {
   restNotifySupported,
   restOverlayEnabled,
   restOverlaySupported,
+  restTimerRunning,
   scheduleRestNotify,
   subscribeRestControl,
   syncRestCardVisible,
@@ -1076,7 +1077,9 @@ function startRestTimer() {
     led.classList.toggle("over", remaining <= 0); // 與震動同門檻：到 0 那一刻就變色
     if (!restAlerted && remaining <= 0) {
       restAlerted = true;
-      navigator.vibrate?.([200, 100, 200]); // iOS Safari 不支援——只有視覺提示
+      // F72 ③：app 版由原生鬧鐘負責（循環鈴聲＋重複震動，響到使用者理它為止），
+      // 這裡再震一次只會兩邊打架。web 版沒有那半，維持原本的單次震動。
+      if (!restTimerRunning()) navigator.vibrate?.([200, 100, 200]);
     }
   }, 1000);
 }

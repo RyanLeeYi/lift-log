@@ -8,9 +8,18 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.CountDownTimer;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 
 import androidx.core.app.NotificationCompat;
 
@@ -33,6 +42,14 @@ public class RestTimerService extends Service {
     /** F71 ②：暫停與繼續。倒數凍結、通知改成暫停樣式，到點提醒不觸發。 */
     public static final String ACTION_PAUSE = "com.ryanleeyi.liftlog.REST_PAUSE";
     public static final String ACTION_RESUME = "com.ryanleeyi.liftlog.REST_RESUME";
+    /**
+     * F72 ⑤：通知列上的「停止」動作鈕。
+     *
+     * <p>與 ACTION_STOP 分開的理由：那條是**前端按了停止之後**送進來的，服務不必再回頭通知前端；
+     * 這條是使用者直接在通知列按的，前端還不知道，必須回送 restControl 事件讓畫面跟上。
+     */
+    public static final String ACTION_STOP_FROM_NOTIFICATION =
+        "com.ryanleeyi.liftlog.REST_STOP_FROM_NOTIFICATION";
 
     private static final String CHANNEL_ID = "rest-timer";
     private static final int NOTIFICATION_ID = 2001; // 與 F62 的 1001 分開，兩者不會互相取代
@@ -40,6 +57,10 @@ public class RestTimerService extends Service {
     private CountDownTimer timer;
     private int remainingSeconds; // 目前剩餘秒數——暫停時要記住，繼續時從這裡接續
     private boolean paused;
+    /** F72 ①②：歸零之後的階段——服務繼續活著、秒數往負的走、鬧鐘一直響。 */
+    private boolean overtime;
+    private final Handler overtimeTicker = new Handler(Looper.getMainLooper());
+    private MediaPlayer alarmPlayer;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -49,7 +70,10 @@ public class RestTimerService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         final String action = intent == null ? null : intent.getAction();
-        if (ACTION_STOP.equals(action)) {
+        if (ACTION_STOP.equals(action) || ACTION_STOP_FROM_NOTIFICATION.equals(action)) {
+            // ⑤：從通知列按的要回送事件讓前端跟上；前端自己按的不必回送（它已經停了）
+            if (ACTION_STOP_FROM_NOTIFICATION.equals(action)) RestTimerPlugin.emit("stop");
+            stopAlarm(); // ④⑦：三條停止路徑都必須真的把聲音與震動關掉
             stopTimer();
             stopForegroundCompat();
             // ③：不能只靠 stopForeground() 的副作用。倒數自然歸零時 onFinish() 已經 stopSelf()，
@@ -104,6 +128,7 @@ public class RestTimerService extends Service {
 
     @Override
     public void onDestroy() {
+        stopAlarm(); // ⑦：服務被系統回收時聲音與震動一起收乾淨
         stopTimer();
         // F64 ④ 的第二條路徑：系統回收服務時也要收掉 overlay。
         // 與 ACTION_STOP 那條各自獨立——F63 ③ 的教訓就是只顧一條路徑會留殘影
@@ -126,12 +151,13 @@ public class RestTimerService extends Service {
 
             @Override
             public void onFinish() {
-                // ②：同一則通知轉為「休息結束」，不另發新通知
-                notifyUpdate(buildNotification(0, true));
-                RestOverlay.hide(RestTimerService.this); // F64 ④：休息結束 overlay 自動消失
-                // 服務結束但通知留著讓使用者看得到——detach 而非 remove
-                stopForegroundKeepNotification();
-                stopSelf();
+                // F72 ①②⑦：歸零**不是結束**——服務繼續活著、秒數往負的走、鬧鐘開始響。
+                // F64 ④ 的「歸零後 overlay 自動消失」由 F72 ① 取代；服務停止／app 被殺
+                // 時仍要收乾淨，那部分沒變。
+                remainingSeconds = 0;
+                overtime = true;
+                startAlarm();
+                startOvertimeTicker();
             }
         }.start();
     }
@@ -141,6 +167,85 @@ public class RestTimerService extends Service {
             timer.cancel();
             timer = null;
         }
+        overtime = false;
+        overtimeTicker.removeCallbacksAndMessages(null);
+    }
+
+    /** F72 ①②：歸零後每秒往上數，通知與 overlay 一起顯示超時值。 */
+    private void startOvertimeTicker() {
+        overtimeTicker.removeCallbacksAndMessages(null);
+        overtimeTicker.post(new Runnable() {
+            @Override
+            public void run() {
+                if (!overtime) return;
+                notifyUpdate(buildNotification(remainingSeconds, true));
+                RestOverlay.update(RestTimerService.this, -remainingSeconds);
+                remainingSeconds += 1;
+                overtimeTicker.postDelayed(this, 1000L);
+            }
+        });
+    }
+
+    /**
+     * F72 ③：鬧鐘音量循環播放 ＋ 重複震動，**不自動停止**（簽核時明確選擇不設上限）。
+     *
+     * <p>用 MediaPlayer 而不是通知音：通知的聲音只響一次，而這裡要的是「響到你理它為止」。
+     * USAGE_ALARM 讓手機靜音／勿擾時仍聽得到——健身房戴耳機時那是唯一會被聽見的通道。
+     */
+    private void startAlarm() {
+        stopAlarm();
+        try {
+            Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (uri == null) uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            alarmPlayer = new MediaPlayer();
+            alarmPlayer.setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build());
+            alarmPlayer.setDataSource(this, uri);
+            alarmPlayer.setLooping(true);
+            alarmPlayer.prepare();
+            alarmPlayer.start();
+        } catch (Exception e) {
+            // 沒有鈴聲或裝置不支援：震動仍要照響，不能整個提醒都沒了
+            releasePlayer();
+        }
+        Vibrator vibrator = vibrator();
+        if (vibrator != null && vibrator.hasVibrator()) {
+            long[] pattern = {0, 600, 400};
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // repeat=0：從陣列開頭無限重複，直到 cancel()
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0));
+            } else {
+                vibrator.vibrate(pattern, 0);
+            }
+        }
+    }
+
+    /** ④⑦：停聲音與震動。每一條離場路徑都要呼叫——沒有 app 卻一直響是最糟的失敗。 */
+    private void stopAlarm() {
+        releasePlayer();
+        Vibrator vibrator = vibrator();
+        if (vibrator != null) vibrator.cancel();
+    }
+
+    private void releasePlayer() {
+        if (alarmPlayer == null) return;
+        try {
+            alarmPlayer.stop();
+        } catch (Exception e) {
+            /* 還沒開始播：直接釋放即可 */
+        }
+        alarmPlayer.release();
+        alarmPlayer = null;
+    }
+
+    private Vibrator vibrator() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            VibratorManager manager = getSystemService(VibratorManager.class);
+            return manager == null ? null : manager.getDefaultVibrator();
+        }
+        return (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
     }
 
     private Notification buildNotification(int remainingSeconds, boolean finished) {
@@ -149,8 +254,9 @@ public class RestTimerService extends Service {
             this, 0, launch, PendingIntent.FLAG_IMMUTABLE);
 
         String title = finished ? "休息結束" : (paused ? "休息暫停" : "休息中");
+        // F72 ②：歸零後不停在一句話——繼續顯示超時秒數，與 app 內卡片一致
         String text = finished
-            ? "時間到，繼續下一組！"
+            ? String.format("時間到！超時 %d:%02d", remainingSeconds / 60, remainingSeconds % 60)
             : String.format(paused ? "已暫停・剩餘 %d:%02d" : "剩餘 %d:%02d",
                 remainingSeconds / 60, remainingSeconds % 60);
 
@@ -165,7 +271,14 @@ public class RestTimerService extends Service {
             builder.setContentIntent(contentIntent);
         }
         if (finished) {
-            builder.setVibrate(new long[] {200, 100, 200});
+            // F72 ⑤：提醒不會自己停，所以通知列一定要有能直接關掉的鈕——
+            // 否則使用者非得解鎖開 app 才停得下來
+            Intent stopIntent = new Intent(this, RestTimerService.class)
+                .setAction(ACTION_STOP_FROM_NOTIFICATION);
+            PendingIntent stopPending = PendingIntent.getService(
+                this, 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(android.R.drawable.ic_lock_idle_alarm, "停止", stopPending);
         }
         return builder.build();
     }
@@ -210,14 +323,9 @@ public class RestTimerService extends Service {
         }
     }
 
-    /** 停服務但留下「休息結束」那則通知，讓使用者回頭看得到。 */
-    private void stopForegroundKeepNotification() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(Service.STOP_FOREGROUND_DETACH);
-        } else {
-            stopForeground(false);
-        }
-    }
+    // F63 曾用 stopForegroundKeepNotification()（DETACH）在歸零時停服務、留下通知。
+    // F72 之後歸零**不再結束服務**（要繼續計時與持續提醒），那個方法沒有呼叫點了，故移除——
+    // 留著會讓下一個人以為還有這條路徑。
 
     static void start(Context context, int seconds, boolean overlay) {
         Intent intent = new Intent(context, RestTimerService.class)

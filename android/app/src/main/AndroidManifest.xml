@@ -71,4 +71,7 @@
          使用者要在「顯示在其他應用程式上層」逐 app 手動開，程式內以 canDrawOverlays() 檢查。
          Play Store 對此權限審查嚴格——本專案採 sideload，不受影響（README 有記） -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- F72 ③：休息結束後持續震動（配合鬧鐘音量的循環鈴聲）。安裝即授予，不需執行期請求 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

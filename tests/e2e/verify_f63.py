@@ -77,8 +77,12 @@ def manifest_and_source_checks() -> None:
     check("FOREGROUND_SERVICE_TYPE_SPECIAL_USE" in svc,
           "⑤ startForeground 的型別與 manifest 一致（不一致 Android 14+ 直接拋錯）")
     check("STOP_FOREGROUND_REMOVE" in svc, "③ 停止時移除通知（不留殘影）")
-    check("STOP_FOREGROUND_DETACH" in svc,
-          "② 歸零時保留同一則通知改成「休息結束」（detach 而非 remove）")
+    # ② 的條文是「同一則通知轉成休息結束，不另發新通知」。原本綁 STOP_FOREGROUND_DETACH，
+    # 但那只是當時的手段——F72 之後歸零不再結束服務（要繼續計時與持續提醒），改綁行為本身：
+    # 只有一個通知 id，且歸零後仍是更新同一則（finished=true），沒有第二個 id 出現。
+    check(svc.count("NOTIFICATION_ID =") == 1, "② 全服務只有一個通知 id（不會另發新通知）")
+    check("notifyUpdate(buildNotification(remainingSeconds, true))" in svc,
+          "② 歸零後更新的是同一則通知（轉為「休息結束」樣式）")
     check("setOnlyAlertOnce" in svc, "① 倒數期間不每秒叮一聲（只有結束才提醒）")
     # ③ 的回歸（2026-07-28 驗收抓到）：倒數自然歸零後服務已 stopSelf，之後的 ACTION_STOP
     # 會建立新實例，它的 stopForeground() 對前一則通知無效——必須直接 cancel。

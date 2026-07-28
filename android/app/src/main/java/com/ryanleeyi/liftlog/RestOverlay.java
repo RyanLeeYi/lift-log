@@ -157,8 +157,11 @@ final class RestOverlay {
         }
     }
 
+    /** F72 ①：歸零後不消失而是繼續數，負數＝超時（-0:07），與 app 內 REST 卡片一致。 */
     private static String text(int seconds) {
-        return String.format("⏱ %d:%02d", seconds / 60, seconds % 60);
+        int abs = Math.abs(seconds);
+        String sign = seconds < 0 ? "-" : "";
+        return String.format("⏱ %s%d:%02d", sign, abs / 60, abs % 60);
     }
 
     private static void attach(Context context) {

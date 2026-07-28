@@ -21,6 +21,7 @@ import {
   requestNativeExactAlarm,
   restOverlayEnabled as nativeOverlayEnabled,
   restOverlaySupported as nativeOverlaySupported,
+  restTimerActive,
   resumeForegroundRest,
   scheduleNativeRest,
   startForegroundRest,
@@ -82,6 +83,11 @@ export async function enableRestOverlay() {
 
 export async function disableRestOverlay() {
   if (native()) await disableNativeOverlay();
+}
+
+// F72 ③：這次休息是不是交給原生前景服務了——app 版交出去之後 JS 不該再自己震動提醒。
+export function restTimerRunning() {
+  return native() ? restTimerActive() : false;
 }
 
 // F71 ①：暫停／繼續要同步到原生那半（通知列與浮動視窗），web 版沒有那半＝no-op。
