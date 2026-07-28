@@ -14,6 +14,7 @@ import {
   nativeNotifyAvailable,
   nativeNotifyEnabled,
   refreshNativeNotifyState,
+  requestNativeExactAlarm,
   scheduleNativeRest,
 } from "./native-notify.js";
 import {
@@ -47,6 +48,11 @@ export async function refreshRestNotifyState() {
 
 export async function enableRestNotify() {
   return native() ? enableNativeNotify() : enablePush();
+}
+
+// ③ 的出路：精確鬧鐘被關時開系統授權頁。web 版無此概念＝no-op。
+export async function requestRestNotifyExact() {
+  if (native()) await requestNativeExactAlarm();
 }
 
 export async function disableRestNotify() {

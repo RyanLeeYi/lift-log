@@ -64,12 +64,14 @@ def start_server(port: int, db: Path) -> subprocess.Popen:
 # 假 plugin：把每次呼叫記進 window.__ln，讓測試斷言參數。
 # display 由 window.__perm 控制，才能同時驗「已授權」與「被拒」兩條路。
 #
-# `sysOn` 模擬「系統層通知開關」——2026-07-28 真機抓到的坑：Android 13 以下
-# checkPermissions() 一律回 granted，即使使用者在系統設定關掉通知。所以測試要能讓
-# perm=granted 與 sysOn=false 同時成立，那正是當時靜默失敗的組合。
+# `sysOn` 模擬「系統層通知開關」——2026-07-28 真機抓到的坑：出現過「開關顯示開、通知被系統丟掉」。
+# checkPermissions() 的語意分兩段（13 以下查 areNotificationsEnabled、13+ 查 POST_NOTIFICATIONS），
+# 不能當唯一事實來源。測試要能讓 perm=granted 與 sysOn=false 同時成立，那正是靜默失敗的組合。
 FAKE_PLUGIN = """
 (perm, exact, sysOn) => {
-  window.__ln = { schedule: [], cancel: [], requested: 0, openedSettings: 0 };
+  window.__ln = { schedule: [], cancel: [], requested: 0, openedSettings: 0, exactRequested: 0 };
+  window.__sysOn = sysOn;
+  window.__exact = exact;
   window.Capacitor = {
     isNativePlatform: () => true,
     getPlatform: () => 'android',
@@ -77,12 +79,18 @@ FAKE_PLUGIN = """
       LocalNotifications: {
         checkPermissions: async () => ({ display: perm }),
         requestPermissions: async () => { window.__ln.requested += 1; return { display: perm }; },
-        checkExactNotificationSetting: async () => ({ exact_alarm: exact }),
+        // 狀態的唯一事實來源（review：不要退回 checkPermissions）
+        areEnabled: async () => ({ value: window.__sysOn }),
+        checkExactNotificationSetting: async () => ({ exact_alarm: window.__exact }),
+        changeExactNotificationSetting: async () => {
+          window.__ln.exactRequested += 1;
+          window.__exact = 'granted';       // 模擬使用者在系統頁授權
+          return { exact_alarm: 'granted' };
+        },
         schedule: async (opts) => { window.__ln.schedule.push(opts); },
         cancel: async (opts) => { window.__ln.cancel.push(opts); },
       },
       NotifyStatus: {
-        enabled: async () => ({ enabled: sysOn }),
         openSettings: async () => { window.__ln.openedSettings += 1; },
       },
     },
@@ -230,6 +238,46 @@ def main() -> int:
                   "⑤ 引導不只一句話——實際開啟系統通知設定頁")
             check(len(dd["ln"]["schedule"]) == 0,
                   "⑤ 系統關閉通知時不排程（排了也只會被系統丟掉）")
+
+            # 情境 E（review HIGH 回歸）：使用者切到系統設定關掉通知再切回 app。
+            # 原生殼切回前景不會重載頁面——沒有 visibilitychange refresh 的話，
+            # 開關會一直顯示「開」然後靜默失敗。
+            ctx = browser.new_context(viewport=PHONE)
+            page = ctx.new_page()
+            e = verify_native(page, base, "granted", "granted", sys_on=True)
+            check(e["after"] is True, "（前提）情境 E 起始時提醒是開著的")
+            fg = page.evaluate(
+                "async () => {"
+                "  const rn = await import('/js/rest-notify.js');"
+                "  window.__sysOn = false;"          # 模擬使用者在系統設定關掉通知
+                "  document.dispatchEvent(new Event('visibilitychange'));"
+                "  await new Promise(r => setTimeout(r, 300));"
+                "  return rn.restNotifyEnabled();"
+                "}"
+            )
+            ctx.close()
+            check(fg is False,
+                  "⑤ 切回前景會重查狀態——系統關掉通知後開關不再假裝「開」（review HIGH）")
+
+            # 情境 F（review MEDIUM）：精確鬧鐘被關時，點擊要開系統授權頁而不是把提醒關掉
+            ctx = browser.new_context(viewport=PHONE)
+            page = ctx.new_page()
+            verify_native(page, base, "granted", "denied", sys_on=True)
+            fx = page.evaluate(
+                "async () => {"
+                "  const rn = await import('/js/rest-notify.js');"
+                "  const before = rn.restNotifyDelayed();"
+                "  await rn.requestRestNotifyExact();"
+                "  return { before, after: rn.restNotifyDelayed(),"
+                "           requested: window.__ln.exactRequested,"
+                "           stillEnabled: rn.restNotifyEnabled() };"
+                "}"
+            )
+            ctx.close()
+            check(fx["before"] is True and fx["requested"] >= 1,
+                  "③ 精確鬧鐘被關時有實際開啟系統授權頁（不只在按鈕上寫字）")
+            check(fx["after"] is False, "③ 授權後「可能延遲」自動消失")
+            check(fx["stillEnabled"] is True, "③ 走這條路不會把提醒關掉")
 
             browser.close()
     finally:

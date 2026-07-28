@@ -18,6 +18,7 @@ import {
   disableRestNotify,
   enableRestNotify,
   refreshRestNotifyState,
+  requestRestNotifyExact,
   restNotifyDelayed,
   restNotifyEnabled,
   restNotifySupported,
@@ -365,6 +366,13 @@ function renderHome() {
               class: `btn push-toggle${restNotifyEnabled() ? " on" : ""}`,
               onclick: () =>
                 guard(async () => {
+                  // ③ 的出路：已開但精確鬧鐘被關 → 點擊改成開系統授權頁，
+                  // 而不是把提醒關掉（只標示「可能延遲」卻不告訴人去哪開，等於沒有出路）
+                  if (restNotifyEnabled() && restNotifyDelayed()) {
+                    await requestRestNotifyExact();
+                    render();
+                    return;
+                  }
                   if (restNotifyEnabled()) {
                     await disableRestNotify();
                     render();
@@ -379,7 +387,7 @@ function renderHome() {
               restNotifyEnabled()
                 ? // F62 ③：精確鬧鐘被關時倒數會被系統延後，講出來而不是讓使用者以為壞了
                   restNotifyDelayed()
-                  ? "🔔 休息提醒：開（可能延遲）"
+                  ? "🔔 休息提醒：開（可能延遲，點此修正）"
                   : "🔔 休息提醒：開"
                 : "🔔 休息提醒：關",
             ],
@@ -1265,12 +1273,21 @@ window.addEventListener("online", () => guard(syncQueue)); // 恢復連線：自
 document.addEventListener("visibilitychange", () => {
   syncWakeLock();
   if (document.hidden) saveTemplateDraft(); // F30：切背景/OS 準備殺分頁前存草稿（手機最可靠的存檔時機）
+  // F62 review HIGH：原生殼切回前景**不會重新載入頁面**，只在開機 refresh 的話，
+  // 「跑去系統設定改通知／精確鬧鐘再切回來」永遠反映不到——⑤ 的靜默失敗會從這條路復活，
+  // 而照 README 去開精確鬧鐘的人也會看到按鈕永遠停在「可能延遲」。
+  if (!document.hidden) {
+    refreshRestNotifyState().then(() => {
+      if (state.screen === "home") render();
+    });
+  }
 });
 
 restoreActiveWorkout();
 // F62：app 版的通知權限／精確鬧鐘狀態是非同步查詢，但 render() 是同步的——
 // 啟動時先查一次填進 cache，查完重繪讓開關顯示真實狀態（web 版是同步判定，這裡 no-op）。
-// 也涵蓋官方警告的情境：使用者關掉精確通知會讓 app 重啟並清掉已排定的通知。
+// ⚠ 這裡只更新「權限狀態」，**不重排通知**：休息倒數（state.restStartedAt）本來就不持久化，
+// app 被重啟後倒數與已排定的通知都會消失且畫面無提示。那是 F62 之前就有的行為，不在本 feature 範圍。
 refreshRestNotifyState().then(() => {
   if (state.screen === "home") render();
 });
