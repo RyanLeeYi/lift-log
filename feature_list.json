@@ -446,7 +446,7 @@
       "name": "浮動視窗倒數 overlay（階段 4）",
       "status": "failing",
       "evidence": "",
-      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① 自寫 Capacitor plugin 以 `SYSTEM_ALERT_WINDOW` 顯示可拖曳的浮動倒數視窗，浮在其他 app 之上。\n② 權限未授予時導引使用者到系統設定頁授權，拒絕時**優雅退回 F63 的通知列倒數**，不當機不空白。\n③ 真機驗證：切到別的 app（例如音樂／YouTube）仍看得到倒數，可拖曳移動、可點擊關閉。\n④ 休息結束後 overlay 自動消失；app 被系統殺掉時 overlay 不殘留。\n⑤ **已知限制寫進 README**：需手動授權、Play Store 上架會被嚴審（本專案採 sideload，不受影響）。\n⑥ 不影響 F62／F63 既有行為，且 web 版完全不受此 feature 影響。"
+      "acceptance": "（Ryan 2026-07-28 簽核凍結）\n① 自寫 Capacitor plugin 以 `SYSTEM_ALERT_WINDOW` 顯示可拖曳的浮動倒數視窗，浮在其他 app 之上。秒數由 RestTimerService 的原生 CountDownTimer 推送，不由 WebView 驅動（WebView 在背景會被節流，而 overlay 的使用情境必然是背景）。\n② 權限未授予時導引使用者到系統設定頁（ACTION_MANAGE_OVERLAY_PERMISSION）授權；拒絕時優雅退回 F63 的通知列倒數，不當機不空白。\n③ overlay 與 F63 通知列倒數同時存在：overlay 被手動關閉後，通知列倒數仍繼續（不會變成什麼都沒有）。\n④ 休息結束後 overlay 自動消失；服務停止、app 被系統殺掉時 overlay 都不殘留（ACTION_STOP 與 onDestroy 兩條路徑都要移除 view，比照 F63 ③ 的教訓）。\n⑤ 模擬器驗證：切到別的 app 仍看得到倒數、可拖曳移動、可點擊關閉。\n⑤-b（待實機確認，不由實作者判 pass）：Samsung 對 overlay 的 OEM 限制模擬器測不到，由 Ryan 實機回報。\n⑥ 已知限制寫進 README：需手動授權、Play Store 上架會被嚴審（本專案 sideload 不受影響）。\n⑦ 不影響 F62／F63 既有行為；web 版完全不受影響。"
     },
     {
       "id": "F65",
