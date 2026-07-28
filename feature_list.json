@@ -439,7 +439,7 @@
       "name": "前景服務＋通知列常駐倒數（階段 3）",
       "status": "failing",
       "evidence": "",
-      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① 開始休息時啟動 Android 前景服務，通知列常駐顯示剩餘秒數並**每秒更新**。\n② 真機驗證：不開 app 也看得到剩幾秒；倒數歸零後通知轉為「休息結束」樣式。\n③ 停止／換動作／結束訓練會結束前景服務，通知列不留殘影。\n④ 省電模式與螢幕關閉下仍準時（真機實測，須記錄測試機型與 Android 版本）。\n⑤ `POST_NOTIFICATIONS` 與 `FOREGROUND_SERVICE` 權限宣告完整，Android 14+ 的 foreground service type 正確標註。\n⑥ 與 F62 不重複通知（同一次休息只有一組通知行為）。"
+      "acceptance": "① 開始休息時啟動 Android 前景服務，通知列常駐顯示剩餘秒數並**每秒更新**。\n② 真機驗證：不開 app 也看得到剩幾秒；倒數歸零後**同一則常駐通知**轉為「休息結束」樣式（不另發新通知）。\n③ 停止／換動作／結束訓練會結束前景服務，通知列不留殘影。\n④ 省電模式與螢幕關閉下仍準時（真機實測，須記錄測試機型與 Android 版本）。\n⑤ 權限宣告完整：`POST_NOTIFICATIONS`、`FOREGROUND_SERVICE`，以及 Android 14+ 的 **`FOREGROUND_SERVICE_SPECIAL_USE`**，服務標註 `foregroundServiceType=\"specialUse\"` 並附用途說明（2026-07-28 簽核時決定不選 `shortService`：3 分鐘上限會在休息調長時被系統斷掉）。\n⑥ **F63 接管休息提醒**：前景服務啟動時不再排 F62 的本機通知，一次休息只有一則通知行為；F62 的程式碼路徑保留（前景服務不可用時仍由它負責），web 版完全不受影響。\n⑦ 回歸：F62 的 E2E（29 條）與 F61／F67／F68 全綠；pytest／ruff 全過。（本 feature 會動到 F62 的排程路徑，故明列回歸範圍。）"
     },
     {
       "id": "F64",
