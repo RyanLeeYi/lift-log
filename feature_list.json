@@ -504,6 +504,13 @@
       "status": "passing",
       "evidence": "（2026-07-28 v79）自動化：pytest 205、ruff clean、verify_f72.py 14/14；回歸 f63 21/21・f64 28/28・f69 21/21・f70 18/18・f71 27/27。\n實作：服務歸零時不再 stopSelf，改進入 overtime 階段（Handler 每秒往上數，通知與 overlay 一起顯示超時）；鬧鐘用 MediaPlayer + USAGE_ALARM + setLooping(true)，震動用 createWaveform(pattern, 0) 無限重複；通知加「停止」動作鈕走專屬 ACTION_STOP_FROM_NOTIFICATION（會回送 restControl 事件讓前端跟上）；ACTION_STOP 與 onDestroy 都呼叫 stopAlarm()。\n模擬器實測（Pixel 9 / Android 16，v79）：① 歸零後浮動視窗未消失，顯示 -0:38 持續累加；② 通知為「休息結束・時間到！超時 0:26 → 1:53」持續更新；③ dumpsys audio 顯示 AudioPlaybackConfiguration type:MediaPlayer usage=USAGE_ALARM state:started；⑦ 服務歸零後仍存活。\n④⑤ 實測：展開通知按「停止」→ 音訊 state:started 消失、服務／通知／overlay 全無，且回到 app 後按鈕已是「✓ 完成這組」（事件有回送前端）。\n⑦ 最危險路徑實測：鬧鐘播放中 adb am force-stop → 沒有任何仍在播放的音訊、服務／通知／overlay 皆無殘留。\n連帶清理：F72 之後 stopForegroundKeepNotification()（DETACH）沒有呼叫點，移除死碼；verify_f63 對應檢查改綁行為（單一通知 id ＋ 歸零後更新同一則）而非該實作手段。",
       "acceptance": "（Ryan 2026-07-28 簽核凍結）\n① 倒數歸零後浮動視窗不消失，改為繼續計時、顯示超時（-0:07 樣式），與 app 內 REST 卡片一致。F64 ④ 的「休息結束後 overlay 自動消失」由本條取代；F64 ④ 其餘部分（服務停止、app 被殺時不殘留）不變。\n② 通知列同樣不停在「休息結束」，改為持續顯示超時秒數。\n③ 歸零時開始持續提醒：鬧鐘音量（USAGE_ALARM，手機靜音／勿擾仍會響）循環播放 ＋ 重複震動，不自動停止（使用者明確選擇不設上限）。\n④ 停止提醒的三條路徑，任一條都要立刻停掉聲音與震動：「⏹ 停止」（計時頁或浮動視窗）、「繼續下一組」、通知列上的「停止」動作鈕。\n⑤ 通知列必須有可直接停止的動作鈕——提醒不會自己停，不能逼使用者一定要解鎖開 app 才關得掉。\n⑥ 浮動視窗的 ✕ 仍只收起顯示（F71 ⑤ 不變），不停止提醒；聲音與震動繼續，直到 ④ 的任一條。\n⑦ 前景服務在超時期間必須持續存活（歸零時不再 stopSelf）；服務停止、app 被殺掉時聲音、震動、overlay、通知一併收乾淨，不留孤兒（沒有 app 卻一直響是最糟的失敗）。\n⑧ 暫停中不觸發提醒（F71 ② 不變）。\n⑨ web 版不受影響（沒有原生鬧鐘，維持既有行為）。\n⑩ 驗收方式：模擬器實測——歸零後 overlay 與通知都續跑、聲音與震動持續、④ 三條停止路徑各驗一次、force-stop 後確認沒有殘留的聲音或震動；＋ E2E ＋ pytest／既有 E2E 全回歸。"
+    },
+    {
+      "id": "F73",
+      "name": "鬧鐘響起時「停止」變色提示",
+      "status": "passing",
+      "evidence": "（2026-07-28 v80）自動化：ruff clean、verify_f73.py 10/10、verify_f72.py 14/14、pytest 205、f69/f70/f71 回歸全綠。\n實作：計時頁停止鈕在「超時且非暫停」時掛 btn-danger + alarming（含輕微脈動）；跨越 0 秒的當下由 ticker 一起切 class（那一刻沒有 render，等重繪就慢半拍）；浮動視窗的 ⏹ 加紅色圓底。\n模擬器實測（Pixel 9 / Android 16，v80）：① -00:03 時計時頁「⏹ 停止」轉紅、「⏸ 暫停」維持原樣；② 切出 app 後浮動視窗 -0:03 的 ⏹ 有紅色圓底、⏸ 不變。\n實測抓到的坑：第一版用 setTextColor 改浮動視窗按鈕顏色，畫面完全沒變——⏹ 是 emoji，**emoji 是彩色字形，setTextColor 對它無效**。改成設 view 底色（與字形種類無關）才生效，並把這條寫進 verify_f73 的檢查。",
+      "acceptance": "（Ryan 2026-07-28 簽核凍結）\n① 倒數歸零、鬧鐘開始響時，計時頁的「⏹ 停止」按鈕變成警示色（紅），與其他按鈕明顯區隔。\n② 浮動視窗的 ⏹ 同步變色——人在別的 app 裡時那顆小視窗才是最需要指路的地方。\n③ 只在「響著」的時候變：暫停中、倒數還沒歸零時維持原樣；停止或繼續下一組之後回復。\n④ 通知列的「停止」動作鈕不動（系統控制樣式，Android 不給 app 改動作鈕顏色）——Ryan 確認不需要。\n⑤ 不影響 F72 的任何行為（聲音、震動、超時計時、三條停止路徑）。\n⑥ 驗收：模擬器實測（歸零前後各截一張圖對照、浮動視窗同樣對照）＋ 既有 E2E 全回歸。"
     }
   ]
 }

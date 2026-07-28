@@ -1075,6 +1075,15 @@ function startRestTimer() {
     if (remaining === null) return;
     led.querySelector(".digits").textContent = fmtRest(remaining);
     led.classList.toggle("over", remaining <= 0); // 與震動同門檻：到 0 那一刻就變色
+    // F73 ①：跨越 0 的那一刻沒有 render()（ticker 只改文字），所以停止鈕的警示色要在這裡一起切，
+    // 否則要等下一次重繪才變——而鬧鐘正響的那幾秒正是最需要它醒目的時候
+    const stopBtn = document.querySelector(".rest-controls .stop-rest");
+    if (stopBtn) {
+      const alarming = remaining <= 0 && !restPaused();
+      stopBtn.classList.toggle("btn-danger", alarming);
+      stopBtn.classList.toggle("alarming", alarming);
+      stopBtn.classList.toggle("btn-ghost", !alarming);
+    }
     if (!restAlerted && remaining <= 0) {
       restAlerted = true;
       // F72 ③：app 版由原生鬧鐘負責（循環鈴聲＋重複震動，響到使用者理它為止），
@@ -1349,7 +1358,16 @@ function renderLogger() {
             ),
             el(
               "button",
-              { class: "btn btn-ghost", onclick: () => guard(stopRestFromUi) },
+              {
+                // F73 ①③：鬧鐘響著的時候才轉警示色——指出「現在該點這裡」。
+                // 暫停中不算響（F71 ② 暫停不觸發提醒），所以條件要排除暫停。
+                class: `btn stop-rest ${
+                  !restPaused() && (restRemainingSeconds() ?? 1) <= 0
+                    ? "btn-danger alarming"
+                    : "btn-ghost"
+                }`,
+                onclick: () => guard(stopRestFromUi),
+              },
               ["⏹ 停止"],
             ),
           ]),

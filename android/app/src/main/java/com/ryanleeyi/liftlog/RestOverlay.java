@@ -33,6 +33,7 @@ final class RestOverlay {
     private static View view;
     private static TextView label;
     private static TextView pauseButton; // F71 ①：⏸／▶ 兩態共用同一顆
+    private static TextView stopButton; // F73：鬧鐘響著時要轉警示色
     /** F71：暫停狀態。兩邊（app 內卡片與這裡）必須顯示一致，否則使用者不知道該信誰。 */
     private static boolean paused;
     private static WindowManager.LayoutParams params;
@@ -128,6 +129,7 @@ final class RestOverlay {
         onMain(() -> {
             paused = value;
             if (pauseButton != null) pauseButton.setText(paused ? "▶" : "⏸");
+            applyAlarmTint(remaining < 0 && !paused); // F73 ③：暫停中不算「響著」
             apply(context);
         });
     }
@@ -136,8 +138,30 @@ final class RestOverlay {
         onMain(() -> {
             remaining = remainingSeconds;
             if (label != null) label.setText(text(remainingSeconds));
+            // F73 ①②③：鬧鐘響著（超時且非暫停）時停止鈕轉警示色——人在別的 app 裡時，
+            // 這顆小視窗是唯一看得到的東西，得指出該點哪裡。
+            applyAlarmTint(remainingSeconds < 0 && !paused);
             apply(context);
         });
+    }
+
+    /**
+     * F73 ②：警示色只在響的時候上，停止／繼續之後回復。
+     *
+     * <p><b>為什麼改底色而不是文字色</b>（2026-07-28 模擬器實測抓到）：⏹ 是 **emoji**，
+     * 而 emoji 是彩色字形，`setTextColor()` 對它完全沒有作用——第一版寫成改文字色，
+     * 螢幕上什麼都沒變。底色是畫在 view 上的，與字形種類無關。
+     */
+    private static void applyAlarmTint(boolean alarming) {
+        if (stopButton == null) return;
+        if (!alarming) {
+            stopButton.setBackground(null);
+            return;
+        }
+        GradientDrawable highlight = new GradientDrawable();
+        highlight.setColor(Color.parseColor("#FF5252"));
+        highlight.setCornerRadius(dp(stopButton.getContext(), 14));
+        stopButton.setBackground(highlight);
     }
 
     /** 使用者按 ✕：關掉顯示，並記住這輪休息不要再自己冒出來（倒數照常走完）。 */
@@ -209,6 +233,7 @@ final class RestOverlay {
         view = null;
         label = null;
         pauseButton = null;
+        stopButton = null;
         params = null;
     }
 
@@ -253,10 +278,11 @@ final class RestOverlay {
         root.addView(pauseButton);
 
         // F71 ④：停止＝結束這段休息（等同繼續下一組），通知與視窗一起收掉
-        root.addView(iconButton(context, "⏹", v -> {
+        stopButton = iconButton(context, "⏹", v -> {
             RestTimerPlugin.emit("stop");
             RestTimerService.stop(context);
-        }));
+        });
+        root.addView(stopButton);
 
         // F64 ③／F71 ⑤：✕ 關掉的是「顯示」不是「倒數」——通知列的倒數與提醒照常走完
         root.addView(iconButton(context, "✕", v -> dismiss(context)));

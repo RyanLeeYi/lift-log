@@ -193,6 +193,13 @@ body {
    訓練中是單手操作，按鈕小或位置跳動都會按錯。 */
 .rest-controls { display: flex; gap: 8px; margin-top: 8px; }
 .rest-controls .btn { flex: 1; padding: 10px 0; }
+/* F73：鬧鐘響著時停止鈕轉警示色並輕微脈動——指出「現在該點這裡」。
+   pulse 只在響的時候跑，其餘時間完全靜止（訓練中閃動的東西會分心）。 */
+.rest-controls .btn.alarming { animation: alarm-pulse 1s ease-in-out infinite; }
+@keyframes alarm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
 
 /* R10 倒數超時：LED 轉紅提示（配合震動；iOS 只有這個） */
 .rest-led.over { border-color: #ff5252; }
