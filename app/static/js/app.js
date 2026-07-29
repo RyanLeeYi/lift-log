@@ -906,8 +906,7 @@ function endWorkout() {
   stopRestTimer();
   state.pendingRestSeconds = null;
   editDraft = null;
-  clearActiveWorkout();
-  state.setCounts = {};
+  clearActiveWorkout(); // F90 起 setCounts 也由它清（單一來源）
   state.exercise = null;
   backHome(); // F81：這次訓練剛結束，本週進度與「上次訓練」都變了
 }
@@ -2177,6 +2176,50 @@ document.addEventListener("visibilitychange", () => {
 });
 
 restoreActiveWorkout();
+
+/**
+ * F90 ③④：向伺服器確認還原出來的 workout 還在，並用伺服器的組數重建 set 編號。
+ *
+ * 伺服器是唯一事實來源，localStorage 只是快取——快取可能指向已被刪掉的 workout（④），
+ * 也可能因為某次寫入沒成功而少算組數，那會讓下一組撞號。
+ *
+ * 三條路徑刻意分開：
+ * - 404：那場 workout 真的不在了 → 清掉本地，退回「開始訓練」
+ * - status 0（連不上）：**不能清**。離線時清掉等於健身房沒網路就把進行中的訓練弄丟，
+ *   比原本的 bug 更糟（handoff 記過「權限/環境問題會偽裝成資料不存在」）
+ * - 其他（含 401）：交給既有的全域 guard，這裡不動狀態
+ */
+async function confirmActiveWorkout() {
+  if (!state.workoutId) return;
+  let detail;
+  try {
+    detail = await api.workoutDetail(state.workoutId);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      clearActiveWorkout();
+      if (state.screen === "home") render();
+    }
+    return; // 離線／401：保留本地狀態
+  }
+  const counts = {};
+  const grouped = {};
+  for (const s of detail.sets) {
+    counts[s.exercise_id] = (counts[s.exercise_id] || 0) + 1;
+    (grouped[s.exercise_id] ??= []).push(s);
+  }
+  // 取 max：離線佇列裡還沒送達伺服器的組，伺服器當然看不到——直接用伺服器的數字會讓
+  // 下一組的 set_number 與那些待送組撞號。往大的取，寧可跳號也不撞號。
+  const merged = { ...state.setCounts };
+  for (const [id, n] of Object.entries(counts)) {
+    merged[id] = Math.max(n, state.setCounts[id] || 0);
+  }
+  state.setCounts = merged;
+  // 既有鏡射優先（可能含尚未上 server 的離線組），只補伺服器有、鏡射缺的動作（同 pickExercise 的規則）
+  state.doneByExercise = { ...grouped, ...state.doneByExercise };
+  saveActiveWorkout();
+  if (state.screen === "home") render();
+}
+guard(confirmActiveWorkout);
 // F62：app 版的通知權限／精確鬧鐘狀態是非同步查詢，但 render() 是同步的——
 // 啟動時先查一次填進 cache，查完重繪讓開關顯示真實狀態（web 版是同步判定，這裡 no-op）。
 // ⚠ 這裡只更新「權限狀態」，**不重排通知**：休息倒數（state.restStartedAt）本來就不持久化，

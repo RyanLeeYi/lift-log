@@ -40,3 +40,12 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+# F90 搬遷（2026-07-30）：verify_f48–f60 這批是從各 session 的 scratchpad 收進 repo 的歷史回歸腳本，
+# 當初沒過 lint。已跑過 ruff --fix 與 ruff format，只剩 E501——內容多半是中文斷言標籤與三引號內的
+# JS，硬折反而更難讀，且折行腳本實測會把 f-string 拆錯（改出過語法錯誤）。
+# 只對這批既有檔案豁免 E501，其餘規則照舊；**新腳本（verify_f61 起與往後的）不在此列，要全綠。**
+[tool.ruff.lint.per-file-ignores]
+"tests/e2e/verify_f4*.py" = ["E501"]
+"tests/e2e/verify_f5*.py" = ["E501"]
+"tests/e2e/verify_f60.py" = ["E501"]

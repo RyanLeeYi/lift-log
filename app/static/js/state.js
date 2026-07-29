@@ -1,9 +1,11 @@
 // 單頁狀態：目前畫面、進行中的 workout、選中的動作、計時器。
-// 重新整理後 workout 從 sessionStorage 續接（同一天的訓練不因手滑斷掉）。
+// F90：進行中的 workout 存 localStorage（原本是 sessionStorage）。sessionStorage 是分頁級的，
+// 分頁一關或 app 被系統回收就整份消失，首頁退回「開始訓練」→ 按下去另建一場 workout、
+// 組號從 1 重來，同一天同一場訓練被切成兩筆。localStorage 撐得過回收與重開機。
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v90";
+export const APP_VERSION = "v91";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -53,11 +55,20 @@ export function exerciseAlias(exercise) {
   return getLang() === "zh" ? exercise.name_en : exercise.name_zh;
 }
 
+/** 本地日期 YYYY-MM-DD。刻意不用 toISOString——那是 UTC，台灣早上八點前會算成昨天。 */
+function todayIso() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 export function saveActiveWorkout() {
-  sessionStorage.setItem(
+  localStorage.setItem(
     WORKOUT_KEY,
     JSON.stringify({
       workoutId: state.workoutId,
+      date: todayIso(), // F90 ②：跨日不續接的判斷依據
       template: state.template,
       setCounts: state.setCounts, // 續接恢復：重新整理後 set_number 不得與已存組撞號
       doneByExercise: state.doneByExercise, // F32：本次各動作已做組，換動作/重整後還原不丟
@@ -66,25 +77,49 @@ export function saveActiveWorkout() {
   );
 }
 
+/**
+ * F90 ①②：同步還原本地狀態。
+ *
+ * 這裡**只**做本地能判斷的事（有沒有、是不是今天）。「伺服器上還在不在」是非同步的，
+ * 由 app.js 的 confirmActiveWorkout() 接手——render() 是同步的，把網路請求塞進來會讓
+ * 首頁在啟動時空一拍。
+ */
 export function restoreActiveWorkout() {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(WORKOUT_KEY));
-    if (saved && saved.workoutId) {
-      state.workoutId = saved.workoutId;
-      state.template = saved.template || null;
-      state.setCounts = saved.setCounts || {};
-      state.doneByExercise = saved.doneByExercise || {};
-      state.restHintOverrides = saved.restHintOverrides || {};
+    // F90 遷移：舊版把狀態存在 sessionStorage。改版當下正在訓練的人重整後不該被丟掉，
+    // 所以 localStorage 沒有、sessionStorage 有的話搬過來一次。
+    let raw = localStorage.getItem(WORKOUT_KEY);
+    if (!raw) {
+      const legacy = sessionStorage.getItem(WORKOUT_KEY);
+      if (legacy) {
+        localStorage.setItem(WORKOUT_KEY, legacy);
+        sessionStorage.removeItem(WORKOUT_KEY);
+        raw = legacy;
+      }
     }
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.workoutId) return;
+    // ②：不做跨日續接。沒有 date 的是遷移前存的，當成今天（那份本來就是本分頁的）。
+    if (saved.date && saved.date !== todayIso()) {
+      clearActiveWorkout();
+      return;
+    }
+    state.workoutId = saved.workoutId;
+    state.template = saved.template || null;
+    state.setCounts = saved.setCounts || {};
+    state.doneByExercise = saved.doneByExercise || {};
+    state.restHintOverrides = saved.restHintOverrides || {};
   } catch {
     /* 壞資料當沒存過 */
   }
 }
 
 export function clearActiveWorkout() {
-  sessionStorage.removeItem(WORKOUT_KEY);
+  localStorage.removeItem(WORKOUT_KEY);
+  sessionStorage.removeItem(WORKOUT_KEY); // 遷移期的殘留也一併清掉
   state.workoutId = null;
   state.template = null;
+  state.setCounts = {}; // F90：不清會讓下一場的組號從上一場接續下去
   state.doneByExercise = {}; // F32：收工/結束訓練清掉本次各動作組的鏡射
   state.restHintOverrides = {};
 }
