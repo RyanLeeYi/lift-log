@@ -63,3 +63,35 @@ def test_migrate_is_idempotent_on_current_schema(tmp_path: Path) -> None:
     migrate_schema(engine)
     migrate_schema(engine)  # 重複跑不得炸（每次啟動都會執行）
     assert "rest_hint_seconds" in _columns(engine, "template_exercises")
+
+
+def _legacy_workouts_engine(tmp_path: Path):
+    """F91 之前的 workouts 表：沒有 ended_at，且已有一筆訓練。"""
+    engine = make_engine(str(tmp_path / "legacy_workouts.db"))
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE workouts ("
+                "id INTEGER PRIMARY KEY, date DATE NOT NULL, template_id INTEGER, "
+                "note VARCHAR, created_at DATETIME)"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO workouts (id, date, note) VALUES (1, '2026-07-20', '練腿日')")
+        )
+    return engine
+
+
+def test_adds_ended_at_to_legacy_workouts(tmp_path: Path) -> None:
+    engine = _legacy_workouts_engine(tmp_path)
+    migrate_schema(engine)
+    assert "ended_at" in _columns(engine, "workouts")
+
+
+def test_legacy_workouts_are_not_backfilled_as_ended(tmp_path: Path) -> None:
+    """舊訓練一律 NULL＝未結束。回填等於謊稱那些訓練有正常收工。"""
+    engine = _legacy_workouts_engine(tmp_path)
+    migrate_schema(engine)
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT id, note, ended_at FROM workouts")).one()
+    assert tuple(row) == (1, "練腿日", None)

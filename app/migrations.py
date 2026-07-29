@@ -20,6 +20,12 @@ _COLUMN_MIGRATIONS = [
         "weekdays",
         "ALTER TABLE templates ADD COLUMN weekdays TEXT",
     ),
+    # F91 結束狀態：舊 workout 一律 NULL＝未結束，不回填（回填等於謊稱那些訓練有正常收工）
+    (
+        "workouts",
+        "ended_at",
+        "ALTER TABLE workouts ADD COLUMN ended_at DATETIME",
+    ),
 ]
 
 

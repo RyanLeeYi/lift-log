@@ -68,6 +68,8 @@ export const api = {
     request("GET", `/api/exercises/${exerciseId}/history?from=${from}&to=${to}`),
 
   workoutDetail: (workoutId) => request("GET", `/api/workouts/${workoutId}`),
+  // F91：標記訓練結束（冪等）。伺服器端的結束狀態，讓另一台裝置的舊快取不會把它接下去。
+  endWorkout: (workoutId) => request("POST", `/api/workouts/${workoutId}/end`),
   listWorkouts: (start, end) => request("GET", `/api/workouts?start=${start}&end=${end}`),
   calendarStats: (year, month) =>
     request("GET", `/api/stats/calendar?year=${year}&month=${month}`),

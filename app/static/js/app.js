@@ -913,15 +913,31 @@ function openCustomForm() {
   render();
 }
 
-// 收工／結束訓練：只清 client 狀態回首頁；已記錄的組在 server（SSOT），佇列未同步的之後仍補傳進這個 workout。
+// 收工／結束訓練：清 client 狀態並告訴伺服器這場結束了；已記錄的組在 server（SSOT），
+// 佇列未同步的之後仍補傳進這個 workout（F91 ⑥ 刻意不擋已結束 workout 的寫入）。
 // logger 的「收工」與 picker 的「結束訓練」共用（module 級 function 宣告會 hoist，logger 內引用不受順序影響）。
 function endWorkout() {
   addPanelOpen = false; // F49：收工一併關窗
   stopRestTimer();
   state.pendingRestSeconds = null;
   editDraft = null;
+  const ending = state.workoutId;
   clearActiveWorkout(); // F90 起 setCounts 也由它清（單一來源）
   state.exercise = null;
+  // F91 ④：本地先結束，再通知伺服器。順序不能反——網路慢或斷線時，
+  // 使用者按了「結束訓練」卻要等一個請求才離開畫面是不能接受的；
+  // 失敗也不回滾本地結束（那只會讓人卡在一場他已經結束的訓練裡）。
+  // 代價是離線結束時伺服器不知道，另一台裝置仍可能續接——那是既有行為，不因此變差。
+  if (ending) {
+    guard(async () => {
+      try {
+        await api.endWorkout(ending);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) throw err; // 交全域 guard 導回登入
+        /* 離線／404：本地已結束，不再處理 */
+      }
+    });
+  }
   backHome(); // F81：這次訓練剛結束，本週進度與「上次訓練」都變了
 }
 
@@ -2265,6 +2281,12 @@ async function confirmActiveWorkout() {
   }
   if (!stillCurrent()) return;
 
+  // F91 ⑤：伺服器說這場已經結束了 → 不續接。這是跨裝置的那條路——
+  // 在手機按結束，網頁那份快取不知道，重整就會把已結束的訓練接下去。
+  if (detail.ended_at) {
+    dropStale("這場訓練已經結束了");
+    return;
+  }
   // ②：日期以伺服器為準。本地快取可能是遷移過來的、或跨午夜後被舊版寫歪的。
   if (detail.date !== todayIso()) {
     dropStale("上一場訓練是別天的，已為你收起");

@@ -192,6 +192,20 @@ def get_workout(session: Session, workout_id: int) -> Workout:
     return workout
 
 
+def end_workout(session: Session, workout_id: int) -> Workout:
+    """F91：標記這場訓練已結束。
+
+    冪等——已結束的再呼叫一次回同一筆、時間不變。離線佇列補傳與連點都會重送，
+    每次都覆寫時間的話「結束於何時」會被最後一次重送污染。
+    """
+    workout = get_workout(session, workout_id)
+    if workout.ended_at is None:
+        workout.ended_at = datetime.now()
+        session.commit()
+        session.refresh(workout)
+    return workout
+
+
 def get_active_sets(session: Session, workout_id: int) -> list[WorkoutSet]:
     """該 workout 未刪除的組，SQL 端過濾與排序（軟刪除不變量的唯一入口）。"""
     return list(

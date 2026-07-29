@@ -60,6 +60,10 @@ class Workout(Base):
     template_id: Mapped[int | None] = mapped_column(default=None)
     note: Mapped[str | None] = mapped_column(String, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # F91：這場訓練已結束（按過「結束訓練／收工」）。NULL＝進行中或從未正常結束。
+    # 存在的理由是**跨裝置**：結束只清當下那台的快取，另一台的舊快取會把它接下去。
+    # 刻意不擋 sets 寫入——離線佇列裡先記的組必須補得進去（見 docs/decisions/）。
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
 
     sets: Mapped[list["WorkoutSet"]] = relationship(back_populates="workout")
 

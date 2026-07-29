@@ -39,8 +39,15 @@ def get_workout(workout_id: int, session: DbSession) -> WorkoutDetailOut:
         template_id=workout.template_id,
         note=workout.note,
         created_at=workout.created_at,  # F83：今日菜單的「已練 N 分」
+        ended_at=workout.ended_at,  # F91：還原時據此拒絕續接已結束的訓練
         sets=[SetOut.model_validate(s) for s in svc.get_active_sets(session, workout_id)],
     )
+
+
+@router.post("/workouts/{workout_id}/end", response_model=WorkoutOut)
+def end_workout(workout_id: int, session: DbSession) -> WorkoutOut:
+    """F91：標記訓練結束。冪等；不影響 sets 寫入（離線佇列的組仍要補得進來）。"""
+    return WorkoutOut.model_validate(svc.end_workout(session, workout_id))
 
 
 @router.post("/workouts/{workout_id}/sets", response_model=SetOut)

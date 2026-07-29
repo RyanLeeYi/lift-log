@@ -296,6 +296,8 @@ class WorkoutOut(BaseModel):
     # F83：今日菜單的「已練 N 分」。用伺服器時間而不是前端記的開始時間——
     # app 被系統回收後 sessionStorage 就沒了，但訓練還在進行
     created_at: datetime_type | None = None
+    # F91：非 null＝已結束。前端還原時據此拒絕續接（跨裝置一致）
+    ended_at: datetime_type | None = None
 
 
 class WorkoutDetailOut(WorkoutOut):

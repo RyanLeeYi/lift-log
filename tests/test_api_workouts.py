@@ -358,3 +358,46 @@ class TestExercises:
         resp = client.get(f"/api/exercises/{exercise_id}/last-sets?exclude_workout={w}")
         assert resp.status_code == 200
         assert resp.json() == []
+
+
+class TestEndWorkout:
+    """F91：workout 結束狀態進伺服器，讓另一台裝置不會把已結束的訓練接下去。"""
+
+    def test_new_workout_is_not_ended(self, client):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        assert client.get(f"/api/workouts/{workout_id}").json()["ended_at"] is None
+
+    def test_end_sets_ended_at(self, client):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        resp = client.post(f"/api/workouts/{workout_id}/end")
+        assert resp.status_code == 200
+        assert resp.json()["ended_at"] is not None
+        assert client.get(f"/api/workouts/{workout_id}").json()["ended_at"] is not None
+
+    def test_end_is_idempotent(self, client):
+        """離線補傳與連點都會重送——第二次不得報錯，也不得把時間往後推。"""
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        first = client.post(f"/api/workouts/{workout_id}/end")
+        second = client.post(f"/api/workouts/{workout_id}/end")
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["ended_at"] == first.json()["ended_at"]
+
+    def test_end_unknown_workout_returns_404(self, client):
+        assert client.post("/api/workouts/999999/end").status_code == 404
+
+    def test_ended_workout_still_accepts_sets(self, client, exercise_id):
+        """⑥ 刻意不擋寫入：離線記完、在另一台按結束的組必須補得進去，不能被標成 failed 而遺失。"""
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        client.post(f"/api/workouts/{workout_id}/end")
+        resp = client.post(
+            f"/api/workouts/{workout_id}/sets", json=make_set_payload(exercise_id)
+        )
+        assert resp.status_code == 201
+        assert len(client.get(f"/api/workouts/{workout_id}").json()["sets"]) == 1
+
+    def test_list_exposes_ended_at(self, client):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        client.post(f"/api/workouts/{workout_id}/end")
+        listed = {w["id"]: w for w in client.get("/api/workouts").json()}
+        assert listed[workout_id]["ended_at"] is not None
