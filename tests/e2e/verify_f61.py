@@ -76,6 +76,12 @@ def round_trip(page) -> int:
     )
 
 
+def open_settings(page) -> None:
+    """F81：版號搬進設定畫面（首頁右上角齒輪）。"""
+    page.locator(".home-settings").click()
+    page.wait_for_timeout(700)
+
+
 def setup_token(page, base: str) -> None:
     """走 setup 畫面存 token（app 版與 web 版共用同一段流程）。"""
     page.goto(base, wait_until="domcontentloaded")
@@ -102,11 +108,14 @@ def verify_web(page, base: str) -> None:
     page.on("request", lambda r: api_urls.append(r.url) if "/api/" in r.url else None)
     setup_token(page, base)
 
+    open_settings(page)  # F81：版號搬進設定畫面
     version = page.locator(".version-tag").inner_text()
     state = (REPO / "app/static/js/state.js").read_text(encoding="utf-8")
     expected = re.search(r'APP_VERSION\s*=\s*"(v\d+)"', state).group(1)
     check(version.strip() == expected, f"⑤ web 畫面角落版號＝原始碼版本（{version.strip()}）")
 
+    page.get_by_role("button", name="回首頁").first.click()
+    page.wait_for_timeout(700)
     count = round_trip(page)
     check(count > 0, f"⑥ web 版 API 往返成功並取回種子動作（{count} 筆）")
     check(len(api_urls) >= 2, f"⑥ web 版確實發出多個 API 請求（{len(api_urls)} 個，前提非空）")

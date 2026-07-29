@@ -92,6 +92,10 @@ export const api = {
   deleteDailyStatus: (dateIso) => request("DELETE", `/api/daily-status/${dateIso}`), // F18 硬刪
   // F67：app 版自我更新——伺服器上最新的 APK 版本（沒有發佈版本時回 404）
   appLatest: () => request("GET", "/api/app/latest"),
+  // F80/F81：今天排到什麼、本週進度、上次訓練（首頁一次請求拿齊）
+  scheduleToday: () => request("GET", "/api/schedule/today"),
+  getSetting: (key) => request("GET", `/api/settings/${key}`),
+  putSetting: (key, value) => request("PUT", `/api/settings/${key}`, { value: String(value) }),
   // F31 Web Push（休息結束通知）
   pushPublicKey: () => request("GET", "/api/push/public-key"),
   pushSubscribe: (sub) => request("POST", "/api/push/subscribe", sub),

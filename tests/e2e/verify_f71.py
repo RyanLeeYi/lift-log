@@ -17,7 +17,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import sync_playwright  # noqa: E402
-from verify_f67 import PHONE, REPO, TOKEN, free_port, setup_and_home, start_server  # noqa: E402
+from verify_f67 import (  # noqa: E402
+    PHONE,
+    REPO,
+    TOKEN,
+    free_port,
+    setup_and_home,
+    start_from_home,  # noqa: E402
+    start_server,
+)
 
 results: list[tuple[bool, str]] = []
 
@@ -127,8 +135,7 @@ def rest_state(page) -> dict:
 
 
 def start_free_workout(page) -> None:
-    page.get_by_role("button", name="開練").click()
-    page.wait_for_timeout(600)
+    start_from_home(page)
     free = page.get_by_role("button", name="自由訓練")
     if free.count():
         free.click()

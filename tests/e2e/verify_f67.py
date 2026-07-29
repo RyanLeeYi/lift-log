@@ -136,6 +136,27 @@ def setup_and_home(page) -> None:
     page.wait_for_timeout(1200)
 
 
+def start_from_home(page) -> None:
+    """按下首頁的主要動作（開始一次訓練）。
+
+    F81 起這顆按鈕的字依當天狀態而變——沒排程是「挑一份課表」、有排程是「開始訓練」、
+    訓練開著是「繼續訓練」。各測試腳本不該各自複製這組判斷，統一走這裡。
+    """
+    for name in ("繼續訓練", "開始訓練", "挑一份課表"):
+        button = page.get_by_role("button", name=name)
+        if button.count():
+            button.first.click()
+            page.wait_for_timeout(700)
+            return
+    raise AssertionError("首頁找不到開始訓練的入口")
+
+
+def open_settings(page) -> None:
+    """F81：版號、更新入口與提醒開關搬進設定畫面（首頁右上角齒輪）。"""
+    page.locator(".home-settings").click()
+    page.wait_for_timeout(700)
+
+
 def dismiss_modal(page) -> None:
     """F68 起有更新時會自動彈視窗蓋住首頁——先收起來才點得到底下的東西。
 
@@ -154,6 +175,7 @@ def start_update_from_entry(page) -> None:
     F68 回簽核拿掉了獨立的更新橫幅，入口併進首頁角落的版號（`v66 → v99`）。
     F67 ③④ 的目的（看得到更新、點了會下載安裝）不變，改的是路徑不是條文。
     """
+    open_settings(page)  # F81：版號入口搬進設定畫面
     page.locator(".version-tag-btn").click()
     page.wait_for_timeout(300)
     page.get_by_role("button", name="立即更新").click()
@@ -189,16 +211,19 @@ def main() -> int:
             page = native(ctx.new_page(), base, current=64)
             setup_and_home(page)
             dismiss_modal(page)
+            # F81：版號入口搬進設定畫面（首頁只留自動彈的視窗）
+            open_settings(page)
             entry = page.locator(".version-tag-btn.has-update")
-            check(entry.count() == 1, f"③ 有新版時首頁版號變成更新入口（{entry.count()}）")
+            check(entry.count() == 1, f"③ 有新版時設定畫面的版號變成更新入口（{entry.count()}）")
             text = entry.inner_text() if entry.count() else ""
             check("v99" in text, f"③ 入口帶伺服器版號：{text!r}")
 
-            # ③ 只在首頁：進到選動作畫面後不得出現（視窗已於上方收起）
-            page.get_by_role("button").first.click()  # 開練
-            page.wait_for_timeout(800)
+            # ③ 只在首頁／設定：進到選動作畫面後不得出現（視窗已於上方收起）
+            page.get_by_role("button", name="回首頁").first.click()
+            page.wait_for_timeout(700)
+            start_from_home(page)
             check(page.locator(".version-tag-btn.has-update").count() == 0,
-                  "③ 離開首頁後更新入口消失（訓練中不打斷）")
+                  "③ 進入訓練流程後更新入口消失（訓練中不打斷）")
             ctx.close()
 
             # ③ 已是最新 → 不顯示

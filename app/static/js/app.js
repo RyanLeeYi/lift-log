@@ -143,7 +143,7 @@ function versionTag() {
             updateFlash = "已是最新版";
             setTimeout(() => {
               updateFlash = null;
-              if (state.screen === "home") render();
+              if (state.screen === "home" || state.screen === "settings") render();
             }, 2000);
           }
           render();
@@ -259,6 +259,9 @@ async function syncQueue() {
     synced.length > 0 ||
     before.pending !== state.queue.pending ||
     before.failed !== state.queue.failed;
+  // F81：補傳進去的是「組」，本週天數與上次訓練因此改變。開站時 loadHome 與 syncQueue 並行，
+  // 首頁那份通常先回來——不重抓的話畫面會停在補傳前的數字，直到下次切畫面（Codex P2）。
+  if (synced.length > 0) await loadHome();
   if (changed) renderUnlessTyping();
 }
 
@@ -304,6 +307,7 @@ function renderSetup() {
   const save = async () => {
     setToken(input.value.trim());
     await loadExercises(""); // 驗證 token 可用，順便預載動作庫
+    await loadHome(); // F81：進首頁前把三張卡的資料補上（否則第一眼是空的，要離開再回來才出現）
     state.screen = "home";
     render();
     runUpdateCheck(); // F67：剛設好 token 才查得動——開機那次在 setup 畫面必然 401
@@ -321,6 +325,35 @@ function renderSetup() {
 
 // ---------- home ----------
 
+// F81：首頁的三張卡（本週進度、今天的安排、上次訓練）全部吃這一包。
+// 一次請求拿齊，不讓首頁變成三個 spinner；載不到就讓卡片消失，首頁的主要動作仍在。
+let homeData = null;
+
+export async function loadHome() {
+  try {
+    homeData = await api.scheduleToday();
+  } catch (err) {
+    // 離線或後端沒醒＝可降級：卡片消失，首頁照樣能開練。
+    // 但 401 是「token 失效」，吞掉就會讓人卡在看起來只是「今天沒安排」的首頁上——
+    // 那條路要交給 guard 導回重新登入（Codex 2026-07-29 P2）。
+    homeData = null;
+    if (err instanceof ApiError && err.status === 401) throw err;
+  }
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 11) return "早安";
+  if (hour < 18) return "午安";
+  return "晚安";
+}
+
+function longDateLabel() {
+  const now = new Date();
+  const week = ["日", "一", "二", "三", "四", "五", "六"][now.getDay()];
+  return `${now.getMonth() + 1}月${now.getDate()}日 週${week}`;
+}
+
 async function goPicker() {
   if (pickerExercises.length === 0) await loadExercises("");
   state.screen = "picker";
@@ -337,6 +370,142 @@ async function startWorkout(template) {
   await goPicker();
 }
 
+// 本週進度卡：七段條 ＋ 大數字。資料全部來自 /api/schedule/today（F80）。
+function weekProgressCard() {
+  const today = homeData.weekday - 1; // ISO 1..7 → 陣列索引 0..6
+  return el("section", { class: "card week-card" }, [
+    el("div", { class: "card-label" }, ["本週進度"]),
+    el("div", { class: "week-count" }, [
+      el("span", { class: "n" }, [String(homeData.week_done_days)]),
+      el("span", { class: "of" }, [`/ ${homeData.weekly_target_days} 天`]),
+    ]),
+    el(
+      "div",
+      { class: "week-bars" },
+      homeData.week_days.map((done, i) =>
+        el("span", { class: `week-bar${done ? " done" : i === today ? " today" : ""}` }, []),
+      ),
+    ),
+  ]);
+}
+
+// 今天的安排。三態：一份（照設計稿）／多份（各自一張小卡）／沒排程。
+function todayPlanCard(start, pickTemplate) {
+  const planned = homeData?.templates ?? [];
+  const startLabel = state.workoutId ? "繼續訓練" : "開始訓練";
+
+  if (planned.length === 0) {
+    return el("section", { class: "card plan-card" }, [
+      el("div", { class: "card-label" }, ["今天的安排"]),
+      el("div", { class: "plan-none" }, ["今天沒安排"]),
+      el(
+        "button",
+        { class: "btn btn-primary plan-start", onclick: () => guard(start) },
+        [state.workoutId ? "繼續訓練" : "挑一份課表"],
+      ),
+    ]);
+  }
+
+  if (planned.length === 1) {
+    const plan = planned[0];
+    return el("section", { class: "card plan-card" }, [
+      el("div", { class: "card-label" }, ["今天的安排"]),
+      el("div", { class: "plan-name" }, [plan.name]),
+      el("div", { class: "plan-meta" }, [`${plan.exercise_count} 動作 · ${plan.set_count} 組`]),
+      el(
+        "button",
+        { class: "btn btn-primary plan-start", onclick: () => guard(() => pickTemplate(plan.id)) },
+        [startLabel],
+      ),
+      el("button", { class: "btn btn-ghost plan-swap", onclick: () => guard(start) }, [
+        "換一份課表",
+      ]),
+    ]);
+  }
+
+  // 多份：一天可以排早上推、晚上有氧（F80 ④）。各自一列，主按鈕的位置不因份數而跳動。
+  return el("section", { class: "card plan-card" }, [
+    el("div", { class: "card-label" }, [`今天的安排 · ${planned.length} 份`]),
+    ...planned.map((plan) =>
+      el("div", { class: "plan-row" }, [
+        el("div", { class: "plan-row-text" }, [
+          el("div", { class: "plan-row-name" }, [plan.name]),
+          el("div", { class: "plan-meta" }, [
+            `${plan.exercise_count} 動作 · ${plan.set_count} 組`,
+          ]),
+        ]),
+        el(
+          "button",
+          {
+            class: "btn btn-primary plan-row-start",
+            onclick: () => guard(() => pickTemplate(plan.id)),
+          },
+          [startLabel],
+        ),
+      ]),
+    ),
+    el("button", { class: "btn btn-ghost plan-swap", onclick: () => guard(start) }, [
+      "換一份課表",
+    ]),
+  ]);
+}
+
+// 上次訓練。沒有任何歷史時整張不畫——空狀態的卡片只是噪音。
+function lastWorkoutCard() {
+  const last = homeData?.last_workout;
+  if (!last) return [];
+  const [, month, day] = last.date.split("-");
+  const title = last.template_name ? `上次 · ${last.template_name}` : "上次訓練";
+  return [
+    el("section", { class: "card last-card" }, [
+      el("div", { class: "last-text" }, [
+        el("div", { class: "last-title" }, [title]),
+        el("div", { class: "last-meta" }, [
+          `${Number(month)}/${Number(day)} · ${last.set_count} 組`,
+        ]),
+      ]),
+      el("div", { class: "last-volume" }, [
+        el("span", { class: "v" }, [Math.round(last.volume_kg).toLocaleString("en-US")]),
+        el("span", { class: "u" }, ["kg"]),
+      ]),
+    ]),
+  ];
+}
+
+function bottomNav() {
+  const go = async (screen, open) => {
+    await open();
+    state.screen = screen;
+    render();
+  };
+  const items = [
+    ["clipboard", "課表", () => go("templates", async () => {
+      await openTemplates();
+      resetTemplateListScroll(); // F48：從首頁進課表頁一律從頂端
+    })],
+    ["calendar", "日曆", () => go("calendar", openCalendar)],
+    ["trending", "表現", async () => {
+      // F39：不必先開練，直接瀏覽有資料的動作看表現
+      const origin = state.screen;
+      await openTrends();
+      if (state.screen !== origin) return; // 載入期間離開首頁 → 不劫持導覽
+      state.screen = "trends";
+      render();
+    }],
+    ["scale", "體重", () => go("body", openBody)],
+  ];
+  return el(
+    "nav",
+    { class: "bottom-nav" },
+    items.map(([name, label, onclick]) =>
+      el("button", { class: "btn nav-item", onclick: () => guard(onclick) }, [
+        icon(name, { size: 18 }),
+        el("span", {}, [label]),
+      ]),
+    ),
+  );
+}
+
 function renderHome() {
   const start = async () => {
     if (state.workoutId) {
@@ -351,77 +520,108 @@ function renderHome() {
     state.screen = "templateSelect";
     render();
   };
-  return el("section", { class: "screen" }, [
-    el("header", { class: "topbar" }, [
-      el("h1", {}, ["lift-log"]),
-      el("span", { class: "date" }, [todayLabel()]),
+
+  // 今天排定的那份：直接開練，不必再繞去挑課表
+  const pickTemplate = async (templateId) => {
+    if (state.workoutId) {
+      await goPicker();
+      return;
+    }
+    const templates = await api.listTemplates();
+    const template = templates.find((t) => t.id === templateId);
+    if (!template) {
+      await start(); // 課表在別處被刪了——退回挑課表，不要卡住
+      return;
+    }
+    await startWorkout(template);
+  };
+  return el("section", { class: "screen home" }, [
+    el("header", { class: "home-head" }, [
+      el("h1", {}, [`${greeting()}，Ryan`]),
+      el("span", { class: "date" }, [longDateLabel()]),
+      el(
+        "button",
+        {
+          class: "btn icon-btn home-settings",
+          "aria-label": "設定",
+          onclick: () =>
+            guard(async () => {
+              await openSettings();
+              state.screen = "settings";
+              render();
+            }),
+        },
+        [icon("settings", { size: 20, label: "設定" })],
+      ),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...syncStatusLine(),
-    el("p", { class: "today-summary" }, [
-      state.workoutId ? "今天的訓練還開著——繼續。" : "還沒開始。按下去，就是今天的第一組。",
+    ...(homeData ? [weekProgressCard()] : []),
+    todayPlanCard(start, pickTemplate),
+    ...lastWorkoutCard(),
+    bottomNav(),
+    // F68 ①④：更新視窗仍自動彈在首頁——版號入口雖然搬進設定，但「有新版」不該要人自己去翻
+    ...(updateModalOpen && pendingUpdate ? [updateModal()] : []),
+  ]);
+}
+
+
+// ---------- settings（F81） ----------
+//
+// 首頁改版把版面讓給了「今天要練什麼」，所以提醒開關、浮動計時、週目標與版號都收進這裡。
+// 它們的共同點是「設定一次就不再碰」——留在首頁只是每天擋在主要動作前面。
+
+let weeklyTargetDraft = null;
+
+export async function openSettings() {
+  try {
+    const setting = await api.getSetting("weekly_target_days");
+    weeklyTargetDraft = Number(setting.value);
+  } catch (err) {
+    weeklyTargetDraft = null; // 讀不到就不畫這一列，其餘設定照常可用
+    if (err instanceof ApiError && err.status === 401) throw err; // 同 loadHome：401 要導回登入
+  }
+}
+
+function weeklyTargetRow() {
+  if (weeklyTargetDraft === null) return [];
+  const change = (delta) =>
+    guard(async () => {
+      const previous = weeklyTargetDraft;
+      const next = Math.min(7, Math.max(1, previous + delta));
+      if (next === previous) return;
+      weeklyTargetDraft = next;
+      render(); // 先反映在畫面上（按下去要立刻有反應）
+      try {
+        await api.putSetting("weekly_target_days", next);
+      } catch (err) {
+        // 寫入失敗就把畫面退回去——留著未儲存的數字，下一次加減會從錯的值起算
+        //（伺服器還是 4、畫面卻是 5，再按一次就直接寫 6）。Codex 2026-07-29 P2。
+        weeklyTargetDraft = previous;
+        render();
+        throw err;
+      }
+      await loadHome(); // 首頁的分母跟著變
+    });
+  return [
+    el("div", { class: "set-row" }, [
+      el("span", { class: "set-row-label" }, ["每週目標天數"]),
+      el("div", { class: "set-row-ctl" }, [
+        el("button", { class: "btn chip", "aria-label": "減少", onclick: () => change(-1) }, ["−"]),
+        el("span", { class: "set-row-val" }, [String(weeklyTargetDraft)]),
+        el("button", { class: "btn chip", "aria-label": "增加", onclick: () => change(1) }, ["＋"]),
+      ]),
     ]),
-    el(
-      "button",
-      { class: "btn btn-primary home-start", onclick: () => guard(start) },
-      [state.workoutId ? "繼續訓練" : "開練"],
-    ),
-    el(
-      "button",
-      {
-        class: "btn",
-        onclick: () =>
-          guard(async () => {
-            await openTemplates();
-            resetTemplateListScroll(); // F48：從首頁進課表頁一律從頂端
-            state.screen = "templates";
-            render();
-          }),
-      },
-      [iconLabel("clipboard", "課表")],
-    ),
-    el(
-      "button",
-      {
-        class: "btn",
-        onclick: () =>
-          guard(async () => {
-            await openCalendar();
-            state.screen = "calendar";
-            render();
-          }),
-      },
-      [iconLabel("calendar", "日曆")],
-    ),
-    el(
-      "button",
-      {
-        class: "btn",
-        // F39：不必先開練，直接瀏覽有資料的動作看表現
-        onclick: () =>
-          guard(async () => {
-            const origin = state.screen;
-            await openTrends();
-            if (state.screen !== origin) return; // 載入期間離開首頁 → 不劫持導覽
-            state.screen = "trends";
-            render();
-          }),
-      },
-      [iconLabel("trending", "動作表現")],
-    ),
-    el(
-      "button",
-      {
-        class: "btn",
-        onclick: () =>
-          guard(async () => {
-            await openBody();
-            state.screen = "body";
-            render();
-          }),
-      },
-      [iconLabel("scale", "體重")],
-    ),
+  ];
+}
+
+function renderSettings() {
+  return el("section", { class: "screen settings-screen" }, [
+    el("header", { class: "topbar" }, [
+      el("h1", {}, ["設定"]),
+    ]),
+    ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    ...weeklyTargetRow(),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
     // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js
     ...(restNotifySupported()
@@ -490,10 +690,24 @@ function renderHome() {
     versionTag(),
     // F68 ⑦：手動檢查後沒有新版的短暫提示
     ...(updateFlash ? [el("div", { class: "update-flash" }, [updateFlash])] : []),
-    // F68 ①④：更新視窗只掛在首頁——其他畫面即使有新版也不會被打斷
+    // F68 ④：更新視窗在首頁與設定都掛得住——訓練途中的畫面一律不被它打斷
     ...(updateModalOpen && pendingUpdate ? [updateModal()] : []),
+    el(
+      "button",
+      {
+        class: "btn btn-ghost settings-back",
+        onclick: () =>
+          guard(async () => {
+            await loadHome(); // 週目標可能剛改過，首頁的分母要跟著更新
+            state.screen = "home";
+            render();
+          }),
+      },
+      [iconLabel("back", "回首頁")],
+    ),
   ]);
 }
+
 
 // F68：更新視窗。內容與下載進度都在視窗內（⑤），下載邏輯沿用 F67 的原生路徑不重做。
 function updateModal() {
@@ -645,8 +859,7 @@ function endWorkout() {
   clearActiveWorkout();
   state.setCounts = {};
   state.exercise = null;
-  state.screen = "home";
-  render();
+  backHome(); // F81：這次訓練剛結束，本週進度與「上次訓練」都變了
 }
 
 // F10 picker 的自訂動作視窗（共用 customExerciseModal）。建立成功 → reload 動作庫並關窗，
@@ -1431,6 +1644,16 @@ function captureScrollPositions() {
   captureBodyScroll(); // F53：體重頁紀錄清單
 }
 
+// F81：回首頁前先把首頁那三張卡的資料重抓一次——記完組回來，本週進度與上次訓練都變了。
+// 失敗不擋路（loadHome 內部吞掉），首頁照樣開得起來。
+function backHome() {
+  guard(async () => {
+    await loadHome(); // 401 會在這裡拋出 → guard 導回重新登入，不會再往下設 home
+    state.screen = "home";
+    render();
+  });
+}
+
 function render() {
   captureScrollPositions();
   // F49 review P2-1：回到 setup／home＝離開訓練情境，picker 的兩個懸浮視窗一律關閉。
@@ -1444,38 +1667,16 @@ function render() {
   const screens = {
     setup: renderSetup,
     home: renderHome,
+    settings: renderSettings,
     templateSelect: renderTemplateSelect,
     picker: renderPicker,
     trends: renderTrends,
     logger: renderLogger,
     templates: () =>
-      renderTemplates(
-        render,
-        () => {
-          state.screen = "home";
-          render();
-        },
-        guard,
-      ),
+      renderTemplates(render, backHome, guard),
     templateEdit: () => renderTemplateEdit(render, guard),
-    calendar: () =>
-      renderCalendar(
-        render,
-        () => {
-          state.screen = "home";
-          render();
-        },
-        guard,
-      ),
-    body: () =>
-      renderBody(
-        render,
-        () => {
-          state.screen = "home";
-          render();
-        },
-        guard,
-      ),
+    calendar: () => renderCalendar(render, backHome, guard),
+    body: () => renderBody(render, backHome, guard),
     exerciseDetail: () =>
       renderExerciseDetail(
         render,
@@ -1585,6 +1786,11 @@ if (!getToken()) {
 } else {
   restoreTemplateDraft(); // F30：有未存的課表草稿就還原進編輯畫面（比 beforeunload 提示可靠）
   render();
+  // F81：首頁三張卡的資料。先畫再補——沒有它首頁也開得起來，不讓網路擋住第一次繪製
+  guard(async () => {
+    await loadHome();
+    if (state.screen === "home") render();
+  });
   guard(loadExercises); // 預載動作庫，token 失效會導回 setup
   guard(syncQueue); // 開站補傳上次離線留下的佇列
 }

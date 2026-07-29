@@ -58,9 +58,10 @@ def source_checks() -> None:
 
 def make_template(page, name: str, weekdays: list[int]) -> None:
     """走真實 UI：新課表 → 選星期 → 加動作 → 存檔。"""
-    # 可能是從首頁進來，也可能存完課表後還停在列表頁——兩種都要能用
+    # 可能是從首頁進來，也可能存完課表後還停在列表頁——兩種都要能用。
+    # 用底部導覽定位而不是文字：F81 起首頁同時有「換一份課表」，name 比對會先命中它。
     if page.get_by_role("button", name="新課表").count() == 0:
-        page.get_by_role("button", name="課表").first.click()
+        page.locator(".bottom-nav .nav-item", has_text="課表").click()
         page.wait_for_timeout(700)
     page.get_by_role("button", name="新課表").first.click()
     page.wait_for_timeout(600)
@@ -97,7 +98,7 @@ def main() -> int:
             setup_and_home(page)
 
             # ⑥ 編輯畫面有星期多選
-            page.get_by_role("button", name="課表").first.click()
+            page.locator(".bottom-nav .nav-item", has_text="課表").click()
             page.wait_for_timeout(700)
             page.get_by_role("button", name="新課表").first.click()
             page.wait_for_timeout(600)

@@ -225,3 +225,54 @@ class TestMigration:
         with engine.begin() as conn:
             cols = {row[1] for row in conn.execute(text("PRAGMA table_info(templates)"))}
         assert "weekdays" in cols
+
+
+class TestLastWorkout:
+    """F81 首頁的「上次訓練」卡。"""
+
+    def _log(self, client, exercise_id: int, day: date, uuid: str, template_id=None) -> int:
+        body = {"date": day.isoformat()}
+        if template_id is not None:
+            body["template_id"] = template_id
+        workout = client.post("/api/workouts", json=body).json()
+        client.post(
+            f"/api/workouts/{workout['id']}/sets",
+            json={
+                "client_uuid": uuid,
+                "exercise_id": exercise_id,
+                "set_number": 1,
+                "weight_kg": 60,
+                "reps": 8,
+            },
+        )
+        return workout["id"]
+
+    def test_none_when_no_history(self, client) -> None:
+        assert client.get("/api/schedule/today").json()["last_workout"] is None
+
+    def test_reports_latest_workout(self, client, exercise_id) -> None:
+        self._log(client, exercise_id, date.today() - timedelta(days=3), "uuid-old-0001")
+        self._log(client, exercise_id, date.today() - timedelta(days=1), "uuid-new-0001")
+        last = client.get("/api/schedule/today").json()["last_workout"]
+        assert last["date"] == (date.today() - timedelta(days=1)).isoformat()
+        assert last["set_count"] == 1
+        assert last["volume_kg"] == 480.0
+
+    def test_template_name_resolved(self, client, exercise_id) -> None:
+        template = _make_template(client, ex_id=exercise_id, name="拉背日")
+        self._log(client, exercise_id, date.today(), "uuid-tpl-0001", template_id=template["id"])
+        assert client.get("/api/schedule/today").json()["last_workout"]["template_name"] == "拉背日"
+
+    def test_deleted_template_leaves_name_empty(self, client, exercise_id) -> None:
+        """課表被刪掉不該讓首頁壞掉——workouts.template_id 沒有 FK，查不到就留空。"""
+        template = _make_template(client, ex_id=exercise_id, name="會被刪的")
+        self._log(client, exercise_id, date.today(), "uuid-del-0001", template_id=template["id"])
+        client.delete(f"/api/templates/{template['id']}")
+        assert client.get("/api/schedule/today").json()["last_workout"]["template_name"] is None
+
+    def test_empty_workout_is_not_the_last(self, client, exercise_id) -> None:
+        """今天開了訓練還沒記組時，卡片要講的仍是上一次真的有練的那次。"""
+        self._log(client, exercise_id, date.today() - timedelta(days=2), "uuid-real-0001")
+        client.post("/api/workouts", json={"date": date.today().isoformat()})
+        last = client.get("/api/schedule/today").json()["last_workout"]
+        assert last["date"] == (date.today() - timedelta(days=2)).isoformat()

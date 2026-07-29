@@ -7,11 +7,11 @@
 from datetime import date as date_type
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Template, Workout, WorkoutSet
-from app.schemas import ScheduledTemplate, ScheduleTodayOut
+from app.schemas import LastWorkout, ScheduledTemplate, ScheduleTodayOut
 from app.services.settings import weekly_target_days
 from app.services.templates import unpack_weekdays
 
@@ -58,6 +58,40 @@ def templates_for_weekday(session: Session, weekday: int) -> list[ScheduledTempl
     return out
 
 
+def last_workout(session: Session, before: date_type) -> LastWorkout | None:
+    """最近一次「真的有記東西」的訓練（含當天稍早的）。
+
+    以 workout 為單位而不是以日期：同一天練兩場時，卡片講的是最後那一場。
+    課表名稱走 template_id 反查——課表可能已被刪除（workouts.template_id 無 FK），查不到就留 None。
+    """
+    row = session.execute(
+        select(
+            Workout.id,
+            Workout.date,
+            Workout.template_id,
+            func.count(WorkoutSet.id),
+            func.sum(WorkoutSet.weight_kg * WorkoutSet.reps),
+        )
+        .join(WorkoutSet, WorkoutSet.workout_id == Workout.id)
+        .where(Workout.date <= before, WorkoutSet.deleted_at.is_(None))
+        .group_by(Workout.id)
+        .order_by(Workout.date.desc(), Workout.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    _, day, template_id, set_count, volume = row
+    name = None
+    if template_id is not None:
+        name = session.scalar(select(Template.name).where(Template.id == template_id))
+    return LastWorkout(
+        date=day,
+        template_name=name,
+        set_count=set_count,
+        volume_kg=round(volume or 0, 1),
+    )
+
+
 def today(session: Session, today_date: date_type | None = None) -> ScheduleTodayOut:
     day = today_date or date_type.today()
     start = week_start(day)
@@ -69,5 +103,6 @@ def today(session: Session, today_date: date_type | None = None) -> ScheduleToda
         weekly_target_days=weekly_target_days(session),
         week_done_days=len(done),
         week_days=[(start + timedelta(days=i)) in done for i in range(7)],
+        last_workout=last_workout(session, day),
     )
 

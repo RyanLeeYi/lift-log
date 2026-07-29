@@ -21,7 +21,14 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import sync_playwright  # noqa: E402
-from verify_f67 import PHONE, REPO, free_port, setup_and_home, start_server  # noqa: E402
+from verify_f67 import (  # noqa: E402
+    PHONE,
+    REPO,
+    free_port,
+    setup_and_home,
+    start_from_home,  # noqa: E402
+    start_server,
+)
 
 results: list[tuple[bool, str]] = []
 
@@ -171,7 +178,8 @@ def rendered_checks(page, base: str) -> None:
     body_bg = page.evaluate("() => getComputedStyle(document.body).backgroundColor")
     check(body_bg == "rgb(34, 30, 26)", f"① 頁面底實際渲染為 #221E1A（{body_bg}）")
 
-    start = page.get_by_role("button", name="開練")
+    # F81 起首頁的主按鈕依當天排程改名，所以用 class 定位而不是文字
+    start = page.locator(".plan-start")
     radius = start.evaluate("el => getComputedStyle(el).borderTopLeftRadius")
     check(radius == "99px", f"④ 主按鈕實際圓角 99px（{radius}）")
     colour = start.evaluate("el => getComputedStyle(el).backgroundColor")
@@ -183,8 +191,8 @@ def rendered_checks(page, base: str) -> None:
     #   逐畫面量，不只量首頁：verify_ui_audit 只涵蓋計時頁，日曆／表現／體重／picker 的缺口
     #   因此一路假綠到 F78（Codex 2026-07-29 驗收抓到）。
     check(not undersized(page), f"⑦ 首頁觸控區全部 ≥44px（不足：{undersized(page)}）")
-    for label, name in (("日曆", "日曆"), ("動作表現", "動作表現"), ("體重", "體重")):
-        page.get_by_role("button", name=name).first.click()
+    for label in ("日曆", "表現", "體重"):  # F81：底部四格導覽（「動作表現」縮寫成「表現」）
+        page.locator(".bottom-nav .nav-item", has_text=label).click()
         page.wait_for_timeout(800)
         small = undersized(page, allow_narrow={"1M", "3M", "6M", "9M", "1Y", "2Y", "3Y"})
         check(not small, f"⑦ {label}頁觸控區 ≥44px（不足：{small}）")
@@ -193,8 +201,7 @@ def rendered_checks(page, base: str) -> None:
         page.get_by_role("button", name="回首頁").first.click()
         page.wait_for_timeout(600)
 
-    page.get_by_role("button", name="開練").click()
-    page.wait_for_timeout(800)
+    start_from_home(page)
     free = page.get_by_role("button", name="自由訓練")
     if free.count():
         free.click()

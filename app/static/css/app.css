@@ -562,8 +562,10 @@ body {
 /* F68：更新視窗與版號入口。視窗沿用 .modal-overlay/.modal，這裡只補內容排版。 */
 .update-modal { text-align: center; }
 .update-progress { color: var(--text-dim); margin: 8px 0 4px; }
+/* F81 ⑧：app 版的版號是可點的按鈕（手動檢查更新的入口），觸控高度要達標。
+   web 版是純文字 div，量不到——這個缺口就是這樣躲過 F77/F78 兩輪量測的（Codex 2026-07-29 驗收抓到）。 */
 .version-tag-btn { background: none; border: none; padding: 12px 16px; cursor: pointer;
-  font: inherit; color: inherit; }
+  font: inherit; color: inherit; min-height: 44px; }
 /* 有新版時版號自己就是提示（`v67 → v68`）——回簽核拿掉了獨立的更新橫幅 */
 .version-tag-btn.has-update { color: var(--accent); }
 /* 手動檢查「已是最新版」的短暫提示——不佔版面高度，淡出前浮在版號上方 */
@@ -1002,3 +1004,111 @@ body {
   font-family: var(--mono);
   font-size: 12px;
 }
+
+/* ---------- F81：首頁改版（陶土夜色） ---------- */
+.screen.home { gap: 12px; }
+/* 問候列：名字靠左、日期靠右、設定在最右。日期用 mono 對齊數字 */
+.home-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 6px 2px;
+}
+.home-head h1 { font-size: 17px; font-weight: 700; letter-spacing: .01em; }
+.home-head .date {
+  flex: 1; text-align: right;
+  color: var(--text-mute); font-family: var(--mono); font-size: 12px;
+}
+.home-head .home-settings {
+  flex: none; min-width: 44px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; color: var(--text-dim);
+}
+
+/* 卡片：靠底色差分層，不用外框（F78 ⑤） */
+.card {
+  background: var(--card);
+  border-radius: var(--r-card);
+  padding: 20px 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.card-label {
+  color: var(--text-mute);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+}
+
+/* 本週進度：大數字是主角 */
+.week-count { display: flex; align-items: baseline; gap: 8px; }
+.week-count .n {
+  color: var(--accent);
+  font-size: 52px; font-weight: 700; line-height: 1; letter-spacing: -.03em;
+}
+.week-count .of { color: var(--text-mute); font-size: 15px; }
+.week-bars { display: flex; gap: 6px; }
+.week-bar {
+  flex: 1; height: 8px; border-radius: var(--r-pill);
+  background: var(--card-hi);
+}
+.week-bar.done { background: var(--accent); }
+.week-bar.today { background: var(--line); }
+
+/* 今天的安排 */
+.plan-name { font-size: 26px; font-weight: 700; line-height: 1.15; }
+.plan-meta { color: var(--text-mute); font-family: var(--mono); font-size: 12px; }
+.plan-none { color: var(--text-dim); font-size: 15px; padding: 2px 0 4px; }
+.plan-start { font-size: 17px; font-weight: 700; padding: 18px; margin-top: 4px; }
+.plan-swap {
+  background: transparent; box-shadow: none;
+  color: var(--text-mute); font-size: 13px; padding: 10px;
+  min-height: 44px;
+}
+/* 多份課表：一列一份，各自帶「開始」。主按鈕寬度固定，份數多寡不影響左側資訊的位置 */
+.plan-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card-hi);
+  border-radius: var(--r-card);
+  padding: 12px 14px;
+}
+.plan-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.plan-row-name {
+  font-size: 17px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.plan-row-start { flex: none; padding: 12px 18px; font-size: 14px; font-weight: 700; }
+
+/* 上次訓練：左資訊、右總量 */
+.last-card { flex-direction: row; align-items: center; gap: 12px; padding: 16px 18px; }
+.last-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.last-title {
+  font-size: 15px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.last-meta { color: var(--text-mute); font-family: var(--mono); font-size: 12px; }
+.last-volume {
+  flex: none; display: flex; align-items: baseline; gap: 4px;
+  font-family: var(--mono); color: var(--accent);
+}
+.last-volume .v { font-size: 17px; font-weight: 600; }
+.last-volume .u { font-size: 11px; color: var(--text-mute); }
+
+/* 底部四格導覽：貼底、等分 */
+.bottom-nav { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
+.bottom-nav .nav-item {
+  flex: 1; min-height: 56px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  background: var(--card); border-radius: 16px;
+  color: var(--text-mid); font-size: 12px; font-weight: 500; padding: 12px 4px;
+}
+
+/* ---------- F81：設定畫面 ---------- */
+.settings-screen { gap: 12px; }
+.set-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border-radius: var(--r-card);
+  padding: 12px 16px;
+}
+.set-row-label { flex: 1; font-size: 15px; }
+.set-row-ctl { flex: none; display: flex; align-items: center; gap: 10px; }
+.set-row-val {
+  min-width: 2ch; text-align: center;
+  font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--accent);
+}
+.settings-screen .settings-back { margin-top: auto; }

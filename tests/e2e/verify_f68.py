@@ -20,7 +20,9 @@ from verify_f67 import (  # noqa: E402
     REPO,
     free_port,
     native,
+    open_settings,
     setup_and_home,
+    start_from_home,
     start_server,
 )
 
@@ -69,6 +71,7 @@ def main() -> int:
 
             # ③ 關閉後不留橫幅，提示與入口都併進版號
             check(page.locator(".update-banner").count() == 0, "③ 不再有獨立的更新橫幅")
+            open_settings(page)  # F81：版號入口搬進設定畫面
             entry = page.locator(".version-tag-btn.has-update")
             check(entry.count() == 1, "③ 版號標示有新版（提示與入口合一）")
             check("v99" in entry.inner_text(),
@@ -79,9 +82,10 @@ def main() -> int:
             page.get_by_role("button", name="稍後再說").click()
             page.wait_for_timeout(300)
 
-            # ④ 只在首頁：進到別的畫面不得有視窗或橫幅
-            page.get_by_role("button").first.click()  # 開練
-            page.wait_for_timeout(900)
+            # ④ 只在首頁／設定：進到訓練流程不得有視窗或入口
+            page.get_by_role("button", name="回首頁").first.click()
+            page.wait_for_timeout(700)
+            start_from_home(page)
             check(modal(page).count() == 0
                   and page.locator(".version-tag-btn.has-update").count() == 0,
                   "④ 離開首頁後視窗與更新入口都不出現（訓練中不打斷）")
@@ -93,6 +97,7 @@ def main() -> int:
             page.evaluate("() => localStorage.setItem('liftlog.updateDismissed', '99')")
             setup_and_home(page)
             check(modal(page).count() == 0, "② 同一版本已按過稍後再說 → 不再自動彈")
+            open_settings(page)
             check(page.locator(".version-tag-btn.has-update").count() == 1,
                   "② 但版號仍標著有新版（還能主動更新）")
 
@@ -107,6 +112,7 @@ def main() -> int:
             ctx = browser.new_context(viewport=PHONE)
             page = native(ctx.new_page(), base, current=99)
             setup_and_home(page)
+            open_settings(page)
             check(page.locator(".version-tag-btn").count() == 1, "⑦ app 版版號是可點的按鈕")
             check(page.locator(".version-tag-btn.has-update").count() == 0,
                   "⑦ 沒有更新時版號不標示（純版號）")
@@ -123,6 +129,7 @@ def main() -> int:
             page.evaluate("() => localStorage.setItem('liftlog.updateDismissed', '99')")
             setup_and_home(page)
             check(modal(page).count() == 0, "（前提）已靜音，開場沒有自動彈")
+            open_settings(page)
             page.locator(".version-tag-btn").click()
             page.wait_for_timeout(900)
             check(modal(page).count() == 1, "⑦ 手動檢查到新版會開視窗，不受稍後再說的靜音影響")
@@ -154,6 +161,7 @@ def main() -> int:
             page.wait_for_selector("input", timeout=10_000)
             setup_and_home(page)
             check(modal(page).count() == 0, "⑧ web 版不彈更新視窗")
+            open_settings(page)  # F81：版號在設定畫面
             check(page.locator(".version-tag-btn").count() == 0, "⑧ web 版版號不可點")
             check(page.locator(".version-tag").count() == 1, "⑧ web 版版號仍顯示（純文字）")
             ctx.close()

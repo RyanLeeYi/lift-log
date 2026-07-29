@@ -116,10 +116,20 @@ class ScheduledTemplate(BaseModel):
     set_count: int
 
 
+class LastWorkout(BaseModel):
+    """首頁「上次訓練」卡。沒有任何歷史時整個欄位為 None，前端就不畫這張卡。"""
+
+    date: date_type
+    template_name: str | None
+    set_count: int
+    volume_kg: float
+
+
 class ScheduleTodayOut(BaseModel):
     date: date_type
     weekday: int  # ISO 1=週一…7=週日
     templates: list[ScheduledTemplate]
+    last_workout: LastWorkout | None = None  # F81：首頁的「上次訓練」
     weekly_target_days: int
     week_done_days: int  # 本週（週一起算）有記錄的不重複天數
     week_days: list[bool]  # 週一…週日，各日有沒有練——首頁的七段進度條
