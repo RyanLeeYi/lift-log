@@ -18,6 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# 報告裡有 ≥ 與全形字，Windows console 預設 CP950 會直接 UnicodeEncodeError（F78 驗收踩過）
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import PHONE, REPO, free_port, setup_and_home, start_server  # noqa: E402
 

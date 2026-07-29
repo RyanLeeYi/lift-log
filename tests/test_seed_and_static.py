@@ -139,7 +139,12 @@ class TestStatic:
             target = static_dir / ("index.html" if url == "/" else url.lstrip("/"))
             assert target.is_file(), f"SHELL 列了不存在的檔案：{url}"
 
-        # 每個 js/css 檔都必須列進 SHELL（sw.js 自己除外——瀏覽器另行管理）
-        for file in [*static_dir.glob("js/*.js"), *static_dir.glob("css/*.css")]:
+        # 每個 js/css/字型檔都必須列進 SHELL（sw.js 自己除外——瀏覽器另行管理）。
+        # F79：字型漏列的後果比 js 更隱晦——離線時不會壞掉，只會安靜地掉回系統字。
+        for file in [
+            *static_dir.glob("js/*.js"),
+            *static_dir.glob("css/*.css"),
+            *static_dir.glob("fonts/*.woff2"),
+        ]:
             url = "/" + file.relative_to(static_dir).as_posix()
             assert url in shell, f"{url} 沒列進 sw.js 的 SHELL，離線時會載不到"

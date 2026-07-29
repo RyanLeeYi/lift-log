@@ -85,8 +85,11 @@ def static_checks() -> str:
 
     # ③ 沒有散落的硬編色：所有字面色只能出現在 :root 裡。
     #   rgb()/rgba() 也算——光暈與遮罩同樣是「換色時要找出來改」的東西（Codex P2）。
-    root = css.split("}", 1)[0]
-    body = css[len(root):]
+    # 精準取 :root 區塊——不能用「切到第一個 }」，F79 把 @font-face 加在 :root 之前就會失準
+    root_match = re.search(r":root\s*\{(.*?)\n\}", css, re.S)
+    check(root_match is not None, "③ 找得到 :root 區塊")
+    root = root_match.group(1) if root_match else ""
+    body = css.replace(root, "") if root else css
     strays = sorted(set(re.findall(r"#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)", body)))
     check(not strays, f"③ :root 之外沒有硬編色（殘留：{strays}）")
 

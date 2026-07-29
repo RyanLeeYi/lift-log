@@ -3,7 +3,7 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-const CACHE_NAME = "liftlog-shell-v82"; // F78：陶土夜色 token（改此處務必同步 state.js 的 APP_VERSION）
+const CACHE_NAME = "liftlog-shell-v83"; // F79：內嵌字型（改此處務必同步 state.js 的 APP_VERSION）
 const SHELL = [
   "/",
   "/css/app.css",
@@ -25,6 +25,12 @@ const SHELL = [
   "/js/templates.js",
   "/manifest.webmanifest",
   "/icon.svg",
+  // F79：字型也是 shell 的一部分——離線時載不到就整頁掉回系統字
+  "/fonts/archivo-var.woff2",
+  "/fonts/notosanstc-var.woff2",
+  "/fonts/plexmono-400.woff2",
+  "/fonts/plexmono-500.woff2",
+  "/fonts/plexmono-600.woff2",
 ];
 
 self.addEventListener("install", (event) => {

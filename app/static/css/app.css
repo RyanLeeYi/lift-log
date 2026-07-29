@@ -1,6 +1,47 @@
 /* lift-log — 陶土夜色 Soft Clay。數字是主角，控制項全在拇指熱區。
    F78：色票、圓角、間距一律照 design_handoff_liftlog_clay/README.md 的實測值。 */
 
+/* ---------- F79：內嵌字型 ----------
+   全部打包在 app/static/fonts/（跟著 APK 走），**不碰任何 CDN**——app 版在健身房常常是離線的，
+   字型載不到就整頁掉回系統字，字重對比正是這套設計的骨架。
+   產生方式見 scripts/build_fonts.py；授權（OFL）檔與字型放在一起。
+   Archivo 與 Noto Sans TC 用可變字型：一個檔案涵蓋所有字重，比每個字重各一個檔小得多。 */
+@font-face {
+  font-family: Archivo;
+  src: url("/fonts/archivo-var.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap; /* 檔案在本機，swap 只是保險：任何情況下都不要出現看不見的文字 */
+}
+@font-face {
+  font-family: "Noto Sans TC";
+  src: url("/fonts/notosanstc-var.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plexmono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plexmono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plexmono-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* ---- 底層與表面：不用邊框做分隔，靠這三階底色差 ---- */
   --bg: #221E1A;          /* 頁面底 */
@@ -42,7 +83,9 @@
   --r-input: 18px;
   --r-cell: 10px;         /* 日曆格 */
 
-  --mono: "IBM Plex Mono", "SF Mono", "Roboto Mono", Consolas, monospace;
+  /* 等寬堆疊裡也要放 Noto Sans TC：Plex Mono 只有拉丁字，
+     不接的話 mono 情境（日期、組列、標籤）的中文會掉回系統字，同一行兩種字面 */
+  --mono: "IBM Plex Mono", "Noto Sans TC", "SF Mono", "Roboto Mono", Consolas, monospace;
   --sans: Archivo, "Noto Sans TC", -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
