@@ -1311,7 +1311,9 @@ function nextUpBlock() {
   if (!item) {
     return [el("div", { class: "next-up-done" }, ["都做完了 —— 可以收工"])];
   }
-  const setNumber = (state.setCounts[item.exercise_id] || 0) + 1;
+  // 走同一支推導：用 setCounts + 1 的話，刪過中間組時這裡會顯示「第 3 組」，
+  // 點進去卻記成第 4 組——建議與實際不一致（Codex P2）。
+  const setNumber = nextSetNumber(item.exercise_id);
   const values = menuValuesText(item);
   const exercise = {
     id: item.exercise_id,
@@ -1878,7 +1880,14 @@ function renderLogger() {
       state.doneSets.push(saved);
       // setCounts＝**完成組數**（menuCounts 的課表進度靠它），不是組號。
       // 刪掉中間某組後兩者會分岔，下一組的編號改由 nextSetNumber() 從最大組號推。
-      state.setCounts[exercise.id] = state.doneSets.length;
+      // 取 max 而非直接指派：doneSets 可能不完整——舊狀態（沒有 doneByExercise 鏡射）
+      // 遇上離線時，pickExercise 的伺服器回填會失敗、doneSets 留空，
+      // 這時直接用長度會把先前存下的 N 組進度覆寫成 1 並持久化（Codex P2）。
+      // 刪組要讓數字降下來是走 reconcile 那條路，不受這裡的 max 影響。
+      state.setCounts[exercise.id] = Math.max(
+        state.doneSets.length,
+        state.setCounts[exercise.id] || 0,
+      );
       state.setNumber += 1;
       state.rpe = 6; // F40：記完重置回預設「輕鬆」（下一組不碰即帶 6）
       rememberDoneSets(); // F32：換動作後回到此動作可還原本次組
