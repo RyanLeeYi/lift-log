@@ -68,8 +68,9 @@
   --heat-2: #6B5730;
   --heat-3: #A88742;      /* 第 3、4 階要改用 --on-accent 才有對比 */
   --heat-4: #D9B25F;
-  /* 未來日期的底色（handoff 有指定）等日曆改版 F85 動 calendar.js 時一起加，
-     現在放進來只會是沒人引用的死 token。 */
+  /* F85：未來日期。它與「過去這天沒練」（lv0 = --card）是兩件事，共用同一個底色會讓
+     月底一整排看起來像連續缺練，所以比 --card 再暗一階，明確是「還沒到」。 */
+  --heat-future: #29241F;
 
   /* ---- 非實色：遮罩也走 token，換色不必再全檔搜字面值 ---- */
   /* F84 把 LED 面板換成圓環後，兩個光暈 token 就沒人用了——留著只會讓下一個人以為它生效 */
@@ -612,8 +613,17 @@ body {
 .pick-modal .chips { flex: none; }
 
 /* ---------- calendar（heatmap） ---------- */
-.cal-nav { display: flex; align-items: center; gap: 8px; }
-.cal-month { font-family: var(--mono); font-size: 15px; }
+/* F85：月份切換收進標頭右側的兩顆圓鈕（上個月＝把 chevron 轉 180°，不必為方向各存一份路徑） */
+.cal-nav { display: flex; align-items: center; gap: 6px; flex: none; }
+.cal-nav .icon-btn {
+  min-width: 44px; min-height: 44px;
+  background: var(--card-hi); border: none; border-radius: var(--r-pill);
+  color: var(--text-mid);
+  display: flex; align-items: center; justify-content: center;
+}
+.cal-prev .icon { transform: rotate(180deg); }
+/* 日曆格子的容器卡（設計：--card, r22, padding 18/16） */
+.cal-card { padding: 18px 16px; }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -621,7 +631,8 @@ body {
 }
 .cal-wd {
   color: var(--text-faint);
-  font-size: 12px;
+  font-family: var(--mono);
+  font-size: 10px;
   text-align: center;
   padding-bottom: 2px;
 }
@@ -632,33 +643,32 @@ body {
   background: var(--card);
   color: var(--text-dim);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 11px;
   cursor: pointer;
 }
 .cal-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cal-day.sel { border-color: var(--text); color: var(--text); }
+/* 未來日：只在「沒有資料」時套用（未來日理論上不會有噸位，但補記過的日子仍該顯示熱度） */
+.cal-day.future.lv0 { background: var(--heat-future); color: var(--text-faint); }
 /* 5 級：0 沒練 → 4 當月最大；琥珀由暗到亮，同一色相不靠色盲敏感對比 */
-.cal-day.lv1, .cal-swatch.lv1 { background: var(--heat-1); color: var(--text); }
-.cal-day.lv2, .cal-swatch.lv2 { background: var(--heat-2); color: var(--text); }
-.cal-day.lv3, .cal-swatch.lv3 { background: var(--heat-3); color: var(--on-accent); }
-.cal-day.lv4, .cal-swatch.lv4 { background: var(--heat-4); color: var(--on-accent); font-weight: 700; }
-.cal-legend {
-  display: flex; align-items: center; gap: 5px; justify-content: flex-end;
-  color: var(--text-dim); font-size: 12px;
-}
-.cal-swatch {
-  width: 14px; height: 14px; border-radius: 4px;
-  background: var(--card); border: none;
-  display: inline-block;
-}
-.cal-detail { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.cal-day.lv1 { background: var(--heat-1); color: var(--text); }
+.cal-day.lv2 { background: var(--heat-2); color: var(--text); }
+.cal-day.lv3 { background: var(--heat-3); color: var(--on-accent); }
+.cal-day.lv4 { background: var(--heat-4); color: var(--on-accent); font-weight: 700; }
+/* F85：當日明細本身就是一張卡（設計：--card, r22, padding 20）；
+   熱度圖例拿掉——五階的意義靠格子本身的漸層就讀得出來，圖例只是佔一列。 */
+.cal-detail { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.cal-hint { color: var(--text-mute); font-size: 14px; text-align: center; padding: 24px 4px; }
 .cal-detail-head {
   display: flex; justify-content: space-between;
-  font-family: var(--mono); font-size: 14px;
-  padding: 8px 4px 2px;
+  padding: 0;
   color: var(--text);
 }
-.cal-detail-head .n { color: var(--accent); }
+/* 標題走 sans 700 16px（「7月24日 · 腿日」），噸位走 mono 600 13px 琥珀 */
+.cal-detail-head .d { font-size: 16px; font-weight: 700; }
+.cal-detail-head .n {
+  color: var(--accent); font-family: var(--mono); font-weight: 600; font-size: 13px;
+}
 /* F34：選取入口收進 head 右側，安靜的 icon-text（不再獨占一列） */
 .cal-detail-head { align-items: center; gap: 10px; }
 .cal-detail-head .n { flex: 1; text-align: right; }
@@ -667,13 +677,6 @@ body {
   font-size: 13px; color: var(--text-dim);
   background: var(--card-hi); border: none;
 }
-.cal-detail-row {
-  display: flex; justify-content: space-between; gap: 12px;
-  color: var(--text-dim);
-  font-size: 14px;
-  padding: 6px 4px;
-}
-.cal-detail-row .n { font-family: var(--mono); color: var(--text); text-align: right; }
 /* F16：動作標題列 + 每組一列可編輯/刪除 */
 .cal-detail-ex { color: var(--text-dim); font-size: 13px; padding: 4px 4px 2px; font-weight: 600; }
 /* F34：標頭＝收合/展開開關（動作名｜摘要｜指示符） */
@@ -681,39 +684,40 @@ body {
   display: flex; align-items: center; gap: 8px;
   cursor: pointer; user-select: none; min-height: 34px;
 }
-.cal-detail-ex .ex-name { flex: none; color: var(--text); }
+.cal-detail-ex .ex-name { flex: none; color: var(--text); font-size: 15px; font-weight: 600; }
 .cal-detail-ex .ex-sum {
   flex: 1; text-align: right;
-  font-family: var(--mono); font-weight: 400; font-size: 12px;
-  color: var(--text-dim);
+  font-family: var(--mono); font-weight: 400; font-size: 11px;
+  color: var(--text-mute);
 }
 /* F34：caret 是展開/收合的互動指示符，用沙金 --accent（對比 7.27:1，過 WCAG 3:1）而非過暗的標籤色 */
-.cal-detail-ex .ex-caret { flex: none; color: var(--accent); font-size: 12px; }
-/* F33：動作區塊——左緣琥珀脊取代舊的帳本橫線，做動作與動作的分界 */
+/* F85：字元 ▾ ▸ 換成 icons.js 的 chevron（那兩個字不在內嵌字型裡，各機大小基線都不同） */
+.cal-detail-ex .ex-caret { flex: none; color: var(--accent); display: flex; }
+/* F85：動作區塊改用「卡片內分隔線」而非左緣脊——明細已經是一張卡，
+   卡內再加一條琥珀直線會變成兩層框。分隔線只在區塊之間，第一塊之上不要。 */
 .cal-ex-block {
-  display: flex; flex-direction: column; gap: 2px;
-  border-left: 2px solid var(--line);
-  padding-left: 10px;
-  margin-top: 2px;
+  display: flex; flex-direction: column; gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
-.cal-detail-row { align-items: center; }
-.cal-detail-row.set { padding-left: 4px; }
-.cal-detail-row .setno { color: var(--text-faint); font-family: var(--mono); flex: none; }
-.cal-detail-row.set .n { flex: 1; }
-.cal-detail-row .icon-btn {
-  flex: none; padding: 2px 8px; min-height: 44px; font-size: 15px;
+.cal-ex-block:first-child { padding-top: 0; border-top: none; }
+/* 組 chips（設計：--card-hi 底、r99、padding 7/13、mono 500 12px） */
+.cal-set-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.set-chip {
   background: var(--card-hi); border: none; border-radius: var(--r-pill);
+  padding: 7px 13px; min-height: 44px;
+  color: var(--text-mid); font-family: var(--mono); font-weight: 500; font-size: 12px;
+  cursor: pointer;
 }
+/* 當日該動作最佳組：整顆填琥珀 ＋ ★（設計 ⑦） */
+.set-chip.best { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.set-chip.selectable.selected { box-shadow: inset 0 0 0 2px var(--accent); color: var(--text); }
 /* F45：編輯既有組的懸浮 modal（取代舊的行內編輯列；modal base 見 .modal / .modal-overlay） */
 .cal-edit-modal .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cal-edit-modal .modal-head .ex-name { color: var(--accent); font-weight: 700; }
 .cal-edit-modal .modal-head .setno { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
 .cal-edit-modal .modal-actions .cal-edit-save { flex: 1; }
-.cal-detail-row .btn.sm { padding: 6px 10px; min-height: 44px; font-size: 14px; }
-/* F19 多選批次刪除 */
-.cal-detail-row.selectable { cursor: pointer; padding-left: 8px; }
-.cal-detail-row.selectable .check { flex: none; font-size: 16px; }
-.cal-detail-row.selectable.selected { color: var(--text); background: var(--card-hi); border-radius: var(--r-cell); }
+/* F19 多選批次刪除：勾選態畫在 .set-chip.selectable 上（見上方 chips 段） */
 .cal-batch-bar { position: sticky; bottom: 8px; padding: 8px 0; }
 .cal-batch-bar .cal-batch-del { width: 100%; }
 /* F34：批次刪除鈕琥珀填色；未選取時停用＝淡化不可按 */
@@ -722,12 +726,16 @@ body {
 /* F43：動作區塊 > 3 個時，動作列表段固定高度（約 3 個收合區塊）＋垂直捲軸——
    第 4 個起需捲動，避免當日動作多時把明細推得過長（噸位/狀態/補記入口不被捲入）。 */
 .cal-ex-scroll {
-  max-height: 150px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch;
   display: flex; flex-direction: column; gap: 8px;
 }
 
 /* F41→F43：日曆補記入口＋懸浮 modal */
-.cal-add-toggle { width: 100%; margin-top: 8px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--accent); }
+.cal-add-toggle {
+  width: 100%; margin-top: 4px;
+  background: transparent; border: 1px solid var(--line); border-radius: var(--r-pill);
+  color: var(--accent); font-weight: 600;
+}
 /* modal 內的補記表單（modal base 樣式見 .modal / .modal-overlay） */
 .cal-add-modal .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cal-add-modal .modal-head .ex-name { color: var(--accent); font-weight: 700; }
@@ -761,7 +769,7 @@ body {
   margin-left: auto; font-family: var(--mono); font-size: 13px;
   color: var(--text-dim); white-space: nowrap;
 }
-.cal-batch-row .batch-caret { color: var(--text-dim); font-size: 12px; }
+.cal-batch-row .batch-caret { color: var(--text-dim); display: flex; flex: none; }
 .cal-batch-row .batch-sets { display: flex; align-items: center; gap: 8px; }
 .cal-batch-row .batch-sets .name { color: var(--text-dim); font-size: 13px; }
 .cal-batch-row .batch-sets .val { font-family: var(--mono); font-size: 18px; min-width: 2ch; text-align: center; }
@@ -831,7 +839,7 @@ body {
 .ex-mhead { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 7px 2px; min-height: 34px; }
 .ex-mhead .mo { font-family: var(--mono); font-size: 13px; color: var(--text); }
 .ex-mhead .sum { flex: 1; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
-.ex-mhead .car { color: var(--accent); font-size: 12px; width: 12px; text-align: center; }
+.ex-mhead .car { color: var(--accent); display: flex; flex: none; }
 .ex-mbody { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid var(--line); padding: 2px 0 4px 12px; margin-left: 2px; }
 .ex-day { display: flex; flex-direction: column; gap: 6px; }
 .ex-day .d { display: flex; align-items: baseline; gap: 8px; }
@@ -849,16 +857,19 @@ body {
 .trends-hint { color: var(--text-dim); font-size: 14px; padding: 20px 4px; text-align: center; }
 .cal-empty { color: var(--text-dim); font-size: 14px; padding: 8px 4px; }
 .cal-status {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   font-size: 13px; color: var(--text-dim);
-  padding: 4px 4px 6px;
-  border-bottom: 1px solid var(--line);
+  padding: 0;
 }
-.cal-status .txt { flex: none; }
-.cal-status .note { color: var(--text); flex: 1; }
+/* F85：三段各自一顆 chip（睡眠／狀態／備註）——設計 --card-hi 底、r99、padding 6/12 */
+.cal-status .status-chip {
+  background: var(--card-hi); border-radius: var(--r-pill);
+  padding: 6px 12px; color: var(--text-mid); font-size: 13px;
+}
+.cal-status .status-chip.note { color: var(--text); }
 /* F18 狀態行內編輯 */
 .cal-status .icon-btn {
-  flex: none; padding: 2px 8px; min-height: 44px; font-size: 15px;
+  flex: none; padding: 2px 8px; min-height: 44px; min-width: 44px; font-size: 15px;
   background: var(--card-hi); border: none; border-radius: var(--r-pill);
 }
 .cal-status.editing { flex-direction: column; align-items: stretch; gap: 10px; }

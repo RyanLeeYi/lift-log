@@ -147,17 +147,28 @@ def token_px(css: str, name: str) -> str:
     return m.group(1) if m else ""
 
 
-def undersized(page, allow_narrow: set[str] | None = None) -> list[str]:
+def undersized(
+    page,
+    allow_narrow: set[str] | None = None,
+    skip_class: str | None = None,
+) -> list[str]:
     """回傳畫面上觸控區不足 44px 的可見按鈕。
 
     `allow_narrow` 是「高度達標但寬度受同列顆數限制」的明確例外（時間窗 8 顆一列，
     寬度拉到 44 會換行並讓 /body 的高度門檻算式失準——理由寫在 app.css 的同一段註解）。
+
+    `skip_class` 給日曆格子（F85）：一個月視圖固定 7 欄等分，390px 的手機上格子最多
+    只有 ~45px，而設計要求格子包在 padding 18/16 的卡片內——padding 一加就掉到 41px。
+    要同時滿足「7 欄月視圖」「卡片內縮」「≥44px」在手機寬度上無解，所以格子改由版面決定
+    尺寸，這條例外寫進 F85 acceptance ⑫（取代 F78 ⑦ 對日曆格的涵蓋）。
     """
     allow_narrow = allow_narrow or set()
     out: list[str] = []
     for i in range(page.locator("button").count()):
         b = page.locator("button").nth(i)
         if not b.is_visible():
+            continue
+        if skip_class and skip_class in (b.get_attribute("class") or ""):
             continue
         box = b.bounding_box()
         if not box:
@@ -194,7 +205,11 @@ def rendered_checks(page, base: str) -> None:
     for label in ("日曆", "表現", "體重"):  # F81：底部四格導覽（「動作表現」縮寫成「表現」）
         page.locator(".bottom-nav .nav-item", has_text=label).click()
         page.wait_for_timeout(800)
-        small = undersized(page, allow_narrow={"1M", "3M", "6M", "9M", "1Y", "2Y", "3Y"})
+        small = undersized(
+            page,
+            allow_narrow={"1M", "3M", "6M", "9M", "1Y", "2Y", "3Y"},
+            skip_class="cal-day" if label == "日曆" else None,
+        )
         check(not small, f"⑦ {label}頁觸控區 ≥44px（不足：{small}）")
         check(page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"),
               f"⑦ {label}頁無水平捲動")

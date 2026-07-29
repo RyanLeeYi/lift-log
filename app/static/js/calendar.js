@@ -2,6 +2,7 @@
 
 import { api, ApiError } from "./api.js";
 import { el, rpePicker, stepper } from "./dom.js";
+import { icon } from "./icons.js";
 import { exerciseAlias, exerciseName, getLang, state } from "./state.js";
 
 // 本模組自己的畫面狀態（不進全域 state：換畫面即重置無妨）
@@ -56,7 +57,31 @@ export async function openCalendar() {
     (await api.searchExercises("")).map((e) => [e.id, e]),
   );
   cal.templates = null; // Codex P2：課表可能在課表頁被改過，重進日曆一律重抓（切到「用課表」時才實際載入）
+  // F85：明細卡標題要寫「7月24日 · 腿日」，課表名只能從課表清單對 workout.template_id 查。
+  // 抓不到不該擋住日曆——標題退回只有日期。
+  try {
+    cal.templates = await api.listTemplates();
+  } catch {
+    cal.templates = null;
+  }
   await loadMonth();
+}
+
+// F85：workout.template_id → 課表名。同日多場只取第一個有課表的（標題只放得下一個）。
+function dayTemplateName() {
+  if (!cal.templates) return null;
+  for (const { workout } of cal.detail) {
+    if (workout.template_id == null) continue;
+    const tpl = cal.templates.find((t) => t.id === workout.template_id);
+    if (tpl) return tpl.name;
+  }
+  return null;
+}
+
+// F85：明細卡標題的「M月D日」。日期字串是 YYYY-MM-DD，直接拆比 new Date 安全（不吃時區）。
+function dayTitle(dateStr) {
+  const [, m, dd] = dateStr.split("-");
+  return `${Number(m)}月${Number(dd)}日`;
 }
 
 function level(tonnage, max) {
@@ -113,6 +138,12 @@ async function selectDay(dateStr, keepExpanded = false) {
       sets: (await api.workoutDetail(w.id)).sets,
     })),
   );
+  // F85（設計 ⑧）：第一個動作預設展開、第二個起收合。展開態是使用者操作的產物，
+  // 所以只在「切日/切月」這種重置時機給預設值，keepExpanded（刪/改/補記後重載）不動它。
+  if (!keepExpanded) {
+    const firstId = cal.detail.flatMap((d) => d.sets)[0]?.exercise_id;
+    cal.expandedEx = firstId == null ? new Set() : new Set([firstId]);
+  }
 }
 
 // F18：當日狀態存檔（同日覆蓋）／硬刪
@@ -176,12 +207,14 @@ function statusRow(guard, rerender) {
       ]),
     ];
   }
-  const parts = [`精力 ${s.energy}/5`];
-  if (s.sleep_quality != null) parts.push(`睡眠 ${s.sleep_quality}/5`);
+  // F85：三段各自成一顆 chip（睡眠／狀態／備註）——原本擠在一行純文字裡，數字與備註黏在一起難掃讀
   return [
     el("div", { class: "cal-status" }, [
-      el("span", { class: "txt" }, [parts.join("  ")]),
-      ...(s.note ? [el("span", { class: "note" }, [s.note])] : []),
+      ...(s.sleep_quality != null
+        ? [el("span", { class: "status-chip" }, [`睡眠 ${s.sleep_quality}/5`])]
+        : []),
+      el("span", { class: "status-chip" }, [`狀態 ${s.energy}/5`]),
+      ...(s.note ? [el("span", { class: "status-chip note" }, [s.note])] : []),
       el("button", {
         class: "btn icon-btn status-edit",
         onclick: () => {
@@ -305,49 +338,49 @@ function editModal(guard, rerender) {
             ...(cal.editSubmitting ? { disabled: "" } : {}),
             onclick: () => closeEditModal(rerender),
           }, ["取消"]),
+          el("button", {
+            // F85：組列改成 chips 後每列不再有 🗑——刪除搬進這裡。維持 F19 的單擊即刪（無兩段式確認）。
+            class: "btn btn-ghost sm cal-edit-del",
+            ...(cal.editSubmitting ? { disabled: "" } : {}),
+            onclick: () => guard(async () => {
+              closeEditModal(rerender);
+              await deleteSet(s, rerender);
+            }),
+          }, ["刪除"]),
         ]),
       ]),
     ]),
   ];
 }
 
-function calSetRow(s, guard, rerender) {
-  // F45：編輯表單改懸浮 modal（editModal），這裡不再有行內編輯列
+// F85：一組一顆 chip（設計稿：`80×8`、當日最佳組加 ★ 並填琥珀）。
+// 點 chip ＝ 開編輯 modal（原本每列的 ✎）；刪除移進 modal 內（原本每列的 🗑，語意不變）。
+function calSetChip(s, best, rerender) {
+  const label = `${s.weight_kg}×${s.reps}`;
   if (cal.selectMode) {
-    // F19 多選：整列可點切換勾選，隱藏編輯/刪除單擊鈕
+    // F19 多選：chip 本身即勾選目標（勾中填琥珀邊），不另外畫勾選框
     const checked = cal.selectedIds.includes(s.id);
-    return el("div", {
-      class: `cal-detail-row set selectable${checked ? " selected" : ""}`,
+    return el("button", {
+      class: `set-chip selectable${checked ? " selected" : ""}`,
+      "aria-label": `第 ${s.set_number} 組 ${label}`,
       onclick: () => {
         cal.selectedIds = checked
           ? cal.selectedIds.filter((x) => x !== s.id)
           : [...cal.selectedIds, s.id];
         rerender();
       },
-    }, [
-      el("span", { class: "check" }, [checked ? "☑" : "☐"]),
-      el("span", { class: "setno" }, [`#${s.set_number}`]),
-      el("span", { class: "n" }, [`${s.weight_kg}×${s.reps}${s.rpe ? `@${s.rpe}` : ""}`]),
-    ]);
+    }, [label]);
   }
-  return el("div", { class: "cal-detail-row set" }, [
-    el("span", { class: "setno" }, [`#${s.set_number}`]),
-    el("span", { class: "n" }, [`${s.weight_kg}×${s.reps}${s.rpe ? `@${s.rpe}` : ""}`]),
-    el("button", {
-      class: "btn icon-btn edit-set",
-      onclick: () => {
-        cal.editSetId = s.id;
-        cal.editSet = s;
-        cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
-        rerender();
-      },
-    }, ["✎"]),
-    el("button", {
-      // F19：單擊即刪（軟刪），不再兩段式確認
-      class: "btn icon-btn del-set",
-      onclick: () => guard(() => deleteSet(s, rerender)),
-    }, ["🗑"]),
-  ]);
+  return el("button", {
+    class: `set-chip${s.id === best?.id ? " best" : ""}`,
+    "aria-label": `編輯第 ${s.set_number} 組 ${label}`,
+    onclick: () => {
+      cal.editSetId = s.id;
+      cal.editSet = s;
+      cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
+      rerender();
+    },
+  }, [s.id === best?.id ? `${label} ★` : label]);
 }
 
 // F34：收合摘要用的「最重組」——weight_kg 最大者，平手取 reps 多者
@@ -496,7 +529,7 @@ function addBlock(rerender) {
         cal.batch = null;
         rerender();
       },
-    }, ["＋ 新增動作"]),
+    }, ["補記這一天"]),
   ];
 }
 
@@ -578,7 +611,9 @@ function batchRowNode(row, onCheckChange) {
       ]),
       el("span", { class: "ex-name" }, [exerciseName(row.item)]),
       el("span", { class: "batch-summary" }, [summary]),
-      el("span", { class: "batch-caret" }, [row.open ? "▾" : "▸"]),
+      el("span", { class: "batch-caret" }, [
+        icon(row.open ? "chevron-down" : "chevron-right", { size: 16 }),
+      ]),
     ]);
     const kids = [head];
     if (row.open) {
@@ -610,7 +645,7 @@ function addModal(guard, rerender) {
   let inner;
   if (cal.batch) {
     // F47：批次確認態——課表每個動作一列，逐列可勾選/調重量次數組數，按一次全部寫入
-    // F60：每列預設摺疊成一行摘要（勾選＋動作名＋「20kg × 8 × 3 組」＋▸），點標頭才展開 steppers。
+    // F60：每列預設摺疊成一行摘要（勾選＋動作名＋「20kg × 8 × 3 組」＋收合指示符），點標頭才展開 steppers。
     // 4 個動作的課表原本要捲三屏才看得完，違背 F47「先展開讓人逐列確認」的本意。
     const logBtn = el("button", {
       class: "btn btn-primary cal-batch-log",
@@ -741,7 +776,8 @@ function detailRows(guard, rerender) {
   if (cal.detail.length === 0) {
     // 休息日也可能記了當日狀態（R9：不依附 workout）；F41：休息日也能就地補記
     return [
-      el("p", { class: "cal-empty" }, [`${cal.selected}：休息日`]),
+      // 標題格式跟有練的日子一致（原本這裡漏掉，一個寫「7月8日」一個寫「2026-07-08」）
+      el("p", { class: "cal-empty" }, [`${dayTitle(cal.selected)} · 休息日`]),
       ...statusRow(guard, rerender),
       ...addBlock(rerender),
     ];
@@ -750,12 +786,14 @@ function detailRows(guard, rerender) {
   // F19：有組才顯示「選取」入口（進多選批次刪除）
   // F34：入口從獨立一列的 .cal-select-bar 收進 head 右側，不再獨占一列
   const hasSets = cal.detail.some((d) => d.sets.length > 0);
+  const tplName = dayTemplateName();
   const rows = [
     el("div", { class: "cal-detail-head" }, [
-      el("span", {}, [cal.selected]),
+      // F85：設計稿的「7月24日 · 腿日」——課表名讓「那天練什麼」不必展開動作才看得出來
+      el("span", { class: "d" }, [dayTitle(cal.selected) + (tplName ? ` · ${tplName}` : "")]),
       el("span", { class: "n" }, [
         // 純自體重日噸位可為 0，仍要顯示
-        tonnage !== undefined ? `噸位 ${Math.round(tonnage).toLocaleString()} kg` : "",
+        tonnage !== undefined ? `${Math.round(tonnage).toLocaleString()} kg` : "",
       ]),
       ...(hasSets
         ? [
@@ -804,12 +842,15 @@ function detailRows(guard, rerender) {
           }),
         }, [
           el("span", { class: "ex-name" }, [exercise ? exerciseName(exercise) : `#${exerciseId}`]),
-          el("span", { class: "ex-sum" }, [
-            `${groupSets.length}組 · 最重 ${top.weight_kg}×${top.reps}`,
+          el("span", { class: "ex-sum" }, [`${groupSets.length} 組`]),
+          el("span", { class: "ex-caret" }, [
+            icon(showSets ? "chevron-down" : "chevron-right", { size: 16 }),
           ]),
-          el("span", { class: "ex-caret" }, [showSets ? "▾" : "▸"]),
         ]),
-        ...(showSets ? groupSets.map((s) => calSetRow(s, guard, rerender)) : []),
+        ...(showSets
+          ? [el("div", { class: "cal-set-chips" },
+              groupSets.map((s) => calSetChip(s, top, rerender)))]
+          : []),
       ]),
     );
   }
@@ -845,23 +886,27 @@ function detailRows(guard, rerender) {
 export function renderCalendar(rerender, goHome, guard) {
   const first = new Date(cal.year, cal.month - 1, 1);
   const daysInMonth = new Date(cal.year, cal.month, 0).getDate();
-  const leadBlanks = (first.getDay() + 6) % 7; // 週一起始
+  const leadBlanks = first.getDay(); // F85：週日起始（設計表頭是「日一二三四五六」）
   const max = Math.max(0, ...Object.values(cal.days));
+  const today = calToday();
 
   const cells = [];
   const weekdays = getLang() === "zh"
-    ? ["一", "二", "三", "四", "五", "六", "日"]
-    : ["M", "T", "W", "T", "F", "S", "S"];
+    ? ["日", "一", "二", "三", "四", "五", "六"]
+    : ["S", "M", "T", "W", "T", "F", "S"];
   for (const w of weekdays) cells.push(el("div", { class: "cal-wd" }, [w]));
   for (let i = 0; i < leadBlanks; i++) cells.push(el("div", {}));
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${cal.year}-${String(cal.month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const lv = level(cal.days[dateStr], max);
+    // F85：未來日單獨一個底色（--heat-future）——它跟「過去這天沒練」是兩件事，
+    // 共用 lv0 會讓月底一整排看起來像連續缺練
+    const future = dateStr > today;
     cells.push(
       el(
         "button",
         {
-          class: `cal-day lv${lv}${cal.selected === dateStr ? " sel" : ""}`,
+          class: `cal-day lv${lv}${future ? " future" : ""}${cal.selected === dateStr ? " sel" : ""}`,
           "aria-label": dateStr,
           onclick: () =>
             guard(async () => {
@@ -873,6 +918,9 @@ export function renderCalendar(rerender, goHome, guard) {
       ),
     );
   }
+  const trainedDays = Object.entries(cal.days)
+    .filter(([date]) => date.startsWith(`${cal.year}-${String(cal.month).padStart(2, "0")}`))
+    .length;
 
   const changeMonth = (delta) =>
     guard(async () => {
@@ -882,23 +930,38 @@ export function renderCalendar(rerender, goHome, guard) {
     });
 
   return el("section", { class: "screen calendar" }, [
-    el("header", { class: "topbar" }, [
-      el("h1", {}, ["日曆"]),
+    // F85：改用全站 .screen-head（返回 ＋ 標題 ＋ 副標）；月份切換留在右側，
+    // 沒有它就只看得到當月，切月是日曆的基本能力
+    el("header", { class: "screen-head" }, [
+      el("button", {
+        class: "btn icon-btn back-btn",
+        "aria-label": "回首頁",
+        onclick: goHome,
+      }, [icon("back", { size: 20, label: "回首頁" })]),
+      el("div", { class: "screen-head-text" }, [
+        el("h1", {}, ["訓練日曆"]),
+        el("div", { class: "st" }, [`${monthLabel()} · ${trainedDays} 天`]),
+      ]),
       el("div", { class: "cal-nav" }, [
-        el("button", { class: "btn btn-ghost chip", onclick: () => changeMonth(-1) }, ["◀"]),
-        el("span", { class: "cal-month" }, [monthLabel()]),
-        el("button", { class: "btn btn-ghost chip", onclick: () => changeMonth(+1) }, ["▶"]),
+        el("button", {
+          class: "btn icon-btn cal-prev", "aria-label": "上個月",
+          onclick: () => changeMonth(-1),
+        }, [icon("chevron-right", { size: 18, label: "上個月" })]),
+        el("button", {
+          class: "btn icon-btn cal-next", "aria-label": "下個月",
+          onclick: () => changeMonth(+1),
+        }, [icon("chevron-right", { size: 18, label: "下個月" })]),
       ]),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
-    el("div", { class: "cal-grid" }, cells),
-    el("div", { class: "cal-legend" }, [
-      el("span", {}, ["少"]),
-      ...[0, 1, 2, 3, 4].map((lv) => el("span", { class: `cal-swatch lv${lv}` })),
-      el("span", {}, ["多"]),
+    el("div", { class: "card cal-card" }, [
+      el("div", { class: "cal-grid" }, cells),
     ]),
-    el("div", { class: "cal-detail" }, detailRows(guard, rerender)),
-    el("button", { class: "btn btn-ghost", onclick: goHome }, ["← 回首頁"]),
+    // 沒選日就不要建這張卡——明細現在有 --card 底色，空的時候會是一個佔滿下半屏的空褐色方塊
+    // （實機截圖才看出來：改版前它沒有底色，空著也看不見）
+    ...(cal.selected
+      ? [el("div", { class: "card cal-detail" }, detailRows(guard, rerender))]
+      : [el("p", { class: "cal-hint" }, ["點一天看當天練了什麼"])]),
     // F43：補記懸浮 modal（position:fixed，蓋在整個日曆畫面上；未開啟時回 []）
     ...addModal(guard, rerender),
     ...editModal(guard, rerender),

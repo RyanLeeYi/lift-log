@@ -3,6 +3,7 @@
 
 import { api } from "./api.js";
 import { el } from "./dom.js";
+import { icon } from "./icons.js";
 import { exerciseName, state } from "./state.js";
 
 // 本模組畫面狀態（不進全域 state：換畫面即重置無妨）
@@ -293,7 +294,9 @@ function renderHistory(rerender) {
         }, [
           el("span", { class: "mo" }, [`${y} 年 ${+m} 月`]),
           el("span", { class: "sum" }, [`${ss.length} 次 · 最重 ${maxW} kg`]),
-          el("span", { class: "car" }, [open ? "▾" : "▸"]),
+          el("span", { class: "car" }, [
+            icon(open ? "chevron-down" : "chevron-right", { size: 16 }),
+          ]),
         ]),
         ...(open ? [el("div", { class: "ex-mbody" }, ss.map(dayBlock))] : []),
       ]),
