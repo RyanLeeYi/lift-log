@@ -939,6 +939,22 @@ function pickerCustomModal() {
   });
 }
 
+/**
+ * 下一組的組號＝這個動作已用過的**最大組號** + 1。
+ *
+ * 不能用「完成組數 + 1」：刪掉中間某組後（伺服器剩 [1, 3]）組數是 2，下一組又會送 3，
+ * 而後端沒有組號唯一約束——撞號是靜默的，資料裡就多一筆一樣的組號，沒有任何錯誤訊息。
+ *
+ * 與 setCounts 刻意分開：那個欄位是「完成組數」，menuCounts() 的課表進度（X/Y 組）靠它，
+ * 拿最大組號去填會讓刪過組的動作提前顯示做完（Codex 複審 P2）。
+ * 仍以 setCounts 當下限，是為了相容沒有鏡射的舊資料（那時只有組數可用）。
+ */
+function nextSetNumber(exerciseId) {
+  const done = state.doneByExercise[exerciseId] ?? [];
+  const maxUsed = done.reduce((max, s) => Math.max(max, s.set_number ?? 0), 0);
+  return Math.max(maxUsed, state.setCounts[exerciseId] || 0) + 1;
+}
+
 // F32：把目前動作的完成組鏡射進 doneByExercise，換動作後回到該動作可原樣還原（同一次訓練內）。
 function rememberDoneSets() {
   if (!state.exercise) return;
@@ -950,7 +966,7 @@ async function pickExercise(exercise) {
   state.exercise = exercise;
   state.rpe = 6; // F40：進動作預設累度「輕鬆」
   state.doneSets = [];
-  state.setNumber = (state.setCounts[exercise.id] || 0) + 1; // 回頭選同動作時接續編號
+  state.setNumber = nextSetNumber(exercise.id); // 回頭選同動作時接續編號（取最大組號，不是組數）
 
   // F32：同一次訓練已做過這個動作 → 還原本次的組，不重抓「上次」
   //（last-sets 取「最近一次 workout」＝今天這次，會把本次的組誤標成上次、done-list 也空掉）
@@ -1860,7 +1876,9 @@ function renderLogger() {
       // 若上面丟錯（非離線錯誤或入列失敗），pendingRestSeconds 保留，重試的 payload 仍帶 rest_seconds
       state.pendingRestSeconds = null;
       state.doneSets.push(saved);
-      state.setCounts[exercise.id] = state.setNumber;
+      // setCounts＝**完成組數**（menuCounts 的課表進度靠它），不是組號。
+      // 刪掉中間某組後兩者會分岔，下一組的編號改由 nextSetNumber() 從最大組號推。
+      state.setCounts[exercise.id] = state.doneSets.length;
       state.setNumber += 1;
       state.rpe = 6; // F40：記完重置回預設「輕鬆」（下一組不碰即帶 6）
       rememberDoneSets(); // F32：換動作後回到此動作可還原本次組
@@ -2259,14 +2277,10 @@ async function confirmActiveWorkout() {
   }
 
   state.doneByExercise = grouped;
-  // setCounts 存的是「已用到的最大組號」，不是陣列長度——刪掉中間某組後（伺服器剩 [1, 3]）
-  // 用長度會算出 2，下一組又送 3，而後端沒有組號唯一約束，於是靜默產生重複組號。
-  // 這與 logSet 成功後 `setCounts[id] = state.setNumber` 的語意一致。
+  // setCounts＝完成組數（課表進度用）。下一組的編號不從這裡推，由 nextSetNumber() 取
+  // doneByExercise 的最大組號——上面剛把鏡射換成伺服器版本，那份才是組號的依據。
   state.setCounts = Object.fromEntries(
-    Object.entries(grouped).map(([id, arr]) => [
-      id,
-      arr.reduce((max, s) => Math.max(max, s.set_number ?? 0), 0),
-    ]),
+    Object.entries(grouped).map(([id, arr]) => [id, arr.length]),
   );
   saveActiveWorkout();
   render();

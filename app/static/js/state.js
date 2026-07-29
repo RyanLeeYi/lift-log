@@ -5,7 +5,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v91";
+export const APP_VERSION = "v92";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -25,7 +25,9 @@ export const state = {
   setNumber: 1,
   doneSets: [], // 本回合該動作已完成的組（顯示用）
   doneByExercise: {}, // F32 {exerciseId:[sets]}——本次 workout 各動作已做組的鏡射；換動作後回到該動作原樣還原，不被誤標成「上次」
-  setCounts: {}, // {exerciseId: 本次 workout 已記組數} —— 回頭選同動作時 set_number 接續
+  // {exerciseId: 本次 workout 已**完成的組數**}——menuCounts() 的課表進度（X/Y 組）用它。
+  // ⚠ 這不是組號：刪掉中間某組後兩者會分岔，下一組的編號一律走 app.js 的 nextSetNumber()。
+  setCounts: {},
   restStartedAt: null, // ms timestamp；null = 計時器未啟動（＝就緒態，按鈕顯示「完成這組」）
   // F71：休息時間改成「累計計時中的時間」，不能再用 now - restStartedAt 直接算——
   // 暫停期間不計入（acceptance ③），而 rest_seconds 是會寫進訓練資料的欄位。

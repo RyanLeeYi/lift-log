@@ -368,6 +368,18 @@ def main() -> int:  # noqa: C901
                 next_no == 4,
                 f"複審 P1-1 刪掉中間組後下一組是 4（最大組號+1），不是 3（實際 {next_no}）",
             )
+            # 同一件事的另一半：setCounts 必須維持「完成組數」語意，否則課表進度（X/Y 組）
+            # 會提前顯示做完。組號取最大值、組數取長度，兩者刻意分開。
+            counts_now = page.evaluate(
+                """async () => {
+                    const s = await import('/js/state.js');
+                    return Object.values(s.state.setCounts);
+                }"""
+            )
+            check(
+                counts_now == [2],
+                f"複審 P2 setCounts 仍是完成組數 2（不是最大組號 3）；實際 {counts_now}",
+            )
             log_one_set(page)
             page.wait_for_timeout(600)
             final = sorted(
