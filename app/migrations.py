@@ -14,6 +14,12 @@ _COLUMN_MIGRATIONS = [
         "rest_hint_seconds",
         "ALTER TABLE template_exercises ADD COLUMN rest_hint_seconds INTEGER",
     ),
+    # F80 排程：ISO 星期的逗號字串（"1,3,5"）。舊課表為 NULL＝沒排程
+    (
+        "templates",
+        "weekdays",
+        "ALTER TABLE templates ADD COLUMN weekdays TEXT",
+    ),
 ]
 
 

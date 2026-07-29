@@ -26,6 +26,10 @@ class Template(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String)
+    # F80 排程：ISO 星期（1=週一…7=週日）的逗號字串，例 "1,3,5"。
+    # NULL＝這份課表沒排進星期（升級上來的舊資料都是這樣）。
+    # 用字串而非關聯表：一份課表最多七個小整數，開一張表換來的正規化不值得多一次 join。
+    weekdays: Mapped[str | None] = mapped_column(String, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     exercises: Mapped[list["TemplateExercise"]] = relationship(
@@ -115,3 +119,20 @@ class PushSubscription(Base):
     p256dh: Mapped[str] = mapped_column(String)  # 訂閱公鑰
     auth: Mapped[str] = mapped_column(String)  # 驗證秘密
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AppSetting(Base):
+    """F80 應用設定：單人系統的 key/value 小表。
+
+    第一個 key 是 weekly_target_days（每週想練幾天）。用 key/value 而不是逐項加欄位，
+    是因為這類設定會零星長出來（預設休息秒數、單位…），每次加欄位就得改 schema 與遷移。
+    值一律存字串，語意與值域由 services/settings.py 負責——DB 不是驗證的地方。
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

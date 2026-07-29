@@ -53,9 +53,11 @@ function startEditor(template) {
     ? {
         id: template.id,
         name: template.name,
+        // F80：排程（ISO 星期 1–7）。舊課表沒有這個欄位就是沒排
+        weekdays: [...(template.weekdays ?? [])],
         items: template.exercises.map((e) => ({ ...e })),
       }
-    : { id: null, name: "", items: [] };
+    : { id: null, name: "", weekdays: [], items: [] };
   tpl.adding = false;
   tpl.addingCustom = false;
   tpl.selectedAdd = null;
@@ -70,6 +72,7 @@ function startEditor(template) {
 function templateSnapshot(editing) {
   return JSON.stringify({
     name: (editing.name || "").trim(),
+    weekdays: [...(editing.weekdays ?? [])].sort((a, b) => a - b),
     items: editing.items.map((i) => ({
       exercise_id: i.exercise_id,
       default_sets: i.default_sets,
@@ -144,7 +147,7 @@ export function restoreTemplateDraft() {
     ) {
       throw new Error("bad draft");
     }
-    tpl.editing = editing;
+    tpl.editing = { ...editing, weekdays: Array.isArray(editing.weekdays) ? editing.weekdays : [] };
     tpl.savedSnapshot = savedSnapshot ?? templateSnapshot({ name: "", items: [] });
     tpl.adding = false;
     tpl.addingCustom = false;
@@ -163,6 +166,14 @@ export function restoreTemplateDraft() {
 
 // ---------- 列表畫面 ----------
 
+// ISO 星期（1=週一）的顯示字；排程的顯示與選擇共用同一份，避免兩處各寫一套
+const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
+
+// [1, 3, 5] → "一、三、五"（ISO：1=週一）
+function weekdayText(days) {
+  return [...days].sort((a, b) => a - b).map((d) => WEEKDAY_LABELS[d - 1]).join("、");
+}
+
 function templateRow(template, rerender, guard, openEditor) {
   const totalSets = template.exercises.reduce((sum, e) => sum + (e.default_sets || 0), 0);
   return el("div", { class: "tpl-row" }, [
@@ -171,6 +182,10 @@ function templateRow(template, rerender, guard, openEditor) {
       // 份量摘要：動作數＋總組數，一眼看出這份課表的量（mono 對齊數字）
       el("span", { class: "tpl-meta" }, [`${template.exercises.length} 動作 · ${totalSets} 組`]),
     ]),
+    // F80：排到的星期。沒排程就整行不出現——「沒排」是常態，不必為它留一行空位
+    ...(template.weekdays?.length
+      ? [el("div", { class: "tpl-sched" }, [`每週 ${weekdayText(template.weekdays)}`])]
+      : []),
     // 動作以 tag 呈現（帶 ×組數），比「·」串接更好掃視
     el(
       "div",
@@ -547,6 +562,38 @@ function templateCustomModal(rerender, guard) {
   });
 }
 
+// F80：排程用的星期多選。一天可以排多份課表，所以這裡不必管別份課表選了什麼——
+// 衝突（兩份都排週三）是合法的，首頁會兩張一起列。
+function weekdayPicker(rerender) {
+  const picked = new Set(tpl.editing.weekdays ?? []);
+  return el("div", { class: "tpl-weekdays" }, [
+    el("span", { class: "tpl-weekdays-label" }, ["排在星期"]),
+    el(
+      "div",
+      { class: "chips" },
+      WEEKDAY_LABELS.map((label, i) => {
+        const day = i + 1; // ISO：1=週一
+        const on = picked.has(day);
+        return el(
+          "button",
+          {
+            class: `chip wd${on ? " on" : ""}`,
+            "aria-pressed": on ? "true" : "false",
+            onclick: () => {
+              const next = new Set(picked);
+              if (on) next.delete(day);
+              else next.add(day);
+              tpl.editing = { ...tpl.editing, weekdays: [...next].sort((a, b) => a - b) };
+              rerender();
+            },
+          },
+          [label],
+        );
+      }),
+    ),
+  ]);
+}
+
 export function renderTemplateEdit(rerender, guard) {
   const editing = tpl.editing;
   const nameInput = el("input", {
@@ -569,6 +616,7 @@ export function renderTemplateEdit(rerender, guard) {
     if (tpl.busy) return; // 防雙擊：同一份課表不重複建立
     const payload = {
       name: tpl.editing.name.trim(),
+      weekdays: [...(tpl.editing.weekdays ?? [])].sort((a, b) => a - b),
       exercises: tpl.editing.items.map(({ exercise_id, default_sets, rest_hint_seconds }) => ({
         exercise_id,
         default_sets,
@@ -610,6 +658,7 @@ export function renderTemplateEdit(rerender, guard) {
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     nameInput,
+    weekdayPicker(rerender),
     // F21：動作清單可捲，儲存/加動作按鈕不被推走；高度由 F51 改為填滿剩餘空間（見 app.css .tpl-items）
     itemsNode,
     // F51（Ryan 拍板）：三顆鈕包一層貼底容器——清單在 3→2 個動作跨門檻塌陷時，按鈕位置若跟著上移

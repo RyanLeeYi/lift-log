@@ -44,9 +44,40 @@ class TemplateExerciseIn(BaseModel):
     rest_hint_seconds: int | None = Field(default=None, ge=15, le=600)
 
 
+def _clean_weekdays(v: list[int] | None) -> list[int] | None:
+    """F80：ISO 星期（1=週一…7=週日）。去重排序後回傳；空清單視為「沒排程」＝None。
+
+    值域錯誤在這裡就擋下來（→ 400），不讓 "8" 或 "0" 進到 DB 的字串欄位裡——
+    存成字串的代價就是 DB 幫不上忙，驗證只能在邊界做足。
+    """
+    if v is None:
+        return None
+    if any(day < 1 or day > 7 for day in v):
+        raise ValueError("weekday must be 1-7 (1=Mon)")
+    return sorted(set(v)) or None
+
+
 class TemplateCreate(BaseModel):
     name: str = Field(min_length=1)
     exercises: list[TemplateExerciseIn] = Field(min_length=1)
+    # F80：排程；未提供＝不排（PUT 整份取代時，沒帶就是清掉排程）
+    weekdays: list[int] | None = None
+
+    @field_validator("weekdays")
+    @classmethod
+    def _check_weekdays(cls, v: list[int] | None) -> list[int] | None:
+        return _clean_weekdays(v)
+
+
+class TemplateWeekdaysPatch(BaseModel):
+    """只改排程，不動動作清單（課表列表上直接排星期用）。"""
+
+    weekdays: list[int] | None = None
+
+    @field_validator("weekdays")
+    @classmethod
+    def _check_weekdays(cls, v: list[int] | None) -> list[int] | None:
+        return _clean_weekdays(v)
 
 
 class TemplateExerciseOut(BaseModel):
@@ -64,6 +95,34 @@ class TemplateOut(BaseModel):
     id: int
     name: str
     exercises: list[TemplateExerciseOut]
+    weekdays: list[int] = Field(default_factory=list)  # F80：沒排程回空陣列，前端不必判 null
+
+
+class SettingOut(BaseModel):
+    key: str
+    value: str
+
+
+class SettingIn(BaseModel):
+    value: str = Field(min_length=1)
+
+
+class ScheduledTemplate(BaseModel):
+    """今天排到的一份課表（一天可以有多份——早上推、晚上有氧）。"""
+
+    id: int
+    name: str
+    exercise_count: int
+    set_count: int
+
+
+class ScheduleTodayOut(BaseModel):
+    date: date_type
+    weekday: int  # ISO 1=週一…7=週日
+    templates: list[ScheduledTemplate]
+    weekly_target_days: int
+    week_done_days: int  # 本週（週一起算）有記錄的不重複天數
+    week_days: list[bool]  # 週一…週日，各日有沒有練——首頁的七段進度條
 
 
 class WorkoutCreate(BaseModel):

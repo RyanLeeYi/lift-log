@@ -12,9 +12,13 @@ from app.api import (
     daily_status,
     exercises,
     push,
+    schedule,
     stats,
     templates,
     workouts,
+)
+from app.api import (
+    settings as settings_api,
 )
 from app.config import Settings
 from app.db import make_engine
@@ -91,6 +95,8 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(body_metrics.router)
     app.include_router(daily_status.router)
     app.include_router(push.router)
+    app.include_router(schedule.router)  # F80：今天排到什麼＋本週進度
+    app.include_router(settings_api.router)  # F80：每週目標天數等設定
     app.include_router(app_release.router)  # F67：app 版自我更新的版本查詢與 APK 供檔
     app.mount(MCP_MOUNT, mcp_app)
     # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/* 與 /mcp

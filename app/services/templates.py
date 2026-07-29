@@ -6,6 +6,18 @@ from app.models import Exercise, Template, TemplateExercise
 from app.schemas import TemplateCreate, TemplateExerciseOut, TemplateOut
 
 
+def _pack_weekdays(days: list[int] | None) -> str | None:
+    """[1, 3, 5] → "1,3,5"；空／None → NULL（沒排程）。"""
+    return ",".join(str(d) for d in days) if days else None
+
+
+def unpack_weekdays(raw: str | None) -> list[int]:
+    """"1,3,5" → [1, 3, 5]；NULL 或髒資料 → []（讀取端永遠拿得到一個清單）。"""
+    if not raw:
+        return []
+    return sorted({int(part) for part in raw.split(",") if part.strip().isdigit()})
+
+
 def _ensure_unique_name(session: Session, name: str, exclude_id: int | None = None) -> None:
     """MCP log_workout 以名稱解析課表——同名會歧義，寫入前就擋（DB 無 unique 約束，app 層把關）。"""
     query = select(Template.id).where(Template.name == name)
@@ -41,6 +53,7 @@ def _to_out(template: Template) -> TemplateOut:
     return TemplateOut(
         id=template.id,
         name=template.name,
+        weekdays=unpack_weekdays(template.weekdays),
         exercises=[
             TemplateExerciseOut(
                 exercise_id=item.exercise_id,
@@ -71,7 +84,11 @@ def _get(session: Session, template_id: int) -> Template:
 def create_template(session: Session, data: TemplateCreate) -> TemplateOut:
     _ensure_unique_name(session, data.name)
     _validate_exercise_ids(session, data)
-    template = Template(name=data.name, exercises=_build_items(data))
+    template = Template(
+        name=data.name,
+        weekdays=_pack_weekdays(data.weekdays),
+        exercises=_build_items(data),
+    )
     session.add(template)
     session.commit()
     return _to_out(_get(session, template.id))
@@ -96,6 +113,11 @@ def update_template(session: Session, template_id: int, data: TemplateCreate) ->
     _ensure_unique_name(session, data.name, exclude_id=template_id)
     _validate_exercise_ids(session, data)
     template.name = data.name
+    # 「沒帶這個欄位」與「帶了空陣列」是兩件事：前者不動排程，後者才是清掉。
+    # 差別在舊版前端（PWA 快取沒更新的那台）送出的 payload 不含 weekdays——
+    # 若一律覆蓋，另一台裝置排好的星期會被它悄悄清空（Codex 2026-07-29 P1 指出的情境）。
+    if "weekdays" in data.model_fields_set:
+        template.weekdays = _pack_weekdays(data.weekdays)
     template.exercises = _build_items(data)
     session.commit()
     return _to_out(_get(session, template_id))
@@ -113,3 +135,11 @@ def delete_template(session: Session, template_id: int) -> None:
         raise NotFoundError()
     session.delete(template)
     session.commit()
+
+
+def set_weekdays(session: Session, template_id: int, days: list[int] | None) -> TemplateOut:
+    """只改排程。動作清單不動——課表列表上排星期時不必先讀出整份課表再整包送回。"""
+    template = _get(session, template_id)
+    template.weekdays = _pack_weekdays(days)
+    session.commit()
+    return _to_out(_get(session, template_id))

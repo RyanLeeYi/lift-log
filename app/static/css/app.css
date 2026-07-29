@@ -990,3 +990,15 @@ body {
   .btn:active { transform: none; }
   .rest-led .digits { text-shadow: none; }
 }
+
+/* F80：課表排程（編輯頁的星期多選 ＋ 列表卡的排程摘要） */
+.tpl-weekdays { display: flex; flex-direction: column; gap: 8px; }
+.tpl-weekdays-label { color: var(--text-mute); font-size: 12px; letter-spacing: .14em; }
+/* 七顆一列要塞進 360px：min-width 收到 40 並允許等分（.chip 的 44 是給文字 chip 的） */
+.tpl-weekdays .chips { gap: 6px; }
+.tpl-weekdays .chip.wd { flex: 1; min-width: 40px; padding: 7px 0; }
+.tpl-sched {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+}
