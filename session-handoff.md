@@ -7,6 +7,16 @@
 **83/85 passing**，剩 F65、F66（acceptance 未簽核）與 F90（新開，未簽核）。
 線上與原始碼同為 **v90**，已部署；`lift-log-v90-F85.apk` 已上 Google Drive。
 
+### 下一場從這裡開始
+
+**F86 動作表現改版**（設計稿 README §6 ＋ `screenshots/06-exercise-trends.png`）。
+照這個專案的節奏：讀設計段落與截圖 → 逐條走 acceptance → 凍結進 feature_list（failing）→
+實作 → ruff＋pytest＋E2E → `/codex-review` → `/codex-verify` → 改 passing → 出 APK → commit。
+
+F86 已知要順帶處理的兩件（前面幾條欠下來的）：**獎盃／獎章圖示**要加進 icons.js；
+**時間窗 chips 從 8 顆縮到 5 顆**，這樣寬高才能同時達到 44px
+（目前 8 顆是靠 verify_f78 的 `allow_narrow` 例外放行的，不是真的合格）。
+
 ### 這輪的來源：design_handoff_liftlog_clay
 
 Ryan 給的完整視覺改版稿（README ＋ 12 張 screenshots）。拆成 F78–F89 十二條，
