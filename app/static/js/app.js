@@ -2202,10 +2202,16 @@ async function confirmActiveWorkout() {
   const dropStale = (message) => {
     clearActiveWorkout();
     state.error = message;
-    // 只在 home 重繪是不夠的：慢網路下使用者可能已經按「繼續訓練」進了 picker，
-    // 清掉 workoutId 後留在那裡，下一次記組會送去 /api/workouts/null/sets（Codex P2）。
-    if (state.screen === "home") render();
-    else backHome();
+    // 慢網路下使用者可能已經按「繼續訓練」進了 picker，清掉 workoutId 後留在那裡的話，
+    // 下一次記組會送去 /api/workouts/null/sets（Codex P2）。
+    // **同步**切畫面再重繪，不走 backHome()——那支要等 loadHome() 回來才換畫面，
+    // 首頁資料慢或失敗時，那段空窗仍然可以從 picker 進 logger 記組（Codex 複審 P2）。
+    state.screen = "home";
+    render();
+    guard(async () => {
+      await loadHome(); // 資料稍後補上；這時人已經不在訓練畫面了
+      render();
+    });
   };
 
   let detail;
@@ -2229,9 +2235,6 @@ async function confirmActiveWorkout() {
 
   // 伺服器是基礎，離線佇列是唯一的例外——只把「確實還躺在佇列裡、屬於這場訓練」的組加回來。
   // 反過來（本地鏡射整段覆蓋伺服器）會讓別處刪掉的組復活、改過的值退回舊快照（Codex P2）。
-  // 只取 status === "pending"：flush 成功的項目會從佇列移除，所以還留著的 pending
-  // 就等於「確實還沒送達伺服器」。**不能**改用 client_uuid 比對去重——SetOut 沒有那個欄位，
-  // 比出來全是 undefined，會把每一筆都當成新的加回去。
   let queued = [];
   try {
     queued = (await listQueued()).filter(
@@ -2244,7 +2247,11 @@ async function confirmActiveWorkout() {
 
   const grouped = {};
   for (const s of detail.sets) (grouped[s.exercise_id] ??= []).push(s);
+  // 用 client_uuid 排掉「已經送達伺服器、但佇列裡還留著」的殘影：POST 成功而回應途中斷線時，
+  // 那筆會同時出現在 detail.sets 與待送佇列，無條件附加就會重複計組（SetOut 為此補了這個欄位）。
+  const onServer = new Set(detail.sets.map((s) => s.client_uuid));
   for (const e of queued) {
+    if (onServer.has(e.client_uuid)) continue;
     (grouped[e.payload.exercise_id] ??= []).push(e.payload);
   }
   for (const arr of Object.values(grouped)) {
@@ -2252,8 +2259,14 @@ async function confirmActiveWorkout() {
   }
 
   state.doneByExercise = grouped;
+  // setCounts 存的是「已用到的最大組號」，不是陣列長度——刪掉中間某組後（伺服器剩 [1, 3]）
+  // 用長度會算出 2，下一組又送 3，而後端沒有組號唯一約束，於是靜默產生重複組號。
+  // 這與 logSet 成功後 `setCounts[id] = state.setNumber` 的語意一致。
   state.setCounts = Object.fromEntries(
-    Object.entries(grouped).map(([id, arr]) => [id, arr.length]),
+    Object.entries(grouped).map(([id, arr]) => [
+      id,
+      arr.reduce((max, s) => Math.max(max, s.set_number ?? 0), 0),
+    ]),
   );
   saveActiveWorkout();
   render();

@@ -267,6 +267,7 @@ class SetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    client_uuid: str  # F90：離線佇列判斷「這筆送達了沒」的唯一識別，不回傳的話只能用間接特徵猜
     workout_id: int
     exercise_id: int
     set_number: int

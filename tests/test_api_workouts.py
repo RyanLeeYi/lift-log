@@ -74,6 +74,20 @@ class TestLogSet:
         assert len(detail["sets"]) == 1
         assert detail["sets"][0]["id"] == body["id"]
 
+    def test_set_out_exposes_client_uuid(self, client, exercise_id):
+        """F90：離線佇列要能判斷「這筆是不是已經送達了」，靠的就是 client_uuid。
+
+        伺服器不回傳它的話，前端只能拿 set_number 之類的間接特徵去猜——
+        POST 成功但回應途中斷線時，那筆會同時存在於伺服器與待送佇列，猜錯就重複計組。
+        """
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        payload = make_set_payload(exercise_id)
+        created = client.post(f"/api/workouts/{workout_id}/sets", json=payload)
+        assert created.json()["client_uuid"] == payload["client_uuid"]
+
+        detail = client.get(f"/api/workouts/{workout_id}").json()
+        assert detail["sets"][0]["client_uuid"] == payload["client_uuid"]
+
     def test_same_client_uuid_is_idempotent(self, client, exercise_id):
         workout_id = client.post("/api/workouts", json={}).json()["id"]
         payload = make_set_payload(exercise_id)

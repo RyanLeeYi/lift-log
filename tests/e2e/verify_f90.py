@@ -336,6 +336,54 @@ def main() -> int:  # noqa: C901
                 f"P2-2 setCounts 跟著伺服器縮回（實際 {counts_after}）",
             )
 
+            # 複審 P1-1：刪掉中間那組後重載，下一組不得與伺服器上既有組號撞號。
+            # 後端沒有組號唯一約束，撞號是**靜默**的——只會在資料裡多出一筆一樣的組號。
+            start_free_workout(page)
+            for _ in range(3):
+                log_one_set(page)
+            page.wait_for_timeout(600)
+            wid4 = page.evaluate(
+                "async () => (await import('/js/state.js')).state.workoutId"
+            )
+            sets4 = api(base, f"/api/workouts/{wid4}")["sets"]
+            middle = next(s for s in sets4 if s["set_number"] == 2)
+            api(base, f"/api/sets/{middle['id']}", method="DELETE")
+            remaining = sorted(
+                s["set_number"] for s in api(base, f"/api/workouts/{wid4}")["sets"]
+            )
+            check(remaining == [1, 3], f"前置：伺服器上剩下不連續的組號 {remaining}")
+
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+            start_from_home(page)
+            page.wait_for_timeout(800)
+            page.locator(".ex-row, .exercise-row, button").filter(
+                has_text="深蹲"
+            ).first.click()
+            page.wait_for_timeout(700)
+            next_no = page.evaluate(
+                "async () => (await import('/js/state.js')).state.setNumber"
+            )
+            check(
+                next_no == 4,
+                f"複審 P1-1 刪掉中間組後下一組是 4（最大組號+1），不是 3（實際 {next_no}）",
+            )
+            log_one_set(page)
+            page.wait_for_timeout(600)
+            final = sorted(
+                s["set_number"] for s in api(base, f"/api/workouts/{wid4}")["sets"]
+            )
+            check(
+                len(final) == len(set(final)),
+                f"複審 P1-1 不產生重複組號（實際 {final}）",
+            )
+
+            # 複審 P1-2：SetOut 要帶 client_uuid，否則分不出「佇列裡那筆是否已送達」
+            check(
+                all("client_uuid" in s for s in api(base, f"/api/workouts/{wid4}")["sets"]),
+                "複審 P1-2 伺服器回傳的每一組都帶 client_uuid",
+            )
+
             browser.close()
     finally:
         proc.terminate()
