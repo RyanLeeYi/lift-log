@@ -218,7 +218,14 @@ class TestDeleteTemplate:
         assert client.delete("/api/templates/9999").status_code == 404
 
     def test_delete_does_not_affect_historical_workouts(self, client, exercise_ids):
-        """PRD R4：刪除課表不影響歷史 workout 紀錄。"""
+        """PRD R4：刪除課表不影響歷史 workout 紀錄。
+
+        ⚠ F82（Ryan 2026-07-29 裁決）調整了「不影響」的界線：訓練紀錄本身完全保留
+        （日期、組數、備註、sets），但**與課表的關聯會被解除**（template_id → NULL）。
+        原因是 SQLite 的 INTEGER PRIMARY KEY 會重用被刪掉的最大 id——留著那個數字，
+        下一份新建的課表就會繼承這場訓練的歷史（顯示成它的「上次訓練」並冠上新名字）。
+        課表都不在了，那個數字本來就解讀不出任何東西。
+        """
         template_id = client.post(
             "/api/templates", json=make_template_payload(exercise_ids)
         ).json()["id"]
@@ -230,8 +237,8 @@ class TestDeleteTemplate:
 
         detail = client.get(f"/api/workouts/{workout['id']}")
         assert detail.status_code == 200
-        assert detail.json()["template_id"] == template_id
-        assert detail.json()["note"] == "練腿日"
+        assert detail.json()["note"] == "練腿日"  # 紀錄本身完好
+        assert detail.json()["template_id"] is None  # 但不再指向一個已不存在的課表
 
 
 class TestRestHint:

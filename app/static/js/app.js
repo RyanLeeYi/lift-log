@@ -791,39 +791,83 @@ function updateModal() {
 let templateChoices = [];
 
 function renderTemplateSelect() {
-  // F48：課表超過 2 份才固定高度＋內部捲動；「自由訓練」與「← 回首頁」留在捲動區外（它們不是課表，
+  // F82：今天排到的那份預設展開並用 --card-hi 站出來（F80 的排程）。沒排程就展開第一張——
+  // 設計的視覺節奏靠「有一張是攤開的」，全部收合會變成一排一模一樣的長方形。
+  const scheduledIds = new Set((homeData?.templates ?? []).map((t) => t.id));
+  const highlightId = templateChoices.find((t) => scheduledIds.has(t.id))?.id
+    ?? templateChoices[0]?.id;
+
+  // F48：課表超過 2 份才固定高度＋內部捲動；「自由訓練」留在捲動區外（它不是課表，
   // 位置要固定才按得到）。此畫面不會在停留中重繪，故不需存還原 scrollTop。
   const scrollable = templateChoices.length > 2;
   return el("section", { class: "screen template-select fills" }, [
-    el("header", { class: "topbar" }, [el("h1", {}, ["今天練哪份？"])]),
+    el("header", { class: "screen-head" }, [
+      el(
+        "button",
+        {
+          class: "btn icon-btn back-btn",
+          "aria-label": "回首頁",
+          onclick: () => { state.screen = "home"; render(); },
+        },
+        [icon("back", { size: 20, label: "回首頁" })],
+      ),
+      el("div", { class: "screen-head-text" }, [
+        el("h1", {}, ["挑今日課表"]),
+        el("div", { class: "st" }, [`${templateChoices.length} 份課表`]),
+      ]),
+    ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
-    // 課表清單與「自由訓練」同一組（間距不變），但只有課表清單會捲動
-    el("div", { class: "exercise-list tpl-choice-wrap" }, [
+    el("div", { class: "tpl-choice-wrap" }, [
       el(
         "div",
-        { class: `exercise-list tpl-choice-list${scrollable ? " scrollable" : ""}` },
-        templateChoices.map((template) =>
-          el(
-            "button",
-            { class: "btn exercise-item", onclick: () => guard(() => startWorkout(template)) },
-            [
-              el("span", {}, [template.name]),
-              el("span", { class: "sub" }, [`${template.exercises.length} 動作`]),
-            ],
-          ),
-        ),
+        { class: `tpl-choice-list${scrollable ? " scrollable" : ""}` },
+        templateChoices.map((t) => templateChoiceCard(t, t.id === highlightId)),
       ),
       el(
         "button",
-        { class: "btn exercise-item free-choice", onclick: () => guard(() => startWorkout(null)) },
-        [
-          el("span", {}, ["自由訓練"]),
-          el("span", { class: "sub" }, ["不用課表"]),
-        ],
+        { class: "btn btn-ghost free-choice", onclick: () => guard(() => startWorkout(null)) },
+        ["自由訓練"],
       ),
     ]),
-    el("button", { class: "btn btn-ghost", onclick: () => { state.screen = "home"; render(); } }, ["← 回首頁"]),
   ]);
+}
+
+// 挑課表的一張卡。展開的那張列動作 chips，其餘只講「上次練是什麼時候、練了多少」——
+// 那是決定今天要不要練這份的資訊，動作清單反而是次要的。
+function templateChoiceCard(template, expanded) {
+  const totalSets = template.exercises.reduce((sum, e) => sum + (e.default_sets || 0), 0);
+  return el(
+    "button",
+    {
+      class: `tpl-choice${expanded ? " on" : ""}`,
+      onclick: () => guard(() => startWorkout(template)),
+    },
+    [
+      el("div", { class: "tpl-choice-head" }, [
+        el("span", { class: "tpl-choice-name" }, [template.name]),
+        el("span", { class: "tpl-choice-meta" }, [
+          `${template.exercises.length} 動作 · ${totalSets} 組`,
+        ]),
+      ]),
+      expanded
+        ? el(
+            "div",
+            { class: "tpl-choice-chips" },
+            template.exercises.map((e) =>
+              el("span", { class: "chip" }, [getLang() === "zh" ? e.name_zh : e.name_en]),
+            ),
+          )
+        : el("div", { class: "tpl-choice-last" }, [lastUsedText(template)]),
+    ],
+  );
+}
+
+// 「上次 7/27 · 4,820 kg」；沒練過就直說，不要留一行空的
+function lastUsedText(template) {
+  if (!template.last_used_date) return "還沒練過";
+  const [, month, day] = template.last_used_date.split("-");
+  const volume = Math.round(template.last_volume_kg ?? 0).toLocaleString("en-US");
+  return `上次 ${Number(month)}/${Number(day)} · ${volume} kg`;
 }
 
 // ---------- picker ----------

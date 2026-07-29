@@ -276,3 +276,122 @@ class TestLastWorkout:
         client.post("/api/workouts", json={"date": date.today().isoformat()})
         last = client.get("/api/schedule/today").json()["last_workout"]
         assert last["date"] == (date.today() - timedelta(days=2)).isoformat()
+
+
+class TestTemplateLastUsed:
+    """F82 挑課表畫面：每份課表的「上次 M/D · X,XXX kg」。"""
+
+    def _log(self, client, exercise_id: int, template_id: int, day: date, uuid: str,
+             weight: float = 60) -> int:
+        workout = client.post(
+            "/api/workouts", json={"date": day.isoformat(), "template_id": template_id}
+        ).json()
+        client.post(
+            f"/api/workouts/{workout['id']}/sets",
+            json={
+                "client_uuid": uuid,
+                "exercise_id": exercise_id,
+                "set_number": 1,
+                "weight_kg": weight,
+                "reps": 8,
+            },
+        )
+        return workout["id"]
+
+    def test_none_when_never_used(self, client, exercise_id) -> None:
+        _make_template(client, ex_id=exercise_id, name="沒用過")
+        row = client.get("/api/templates").json()[0]
+        assert row["last_used_date"] is None
+        assert row["last_volume_kg"] is None
+
+    def test_reports_latest_use(self, client, exercise_id) -> None:
+        template = _make_template(client, ex_id=exercise_id, name="推胸日")
+        self._log(client, exercise_id, template["id"], date(2026, 7, 20), "uuid-lu-old", 50)
+        self._log(client, exercise_id, template["id"], date(2026, 7, 27), "uuid-lu-new", 60)
+        row = client.get("/api/templates").json()[0]
+        assert row["last_used_date"] == "2026-07-27"
+        assert row["last_volume_kg"] == 480.0  # 只算最後那次，不是全部加總
+
+    def test_each_template_independent(self, client, exercise_id) -> None:
+        a = _make_template(client, ex_id=exercise_id, name="A")
+        b = _make_template(client, ex_id=exercise_id, name="B")
+        self._log(client, exercise_id, a["id"], date(2026, 7, 20), "uuid-lu-a")
+        self._log(client, exercise_id, b["id"], date(2026, 7, 25), "uuid-lu-b")
+        rows = {t["name"]: t["last_used_date"] for t in client.get("/api/templates").json()}
+        assert rows == {"A": "2026-07-20", "B": "2026-07-25"}
+
+    def test_soft_deleted_sets_excluded(self, client, exercise_id) -> None:
+        """整場都被刪光的訓練不算用過——否則卡片會顯示一個查不到東西的日期。"""
+        template = _make_template(client, ex_id=exercise_id, name="全刪")
+        workout_id = self._log(
+            client, exercise_id, template["id"], date(2026, 7, 20), "uuid-lu-del"
+        )
+        set_id = client.get(f"/api/workouts/{workout_id}").json()["sets"][0]["id"]
+        client.delete(f"/api/sets/{set_id}")
+        assert client.get("/api/templates").json()[0]["last_used_date"] is None
+
+    def test_free_workout_not_attributed(self, client, exercise_id) -> None:
+        """自由訓練（template_id 為 null）不該算到任何一份課表頭上。"""
+        template = _make_template(client, ex_id=exercise_id, name="沒用過")
+        workout = client.post("/api/workouts", json={"date": date.today().isoformat()}).json()
+        client.post(
+            f"/api/workouts/{workout['id']}/sets",
+            json={
+                "client_uuid": "uuid-lu-free",
+                "exercise_id": exercise_id,
+                "set_number": 1,
+                "weight_kg": 60,
+                "reps": 8,
+            },
+        )
+        assert template["id"]  # 課表存在但沒被用過
+        assert client.get("/api/templates").json()[0]["last_used_date"] is None
+
+
+class TestDeletedTemplateIdReuse:
+    """SQLite 的 INTEGER PRIMARY KEY 會重用被刪掉的最大 id。
+
+    刪掉最後一份課表再建一份新的，新課表會拿到同一個 id，而歷史 workout 仍存著那個數字——
+    若只靠 id 比對，新課表就會繼承前一份的訓練歷史（Codex 2026-07-29 P2）。
+    """
+
+    def _log(self, client, exercise_id: int, template_id: int, uuid: str) -> None:
+        workout = client.post(
+            "/api/workouts",
+            json={"date": date.today().isoformat(), "template_id": template_id},
+        ).json()
+        client.post(
+            f"/api/workouts/{workout['id']}/sets",
+            json={
+                "client_uuid": uuid,
+                "exercise_id": exercise_id,
+                "set_number": 1,
+                "weight_kg": 60,
+                "reps": 8,
+            },
+        )
+
+    def test_new_template_does_not_inherit_history(self, client, exercise_id) -> None:
+        old = _make_template(client, ex_id=exercise_id, name="舊課表")
+        self._log(client, exercise_id, old["id"], "uuid-reuse-001")
+        client.delete(f"/api/templates/{old['id']}")
+
+        new = _make_template(client, ex_id=exercise_id, name="新課表")
+        # 前提：id 真的被重用了，否則這個測試沒有測到東西
+        assert new["id"] == old["id"], "SQLite 沒有重用 id，這個情境需要重新設計測試"
+
+        row = [t for t in client.get("/api/templates").json() if t["id"] == new["id"]][0]
+        assert row["last_used_date"] is None
+        assert row["last_volume_kg"] is None
+
+    def test_home_last_workout_does_not_borrow_new_name(self, client, exercise_id) -> None:
+        """首頁的「上次訓練」也一樣——不該把舊訓練標上新課表的名字。"""
+        old = _make_template(client, ex_id=exercise_id, name="舊課表")
+        self._log(client, exercise_id, old["id"], "uuid-reuse-002")
+        client.delete(f"/api/templates/{old['id']}")
+        new = _make_template(client, ex_id=exercise_id, name="新課表")
+        assert new["id"] == old["id"]
+
+        last = client.get("/api/schedule/today").json()["last_workout"]
+        assert last is not None
+        assert last["template_name"] is None

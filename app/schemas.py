@@ -96,6 +96,9 @@ class TemplateOut(BaseModel):
     name: str
     exercises: list[TemplateExerciseOut]
     weekdays: list[int] = Field(default_factory=list)  # F80：沒排程回空陣列，前端不必判 null
+    # F82 挑課表畫面：這份課表上次練是什麼時候、練了多少（沒練過為 None）
+    last_used_date: date_type | None = None
+    last_volume_kg: float | None = None
 
 
 class SettingOut(BaseModel):

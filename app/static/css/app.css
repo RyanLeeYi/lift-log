@@ -466,7 +466,11 @@ body {
 /* F50：高度改為「填滿剩餘空間」——螢幕越高顯示越多，錯誤橫幅等元素出現時自動讓位，
    不再用固定 px（F48 的 290／118 是猜的）。min-height 是下限，極矮螢幕仍留得下約一列。 */
 .tpl-rows.scrollable { flex: 1 1 0; min-height: 132px; }
-.tpl-choice-wrap { flex: 1 1 0; min-height: 0; overflow: visible; } /* 外層負責間距，捲動交給內層課表清單 */
+/* 外層負責間距（原本靠 .exercise-list 提供，F82 拆開後自帶），捲動交給內層課表清單 */
+.tpl-choice-wrap {
+  flex: 1 1 0; min-height: 0; overflow: visible;
+  display: flex; flex-direction: column; gap: 10px;
+}
 .tpl-choice-list.scrollable,
 .menu-list.scrollable { flex: 1 1 0; min-height: 56px; }
 .tpl-rows.scrollable,
@@ -1112,3 +1116,41 @@ body {
   font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--accent);
 }
 .settings-screen .settings-back { margin-top: auto; }
+
+/* ---------- F82：挑今日課表 ---------- */
+/* 畫面標頭：返回鈕 ＋ 標題/副標。與首頁的問候列同一族，但這裡有返回 */
+.screen-head { display: flex; align-items: center; gap: 12px; padding: 4px 6px 2px; }
+.screen-head .back-btn {
+  flex: none; min-width: 44px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; color: var(--text-mid);
+}
+.screen-head-text { display: flex; flex-direction: column; gap: 6px; }
+.screen-head h1 { font-size: 19px; font-weight: 700; line-height: 1; }
+.screen-head .st { font-family: var(--mono); font-size: 11px; color: var(--text-mute); }
+
+.tpl-choice-list { display: flex; flex-direction: column; gap: 10px; }
+.tpl-choice {
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--card); border: none; border-radius: var(--r-card);
+  padding: 20px 18px; text-align: left; cursor: pointer;
+  color: var(--text); font-family: var(--sans); font-size: 17px;
+}
+/* 今天排到的那份：靠底色差站出來（同 F78 ⑤ 的原則，不用外框） */
+.tpl-choice.on { background: var(--card-hi); }
+.tpl-choice:active { transform: scale(.99); }
+.tpl-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tpl-choice-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tpl-choice-name { font-size: 19px; font-weight: 700; }
+.tpl-choice-meta {
+  flex: none; color: var(--text-mute);
+  font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.tpl-choice-last { color: var(--text-mute); font-family: var(--mono); font-size: 12px; }
+/* 展開那張的動作 chips：在 --card-hi 上要更暗才分得出來 */
+.tpl-choice-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.tpl-choice-chips .chip {
+  background: var(--card); color: var(--text); font-size: 13px;
+  padding: 6px 12px; min-height: 36px; min-width: 0; cursor: inherit;
+}
+.free-choice { margin-top: 2px; padding: 16px; }

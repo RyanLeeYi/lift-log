@@ -1,8 +1,8 @@
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import DomainError, NotFoundError
-from app.models import Exercise, Template, TemplateExercise
+from app.models import Exercise, Template, TemplateExercise, Workout, WorkoutSet
 from app.schemas import TemplateCreate, TemplateExerciseOut, TemplateOut
 
 
@@ -49,11 +49,42 @@ def _build_items(data: TemplateCreate) -> list[TemplateExercise]:
     ]
 
 
-def _to_out(template: Template) -> TemplateOut:
+def last_used_by_template(session: Session) -> dict[int, tuple[object, float]]:
+    """每份課表最後一次「真的有記東西」的日期與當次總量。
+
+    一次 group by 拿全部，而不是每張卡各查一次——挑課表畫面會一次列出所有課表。
+    以 workout 為單位取最後一次：同一天用同一份課表練兩場時，講的是最後那場。
+    """
+    rows = session.execute(
+        select(
+            Template.id,
+            Workout.date,
+            func.sum(WorkoutSet.weight_kg * WorkoutSet.reps),
+        )
+        # 只留仍然存在的課表（join 而非比數字）——course 刪除時已把歷史的 template_id 清成 NULL，
+        # 所以這裡不會撿到孤兒；join 是第二道保險。
+        .join(Template, Template.id == Workout.template_id)
+        .join(WorkoutSet, WorkoutSet.workout_id == Workout.id)
+        .where(WorkoutSet.deleted_at.is_(None))
+        .group_by(Workout.id)
+        .order_by(Workout.date, Workout.id)
+    ).all()
+    # 依日期由舊到新掃過去，後面的自然覆蓋前面的＝留下每份課表的最後一次
+    latest: dict[int, tuple[object, float]] = {}
+    for template_id, day, volume in rows:
+        latest[template_id] = (day, round(volume or 0, 1))
+    return latest
+
+
+def _to_out(template: Template, last_used: dict[int, tuple[object, float]] | None = None
+            ) -> TemplateOut:
+    used = (last_used or {}).get(template.id)
     return TemplateOut(
         id=template.id,
         name=template.name,
         weekdays=unpack_weekdays(template.weekdays),
+        last_used_date=used[0] if used else None,
+        last_volume_kg=used[1] if used else None,
         exercises=[
             TemplateExerciseOut(
                 exercise_id=item.exercise_id,
@@ -100,11 +131,12 @@ def list_templates(session: Session) -> list[TemplateOut]:
         .options(selectinload(Template.exercises).selectinload(TemplateExercise.exercise))
         .order_by(Template.id)
     )
-    return [_to_out(t) for t in templates]
+    last_used = last_used_by_template(session)
+    return [_to_out(t, last_used) for t in templates]
 
 
 def get_template(session: Session, template_id: int) -> TemplateOut:
-    return _to_out(_get(session, template_id))
+    return _to_out(_get(session, template_id), last_used_by_template(session))
 
 
 def update_template(session: Session, template_id: int, data: TemplateCreate) -> TemplateOut:
@@ -124,7 +156,13 @@ def update_template(session: Session, template_id: int, data: TemplateCreate) ->
 
 
 def delete_template(session: Session, template_id: int) -> None:
-    """刪課表不影響歷史 workout（workouts.template_id 為純數值欄，無 FK）。
+    """刪課表不影響歷史 workout 本身，但要解除關聯。
+
+    workouts.template_id 是純數值欄（無 FK），而 SQLite 的 INTEGER PRIMARY KEY **會重用**
+    被刪掉的最大 id——刪掉最後一份課表再建一份新的，新課表就會拿到同一個數字，
+    舊訓練的歷史於是掛到新課表頭上（顯示成它的「上次訓練」，還冠上新名字）。
+    比對建立時間擋不住「同一秒內刪了再建」，所以在這裡把關聯清乾淨：
+    課表沒了，那個數字本來就已經解讀不出任何東西（Codex 2026-07-29 P2）。
 
     只載 exercises 供 ORM cascade 用，不載 nested Exercise（這裡用不到）。
     """
@@ -133,6 +171,9 @@ def delete_template(session: Session, template_id: int) -> None:
     )
     if template is None:
         raise NotFoundError()
+    session.execute(
+        update(Workout).where(Workout.template_id == template_id).values(template_id=None)
+    )
     session.delete(template)
     session.commit()
 
