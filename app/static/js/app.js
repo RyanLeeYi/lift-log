@@ -241,9 +241,21 @@ function reconcileDoneSets({ replace, remove } = {}) {
       .map((s) => (replace && replace.has(s.client_uuid) ? replace.get(s.client_uuid) : s))
       .filter((s) => !(remove && remove.has(s.client_uuid)));
   state.doneSets = mapArr(state.doneSets);
+  const before = state.doneByExercise;
   state.doneByExercise = Object.fromEntries(
-    Object.entries(state.doneByExercise).map(([id, arr]) => [id, mapArr(arr)]),
+    Object.entries(before).map(([id, arr]) => [id, mapArr(arr)]),
   );
+  // 捨棄失敗的離線組時，setCounts 也要跟著降——只縮短鏡射的話，課表進度會停在
+  // 丟棄前的數字，動作被提前標成做完（Codex P2）。按實際移除幾筆扣，不整份重算：
+  // 鏡射在「舊狀態遷移＋離線」時可能不完整，重算會把還沒回填的組誤刪成 0。
+  if (remove) {
+    for (const [id, arr] of Object.entries(before)) {
+      const removed = arr.length - state.doneByExercise[id].length;
+      if (removed > 0) {
+        state.setCounts[id] = Math.max(0, (state.setCounts[id] || 0) - removed);
+      }
+    }
+  }
   saveActiveWorkout();
 }
 
