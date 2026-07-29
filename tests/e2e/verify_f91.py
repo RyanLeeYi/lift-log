@@ -202,6 +202,48 @@ def main() -> int:
             )
             ctx.set_offline(False)
 
+            # ---------- ④ 離線結束 → 回線上要補送 ----------
+            # 不補的話伺服器的 ended_at 永遠是 null，另一台裝置照樣能續接，
+            # 這條 feature 等於白做（Codex P1）。
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+            offline_wid = page.evaluate(
+                "async () => (await import('/js/state.js')).state.workoutId"
+            )
+            check(
+                offline_wid is not None,
+                f"前置：手上有一場進行中的訓練（wid={offline_wid}）",
+            )
+            # 先在**線上**進到選動作頁（進 picker 要載動作庫），再切離線按結束——
+            # 要測的是「結束請求送不出去」，不是「進不了畫面」。
+            start_from_home(page)
+            page.wait_for_timeout(900)
+            ctx.set_offline(True)
+            finish_workout(page)
+            pending = page.evaluate(
+                "async () => (await import('/js/queue.js')).listPendingEnds()"
+            )
+            check(
+                pending == [offline_wid],
+                f"④ 離線按結束 → 進補送佇列（實際 {pending}）",
+            )
+            check(
+                api(base, f"/api/workouts/{offline_wid}")["ended_at"] is None,
+                "④ 離線當下伺服器尚未收到結束（符合預期）",
+            )
+
+            ctx.set_offline(False)
+            page.goto(base, wait_until="domcontentloaded")  # 開站會 syncQueue
+            page.wait_for_timeout(3000)
+            check(
+                api(base, f"/api/workouts/{offline_wid}")["ended_at"] is not None,
+                "④ 回線上後補送成功，伺服器記下 ended_at",
+            )
+            drained = page.evaluate(
+                "async () => (await import('/js/queue.js')).listPendingEnds()"
+            )
+            check(drained == [], f"④ 補送成功後佇列清空（實際 {drained}）")
+
             browser.close()
     finally:
         proc.terminate()

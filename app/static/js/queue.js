@@ -101,3 +101,63 @@ export async function discardFailed() {
   await Promise.all(failed.map((entry) => asPromise(objectStore.delete(entry.client_uuid))));
   return failed.map((entry) => entry.client_uuid);
 }
+
+// ---------- F91 ④：離線時「結束訓練」的補送佇列 ----------
+//
+// 用 localStorage 而不是上面那顆 IndexedDB：這裡只存一小串 workout id，
+// 沒有 payload、沒有狀態機，同步讀寫反而讓補送邏輯簡單得多。
+// 端點是冪等的，所以重放安全——重複送只會拿到同一個 ended_at。
+
+const PENDING_ENDS_KEY = "liftlog.pendingEnds";
+
+function readPendingEnds() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PENDING_ENDS_KEY));
+    return Array.isArray(raw) ? raw.filter((id) => Number.isInteger(id)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePendingEnds(ids) {
+  if (ids.length === 0) localStorage.removeItem(PENDING_ENDS_KEY);
+  else localStorage.setItem(PENDING_ENDS_KEY, JSON.stringify(ids));
+}
+
+/** 結束請求沒送成功 → 記下來，等回線上補送。 */
+export function rememberPendingEnd(workoutId) {
+  const ids = readPendingEnds();
+  if (!ids.includes(workoutId)) writePendingEnds([...ids, workoutId]);
+}
+
+export function listPendingEnds() {
+  return readPendingEnds();
+}
+
+/**
+ * 重放待補送的結束請求。`endWorkout` = api.endWorkout。
+ *
+ * 錯誤分類與 flushQueue 一致：401 上拋交 guard；連不上／5xx 留著下次再試；
+ * 永久性 4xx（404＝workout 已被刪）就不必再送了，直接移除。
+ */
+export async function flushPendingEnds(endWorkout) {
+  const remaining = [];
+  const ids = readPendingEnds();
+  for (let i = 0; i < ids.length; i += 1) {
+    const id = ids[i];
+    try {
+      await endWorkout(id);
+    } catch (err) {
+      if (err && err.status === 401) {
+        writePendingEnds([...remaining, ...ids.slice(i)]); // 原封保留，重新登入後再試
+        throw err;
+      }
+      if (err && (err.status === 0 || err.status >= 500)) {
+        writePendingEnds([...remaining, ...ids.slice(i)]);
+        return;
+      }
+      /* 404 等永久性 4xx：那場已經不在了，不用再送 */
+    }
+  }
+  writePendingEnds(remaining);
+}

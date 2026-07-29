@@ -44,9 +44,11 @@ import {
 import {
   discardFailed,
   enqueueSet,
+  flushPendingEnds,
   flushQueue,
   listQueued,
   queueCounts,
+  rememberPendingEnd,
   removeQueued,
 } from "./queue.js";
 import {
@@ -262,6 +264,9 @@ function reconcileDoneSets({ replace, remove } = {}) {
 async function syncQueue() {
   const before = state.queue;
   const synced = await flushQueue(api.logSet);
+  // F91 ④：組補完再補「結束」。順序有意義——先送結束的話，同一場還沒補完的組
+  // 會落在 ended_at 之後（雖然 ⑥ 允許寫入，但時間軸會更難讀）。
+  await flushPendingEnds(api.endWorkout);
   // 補傳成功者把含 server id 的回應寫回 doneSets 與鏡射——否則使用者仍停在 logger 時，
   // 該筆缺 id 會被誤判未同步，之後在畫面上刪/改會打不到伺服器（Codex P1）
   if (synced.length > 0) {
@@ -927,14 +932,19 @@ function endWorkout() {
   // F91 ④：本地先結束，再通知伺服器。順序不能反——網路慢或斷線時，
   // 使用者按了「結束訓練」卻要等一個請求才離開畫面是不能接受的；
   // 失敗也不回滾本地結束（那只會讓人卡在一場他已經結束的訓練裡）。
-  // 代價是離線結束時伺服器不知道，另一台裝置仍可能續接——那是既有行為，不因此變差。
+  // 送不出去就進補送佇列：不補的話伺服器的 ended_at 永遠是 null，
+  // 另一台裝置照樣能續接——那正是這條 feature 要解掉的東西。
   if (ending) {
     guard(async () => {
       try {
         await api.endWorkout(ending);
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) throw err; // 交全域 guard 導回登入
-        /* 離線／404：本地已結束，不再處理 */
+        if (err instanceof ApiError && err.status === 401) {
+          rememberPendingEnd(ending); // 重新登入後補送
+          throw err;
+        }
+        if (err instanceof ApiError && err.status === 404) return; // 那場已不在，不必補
+        rememberPendingEnd(ending); // 離線／5xx
       }
     });
   }

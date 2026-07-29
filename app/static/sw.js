@@ -3,8 +3,8 @@
 
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
-// F91：workout 結束狀態進伺服器。
-const CACHE_NAME = "liftlog-shell-v93"; // 改此處務必同步 state.js 的 APP_VERSION
+// F91：workout 結束狀態進伺服器（v93 短暫上線時缺離線補送，故再遞增一版）。
+const CACHE_NAME = "liftlog-shell-v94"; // 改此處務必同步 state.js 的 APP_VERSION
 const SHELL = [
   "/",
   "/css/app.css",
