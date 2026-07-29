@@ -451,18 +451,25 @@
       "superseded_by": "F72（僅 ④ 的「休息結束後 overlay 自動消失」被取代；其餘條文仍有效）"
     },
     {
-      "id": "F65",
-      "name": "通知 channel 被單獨關閉時也要擋下（app 版）",
+      "id": "F90",
+      "name": "進行中訓練在 app 被回收後遺失（另開一場、組號重來）",
       "status": "failing",
-      "evidence": "",
-      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① 使用者長按通知選「關閉這類通知」、或在設定關掉 Capacitor 的 default channel 時，app 版的休息提醒開關要顯示「關」並給引導，不得靜默失敗。\n② 判定來源：`LocalNotifications.listChannels()` 的 importance ≠ IMPORTANCE_NONE，與既有的 areEnabled() 一起構成 granted。\n③ E2E 補回歸情境：app 層通知允許但 channel importance 為 0。\n背景：F62 的 code review（2026-07-28）指出 areEnabled() 與 POST_NOTIFICATIONS 都是 app 層級，看不到單一 channel 被關；使用者被吵到時的第一直覺就是長按關掉那類通知。"
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n① 進行中訓練狀態（`workoutId`、各動作 `setCounts`）從 sessionStorage 搬到 localStorage，分頁關閉、app 被系統回收、裝置重開後仍在。\n② 還原條件：該 workout 的日期是今天，且未被標記結束。不符合就清掉本地狀態，不做跨日續接。\n③ 首頁按鈕在還原成立時顯示「繼續訓練」，點擊進入該 workout 而不新建；「接著做」的 set_number 從伺服器既有組數推算，不從 0 重來。\n④ 還原前先向伺服器確認該 workout 仍存在（404／已結束就清掉本地狀態，退回「開始訓練」）；伺服器是唯一事實來源，本地只是快取。\n⑤ E2E 回歸：記 2 組 → 清掉 sessionStorage 並重載 → 首頁顯示「繼續訓練」→ 進入後第 3 組的 set_number 是 3、當日 workout 總數仍為 1。\n⑥ 與 F66 的分工：這條管「哪一場訓練、記到第幾組」，F66 管休息倒數。兩者各自獨立還原，一邊失敗不影響另一邊。\n現象（2026-07-29 由 F83 驗收過程中的實測發現，不是 F83 造成的既有邊界）：進行中訓練的 workoutId 與 setCounts 存在 sessionStorage。分頁關閉或 app 被系統回收後這份狀態消失：首頁按鈕從「繼續訓練」變回「開始訓練」，按下去會另建一場 workout，「接著做」從第 1 組重來；先前記的組仍留在舊 workout 裡，於是同一天同一場訓練被切成兩筆。\nCodex 2026-07-29 實測：關閉分頁前 workoutId=1、setCounts={\"1\":2}；新分頁 liftlog.activeWorkout=null；按下後建立 workout 2，其 set_number 從 [1] 重新開始。",
+      "evidence": ""
     },
     {
       "id": "F66",
       "name": "休息倒數持久化：app 被重啟後倒數與提醒不消失",
       "status": "failing",
       "evidence": "",
-      "acceptance": "（待 Ryan 簽核，尚未凍結）\n① `state.restStartedAt` 納入 saveActiveWorkout 的持久化 payload。\n② app 被系統回收或重啟後回到 logger，倒數依實際經過時間續算（非重置）。\n③ app 版：還原時依剩餘秒數重新排定本機通知；已超時則不排。\n④ 若無法還原（資料過舊等），畫面要有明確提示，不得靜默沒有倒數。\n背景：F62 的 code review（2026-07-28）指出倒數本來就不持久化，app 一被重啟倒數與已排定通知都消失且畫面無任何提示。此為 F62 之前就存在的行為。"
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n① `state.restStartedAt` 納入 saveActiveWorkout 的持久化 payload。\n② app 被系統回收或重啟後回到 logger，倒數依實際經過時間續算（非重置）。\n③ app 版：還原時依剩餘秒數重新排定本機通知；已超時則不排。\n④ 若無法還原，畫面要有明確提示，不得靜默沒有倒數。「資料過舊」的門檻定為 **12 小時**——距休息開始超過 12 小時就不還原倒數（但訓練本身仍依 F90 還原）。\n⑤ 暫停中被回收，還原後仍是暫停態，且 F71 的累計秒數（`restAccumulatedMs`）不因回收而歸零、也不把回收期間當成經過時間計入。沒有這條，F71「暫停不計入 rest_seconds」在重啟路徑上會靜默失效。\n⑥ 與 F90 的分工：這條只管休息倒數，F90 管「哪一場訓練、記到第幾組」。兩者各自獨立還原，一邊失敗不影響另一邊。\n背景：F62 的 code review（2026-07-28）指出倒數本來就不持久化，app 一被重啟倒數與已排定通知都消失且畫面無任何提示。此為 F62 之前就存在的行為。"
+    },
+    {
+      "id": "F65",
+      "name": "通知 channel 被單獨關閉時也要擋下（app 版）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n① 使用者長按通知選「關閉這類通知」、或在設定關掉 Capacitor 的 default channel 時，app 版的休息提醒開關要顯示「關」並給引導，不得靜默失敗。\n② 判定來源：`LocalNotifications.listChannels()` 的 importance ≠ IMPORTANCE_NONE，與既有的 areEnabled() 一起構成 granted。\n③ E2E 補回歸情境：app 層通知允許但 channel importance 為 0。\n背景：F62 的 code review（2026-07-28）指出 areEnabled() 與 POST_NOTIFICATIONS 都是 app 層級，看不到單一 channel 被關；使用者被吵到時的第一直覺就是長按關掉那類通知。"
     },
     {
       "id": "F67",
@@ -587,12 +594,6 @@
       "evidence": "（2026-07-29 v87）ruff All checks passed；pytest 254 passed；verify_f83.py 35/35；既有 E2E 全回歸綠。\nreviewed_by: headless Claude reviewer（claude -p，唯讀工具）——**注意這是同模型分身**，獨立性只來自 fresh context，不是跨模型：Codex review 連續兩次被中止且未產出報告，依 codex-review skill 的三層退路走第二層。抓到七條，全部已修：\n  HIGH：今日菜單每列的「動作表現」入口（F38）被改版吃掉——舊碼每列經 exerciseRow() 包一層，新版整張卡換成裸按鈕就沒了，而既有 E2E 一支都沒涵蓋它。已接回（卡片與入口並排，巢狀按鈕不合法）並在 verify_f83 釘住（實際點進動作表現頁）。\n  MEDIUM：①有課表時中／EN 切換鈕一併消失（動作名吃 getLang() 卻沒地方切）→ 接回標題列；②menuMeta 是模組層狀態又不綁 workout，換場第一幀會顯示上一場的「已練 N 分」，且失敗時一律清空會把畫面上好好的數值抹掉 → 綁 workoutId、換場先歸零、失敗保留同場舊值。\n  LOW：分鐘不跳動（加只在菜單畫面跑的 30s ticker）／沒有數值的卡仍多 10px gap（整行不建）／組數 >8 時指示條撐出水平捲動（退回文字）／訓練開著過夜顯示「已練 780 分」（≥12h 不顯示）。\n  另：reviewer 指出 verify_f83 原本的 second_values.strip()=='' 把錯誤現況寫死成期望值，已改為驗元素不存在。\nverified_by: Codex（codex exec 驗收，兩輪）。第一輪 ①②③④⑥⑧⑨⑩ pass、⑤ 判 fail（重載後不續接、另建 workout）。本 session 以純 UI 路徑重現失敗：接著做正確顯示第 2 組、沒有另建 workout（仍 id=1）——Codex 的探針是用 API 從外面灌第一組，而 workoutId/setCounts 是前端狀態，API 灌的它看不到（同一種方法錯誤本 session 稍早也犯過）。第二輪要求它走純 UI 路徑重驗，判定翻為 ⑤ pass。\n⑪ 實機截圖由本 session 取得（SM-N9750 v87：上半身／已練 0 分 · 0/18 組／0% 環／臥推 70 kg × 4、上斜臥推 50 kg × 7、肩推 35 kg × 7、槓鈴划船 70 kg × 5／接著做 臥推 · 第 1 組）。"
     },
     {
-      "id": "F90",
-      "name": "進行中訓練在 app 被回收後遺失（另開一場、組號重來）",
-      "status": "failing",
-      "acceptance": "（尚未簽核——2026-07-29 由 F83 驗收過程中的實測發現，不是 F83 造成的既有邊界）\n現象：進行中訓練的 workoutId 與各動作已完成組數（setCounts）存在 sessionStorage。分頁關閉或 app 被系統回收後這份狀態消失：首頁的按鈕從「繼續訓練」變回「開始訓練」，按下去會**另建一場 workout**，「接著做」從第 1 組重來；先前記的組仍留在舊 workout 裡，於是同一天同一場訓練被切成兩筆。\nCodex 2026-07-29 實測：關閉分頁前 workoutId=1、setCounts={\"1\":2}；新分頁 liftlog.activeWorkout=null；按下後建立 workout 2，其 set_number 從 [1] 重新開始。\n與 F66（休息倒數在 app 重啟後消失）同源但不同範圍：F66 講倒數，這條講整場訓練的續接。\n動工前要走 acceptance 簽核。"
-    },
-    {
       "id": "F84",
       "name": "logger 改版（快調列 ＋ 休息圓環 ＋ 四顆控制）",
       "status": "passing",
@@ -605,6 +606,34 @@
       "status": "passing",
       "acceptance": "（2026-07-29 凍結；依 design_handoff_liftlog_clay README「5. 訓練日曆 calendar」與 screenshots/05-calendar.png）\n① 頁頭改 .screen-head：返回鍵（icons.js back）＋標題「訓練日曆」＋副標「YYYY 年 M 月 · N 天」（N＝當月有練的天數）；月份切換仍可用，切月後副標與格子同步更新。\n② 日曆格子包進 .card 容器（底色 var(--card)、圓角 var(--r-card)）；星期表頭「日一二三四五六」，第一欄為星期日，前置空白格數＝該月 1 號的星期（週日起始）。\n③ 格子：7 欄 grid、gap 6px、aspect-ratio 1、圓角 var(--r-cell)、字型 var(--mono)；未選中 2px transparent 邊、選中 2px solid var(--text)，且選前選後格子尺寸不變。\n④ 熱力 5 階沿用（lv0–lv4）；未來日（晚於今天）套用新 token --heat-future，與 lv0（過去沒練）在底色上可區分。\n⑤ 當日明細改 .card：標題「M月D日 · 課表名」（當日無課表則只有日期）＋右側總噸位（var(--mono)、var(--accent)）。\n⑥ 當日狀態改 chips：「睡眠 x/5」「狀態 x/5」與備註各一顆（--card-hi 底、r99）；編輯與刪除入口仍在且可用（F18 不回歸）。\n⑦ 每個動作：標題列（動作名＋「N 組」），展開後每組是一顆 chip（--card-hi 底、r99、var(--mono)）；當日該動作最佳組（最重、平手取次數多）改 --accent 底 ＋ --on-accent 字 ＋ 尾綴 ★。\n⑧ 第一個動作預設展開、第二個起收合（收合列只有「N 組」＋指示符）；點標題列可展開／收合（F34 行為不變）。\n⑨ 點一顆組 chip 開既有編輯 modal（F45），可改重量／次數並儲存生效；該 modal 內新增「刪除」（單擊即刪，取代原本每列的 🗑——F19 的「單擊即刪、不做兩段式確認」語意不變，只是入口位置改到 modal 內，logger 側的 🗑 不動）；「選取」批次刪除（F19）仍可用。\n⑩ 展開／收合指示符改用 icons.js 的 chevron，app/static/js 內不再出現 ▾ 或 ▸ 字元（日曆、批次確認列、動作表現三處都換）。\n⑪ 底部補記入口文案改「補記這一天」，樣式為透明底 ＋ 1px solid var(--line) ＋ r99 ＋ --accent 字；未來日仍不顯示（F41 行為不變）。\n⑫ 觸控目標 ≥44px（日曆格子除外——7 欄等分後單格寬度由版面決定）、無水平捲動；:root 每個 token 都有被引用（含新增的 --heat-future）。\n⑬ 驗收：ruff ＋ pytest ＋ verify_f85.py 全過，既有 E2E 套件不回歸，並附實機截圖。",
       "evidence": "（2026-07-29 v90）ruff All checks passed；pytest 254 passed；verify_f85.py 92/92；既有 E2E 全回歸綠（19 支，含 f78 72、f81 47、f83 35、f84 54、ui_audit 24）。\nreviewed_by: Codex（codex exec review --uncommitted）— 無 finding。\nverified_by: Codex（codex exec 驗收，四輪）。\n  第一輪：零 fail，但 ④⑤⑥⑦⑧⑨⑩⑬ 標 unverified——不是行為錯，是我的測試沒拿出證據（熱力 lv1–lv3 從沒建過對應噸位、無課表日的標題分支沒走過、最佳組平手沒有測資、狀態刪除只驗按鈕在不在）。補成實際操作後斷言 75 → 89。\n  第二輪：Codex 的 Windows sandbox 無法建立程序（0xc0000142），全部 untestable——環境問題非實作問題。起因是連跑 20 支 E2E 後殘留大量 python/node/chrome 程序。之後改用縮小範圍的驗收（不重跑全套）避開。\n  第三輪：④⑤⑦⑧⑨⑬ pass；⑥⑩ 判 unverified 且理由成立——⑥ 只驗『編輯表單打得開』就取消，儲存壞掉照樣全綠；⑩ 只數 .icon 數量，`<span class=\"icon\">` 或貼錯圖示都能過，而斷言文字卻宣稱在驗 svg。兩條都是本檔開頭自己寫的「別問 class、要問渲染結果」，卻在同一支 feature 犯了三次。\n  已修：⑥ 改成把精力 3→5、存檔、驗 chip 顯示『狀態 5/5』並打 API 回讀 energy==5；⑩ 改成取 tagName 與第一條 path 的 d，比對 icons.js 的 chevron 常數，且展開態必須 down、收合態必須 right（貼同一個圖示會失敗）。斷言 89 → 92。\n  第四輪：⑥⑩ 均判 pass，結論可改 passing。\n⑬ 實機截圖：docs/evidence-f85-calendar-device.png（SM-N9750 v90）——頁頭「訓練日曆 / 2026年7月 · 5 天」、熱力日曆（未來日 30/31 用 --heat-future）、選中日 24 的白框、明細卡「7月24日 · 全身 / 8,230 kg」、深蹲展開且最佳組 100×3 ★ 填琥珀。\n取代關係：F78 ⑦（僅日曆格子，7 欄等分＋卡片內縮後 390px 手機只有 41px，與 ≥44px 在手機寬度上無解）、F19（僅日曆單組刪除入口移進編輯 modal）、F34 ①（預設全收合改成第一個動作預設展開）。"
+    },
+    {
+      "id": "F86",
+      "name": "動作表現改版（PR 卡 ＋ 每次最佳組長條圖）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n（依 design_handoff_liftlog_clay README 與 screenshots「6. 動作表現 exercise-detail」與 screenshots/06-exercise-trends.png）\n① 頁頭改 .screen-head：返回鍵（icons.js back）＋動作名（Archivo 700）＋副標「英文別名 · N 次紀錄」。\n② 三張 PR 卡橫排（flex:1、r20、padding 16/14）：推估 1RM（--card-hi 底 ＋ --accent 數字）、最重、單次量；標籤 Mono 400 10px、數值 Mono 600 26px。\n③ 時間窗五顆等寬藥丸（1M / 3M / 6M / 1Y / 全部），選中 --accent 底；「自訂」檔位移除（D2 簽核）。五顆的觸控目標寬高皆 ≥44px，verify_f78 的 allow_narrow 例外一併移除。\n④ F59 的「資料不足停用檔位」規則保留：超出資料範圍的檔位灰掉但仍可點，點了說明最早紀錄日；切換後當前檔位不可用時自動退檔。\n⑤ 圖表改「每次最佳組」長條圖（.card、--card 底、r22、padding 20/18/16、圖表高 130px）：長條 flex:1、border-radius 99px、高度＝值／最大值；一般 --line，PR 那次 --accent 且上方加獎盃圖示（9px、--accent）。標題列「每次最佳組」＋右側最大值（Mono 600 16px、--accent）。底部三段標示「起月 / 個人紀錄 / 迄月」。現行折線圖移除（連帶讓 handoff 待辦 0b「x 軸改時間軸」作廢）。\n⑥ 歷來紀錄卡（--card、r22）：日期（Mono 600 13px）＋相對天數 ＋右側總量；下方每組一顆 chip（--card-hi 底、r99、Mono），當次最佳組改 --accent 底 ＋ --on-accent 字 ＋ 尾綴獎盃圖示（同 F85 日曆的規則）。\n⑦ icons.js 新增 Lucide trophy（或 award）路徑；PR 相關標記不再出現 ★ 字元。新模組／新路徑若影響 sw.js 的 SHELL 清單要一併更新。\n⑧ 觸控目標 ≥44px、無水平捲動、:root 新增 token 皆有被引用。\n⑨ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f86.py 全過，既有 E2E 套件不回歸，並附實機截圖。量測一律問渲染結果（getComputedStyle／bounding_box），不問 class 名稱。"
+    },
+    {
+      "id": "F87",
+      "name": "體重體脂改版（大數字主卡 ＋ 24 根長條圖，保留時間窗）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n（依 design_handoff_liftlog_clay README 與 screenshots「7. 體重體脂 body」與 screenshots/07-body.png；D1 簽核選 B＝保留時間窗）\n① 頁頭改 .screen-head：返回鍵 ＋「體重 · 體脂」＋副標「最近一次 M月D日」。\n② 體重／體脂兩顆藥丸 toggle 等寬，選中 --accent；F53 的切換行為（圖表＋清單一起切）不變。\n③ **時間窗 chips 保留**（D1 選 B）：五顆藥丸置於 toggle 下方，長條圖與歷史清單都跟著篩；F56 的自選區間、F58 的「資料不足停用檔位」與自動退檔規則全部不回歸。設計稿未畫此列是作者不知道 F56–F58 存在，刻意偏離。\n④ 主卡（.card、--card 底、r26、padding 24/20/18）：左側大數字（Mono 600 52px、line-height .9、--accent）＋單位（Mono 400 15px）；右側差值（Mono 600 13px，下降 --good、上升 --text-mute）＋區間文字。\n⑤ 長條圖 24 根、flex:1、r99、高度＝14% + 正規化 * 82%；最新一根 --accent、其餘 --line；底部標示區間起訖日期（Mono 400 10px）。資料點少於 24 筆時不補空條、不變形。\n⑥ 「記錄今天」--accent 藥丸大按鈕，仍開 F54 的懸浮視窗表單；**位置維持在歷史清單下方**（F55 訂的單手可及位置，不採設計稿的清單上方）。\n⑦ 歷史清單卡（--card、r22、padding 10/8）：日期 / 「78.4 kg · 16.2 %」 / 差值（下降 --good、上升 --text-mute）；清單填滿剩餘空間（F50/F53 行為不回歸）。\n⑧ 體脂頁籤改為「全部日子都列、沒體脂顯示 —」（原本「只列有體脂的日子」是 F53 的實作解讀，acceptance ② 沒明說，導致沒量體脂的日子在該頁籤看不到也改不到）；F53 條目加附註說明此變更。\n⑨ 抽出共用 range.js：PRESETS／monthsAgo／iso／presetAvailable／longestAvailablePreset 從 body.js 與 exercise-detail.js 兩份逐字重複收斂成一份，兩頁改為 import。\n⑩ save() 的 saving 旗標要立即反映到 DOM（送出期間按鈕視覺上可見已停用），修掉 verifier 發現的 UX 落差。\n⑪ 版面門檻算式重算（app.css 那段註解是唯一來源，五次踩坑的規則照舊）；矮螢幕退讓用 flex: none，不得把 min-height 設 0。E2E 不得寫死門檻，一律從服役中的 /css/app.css 讀 @media (max-height: N) 再推算。\n⑫ 觸控目標 ≥44px、無水平捲動。\n⑬ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f87.py 全過，F53–F58 既有 E2E 回歸綠，並附實機截圖。"
+    },
+    {
+      "id": "F88",
+      "name": "編輯課表改版（動作卡 ＋ 圓鈕控制列）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n（依 design_handoff_liftlog_clay README 與 screenshots「8. 編輯課表 templateEdit」與 screenshots/08-template-edit.png）\n① 課表名 input：--card 底、r18、padding 16/20、Archivo 700 17px、無邊框。\n② 每個動作一張卡；第一張（或選中的）用 --card-hi 底。名稱 Archivo 700 16px ＋ 英文別名 Mono 400 11px。\n③ 控制列：左「− N 組 ＋」（38px 圓鈕）／右「↑ ↓ ✕」（✕ 用 --over，與 ↑↓ 間距 6px）。↑↓✕ 一律改用 icons.js 圖示，app/static/js 內不再出現對應字元。\n④ 分隔線後：「參考休息」＋「N s」藥丸（--accent 字），可編輯（沿用現行 rest_hint_seconds 行為）。\n⑤ 「＋ 加入動作」：透明底 ＋ 1px solid var(--line) 藥丸；仍開 F52 的加動作視窗，該視窗搜尋篩選時高度穩定不位移（F52 不回歸）。\n⑥ 底部「儲存課表」（--accent）／「取消」（純文字）；F51 的「三顆鈕貼底、清單填滿剩餘空間」不回歸（.tpl-edit-foot 的 margin-top: auto 仍成立）。\n⑦ F21 的清單捲動位置保留行為不回歸。\n⑧ 觸控目標 ≥44px：38px 圓鈕的視覺可維持 38px，但觸控區要補到 44px（用 padding 或偽元素，量 bounding_box 驗）。無水平捲動。\n⑨ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f88.py 全過，F21／F51／F52 回歸綠，並附實機截圖。"
+    },
+    {
+      "id": "F89",
+      "name": "浮動休息視窗原生重做（收合／展開兩態 ＋ 圓環倒數）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n（依 design_handoff_liftlog_clay README 與 screenshots「浮動休息計時視窗」與 screenshots/10~12-floating-timer-*.png；原生 Java，最重的一條）\n① 收合態：76×76 圓形、--card 底、box-shadow 0 14px 32px rgba(0,0,0,.42)；內嵌圓環 r=26 stroke-width=7、dasharray=163.4、dashoffset = 163.4 * (1 - 剩餘/目標)；中央倒數 Mono 600 17px（--accent；超時轉 --over 並顯示 +m:ss）。\n② 展開態：寬 214px、--card 底、border-radius 24px、box-shadow 0 18px 44px rgba(0,0,0,.42)；頂部把手列（padding 12/16/10）含 22×3px 拖曳條（--line）＋「LIFT·LOG」（Mono 500 10px、letter-spacing .18em、--text-mute）＋右側收合圖示。\n③ 展開態圓環 126px（r=44 stroke-width=8、dasharray 276.5），中央倒數 Mono 600 30px ＋狀態字 Mono 400 9px；下方動作提示「動作名 · 第 N 組」（Archivo 500 11px、--text-dim）。\n④ 控制鈕**維持四顆**（暫停/繼續、停止、−15s、+15s；Ryan 開工時定的，覆寫設計稿的兩顆），--card-hi 底藥丸，214px 寬內可排兩列；主按鈕「回 app 記下一組」--accent 藥丸（超時轉 --over），點擊拉起 app 到 logger。停止鈕在鬧鐘響著時轉警示色（F73 不回歸，且要驗渲染結果不是 class）。\n⑤ 點本體收合⇄展開；長按拖曳移動位置，位置持久化於原生層 SharedPreferences（設計稿寫 localStorage，但這是系統 overlay 不經 WebView），下次出現在原位。\n⑥ 未授權時：設定列開關維持 OFF（軌道 --card-hi、鈕 --text-faint），副標「需系統授權 · 點此前往設定」，點擊送到系統「顯示在其他應用程式上層」頁；未授權時倒數仍走通知列（F63 不回歸），功能不消失。\n⑦ 觸控目標 ≥48dp、鈕間距 ≥8dp（F74 訂的，比全域 44px 嚴——濕手在健身房按錯 ✕ 與 ⏹ 後果完全不同）。\n⑧ 所有碰 view 的進入點經 onMain() 繞回 main looper（F69 的 CalledFromWrongThreadException 不回歸）；F64 的 dismissed 旗標與 F69 的 shouldShow() 規則不變；F72 的歸零後繼續往上數、三條停止路徑全部有效。\n⑨ 動效 160ms ease-out；圓環 stroke-dashoffset 每秒線性更新；prefers-reduced-motion 時取消 transition（原生層以對應設定判斷）。\n⑩ 驗收：**必須真機**（模擬器測不到 OEM overlay 行為），附截圖；F63／F64／F69–F73 全數回歸驗過。"
     }
   ]
 }
