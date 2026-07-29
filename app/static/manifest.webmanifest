@@ -3,8 +3,8 @@
   "short_name": "lift-log",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0e0f12",
-  "theme_color": "#0e0f12",
+  "background_color": "#221E1A",
+  "theme_color": "#221E1A",
   "icons": [
     {
       "src": "/icon.svg",

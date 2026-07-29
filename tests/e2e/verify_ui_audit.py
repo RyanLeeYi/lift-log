@@ -48,18 +48,22 @@ def token(css: str, name: str) -> str:
 
 
 def f75_colours() -> None:
+    """F75 的門檻在 F78 換色後只剩這幾條仍然成立。
+
+    ⚠ F78 起，`--text-mute` / `--text-faint` / `--over` / `--line` 由 Ryan（2026-07-29）明確授權
+    照抄陶土夜色的設計值，四者的 4.5:1（`--line` 3:1）門檻**有意識地放行**——不是退化沒被發現。
+    這四條的實測值改由 verify_f78.py 記錄下來（只印不擋），避免留一條永遠紅的斷言。
+    """
     css = (REPO / "app/static/css/app.css").read_text(encoding="utf-8")
     bg = token(css, "bg")
-    pairs = [
-        ("text", 4.5), ("text-dim", 4.5), ("led", 4.5),
-        ("led-dim", 4.5),   # F75 ①：用在 12px 的 REST 標籤，必須到 4.5
-        ("danger", 4.5),
-        ("card-edge", 3.0),  # F75 ②：非文字的 UI 邊界，3:1
-    ]
+    pairs = [("text", 4.5), ("text-mid", 4.5), ("text-dim", 4.5), ("accent", 4.5), ("good", 4.5)]
     for name, need in pairs:
         value = token(css, name)
         ratio = contrast(value, bg) if value else 0
         check(ratio >= need, f"F75 {name}={value} 對比 {ratio}（需 ≥{need}）")
+    # 沙金按鈕上的字：主要動作用的就是它
+    check(contrast(token(css, "on-accent"), token(css, "accent")) >= 4.5,
+          "F75 --on-accent 在 --accent 上 ≥4.5")
 
 
 def f76_icons(page, base: str) -> None:

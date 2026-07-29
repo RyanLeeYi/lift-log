@@ -20,3 +20,6 @@ release/
 
 # Android Studio 安裝器的暫存檔（只含本機 SDK 路徑，無用）
 inst_user_settings.tmp
+
+# Playwright/Chromium 偶爾在 repo 根目錄留下的 GPU 錯誤紀錄
+debug.log
