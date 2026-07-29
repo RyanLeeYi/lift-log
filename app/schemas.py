@@ -276,6 +276,15 @@ class SetOut(BaseModel):
     rest_seconds: int | None
 
 
+class LastSetOut(SetOut):
+    """F84：logger 的「上次提示卡」要顯示日期（「上次 7/22 · 57.5 kg × 8」）。
+
+    只有 last-sets 這一支用它——共用的 SetOut 不動，免得每個回傳組的端點都多帶一個欄位。
+    """
+
+    workout_date: date_type
+
+
 class WorkoutOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

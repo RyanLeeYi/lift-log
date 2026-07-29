@@ -119,7 +119,8 @@ def main() -> int:
             check(r["screen"] == "logger", "④ 回到計時頁")
             check(r["elapsed"] >= before + 2,
                   f"④ 經過秒數持續累加（離開時 {before}s → 回來 {r['elapsed']}s）")
-            check(page.locator(".rest-led").count() == 1, "④ REST 卡片回來就在")
+            # F84 起休息卡是圓環（.rest-card）而不是 LED 面板（.rest-led）——條文不變，定位器換
+            check(page.locator(".rest-card").count() == 1, "④ 休息卡回來就在")
 
             # ③ 記下一組 → 寫進資料庫的 rest_seconds ≈ 實際經過時間。
             # 休息中按鈕是「繼續下一組」（結束休息、凍結經過秒數），再按「完成這組」——

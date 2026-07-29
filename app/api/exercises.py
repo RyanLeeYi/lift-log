@@ -9,6 +9,7 @@ from app.schemas import (
     ExerciseHistoryOut,
     ExerciseLastSet,
     ExerciseOut,
+    LastSetOut,
     SetOut,
 )
 from app.services import exercises as svc
@@ -68,12 +69,14 @@ def last_set_values(
     ]
 
 
-@router.get("/exercises/{exercise_id}/last-sets", response_model=list[SetOut])
+@router.get("/exercises/{exercise_id}/last-sets", response_model=list[LastSetOut])
 def last_sets(
     exercise_id: int, session: DbSession, exclude_workout: int | None = None
-) -> list[SetOut]:
+) -> list[LastSetOut]:
     # exclude_workout：排除進行中的 workout → 「上次」看前一次訓練，不是本次（F32）
     return [
-        SetOut.model_validate(s)
+        # F84：帶上 workout 日期給 logger 的「上次提示卡」——同一批組本來就同一天，
+        # 從關聯取比再打一次 workouts 便宜
+        LastSetOut(**SetOut.model_validate(s).model_dump(), workout_date=s.workout.date)
         for s in svc.last_sets(session, exercise_id, exclude_workout_id=exclude_workout)
     ]

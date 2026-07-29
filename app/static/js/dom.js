@@ -31,7 +31,8 @@ export function stepper(name, value, steps, apply, rerender) {
 // 一律有值（新組預設輕鬆＝6；value 為 null 的舊組亦起始 6），不再有「未記」空狀態。
 // 拖曳/點選時只就地更新本元件 DOM（形容詞＋停點高亮），絕不呼叫 rerender——否則整頁重繪會把
 // 正在拖的 input 拆掉、中斷拖曳（同「就地重畫」教訓）；rerender 參數保留僅為呼叫端簽名相容。
-const RPE_WORDS = { 6: "輕鬆", 7: "有餘力", 8: "吃力", 9: "很吃力", 10: "力竭" };
+// F84：done-list 也要顯示口語詞，所以匯出——兩處各寫一份對照表遲早會走鐘
+export const RPE_WORDS = { 6: "輕鬆", 7: "有餘力", 8: "吃力", 9: "很吃力", 10: "力竭" };
 
 export function rpePicker(value, apply, _rerender) {
   // 底層 schema 允許 rpe 1–10，但此軸只呈現 6–10 五個停點。舊資料 1–5（或任何越界值）正規化到

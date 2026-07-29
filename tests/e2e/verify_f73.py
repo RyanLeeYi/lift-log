@@ -99,7 +99,14 @@ def main() -> int:
             page.wait_for_timeout(1600)  # 讓 ticker 跑一輪
             cls = page.locator(".rest-controls .stop-rest").get_attribute("class") or ""
             check("alarming" in cls and "btn-danger" in cls,
-                  f"① 響著時停止鈕轉警示色（{cls}）")
+                  f"① 響著時停止鈕掛上警示 class（{cls}）")
+            # ⚠ 只驗 class 會假綠：F84 改版後 .rest-controls .chip 的 specificity 蓋過 .btn-danger，
+            # class 對但畫面顏色完全沒動（Codex 2026-07-29 量 computed style 才抓到）。
+            # 這條測試當初就是這樣一路綠的——「顏色有沒有變」要問 computed style。
+            bg = page.locator(".rest-controls .stop-rest").evaluate(
+                "el => getComputedStyle(el).backgroundColor"
+            )
+            check(bg == "rgb(201, 106, 78)", f"① 響著時停止鈕的實際底色是赤陶（{bg}）")
 
             # ③ 暫停中不算響著
             page.get_by_role("button", name="暫停").click()

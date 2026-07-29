@@ -122,9 +122,12 @@ def source_checks() -> None:
     app_js = (REPO / "app/static/js/app.js").read_text(encoding="utf-8")
     check("scheduleRestPush" not in app_js and "cancelRestPush" not in app_js,
           "⑥ app.js 不再直接呼叫 push.js 的排程／取消")
-    check(app_js.count("scheduleRestNotify(") == 2 and app_js.count("cancelRestNotify(") == 2,
-          f"⑥ 四個呼叫點都走 rest-notify（schedule {app_js.count('scheduleRestNotify(')} 處／"
-          f"cancel {app_js.count('cancelRestNotify(')} 處）")
+    # ⚠ 這裡刻意不寫死次數：條文要的是「都走統一入口、沒有繞道」，不是「剛好 N 處」。
+    # 原本寫 ==2，F84 多了 ±15s 這個合法呼叫點就紅了——那是把實作細節當成規格。
+    schedules = app_js.count("scheduleRestNotify(")
+    cancels = app_js.count("cancelRestNotify(")
+    check(schedules >= 2 and cancels >= 2,
+          f"⑥ 排程與取消都走 rest-notify（schedule {schedules} 處／cancel {cancels} 處）")
     # ⑦ F31 的伺服器端排程器不得被刪
     push_api = (REPO / "app/api/push.py").read_text(encoding="utf-8")
     check("rest-timer" in push_api, "⑦ F31 伺服器端休息排程端點仍在（web 版繼續用）")

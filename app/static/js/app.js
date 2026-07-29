@@ -11,7 +11,7 @@ import {
   downloadAndInstall,
   isDismissed,
 } from "./app-update.js";
-import { el, rpePicker, stepper } from "./dom.js";
+import { el, RPE_WORDS, rpePicker, stepper } from "./dom.js";
 // F76：結構性圖示一律走這裡（emoji 是彩色字形，跨平台不一致且吃不到 CSS 顏色）
 import { icon, iconLabel } from "./icons.js";
 import { isNativeApp } from "./env.js";
@@ -111,8 +111,9 @@ function fmtClock(totalSeconds) {
 }
 
 function fmtRest(remaining) {
-  // R10 倒數顯示：到 0 之後轉負數（-00:15＝超時 15 秒），實際量測照舊
-  return remaining < 0 ? `-${fmtClock(-remaining)}` : fmtClock(remaining);
+  // R10 倒數顯示：到 0 之後往上數。F84 ⑦ 起用「＋」而不是「−」——
+  // 超時 15 秒是「多休了 15 秒」，減號讀起來像還剩負秒數，語意是反的。
+  return remaining < 0 ? `+${fmtClock(-remaining)}` : fmtClock(remaining);
 }
 
 // F24：畫面角落的版本標記——手機載入哪版一眼可辨（快取過期會顯示舊版號）
@@ -988,6 +989,10 @@ async function pickExercise(exercise) {
       prev.length > 0
         ? `上次  ${prev.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`
         : `本次  ${state.doneSets.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
+    const ref = prev.length > 0 ? prev[0] : state.doneSets[state.doneSets.length - 1];
+    state.lastRef = ref
+      ? { date: ref.workout_date ?? null, weight: ref.weight_kg, reps: ref.reps }
+      : null;
     state.screen = "logger";
     render();
     return;
@@ -1006,6 +1011,12 @@ async function pickExercise(exercise) {
     state.weightKg = last[0].weight_kg;
     state.reps = last[0].reps;
     state.lastHint = `上次  ${last.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
+    // F84：上次提示卡要的是結構化資料（日期＋代表值），顯示字串湊不回來
+    state.lastRef = {
+      date: last[0].workout_date ?? null,
+      weight: last[0].weight_kg,
+      reps: last[0].reps,
+    };
   } else if (offline) {
     // 離線：沿用本次已排隊的同動作組數當預設，沒有就用通用預設；不假裝是「第一次做」
     const queued = (await listQueued()).filter(
@@ -1025,11 +1036,13 @@ async function pickExercise(exercise) {
       state.weightKg = exercise.is_bodyweight ? 0 : 20;
       state.reps = 8;
       state.lastHint = "離線中——載不到上次紀錄";
+      state.lastRef = null;
     }
   } else {
     state.weightKg = exercise.is_bodyweight ? 0 : 20;
     state.reps = 8;
     state.lastHint = null;
+    state.lastRef = null; // 換動作沒清＝上一個動作的參考值殘留在卡片上
   }
   if (state.exercise !== exercise) return; // await（lastSets/listQueued）期間已離開/換動作：丟棄過期結果
   state.screen = "logger";
@@ -1566,22 +1579,36 @@ function startRestTimer() {
   if (state.exercise) scheduleRestNotify(restHintFor(state.exercise.id));
   if (restTicker) clearInterval(restTicker);
   restTicker = setInterval(() => {
-    const led = document.querySelector(".rest-led");
-    if (!led) return;
+    // F84：休息卡是圓環了——每秒更新數字、環的比例與超時樣式。
+    // 用 DOM 局部更新而不是整頁 render()：一秒一次的全畫面重繪會把使用者正在按的
+    // 步進器與累度軸重建掉（原本用 .rest-led 也是同一個理由）。
+    const ring = document.querySelector(".rest-ring");
+    if (!ring) return;
     const remaining = restRemainingSeconds();
     if (remaining === null) return;
-    led.querySelector(".digits").textContent = fmtRest(remaining);
-    led.classList.toggle("over", remaining <= 0); // 與震動同門檻：到 0 那一刻就變色
-    // F73 ①：跨越 0 的那一刻沒有 render()（ticker 只改文字），所以停止鈕的警示色要在這裡一起切，
+    const target = state.restTargetSeconds ?? DEFAULT_REST_HINT_SECONDS;
+    const over = remaining <= 0;
+    ring.querySelector(".digits").textContent = fmtRest(remaining);
+    ring.classList.toggle("over", over);
+    const value = ring.querySelector(".ring-value");
+    if (value) {
+      const circumference = 2 * Math.PI * 44;
+      const ratio = target > 0 ? Math.min(1, Math.max(0, remaining / target)) : 0;
+      value.setAttribute("stroke-dashoffset", String(circumference * (1 - ratio)));
+    }
+    const status = document.querySelector(".rest-status");
+    if (status && !restPaused()) status.textContent = over ? "超時了" : "休息一下";
+    // F84 ⑦：主按鈕與圓環同時轉 --over
+    document.querySelector(".log-btn")?.classList.toggle("over", over);
+    // F73 ①：跨越 0 的那一刻沒有 render()，停止鈕的警示色要在這裡一起切，
     // 否則要等下一次重繪才變——而鬧鐘正響的那幾秒正是最需要它醒目的時候
     const stopBtn = document.querySelector(".rest-controls .stop-rest");
     if (stopBtn) {
-      const alarming = remaining <= 0 && !restPaused();
+      const alarming = over && !restPaused();
       stopBtn.classList.toggle("btn-danger", alarming);
       stopBtn.classList.toggle("alarming", alarming);
-      stopBtn.classList.toggle("btn-ghost", !alarming);
     }
-    if (!restAlerted && remaining <= 0) {
+    if (!restAlerted && over) {
       restAlerted = true;
       // F72 ③：app 版由原生鬧鐘負責（循環鈴聲＋重複震動，響到使用者理它為止），
       // 這裡再震一次只會兩邊打架。web 版沒有那半，維持原本的單次震動。
@@ -1642,6 +1669,162 @@ function cycleRestHint(exerciseId) {
     if (remaining !== null && remaining > 0) scheduleRestNotify(remaining);
     else cancelRestNotify();
   }
+}
+
+// F84：±15s。設計拿掉了 60/90/120/180 的循環 chip，改成休息中直接加減——
+// 「同時改剩餘與目標」是關鍵：只改剩餘的話圓環的分母不動，畫面上的比例會說謊。
+const REST_STEP_SECONDS = 15;
+const REST_MIN_SECONDS = 15;
+const REST_MAX_SECONDS = 600;
+
+function adjustRest(delta) {
+  const exerciseId = state.exercise?.id;
+  const current = state.restTargetSeconds
+    ?? (exerciseId ? restHintFor(exerciseId) : DEFAULT_REST_HINT_SECONDS);
+  const next = Math.min(REST_MAX_SECONDS, Math.max(REST_MIN_SECONDS, current + delta));
+  if (next === current) return;
+  // 寫回本次訓練的 override：這一組覺得要多休 15 秒，下一組多半也是（同 cycleRestHint 的語意）
+  if (exerciseId) {
+    state.restHintOverrides = { ...state.restHintOverrides, [exerciseId]: next };
+    saveActiveWorkout();
+  }
+  if (state.restStartedAt === null) {
+    render();
+    return;
+  }
+  // 快照要在算 remaining 之前更新——慢一步就會拿舊基準算，畫面與重排的提醒各對各的
+  state.restTargetSeconds = next;
+  const remaining = restRemainingSeconds();
+  if ((remaining ?? -1) > 0) restAlerted = false; // 調長回到未到點：重新武裝提醒
+  if (remaining !== null && remaining > 0) scheduleRestNotify(remaining);
+  else cancelRestNotify();
+  render();
+}
+
+// 休息圓環：SVG 進度環 ＋ 中央剩餘秒數。超時時整組轉 --over（設計 ⑦）。
+function restRing() {
+  const target = state.restTargetSeconds
+    ?? (state.exercise ? restHintFor(state.exercise.id) : DEFAULT_REST_HINT_SECONDS);
+  const remaining = restRemainingSeconds() ?? target;
+  const over = remaining <= 0;
+  const ratio = target > 0 ? Math.min(1, Math.max(0, remaining / target)) : 0;
+  const circumference = 2 * Math.PI * 44;
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("aria-hidden", "true");
+  for (const cls of ["ring-track", "ring-value"]) {
+    const circle = document.createElementNS(svgNs, "circle");
+    circle.setAttribute("cx", "50");
+    circle.setAttribute("cy", "50");
+    circle.setAttribute("r", "44");
+    circle.setAttribute("fill", "none");
+    circle.setAttribute("stroke-width", "7");
+    circle.setAttribute("class", cls);
+    if (cls === "ring-value") {
+      circle.setAttribute("stroke-dasharray", String(circumference));
+      circle.setAttribute("stroke-dashoffset", String(circumference * (1 - ratio)));
+      circle.setAttribute("stroke-linecap", "round");
+    }
+    svg.append(circle);
+  }
+  return el("div", { class: `rest-ring${over ? " over" : ""}` }, [
+    svg,
+    el("div", { class: "rest-ring-text" }, [
+      el("span", { class: "digits" }, [fmtRest(remaining)]),
+      el("span", { class: "target" }, [`/ ${target}s`]),
+    ]),
+  ]);
+}
+
+// 休息卡。取代就緒態的「上次提示卡＋快調列」那一整塊——其餘版面不動（設計 ④）。
+function restCard() {
+  const remaining = restRemainingSeconds() ?? 1;
+  const paused = restPaused();
+  const status = paused ? "已暫停" : remaining <= 0 ? "超時了" : "休息一下";
+  return el("section", { class: "card rest-card" }, [
+    el("div", { class: "rest-status" }, [status]),
+    restRing(),
+    el("div", { class: "rest-controls" }, [
+      el(
+        "button",
+        { class: "btn chip", onclick: () => guard(togglePauseRest) },
+        [paused ? iconLabel("play", "繼續") : iconLabel("pause", "暫停")],
+      ),
+      el(
+        "button",
+        {
+          // F73 ①③：鬧鐘響著時才轉警示色（暫停中不算響）
+          class: `btn chip stop-rest${
+            !paused && remaining <= 0 ? " btn-danger alarming" : ""
+          }`,
+          onclick: () => guard(stopRestFromUi),
+        },
+        [iconLabel("stop", "停止")],
+      ),
+      el(
+        "button",
+        { class: "btn chip rest-minus", onclick: () => guard(() => adjustRest(-REST_STEP_SECONDS)) },
+        ["−15s"],
+      ),
+      el(
+        "button",
+        { class: "btn chip rest-plus", onclick: () => guard(() => adjustRest(+REST_STEP_SECONDS)) },
+        ["+15s"],
+      ),
+    ]),
+  ]);
+}
+
+// 就緒態的「上次提示卡 ＋ 快調列」。快調只填值不送出——省掉戳步進器那幾秒。
+function lastRefCard() {
+  const ref = state.lastRef;
+  const same = () => {
+    if (!ref) return;
+    state.weightKg = ref.weight;
+    state.reps = ref.reps;
+    render();
+  };
+  const bump = (delta) => {
+    state.weightKg = Math.max(0, Math.round((state.weightKg + delta) * 10) / 10);
+    render();
+  };
+  const headline = ref
+    ? `上次 ${refDateText(ref)}${ref.weight} kg × ${ref.reps}`
+    : (state.lastHint ?? "第一次做這個動作");
+  const delta = ref ? Math.round((state.weightKg - ref.weight) * 10) / 10 : 0;
+  return el("section", { class: "card last-ref" }, [
+    el("div", { class: "last-ref-head" }, [
+      el("span", { class: "last-ref-text" }, [headline]),
+      ...(ref && delta !== 0
+        ? [
+            el("span", { class: `last-ref-delta${delta > 0 ? " up" : ""}` }, [
+              `${delta > 0 ? "＋" : "−"}${Math.abs(delta)}`,
+            ]),
+          ]
+        : []),
+    ]),
+    el("div", { class: "quick-row" }, [
+      el(
+        "button",
+        {
+          class: `btn chip quick-same${ref && state.weightKg === ref.weight
+            && state.reps === ref.reps ? " on" : ""}`,
+          ...(ref ? {} : { disabled: "" }),
+          onclick: same,
+        },
+        ["同上"],
+      ),
+      el("button", { class: "btn chip quick-up", onclick: () => bump(2.5) }, ["+2.5kg"]),
+      el("button", { class: "btn chip quick-down", onclick: () => bump(-2.5) }, ["減量"]),
+    ]),
+  ]);
+}
+
+function refDateText(ref) {
+  if (!ref.date) return "";
+  const [, month, day] = ref.date.split("-");
+  return `${Number(month)}/${Number(day)} · `;
 }
 
 function renderLogger() {
@@ -1783,9 +1966,9 @@ function renderLogger() {
         : [];
     return el("div", { class: `done-row${queued ? ` ${queued}` : ""}` }, [
       el("span", { class: "set-no" }, [`#${s.set_number}`, ...mark]),
-      el("span", { class: "n" }, [
-        `${s.weight_kg} kg × ${s.reps}${s.rpe ? `  @${s.rpe}` : ""}`,
-      ]),
+      el("span", { class: "n" }, [`${s.weight_kg} kg × ${s.reps}`]),
+      // F84 ③：顯示口語詞而不是 @6——記錄時選的就是詞，回看時卻要自己換算數字
+      ...(s.rpe ? [el("span", { class: "done-rpe" }, [RPE_WORDS[s.rpe] ?? `@${s.rpe}`])] : []),
       el("button", {
         class: "btn icon-btn edit-set",
         onclick: () => {
@@ -1801,16 +1984,22 @@ function renderLogger() {
     ]);
   };
 
+  const resting = state.restStartedAt !== null;
+  const overtime = resting && (restRemainingSeconds() ?? 1) <= 0;
+
   return el("section", { class: "screen logger" }, [
+    // F84 ①：返回 ＋ 動作名／英文名 · 第 N 組 ＋ 動作表現
     el("header", { class: "exercise-head" }, [
       // F42：左上返回箭頭——回動作選擇 picker（等同原『換動作』，不結束訓練、workout 保留）
       el("button", {
-        class: "btn btn-ghost logger-back", "aria-label": "回動作選擇",
+        class: "btn icon-btn logger-back", "aria-label": "回動作選擇",
         onclick: finish,
-      }, ["←"]),
+      }, [icon("back", { size: 20, label: "回動作選擇" })]),
       el("div", { class: "exercise-head-name" }, [
         el("h2", {}, [exerciseName(exercise)]),
-        el("span", { class: "alias" }, [exerciseAlias(exercise)]),
+        el("span", { class: "alias" }, [
+          `${exerciseAlias(exercise)} · 第 ${state.setNumber} 組`,
+        ]),
       ]),
       // F38：練到一半查當前動作歷史；返回不丟進行中訓練
       el("button", {
@@ -1818,91 +2007,46 @@ function renderLogger() {
         onclick: () => openDetail(exercise, "logger"),
       }, [icon("trending", { size: 18, label: "動作表現" })]),
     ]),
-    el("div", { class: "last-hint" }, [state.lastHint || "第一次做這個動作"]),
-    el("div", { class: "rest-hint-row" }, [
-      el(
-        "button",
-        {
-          class: "btn chip rest-hint",
-          // 點擊循環 60→90→120→180（課表自訂值也留在循環內）；僅本次訓練，不寫回課表
-          onclick: () => {
-            cycleRestHint(exercise.id);
-            render();
-          },
-        },
-        [iconLabel("timer", `休息 ${restHintFor(exercise.id)}s`)],
-      ),
-    ]),
-    el(
-      "div",
-      {
-        class: `rest-led${state.restStartedAt ? " on" : ""}${
-          (restRemainingSeconds() ?? 1) <= 0 ? " over" : ""
-        }`,
-      },
-      [
-        el("span", { class: "label" }, [restPaused() ? "PAUSED" : "REST"]),
-        el("span", { class: "digits" }, [
-          state.restStartedAt
-            ? fmtRest(restRemainingSeconds())
-            : fmtClock(restHintFor(exercise.id)),
-        ]),
-      ],
-    ),
-    // F71 ①：暫停／繼續與停止。只在休息中出現——沒在休息時這兩顆沒有意義，
-    // 而且底部的「✓ 完成這組」本來就是那個狀態下唯一該按的東西
-    ...(state.restStartedAt
-      ? [
-          el("div", { class: "rest-controls" }, [
-            el(
-              "button",
-              { class: "btn btn-ghost", onclick: () => guard(togglePauseRest) },
-              [restPaused() ? iconLabel("play", "繼續") : iconLabel("pause", "暫停")],
-            ),
-            el(
-              "button",
-              {
-                // F73 ①③：鬧鐘響著的時候才轉警示色——指出「現在該點這裡」。
-                // 暫停中不算響（F71 ② 暫停不觸發提醒），所以條件要排除暫停。
-                class: `btn stop-rest ${
-                  !restPaused() && (restRemainingSeconds() ?? 1) <= 0
-                    ? "btn-danger alarming"
-                    : "btn-ghost"
-                }`,
-                onclick: () => guard(stopRestFromUi),
-              },
-              [iconLabel("stop", "停止")],
-            ),
-          ]),
-        ]
-      : []),
+    // F84 ④：休息態把「上次提示卡＋快調列」整塊換成休息卡，其餘版面不動
+    resting ? restCard() : lastRefCard(),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...syncStatusLine(),
     // F20：新→舊排序（最新在最上）；組數 > 2 時固定高度內部捲動（編輯中不限高，讓編輯表單完整可見）
-    el("div", {
-      class: `done-list${state.doneSets.length > 2 && !editDraft ? " scrollable" : ""}`,
-    }, [...state.doneSets].reverse().map(doneRow)),
-    el("div", { class: "steppers" }, [
-      stepper(exercise.is_bodyweight ? "負重 KG" : "KG", state.weightKg, [
-        ["−2.5", -2.5],
-        ["+2.5", +2.5],
-      ], (d) => { state.weightKg = Math.max(0, Math.round((state.weightKg + d) * 10) / 10); }, render),
-      stepper("REPS", state.reps, [
-        ["−1", -1],
-        ["+1", +1],
-      ], (d) => { state.reps = Math.max(1, state.reps + d); }, render),
+    ...(state.doneSets.length > 0
+      ? [
+          el("section", {
+            class: `card done-list${
+              state.doneSets.length > 2 && !editDraft ? " scrollable" : ""
+            }`,
+          }, [...state.doneSets].reverse().map(doneRow)),
+        ]
+      : []),
+    el("div", { class: "logger-foot" }, [
+      el("div", { class: "steppers" }, [
+        stepper(exercise.is_bodyweight ? "負重 KG" : "KG", state.weightKg, [
+          ["−2.5", -2.5],
+          ["+2.5", +2.5],
+        ], (d) => { state.weightKg = Math.max(0, Math.round((state.weightKg + d) * 10) / 10); }, render),
+        stepper("REPS", state.reps, [
+          ["−1", -1],
+          ["+1", +1],
+        ], (d) => { state.reps = Math.max(1, state.reps + d); }, render),
+      ]),
+      rpePicker(state.rpe, (v) => { state.rpe = v; }, render),
+      el(
+        "button",
+        {
+          // F15 兩態切換：就緒態（未在休息）＝記錄；休息態＝繼續下一組（停倒數）
+          // F84 ⑦：超時時主按鈕也轉 --over，與圓環、數字同步
+          class: `btn btn-primary log-btn${resting ? " resting" : ""}${
+            overtime ? " over" : ""
+          }`,
+          ...(state.submitting ? { disabled: "" } : {}),
+          onclick: () => guard(resting ? continueNext : logSet),
+        },
+        [resting ? el("span", {}, ["繼續下一組"]) : iconLabel("check", "完成這組")],
+      ),
     ]),
-    rpePicker(state.rpe, (v) => { state.rpe = v; }, render),
-    el(
-      "button",
-      {
-        // F15 兩態切換：就緒態（未在休息）＝記錄；休息態＝繼續下一組（停倒數）
-        class: `btn btn-primary log-btn${state.restStartedAt ? " resting" : ""}`,
-        ...(state.submitting ? { disabled: "" } : {}),
-        onclick: () => guard(state.restStartedAt ? continueNext : logSet),
-      },
-      [state.restStartedAt ? el("span", {}, ["繼續下一組"]) : iconLabel("check", "完成這組")],
-    ),
     // F42：底部『換動作』『收工』已移除——換動作改左上←，結束訓練走 picker 的『結束訓練』
   ]);
 }

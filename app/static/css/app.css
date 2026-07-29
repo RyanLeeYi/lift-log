@@ -71,9 +71,8 @@
   /* 未來日期的底色（handoff 有指定）等日曆改版 F85 動 calendar.js 時一起加，
      現在放進來只會是沒人引用的死 token。 */
 
-  /* ---- 非實色：光暈與遮罩也走 token，換色不必再全檔搜字面值 ---- */
-  --glow-accent: rgba(217, 178, 95, .45);
-  --glow-over: rgba(201, 106, 78, .55);
+  /* ---- 非實色：遮罩也走 token，換色不必再全檔搜字面值 ---- */
+  /* F84 把 LED 面板換成圓環後，兩個光暈 token 就沒人用了——留著只會讓下一個人以為它生效 */
   --scrim: rgba(0, 0, 0, .55);
 
   /* ---- 圓角：按鈕與 chip 一律藥丸，這是本方向的識別特徵 ---- */
@@ -271,28 +270,36 @@ body {
   font-family: var(--mono);
 }
 
-/* LED 休息計時器 —— 招牌元件：送出即亮起，同時是「已記錄」確認 */
-.rest-led {
-  display: flex; align-items: baseline; justify-content: space-between;
-  background: var(--card-hi);
-  border: none;
-  border-radius: var(--r-card-lg);
-  padding: 10px 16px;
-  visibility: hidden;
+/* ---------- F84：休息卡（圓環取代 LED 面板） ---------- */
+.rest-card { gap: 14px; align-items: center; padding: 16px 20px 18px; border-radius: var(--r-card-lg); }
+.rest-status {
+  color: var(--text-mute); font-family: var(--mono);
+  font-size: 11px; letter-spacing: .18em;
 }
-.rest-led.on { visibility: visible; }
-.rest-led .label { color: var(--text-mute); font-size: 12px; letter-spacing: .2em; }
-.rest-led .digits {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 34px;
-  color: var(--accent);
-  text-shadow: 0 0 14px var(--glow-accent);
+/* 142px 是設計調過的值：再大就會把主按鈕推到摺線下（handoff 的版面高度警告） */
+.rest-ring { position: relative; width: 142px; height: 142px; }
+.rest-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.rest-ring .ring-track { stroke: var(--line); }
+.rest-ring .ring-value {
+  stroke: var(--accent);
+  transition: stroke-dashoffset 1s linear; /* 每秒線性推進，不要有彈跳感 */
 }
-/* F71：休息倒數的暫停／停止。放在 LED 下方一列，兩顆等寬——
-   訓練中是單手操作，按鈕小或位置跳動都會按錯。 */
-.rest-controls { display: flex; gap: 8px; margin-top: 8px; }
-.rest-controls .btn { flex: 1; padding: 10px 0; }
+.rest-ring.over .ring-value { stroke: var(--over); }
+.rest-ring-text {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.rest-ring .digits {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 34px; font-weight: 600; color: var(--accent);
+}
+.rest-ring.over .digits { color: var(--over); }
+.rest-ring .target { font-family: var(--mono); font-size: 10px; color: var(--text-mute); }
+
+/* F71/F84：暫停｜停止｜−15s｜+15s。四顆等寬——訓練中是單手操作，
+   按鈕小或位置跳動都會按錯，所以寬度固定不隨字數變。 */
+.rest-controls { display: flex; gap: 8px; width: 100%; }
+.rest-controls .chip { flex: 1; min-width: 0; padding: 13px 0; font-size: 13px; }
 /* F73：鬧鐘響著時停止鈕轉警示色並輕微脈動——指出「現在該點這裡」。
    pulse 只在響的時候跑，其餘時間完全靜止（訓練中閃動的東西會分心）。 */
 .rest-controls .btn.alarming { animation: alarm-pulse 1s ease-in-out infinite; }
@@ -300,17 +307,6 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: .55; }
 }
-
-/* R10 倒數超時：LED 轉紅提示（配合震動；iOS 只有這個） */
-.rest-led.over { box-shadow: inset 0 0 0 1px var(--over); }
-.rest-led.over .digits {
-  color: var(--over);
-  text-shadow: 0 0 14px var(--glow-over);
-}
-/* R10 參考休息 chip：常駐可點，循環快選值（僅本次） */
-.rest-hint-row { display: flex; justify-content: flex-end; }
-/* F77 ①：休息秒數 chip 是訓練中會反覆點的（循環 60/90/120/180） */
-.rest-hint-row .rest-hint { min-height: 44px; display: inline-flex; align-items: center; }
 
 /* 數字步進器：kg / reps */
 .steppers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: auto; }
@@ -776,7 +772,7 @@ body {
 /* ---------- F36 動作詳情頁 ---------- */
 .exercise-detail { gap: 12px; }
 .exercise-detail .ex-back { padding: 6px 12px; }
-/* PR 卡（琥珀 LED 面板，同 rest-led 語言） */
+/* PR 卡（沙金面板） */
 .ex-prs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .ex-prs .pr {
   background: var(--card-hi); border: none; border-radius: var(--r-card);
@@ -994,7 +990,9 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .btn:active { transform: none; }
-  .rest-led .digits { text-shadow: none; }
+  /* F84：圓環每秒推進的過渡也一併關掉（reduce motion 的人不需要那個動畫） */
+  .rest-ring .ring-value { transition: none; }
+  .rest-controls .btn.alarming { animation: none; }
 }
 
 /* F80：課表排程（編輯頁的星期多選 ＋ 列表卡的排程摘要） */
@@ -1226,3 +1224,71 @@ body {
 .exercise-row .detail-link { border-radius: var(--r-card); }
 /* 今日菜單的語言切換：標題與環形進度之間，不搶版面 */
 .screen-head .lang-toggle { flex: none; min-width: 44px; padding: 7px 10px; font-size: 13px; }
+
+/* ---------- F84：logger 就緒態 ---------- */
+.logger { gap: 12px; }
+.exercise-head .logger-back {
+  min-width: 44px; min-height: 44px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-mid);
+}
+/* 上次提示卡 ＋ 快調列 */
+.last-ref { gap: 12px; padding: 18px 20px; }
+.last-ref-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.last-ref-text {
+  color: var(--text-mute); font-family: var(--mono); font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* 與上次的差：加重量用苔綠（進步），減量用中性色——減量常常是刻意的，不該標成壞事 */
+.last-ref-delta { flex: none; font-family: var(--mono); font-size: 12px; color: var(--text-mute); }
+.last-ref-delta.up { color: var(--good); }
+.quick-row { display: flex; gap: 8px; }
+.quick-row .chip { flex: 1; min-width: 0; padding: 12px 0; font-size: 14px; font-weight: 600; }
+.quick-row .chip.on { background: var(--accent); color: var(--on-accent); }
+.quick-row .chip:disabled { opacity: .4; cursor: default; }
+
+/* 已完成組列表收進卡片 */
+.done-list.card { gap: 0; padding: 10px 16px; }
+.done-list.card .done-row:last-child { border-bottom: none; }
+.done-row .set-no { color: var(--text-faint); }
+
+/* 底部固定區：步進器、累度軸、主按鈕。margin-top:auto 讓它貼底，
+   內容多寡不影響主按鈕的位置（訓練中手指落點要穩定）。 */
+.logger-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.log-btn.over { background: var(--over); color: var(--text); }
+
+/* F84 ⑨：矮螢幕的休息態退讓。
+   實測（360×640）不退讓時溢出 142px＝主按鈕被推到摺線下，正是 handoff 警告的那件事。
+   優先犧牲「看起來爽」的尺寸（圓環、大字、留白），保住「按得到」的主按鈕。
+   門檻 840px：不退讓的休息態實測需要約 828px，所以「看起來很大」的手機也可能不夠——
+   Ryan 的 Note10+ 把顯示密度調成 600，CSS 可視高度只有約 727px，主按鈕當場被切掉。
+   用「版面實際需要多少」訂門檻，不要用「這台手機看起來很大」猜。 */
+@media (max-height: 840px) {
+  .logger { gap: 8px; }
+  .rest-card { gap: 10px; padding: 12px 16px 14px; }
+  .rest-ring { width: 104px; height: 104px; }
+  .rest-ring .digits { font-size: 26px; }
+  .rest-ring .target { font-size: 9px; }
+  .rest-controls .chip { padding: 10px 0; font-size: 12px; }
+  .last-ref { gap: 8px; padding: 12px 16px; }
+  .logger-foot { gap: 8px; }
+  .stepper { padding: 8px; gap: 4px; }
+  .stepper output { font-size: 32px; }
+  .stepper .pair .btn { padding: 8px; font-size: 18px; }
+  /* 累度軸的 slider 在矮螢幕收起——五顆停點本來就是它的第二條路，兩者擇一不損功能 */
+  .rpe-axis .rpe-slider { display: none; }
+  .done-list.card { padding: 6px 14px; }
+  .done-list.scrollable { max-height: 48px; }
+  .rpe-axis { gap: 4px; }
+  .log-btn { padding: 14px; font-size: 18px; }
+}
+/* F84 ③：組列右側的累度詞（記錄時選的是詞，回看時就該看到詞） */
+.done-rpe { flex: none; color: var(--text-mute); font-size: 11px; }
+/* F84 ⑪：休息控制列的停止鈕在鬧鐘響時要「看得出來」變色。
+   .rest-controls .chip 的 color 的 specificity 比 .btn-danger 高，只加 class 顏色不會動——
+   Codex 2026-07-29 驗收量 computed style 才抓到，而 F73 的測試只驗 class 所以一直假綠。 */
+.rest-controls .chip.btn-danger {
+  background: var(--over);
+  color: var(--text);
+  font-weight: 600;
+}
