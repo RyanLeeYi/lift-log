@@ -126,7 +126,28 @@ def main() -> int:
             )
 
             # ---------- ④ 前端結束訓練會通知伺服器 ----------
+            # ④ 順序：端點必須在清本地狀態**之前**被呼叫。
+            # 只驗「伺服器有收到」抓不到順序錯誤——第一版就是先清再送，E2E 全綠但 acceptance fail。
+            # 攔在 fetch 當下讀 localStorage 才問得到真正的先後。
+            page.evaluate(
+                f"""() => {{
+                    window.__endOrder = [];
+                    const orig = window.fetch;
+                    window.fetch = function (input, init) {{
+                      const url = typeof input === 'string' ? input : (input && input.url) || '';
+                      if (url.includes('/end')) {{
+                        window.__endOrder.push(localStorage.getItem('{WORKOUT_KEY}') !== null);
+                      }}
+                      return orig.apply(this, arguments);
+                    }};
+                }}"""
+            )
             finish_workout(page)
+            order = page.evaluate("() => window.__endOrder")
+            check(
+                order == [True],
+                f"④ 呼叫 /end 的當下本地狀態仍在（＝先呼叫再清）；實際 {order}",
+            )
             ended_at = api(base, f"/api/workouts/{wid}")["ended_at"]
             check(
                 ended_at is not None,

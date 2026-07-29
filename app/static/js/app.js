@@ -931,13 +931,12 @@ function endWorkout() {
   state.pendingRestSeconds = null;
   editDraft = null;
   const ending = state.workoutId;
-  clearActiveWorkout(); // F90 起 setCounts 也由它清（單一來源）
-  state.exercise = null;
-  // F91 ④：本地先結束，再通知伺服器。順序不能反——網路慢或斷線時，
-  // 使用者按了「結束訓練」卻要等一個請求才離開畫面是不能接受的；
-  // 失敗也不回滾本地結束（那只會讓人卡在一場他已經結束的訓練裡）。
-  // 送不出去就進補送佇列：不補的話伺服器的 ended_at 永遠是 null，
-  // 另一台裝置照樣能續接——那正是這條 feature 要解掉的東西。
+  // F91 ④：**先發出**結束請求，再清本地狀態。
+  // 「發出」不等於「等它回來」——guard 的 async body 會同步執行到第一個 await，
+  // 也就是 fetch 已經送出去了，下面才清狀態。使用者不會多等一毫秒，
+  // 而伺服器收到請求時本地狀態仍在，順序與規格一致。
+  // 失敗不回滾本地結束（那只會讓人卡在一場他已經結束的訓練裡），改進補送佇列：
+  // 不補的話伺服器的 ended_at 永遠是 null，另一台裝置照樣能續接——那正是這條要解掉的東西。
   if (ending) {
     guard(async () => {
       try {
@@ -952,6 +951,8 @@ function endWorkout() {
       }
     });
   }
+  clearActiveWorkout(); // F90 起 setCounts 也由它清（單一來源）
+  state.exercise = null;
   backHome(); // F81：這次訓練剛結束，本週進度與「上次訓練」都變了
 }
 
