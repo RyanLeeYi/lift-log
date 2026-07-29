@@ -1154,3 +1154,75 @@ body {
   padding: 6px 12px; min-height: 36px; min-width: 0; cursor: inherit;
 }
 .free-choice { margin-top: 2px; padding: 16px; }
+
+/* ---------- F83：今日菜單 ---------- */
+/* 環形進度：SVG 圓環 ＋ 中央百分比。放標題列右側，不佔內容區 */
+.progress-ring { flex: none; position: relative; width: 44px; height: 44px; }
+.progress-ring svg { transform: rotate(-90deg); } /* 從十二點鐘方向開始填 */
+.progress-ring .ring-track { stroke: var(--line); }
+.progress-ring .ring-value { stroke: var(--accent); transition: stroke-dashoffset .3s ease-out; }
+.progress-ring .ring-pct {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent);
+}
+
+.menu-list { display: flex; flex-direction: column; gap: 10px; }
+.menu-card {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--card); border: none; border-radius: var(--r-card);
+  padding: 18px; text-align: left; cursor: pointer;
+  color: var(--text); font-family: var(--sans);
+}
+/* 進行中的那張站出來——訓練中掃一眼就要知道「我在哪」 */
+.menu-card.on { background: var(--card-hi); }
+.menu-card.complete { opacity: .55; }
+.menu-card:active { transform: scale(.99); }
+.menu-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.menu-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.menu-card-name { font-size: 17px; font-weight: 700; }
+.menu-card:not(.on) .menu-card-name { color: var(--text-mid); font-weight: 600; }
+.menu-card-state {
+  flex: none; color: var(--accent);
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+}
+.menu-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.menu-card-values {
+  color: var(--text-mute); font-family: var(--mono); font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* 每組一段：還剩幾組用看的就知道，不必讀「2/4 組」 */
+.menu-card-bars { flex: none; display: flex; gap: 6px; }
+.menu-bar { width: 20px; height: 6px; border-radius: var(--r-pill); background: var(--card-hi); }
+.menu-card.on .menu-bar { background: var(--line); }
+.menu-bar.done, .menu-card.on .menu-bar.done { background: var(--accent); }
+
+/* 「接著做」：訓練中最常做的下一步，貼在拇指旁邊 */
+.next-up-block { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.next-up-label {
+  color: var(--text-mute); font-family: var(--mono); font-size: 11px; padding-left: 4px;
+}
+.next-up {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 17px 24px; text-align: left;
+}
+.next-up-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.next-up-name {
+  font-size: 17px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.next-up-values { font-family: var(--mono); font-size: 11px; opacity: .7; }
+.next-up-done {
+  color: var(--text-dim); font-size: 15px; text-align: center; padding: 14px 0;
+}
+.end-workout { color: var(--text-mute); font-size: 14px; background: transparent; box-shadow: none; }
+/* F83 review LOW-6：組數多到塞不下時，指示條退回文字（bars 不可壓縮，會撐出水平捲動） */
+.menu-card-count {
+  flex: none; color: var(--text-mute);
+  font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+}
+/* F38 的「動作表現」入口與卡片並排（整張卡是按鈕，巢狀按鈕不合法） */
+.exercise-row .menu-card { flex: 1; min-width: 0; }
+.exercise-row .detail-link { border-radius: var(--r-card); }
+/* 今日菜單的語言切換：標題與環形進度之間，不搶版面 */
+.screen-head .lang-toggle { flex: none; min-width: 44px; padding: 7px 10px; font-size: 13px; }

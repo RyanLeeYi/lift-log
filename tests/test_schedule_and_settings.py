@@ -395,3 +395,83 @@ class TestDeletedTemplateIdReuse:
         last = client.get("/api/schedule/today").json()["last_workout"]
         assert last is not None
         assert last["template_name"] is None
+
+
+class TestLastSetValues:
+    """F83 今日菜單：一次取多個動作的「上次」代表值。"""
+
+    def _log(self, client, exercise_id: int, day: date, uuid: str,
+             weight: float, reps: int, set_number: int = 1) -> int:
+        workout = client.post("/api/workouts", json={"date": day.isoformat()}).json()
+        client.post(
+            f"/api/workouts/{workout['id']}/sets",
+            json={
+                "client_uuid": uuid,
+                "exercise_id": exercise_id,
+                "set_number": set_number,
+                "weight_kg": weight,
+                "reps": reps,
+            },
+        )
+        return workout["id"]
+
+    def test_empty_when_no_history(self, client, exercise_id) -> None:
+        assert client.get(f"/api/exercises/last-set-values?ids={exercise_id}").json() == []
+
+    def test_returns_latest_workout_values(self, client, exercise_id) -> None:
+        self._log(client, exercise_id, date(2026, 7, 20), "uuid-lsv-old", 50, 10)
+        self._log(client, exercise_id, date(2026, 7, 27), "uuid-lsv-new", 60, 8)
+        row = client.get(f"/api/exercises/last-set-values?ids={exercise_id}").json()[0]
+        assert (row["weight_kg"], row["reps"]) == (60.0, 8)
+
+    def test_uses_last_set_of_that_workout(self, client, exercise_id) -> None:
+        """同一次訓練有多組時，代表值是最後一組（那才是你上次收在哪個重量）。"""
+        workout = client.post(
+            "/api/workouts", json={"date": date(2026, 7, 27).isoformat()}
+        ).json()
+        for n, weight in ((1, 50.0), (2, 55.0), (3, 60.0)):
+            client.post(
+                f"/api/workouts/{workout['id']}/sets",
+                json={
+                    "client_uuid": f"uuid-lsv-multi-{n}",
+                    "exercise_id": exercise_id,
+                    "set_number": n,
+                    "weight_kg": weight,
+                    "reps": 8,
+                },
+            )
+        row = client.get(f"/api/exercises/last-set-values?ids={exercise_id}").json()[0]
+        assert row["weight_kg"] == 60.0
+
+    def test_exclude_workout_keeps_previous_session(self, client, exercise_id) -> None:
+        """排除進行中的訓練——否則「上次」會變成今天剛記的那組（同 F32 的老問題）。"""
+        self._log(client, exercise_id, date(2026, 7, 20), "uuid-lsv-prev", 50, 10)
+        current = self._log(client, exercise_id, date.today(), "uuid-lsv-cur", 80, 5)
+        url = f"/api/exercises/last-set-values?ids={exercise_id}&exclude_workout={current}"
+        row = client.get(url).json()[0]
+        assert (row["weight_kg"], row["reps"]) == (50.0, 10)
+
+    def test_batch_covers_several_exercises(self, client, exercise_id) -> None:
+        second = client.post(
+            "/api/exercises",
+            json={"name_zh": "臥推", "name_en": "Bench Press", "muscle_group": "胸"},
+        ).json()["id"]
+        ids = [exercise_id, second]
+        self._log(client, ids[0], date(2026, 7, 20), "uuid-lsv-b1", 40, 12)
+        self._log(client, ids[1], date(2026, 7, 21), "uuid-lsv-b2", 70, 6)
+        rows = client.get(f"/api/exercises/last-set-values?ids={ids[0]},{ids[1]}").json()
+        got = {r["exercise_id"]: (r["weight_kg"], r["reps"]) for r in rows}
+        assert got == {ids[0]: (40.0, 12), ids[1]: (70.0, 6)}
+
+    def test_soft_deleted_ignored(self, client, exercise_id) -> None:
+        workout_id = self._log(client, exercise_id, date(2026, 7, 27), "uuid-lsv-del", 99, 1)
+        set_id = client.get(f"/api/workouts/{workout_id}").json()["sets"][0]["id"]
+        client.delete(f"/api/sets/{set_id}")
+        assert client.get(f"/api/exercises/last-set-values?ids={exercise_id}").json() == []
+
+
+class TestWorkoutCreatedAt:
+    def test_detail_exposes_created_at(self, client) -> None:
+        """F83「已練 N 分」用伺服器時間——app 被回收後前端記的開始時間就沒了。"""
+        workout = client.post("/api/workouts", json={}).json()
+        assert client.get(f"/api/workouts/{workout['id']}").json()["created_at"] is not None

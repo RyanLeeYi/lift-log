@@ -119,3 +119,29 @@ def last_sets(
             .order_by(WorkoutSet.set_number)
         )
     )
+
+
+def last_set_values(
+    session: Session, exercise_ids: list[int], exclude_workout_id: int | None = None
+) -> dict[int, tuple[float, int]]:
+    """一次取多個動作「上次」的代表數值（該動作最近一次訓練的最後一組）。
+
+    今日菜單一次列出整份課表，逐個動作打 last-sets 會是 N 次往返；這裡一次查完。
+    回傳 {exercise_id: (weight_kg, reps)}，查不到的動作不會出現在字典裡。
+    """
+    if not exercise_ids:
+        return {}
+    filters = [
+        WorkoutSet.exercise_id.in_(exercise_ids),
+        WorkoutSet.deleted_at.is_(None),
+    ]
+    if exclude_workout_id is not None:
+        filters.append(WorkoutSet.workout_id != exclude_workout_id)
+    rows = session.execute(
+        select(WorkoutSet.exercise_id, WorkoutSet.weight_kg, WorkoutSet.reps)
+        .join(Workout, Workout.id == WorkoutSet.workout_id)
+        .where(*filters)
+        # 由舊到新掃過去，後面的覆蓋前面的＝每個動作留下最新那次的最後一組
+        .order_by(Workout.date, WorkoutSet.workout_id, WorkoutSet.set_number)
+    ).all()
+    return {exercise_id: (weight, reps) for exercise_id, weight, reps in rows}

@@ -1,4 +1,5 @@
 from datetime import date as date_type
+from datetime import datetime as datetime_type
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -282,6 +283,9 @@ class WorkoutOut(BaseModel):
     date: date_type
     template_id: int | None
     note: str | None
+    # F83：今日菜單的「已練 N 分」。用伺服器時間而不是前端記的開始時間——
+    # app 被系統回收後 sessionStorage 就沒了，但訓練還在進行
+    created_at: datetime_type | None = None
 
 
 class WorkoutDetailOut(WorkoutOut):
@@ -338,3 +342,11 @@ class PushSubscriptionIn(BaseModel):
 
 class RestTimerIn(BaseModel):
     seconds: int = Field(ge=1, le=3600)  # 休息秒數，到點推「休息結束」通知
+
+
+class ExerciseLastSet(BaseModel):
+    """F83 今日菜單：某個動作「上次」的代表數值（最後一組）。"""
+
+    exercise_id: int
+    weight_kg: float
+    reps: int

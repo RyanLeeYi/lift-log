@@ -92,6 +92,13 @@ export const api = {
   deleteDailyStatus: (dateIso) => request("DELETE", `/api/daily-status/${dateIso}`), // F18 硬刪
   // F67：app 版自我更新——伺服器上最新的 APK 版本（沒有發佈版本時回 404）
   appLatest: () => request("GET", "/api/app/latest"),
+  // F83：今日菜單一次取多個動作的「上次」代表值（逐個打 last-sets 會是 N 次往返）
+  lastSetValues: (ids, excludeWorkoutId) =>
+    request(
+      "GET",
+      `/api/exercises/last-set-values?ids=${ids.join(",")}` +
+        (excludeWorkoutId ? `&exclude_workout=${excludeWorkoutId}` : ""),
+    ),
   // F80/F81：今天排到什麼、本週進度、上次訓練（首頁一次請求拿齊）
   scheduleToday: () => request("GET", "/api/schedule/today"),
   getSetting: (key) => request("GET", `/api/settings/${key}`),

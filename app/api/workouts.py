@@ -38,6 +38,7 @@ def get_workout(workout_id: int, session: DbSession) -> WorkoutDetailOut:
         date=workout.date,
         template_id=workout.template_id,
         note=workout.note,
+        created_at=workout.created_at,  # F83：今日菜單的「已練 N 分」
         sets=[SetOut.model_validate(s) for s in svc.get_active_sets(session, workout_id)],
     )
 

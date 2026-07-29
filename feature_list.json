@@ -576,6 +576,19 @@
       "status": "passing",
       "acceptance": "（Ryan 2026-07-29 簽核）\n① 標題「挑今日課表」＋副標「N 份課表」＋左上返回。\n② 每份一張卡；今天排到的那份（F80 排程）用 --card-hi 並展開動作 chips，其餘 --card 並顯示「上次 M/D · X,XXX kg」（沒練過顯示「還沒練過」）。\n③ 今天沒排程時，第一張展開（維持設計的視覺節奏）。\n④ 卡片右側顯示「N 動作 · M 組」。\n⑤ 點卡片＝用該課表開始訓練（維持現行行為）。\n⑥ 最後一顆「自由訓練」：透明底＋細框藥丸。\n⑦ 後端：GET /api/templates 回傳 last_used_date 與 last_volume_kg（由 sets 推導，軟刪除不計）。\n⑧ 觸控目標 ≥44px、無水平捲動、>2 份時課表清單可捲且「自由訓練」位置穩定。\n⑨ 驗收：ruff ＋ pytest ＋ E2E 全回歸 ＋ 新增 verify_f82.py ＋ 實機截圖。",
       "evidence": "（2026-07-29 v86）ruff All checks passed；pytest 247 passed；verify_f82.py 19/19；既有 E2E 全回歸綠（17 支腳本）。\nreviewed_by: Codex（codex exec review --uncommitted）— 一條 P2：SQLite 的 INTEGER PRIMARY KEY 會重用被刪課表的最大 id，刪掉最後一份課表再建新的，新課表會繼承舊課表的訓練歷史（顯示成它的「上次訓練」，首頁還會冠上新名字）。先寫測試重現（兩條皆紅），第一版修法「比對建立時間」被測試證明擋不住「同一秒內刪了再建」，改為在刪課表時把歷史 workout 的 template_id 清成 NULL。Ryan 2026-07-29 裁決採此法；連帶調整 tests/test_api_templates.py 的舊斷言（PRD R4「刪除課表不影響歷史 workout」的界線改為：紀錄本身完整保留，但不再指向已不存在的課表——理由寫在該測試的 docstring）。\nverified_by: Codex（codex exec 驗收，兩輪）。第一輪 ①–⑧ 全 pass 並獨立確認 id 重用修正（自建 SQLite：刪除回 204、歷史 workout 仍在且 set 完整但 template_id=None、新課表確實重用 id=1、其 last_used_date/last_volume_kg 皆為 None、Playwright 實測新課表顯示「還沒練過」、首頁不借用新課表名）；⑨ 因當時 APK 尚未產出而卡住。第二輪補驗 ⑨：確認 app-release.apk 為最新 v86 產物、assets/public 內確實封裝 F82 的靜態資產、APP_VERSION 與 sw.js CACHE_NAME 一致且已由 v85 遞增；實機截圖由本 session 提供（SM-N9750：上半身 6 動作·18 組攤開列動作 chips、下半身 上次 7/22 · 5,360 kg、全身 上次 7/24 · 8,230 kg、自由訓練在底部）。"
+    },
+    {
+      "id": "F83",
+      "name": "今日菜單改版（環形進度 ＋ 接著做）",
+      "status": "passing",
+      "acceptance": "（Ryan 2026-07-29 簽核）\n① 標題列：返回鈕 ＋ 課表名 ＋ 副標「已練 N 分 · X/Y 組」＋ 右側環形進度（44px、--accent、內填百分比）。\n② 每個動作一張卡：進行中用 --card-hi 並標「進行中」；其餘 --card、動作名 --text-mid。\n③ 卡片右側組數指示：每組一段（已完成 --accent、未完成 --line／--card-hi）。\n④ 卡片第二行顯示「重量 × 次數」：本次做過就顯示本次最後一組，否則顯示上次該動作的數值；都沒有則不顯示這行。\n⑤ 底部「接著做」：小標＋藥丸大按鈕（左兩行：動作名 · 第 N 組／重量×次數，右箭頭），一按直接進 logger 並帶入該動作與續接的 set_number。\n⑥ 「接著做」選第一個未做滿 default_sets 的動作；全部做滿時改講「都做完了」。\n⑦ 「結束訓練」純文字置中；返回鈕回首頁。\n⑧ 自由訓練（無課表）維持現行選動作畫面，不套用本版型。\n⑨ 後端：WorkoutOut 增加 created_at；新增批次取得各動作上次數值的端點。\n⑩ 觸控 ≥44px、無水平捲動、動作多時可捲且「接著做」位置固定。\n⑪ 驗收：ruff ＋ pytest ＋ E2E 全回歸 ＋ verify_f83.py ＋ 實機截圖。",
+      "evidence": "（2026-07-29 v87）ruff All checks passed；pytest 254 passed；verify_f83.py 35/35；既有 E2E 全回歸綠。\nreviewed_by: headless Claude reviewer（claude -p，唯讀工具）——**注意這是同模型分身**，獨立性只來自 fresh context，不是跨模型：Codex review 連續兩次被中止且未產出報告，依 codex-review skill 的三層退路走第二層。抓到七條，全部已修：\n  HIGH：今日菜單每列的「動作表現」入口（F38）被改版吃掉——舊碼每列經 exerciseRow() 包一層，新版整張卡換成裸按鈕就沒了，而既有 E2E 一支都沒涵蓋它。已接回（卡片與入口並排，巢狀按鈕不合法）並在 verify_f83 釘住（實際點進動作表現頁）。\n  MEDIUM：①有課表時中／EN 切換鈕一併消失（動作名吃 getLang() 卻沒地方切）→ 接回標題列；②menuMeta 是模組層狀態又不綁 workout，換場第一幀會顯示上一場的「已練 N 分」，且失敗時一律清空會把畫面上好好的數值抹掉 → 綁 workoutId、換場先歸零、失敗保留同場舊值。\n  LOW：分鐘不跳動（加只在菜單畫面跑的 30s ticker）／沒有數值的卡仍多 10px gap（整行不建）／組數 >8 時指示條撐出水平捲動（退回文字）／訓練開著過夜顯示「已練 780 分」（≥12h 不顯示）。\n  另：reviewer 指出 verify_f83 原本的 second_values.strip()=='' 把錯誤現況寫死成期望值，已改為驗元素不存在。\nverified_by: Codex（codex exec 驗收，兩輪）。第一輪 ①②③④⑥⑧⑨⑩ pass、⑤ 判 fail（重載後不續接、另建 workout）。本 session 以純 UI 路徑重現失敗：接著做正確顯示第 2 組、沒有另建 workout（仍 id=1）——Codex 的探針是用 API 從外面灌第一組，而 workoutId/setCounts 是前端狀態，API 灌的它看不到（同一種方法錯誤本 session 稍早也犯過）。第二輪要求它走純 UI 路徑重驗，判定翻為 ⑤ pass。\n⑪ 實機截圖由本 session 取得（SM-N9750 v87：上半身／已練 0 分 · 0/18 組／0% 環／臥推 70 kg × 4、上斜臥推 50 kg × 7、肩推 35 kg × 7、槓鈴划船 70 kg × 5／接著做 臥推 · 第 1 組）。"
+    },
+    {
+      "id": "F90",
+      "name": "進行中訓練在 app 被回收後遺失（另開一場、組號重來）",
+      "status": "failing",
+      "acceptance": "（尚未簽核——2026-07-29 由 F83 驗收過程中的實測發現，不是 F83 造成的既有邊界）\n現象：進行中訓練的 workoutId 與各動作已完成組數（setCounts）存在 sessionStorage。分頁關閉或 app 被系統回收後這份狀態消失：首頁的按鈕從「繼續訓練」變回「開始訓練」，按下去會**另建一場 workout**，「接著做」從第 1 組重來；先前記的組仍留在舊 workout 裡，於是同一天同一場訓練被切成兩筆。\nCodex 2026-07-29 實測：關閉分頁前 workoutId=1、setCounts={\"1\":2}；新分頁 liftlog.activeWorkout=null；按下後建立 workout 2，其 set_number 從 [1] 重新開始。\n與 F66（休息倒數在 app 重啟後消失）同源但不同範圍：F66 講倒數，這條講整場訓練的續接。\n動工前要走 acceptance 簽核。"
     }
   ]
 }

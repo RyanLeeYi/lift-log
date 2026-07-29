@@ -358,6 +358,11 @@ async function goPicker() {
   if (pickerExercises.length === 0) await loadExercises("");
   state.screen = "picker";
   render();
+  // F83：菜單的「已練 N 分」與各動作上次數值。先畫再補——網路不該擋住畫面出現
+  loadMenuMeta().then(() => {
+    if (state.screen === "picker") render();
+  });
+  startMenuTicker();
 }
 
 async function startWorkout(template) {
@@ -1139,47 +1144,244 @@ function exerciseButtons() {
 // F48：今日菜單的捲動位置——記完一組回 picker 會整頁重繪（進度數字更新），否則每次都跳回頂端
 let menuScrollTop = 0;
 
+// F83：今日菜單的兩份輔助資料。開始時間走伺服器（app 被系統回收後前端記的就沒了），
+// 各動作的「上次」一次批次取回（逐個打會是 N 次往返）。
+// ⚠ 一定要綁 workoutId：這是模組層狀態，換一場訓練若不歸零，新菜單的第一幀會用上一場的
+// 開始時間畫出「已練 47 分」，等 API 回來才跳回 0（goPicker 是先 render 再載）。
+let menuMeta = { workoutId: null, startedAt: null, lastValues: {} };
+
+export async function loadMenuMeta() {
+  const workoutId = state.workoutId;
+  if (!workoutId || !state.template) {
+    menuMeta = { workoutId: null, startedAt: null, lastValues: {} };
+    return;
+  }
+  // 換場就先清空——寧可短暫沒有，也不要顯示上一場的數字
+  if (menuMeta.workoutId !== workoutId) {
+    menuMeta = { workoutId, startedAt: null, lastValues: {} };
+  }
+  const ids = state.template.exercises.map((e) => e.exercise_id);
+  try {
+    const [detail, values] = await Promise.all([
+      api.workoutDetail(workoutId),
+      api.lastSetValues(ids, workoutId),
+    ]);
+    if (state.workoutId !== workoutId) return; // await 期間換場了：丟棄過期結果
+    menuMeta = {
+      workoutId,
+      startedAt: detail.created_at ? Date.parse(detail.created_at + "Z") : null,
+      lastValues: Object.fromEntries(
+        values.map((v) => [v.exercise_id, { weight: v.weight_kg, reps: v.reps }]),
+      ),
+    };
+  } catch {
+    // 離線或後端沒醒：**保留同一場已經拿到的值**，不要把畫面上好好的數字清掉
+    //（訓練中途進電梯、從 logger 回菜單剛好失敗一次，就會整批消失）
+  }
+}
+
+// 本次這個動作最後一組的數值——優先於「上次」，因為你正在做的才是當下的參考
+function currentValues(exerciseId) {
+  const done = state.doneByExercise?.[exerciseId] ?? [];
+  const last = done[done.length - 1];
+  return last ? { weight: last.weight_kg, reps: last.reps } : null;
+}
+
+function menuValuesText(item) {
+  const values = currentValues(item.exercise_id) ?? menuMeta.lastValues[item.exercise_id];
+  if (!values) return null; // 沒做過也沒歷史：不留一行空的
+  return `${Number(values.weight)} kg × ${values.reps}`;
+}
+
+// 環形進度：SVG 圓環 ＋ 中央百分比。stroke-dasharray 走圓周長，dashoffset 表未完成的部分。
+function progressRing(done, total) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const circumference = 2 * Math.PI * 19; // r=19（44px 圓、3px 環寬）
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", "0 0 44 44");
+  svg.setAttribute("width", "44");
+  svg.setAttribute("height", "44");
+  svg.setAttribute("aria-hidden", "true");
+  for (const [cls, offset] of [
+    ["ring-track", 0],
+    ["ring-value", circumference * (1 - pct / 100)],
+  ]) {
+    const circle = document.createElementNS(svgNs, "circle");
+    circle.setAttribute("cx", "22");
+    circle.setAttribute("cy", "22");
+    circle.setAttribute("r", "19");
+    circle.setAttribute("fill", "none");
+    circle.setAttribute("stroke-width", "3");
+    circle.setAttribute("class", cls);
+    if (cls === "ring-value") {
+      circle.setAttribute("stroke-dasharray", String(circumference));
+      circle.setAttribute("stroke-dashoffset", String(offset));
+      circle.setAttribute("stroke-linecap", "round");
+    }
+    svg.append(circle);
+  }
+  return el("div", { class: "progress-ring", role: "img", "aria-label": `完成 ${pct}%` }, [
+    svg,
+    el("span", { class: "ring-pct" }, [`${pct}%`]),
+  ]);
+}
+
+// 「已練 N 分」要會跳動——它讀起來就是計時器。每 30 秒重畫一次，
+// 且只在今日菜單上跑：離開畫面就停，不留一個永遠在背景燒電的 interval。
+let menuTicker = null;
+
+function startMenuTicker() {
+  stopMenuTicker();
+  if (!state.template) return;
+  menuTicker = setInterval(() => {
+    if (state.screen !== "picker" || !state.template) {
+      stopMenuTicker();
+      return;
+    }
+    if (menuMeta.startedAt) render();
+  }, 30_000);
+}
+
+function stopMenuTicker() {
+  if (menuTicker !== null) {
+    clearInterval(menuTicker);
+    menuTicker = null;
+  }
+}
+
+function menuCounts() {
+  const items = state.template?.exercises ?? [];
+  const total = items.reduce((sum, i) => sum + (i.default_sets || 0), 0);
+  const done = items.reduce(
+    (sum, i) => sum + Math.min(state.setCounts[i.exercise_id] || 0, i.default_sets || 0),
+    0,
+  );
+  return { done, total };
+}
+
+function elapsedText() {
+  if (!menuMeta.startedAt) return null;
+  const minutes = Math.max(0, Math.round((Date.now() - menuMeta.startedAt) / 60000));
+  // 開著沒收工過夜的情況（restoreActiveWorkout 沒有時效檢查）——「已練 780 分」沒有意義，不如不講
+  if (minutes >= 12 * 60) return null;
+  if (minutes < 60) return `已練 ${minutes} 分`;
+  return `已練 ${Math.floor(minutes / 60)} 小時 ${minutes % 60} 分`;
+}
+
+// 「接著做」＝第一個還沒做滿的動作。全做滿就不再推下一步，改講都做完了。
+function nextUpItem() {
+  return (state.template?.exercises ?? []).find(
+    (item) => (state.setCounts[item.exercise_id] || 0) < (item.default_sets || 0),
+  );
+}
+
+function nextUpBlock() {
+  const item = nextUpItem();
+  if (!item) {
+    return [el("div", { class: "next-up-done" }, ["都做完了 —— 可以收工"])];
+  }
+  const setNumber = (state.setCounts[item.exercise_id] || 0) + 1;
+  const values = menuValuesText(item);
+  const exercise = {
+    id: item.exercise_id,
+    name_zh: item.name_zh,
+    name_en: item.name_en,
+    muscle_group: item.muscle_group,
+    is_bodyweight: item.is_bodyweight,
+  };
+  return [
+    el("div", { class: "next-up-label" }, ["接著做"]),
+    el(
+      "button",
+      {
+        class: "btn btn-primary next-up",
+        onclick: () => guard(() => pickExercise(exercise)),
+      },
+      [
+        el("span", { class: "next-up-text" }, [
+          el("span", { class: "next-up-name" }, [`${exerciseName(item)} · 第 ${setNumber} 組`]),
+          ...(values ? [el("span", { class: "next-up-values" }, [values])] : []),
+        ]),
+        icon("arrow-right", { size: 20 }),
+      ],
+    ),
+  ];
+}
+
 function templateMenu() {
   if (!state.template) return [];
-  // F48：課表動作超過 2 個才固定高度＋內部捲動，下方「臨時加動作」搜尋/chips/清單不被推出畫面
+  // F48：課表動作超過 2 個才固定高度＋內部捲動，下方的「接著做」與結束訓練不被推出畫面
   const scrollable = state.template.exercises.length > 2;
   const menuNode = el(
     "div",
-    { class: `exercise-list menu-list${scrollable ? " scrollable" : ""}` },
-    state.template.exercises.map((item) => {
-      const done = state.setCounts[item.exercise_id] || 0;
-      const exercise = {
-        id: item.exercise_id,
-        name_zh: item.name_zh,
-        name_en: item.name_en,
-        muscle_group: item.muscle_group,
-        is_bodyweight: item.is_bodyweight,
-      };
-      const mainBtn = el(
-        "button",
-        {
-          class: `btn exercise-item${done >= item.default_sets ? " menu-done" : ""}`,
-          onclick: () => guard(() => pickExercise(exercise)),
-        },
-        [
-          el("span", {}, [exerciseName(item)]),
-          el("span", { class: `sub${done > 0 ? " lit" : ""}` }, [
-            `${done}/${item.default_sets} 組`,
-          ]),
-        ],
-      );
-      // F38：今日菜單列也要有 📈 詳情入口（Codex：原本只有臨時加動作清單有）
-      return exerciseRow(mainBtn, exercise, "picker");
-    }),
+    { class: `menu-list${scrollable ? " scrollable" : ""}` },
+    state.template.exercises.map((item) => menuCard(item)),
   );
   if (scrollable) {
     requestAnimationFrame(() => { menuNode.scrollTop = menuScrollTop; });
   }
-  return [
-    el("div", { class: "menu-head" }, [`今日菜單 · ${state.template.name}`]),
-    menuNode,
-    el("div", { class: "menu-head" }, ["臨時加動作"]),
-  ];
+  return [menuNode];
+}
+
+// 每組一段的指示條。段數多到塞不下時退回文字——每段 20px＋6px gap 且不可壓縮，
+// 360px 寬的手機上 8 段就快滿了，再多會把卡片撐出水平捲動（review LOW-6）。
+const MAX_SET_BARS = 8;
+
+function setBars(done, total) {
+  if (total > MAX_SET_BARS) {
+    return el("span", { class: "menu-card-count" }, [`${done}/${total} 組`]);
+  }
+  return el(
+    "span",
+    { class: "menu-card-bars" },
+    Array.from({ length: total }, (_, i) =>
+      el("span", { class: `menu-bar${i < done ? " done" : ""}` }, []),
+    ),
+  );
+}
+
+// F83：一個動作一張卡。進行中的那張站出來（--card-hi ＋「進行中」），
+// 右側每組一段的指示條讓「還剩幾組」不必用讀的。
+function menuCard(item) {
+  const done = state.setCounts[item.exercise_id] || 0;
+  const total = item.default_sets || 0;
+  const inProgress = done > 0 && done < total;
+  const complete = total > 0 && done >= total;
+  const exercise = {
+    id: item.exercise_id,
+    name_zh: item.name_zh,
+    name_en: item.name_en,
+    muscle_group: item.muscle_group,
+    is_bodyweight: item.is_bodyweight,
+  };
+  const values = menuValuesText(item);
+  const card = el(
+    "button",
+    {
+      class: `menu-card${inProgress ? " on" : ""}${complete ? " complete" : ""}`,
+      onclick: () => guard(() => pickExercise(exercise)),
+    },
+    [
+      el("div", { class: "menu-card-head" }, [
+        el("span", { class: "menu-card-name" }, [exerciseName(item)]),
+        inProgress ? el("span", { class: "menu-card-state" }, ["進行中"]) : setBars(done, total),
+      ]),
+      // 沒有數值又不是進行中＝這一行沒東西可放。空的 flex item 高度是 0，
+      // 但 .menu-card 的 gap 照算，會讓卡片多 10px（review LOW-5）
+      ...(values || inProgress
+        ? [
+            el("div", { class: "menu-card-foot" }, [
+              el("span", { class: "menu-card-values" }, [values ?? ""]),
+              ...(inProgress ? [setBars(done, total)] : []),
+            ]),
+          ]
+        : []),
+    ],
+  );
+  // F38：菜單每一列都要有「動作表現」入口——訓練中想查歷史曲線不該得退回首頁重選。
+  // 改版把整張卡變成按鈕，巢狀按鈕不合法，所以入口與卡片並排（同 exerciseRow 的做法）。
+  return exerciseRow(card, exercise, "picker");
 }
 
 // F49：選動作的三件套（搜尋框／部位 chips／清單）。自由訓練直接攤在畫面上、有課表時裝進懸浮視窗，
@@ -1258,16 +1460,44 @@ function renderPicker() {
   // F49：有課表＝清單收進懸浮視窗（畫面留給今日菜單）；自由訓練＝選動作就是主畫面，維持攤開，
   // 否則每次開練都要多點一下才選得到動作。
   const inModal = Boolean(state.template);
+  const { done, total } = menuCounts();
+  const elapsed = elapsedText();
 
   return el("section", { class: "screen picker fills" }, [
-    el("header", { class: "topbar" }, [
-      el("h1", {}, [state.template ? "今日菜單" : "選動作"]),
-      el(
-        "button",
-        { class: "btn btn-ghost chip", onclick: () => { toggleLang(); render(); } },
-        [getLang() === "zh" ? "EN" : "中"],
-      ),
-    ]),
+    inModal
+      ? // F83：課表名 ＋「已練 N 分 · X/Y 組」＋ 右側環形進度
+        el("header", { class: "screen-head" }, [
+          el(
+            "button",
+            {
+              class: "btn icon-btn back-btn",
+              "aria-label": "回首頁",
+              onclick: () => { addPanelOpen = false; state.screen = "home"; render(); },
+            },
+            [icon("back", { size: 20, label: "回首頁" })],
+          ),
+          el("div", { class: "screen-head-text" }, [
+            el("h1", {}, [state.template.name]),
+            el("div", { class: "st" }, [
+              [elapsed, `${done}/${total} 組`].filter(Boolean).join(" · "),
+            ]),
+          ]),
+          // 動作名吃 getLang()，切換鈕若只留在自由訓練那支，用課表開練就沒地方切了
+          el(
+            "button",
+            { class: "btn btn-ghost chip lang-toggle", onclick: () => { toggleLang(); render(); } },
+            [getLang() === "zh" ? "EN" : "中"],
+          ),
+          progressRing(done, total),
+        ])
+      : el("header", { class: "topbar" }, [
+          el("h1", {}, ["選動作"]),
+          el(
+            "button",
+            { class: "btn btn-ghost chip", onclick: () => { toggleLang(); render(); } },
+            [getLang() === "zh" ? "EN" : "中"],
+          ),
+        ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...templateMenu(),
     ...(inModal
@@ -1294,25 +1524,26 @@ function renderPicker() {
             },
             ["＋ 臨時加動作"],
           ),
+          // F83：把下一步直接放在拇指旁邊——訓練中最常做的動作不該要人先讀完整份清單
+          el("div", { class: "next-up-block" }, nextUpBlock()),
+          // F29：直接從今日菜單結束訓練，不必先進 logger 才收工
+          el("button", { class: "btn btn-ghost end-workout", onclick: endWorkout }, ["結束訓練"]),
         ]
       : [
           ...exercisePickerParts(),
           el("button", { class: "btn add-custom-ex", onclick: openCustomForm }, ["＋ 自訂動作"]),
+          el("div", { class: "picker-foot" }, [
+            el(
+              "button",
+              {
+                class: "btn btn-ghost",
+                onclick: () => { addPanelOpen = false; state.screen = "home"; render(); },
+              },
+              ["← 回首頁"],
+            ),
+            el("button", { class: "btn btn-danger", onclick: endWorkout }, ["結束訓練"]),
+          ]),
         ]),
-    el("div", { class: "picker-foot" }, [
-      el(
-        "button",
-        {
-          class: "btn btn-ghost",
-          // F49：回首頁要一併關窗——訓練沒結束，回來時若還記著 addPanelOpen 就會自己彈出視窗。
-          // （進「動作表現」詳情頁的往返刻意不關：那是瀏覽中途離開，回來接續才對）
-          onclick: () => { addPanelOpen = false; state.screen = "home"; render(); },
-        },
-        ["← 回首頁"],
-      ),
-      // F29：直接從今日菜單結束訓練，不必先進 logger 才收工（與 logger「收工」同一動作）
-      el("button", { class: "btn btn-danger", onclick: endWorkout }, ["結束訓練"]),
-    ]),
     // F49：臨時加動作視窗（有課表時）
     ...(inModal && addPanelOpen ? [addExerciseModal()] : []),
     // F10：自訂動作懸浮視窗（overlay，蓋在整個選動作畫面上；F49 起也可能疊在臨時加動作視窗上，同 F25）

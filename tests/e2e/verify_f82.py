@@ -186,8 +186,13 @@ def main() -> int:
             # ⑤ 點卡片＝用那份課表開始
             highlighted.click()
             page.wait_for_timeout(1200)
+            # F83 起今日菜單的標題是課表名（不再是「今日菜單」四個字），
+            # 所以用結構定位：有動作卡＋環形進度就是進到菜單了
             shown = page.locator("h1").first.inner_text().strip()
-            check(shown == "今日菜單", f"⑤ 點卡片直接開練（{shown}）")
+            in_menu = page.locator(".menu-card").count() > 0 and (
+                page.locator(".progress-ring").count() == 1
+            )
+            check(in_menu and shown == "推胸日", f"⑤ 點卡片直接開練（標題 {shown}）")
             # 取最新那場（清單裡還有前面佈資料用的舊訓練）
             latest = max(api(base, "/api/workouts"), key=lambda w: w["id"])
             check(latest["template_id"] == second,

@@ -4,7 +4,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import DbSession, require_token
-from app.schemas import ExerciseCreate, ExerciseHistoryOut, ExerciseOut, SetOut
+from app.schemas import (
+    ExerciseCreate,
+    ExerciseHistoryOut,
+    ExerciseLastSet,
+    ExerciseOut,
+    SetOut,
+)
 from app.services import exercises as svc
 from app.services.history import exercise_history, months_ago
 
@@ -45,6 +51,21 @@ def history(
     if from_date > to_date:
         raise HTTPException(status_code=422, detail="from > to")
     return exercise_history(session, exercise_id, from_date, to_date)
+
+
+@router.get("/exercises/last-set-values", response_model=list[ExerciseLastSet])
+def last_set_values(
+    session: DbSession,
+    ids: str = Query(description="逗號分隔的 exercise id"),
+    exclude_workout: int | None = None,
+) -> list[ExerciseLastSet]:
+    """F83 今日菜單：一次取多個動作的「上次」代表值（逐個打 last-sets 會是 N 次往返）。"""
+    wanted = [int(part) for part in ids.split(",") if part.strip().isdigit()]
+    found = svc.last_set_values(session, wanted, exclude_workout_id=exclude_workout)
+    return [
+        ExerciseLastSet(exercise_id=key, weight_kg=value[0], reps=value[1])
+        for key, value in found.items()
+    ]
 
 
 @router.get("/exercises/{exercise_id}/last-sets", response_model=list[SetOut])
