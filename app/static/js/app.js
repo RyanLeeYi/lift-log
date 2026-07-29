@@ -75,6 +75,7 @@ import {
   resumeRest,
   saveActiveWorkout,
   state,
+  todayIso,
   toggleLang,
 } from "./state.js";
 
@@ -369,6 +370,7 @@ async function goPicker() {
 async function startWorkout(template) {
   const workout = await api.createWorkout(template ? { template_id: template.id } : {});
   state.workoutId = workout.id;
+  state.workoutDate = workout.date; // F90 ②：日期以伺服器建立時為準，之後不隨存檔時間改寫
   state.template = template; // 課表快照跟著這次訓練走，之後刪課表不受影響
   menuScrollTop = 0; // F48（Codex P2）：捲動位置屬於「這次訓練的菜單」——換一次訓練要從頂端開始，
   //                    否則舊偏移量會蓋在新課表上，前幾個動作被藏在捲動區上方
@@ -2190,34 +2192,71 @@ restoreActiveWorkout();
  * - 其他（含 401）：交給既有的全域 guard，這裡不動狀態
  */
 async function confirmActiveWorkout() {
-  if (!state.workoutId) return;
+  const confirming = state.workoutId; // 送出當下的 id，用來擋過期回應（Codex P1）
+  if (!confirming) return;
+
+  /** 這個回應是不是還對應「現在」這場訓練。 */
+  const stillCurrent = () => state.workoutId === confirming;
+
+  /** 快取指向的訓練不存在／不是今天 → 清掉，並把人帶離已經沒有依據的畫面。 */
+  const dropStale = (message) => {
+    clearActiveWorkout();
+    state.error = message;
+    // 只在 home 重繪是不夠的：慢網路下使用者可能已經按「繼續訓練」進了 picker，
+    // 清掉 workoutId 後留在那裡，下一次記組會送去 /api/workouts/null/sets（Codex P2）。
+    if (state.screen === "home") render();
+    else backHome();
+  };
+
   let detail;
   try {
-    detail = await api.workoutDetail(state.workoutId);
+    detail = await api.workoutDetail(confirming);
   } catch (err) {
+    if (!stillCurrent()) return; // 期間已換了一場訓練，這個 404 不是在講它
     if (err instanceof ApiError && err.status === 404) {
-      clearActiveWorkout();
-      if (state.screen === "home") render();
+      dropStale("先前的訓練已不存在，請重新開始一場");
     }
     return; // 離線／401：保留本地狀態
   }
-  const counts = {};
+  if (!stillCurrent()) return;
+
+  // ②：日期以伺服器為準。本地快取可能是遷移過來的、或跨午夜後被舊版寫歪的。
+  if (detail.date !== todayIso()) {
+    dropStale("上一場訓練是別天的，已為你收起");
+    return;
+  }
+  state.workoutDate = detail.date;
+
+  // 伺服器是基礎，離線佇列是唯一的例外——只把「確實還躺在佇列裡、屬於這場訓練」的組加回來。
+  // 反過來（本地鏡射整段覆蓋伺服器）會讓別處刪掉的組復活、改過的值退回舊快照（Codex P2）。
+  // 只取 status === "pending"：flush 成功的項目會從佇列移除，所以還留著的 pending
+  // 就等於「確實還沒送達伺服器」。**不能**改用 client_uuid 比對去重——SetOut 沒有那個欄位，
+  // 比出來全是 undefined，會把每一筆都當成新的加回去。
+  let queued = [];
+  try {
+    queued = (await listQueued()).filter(
+      (e) => e.status === "pending" && e.workout_id === confirming,
+    );
+  } catch {
+    /* 佇列讀不到就只信伺服器 */
+  }
+  if (!stillCurrent()) return;
+
   const grouped = {};
-  for (const s of detail.sets) {
-    counts[s.exercise_id] = (counts[s.exercise_id] || 0) + 1;
-    (grouped[s.exercise_id] ??= []).push(s);
+  for (const s of detail.sets) (grouped[s.exercise_id] ??= []).push(s);
+  for (const e of queued) {
+    (grouped[e.payload.exercise_id] ??= []).push(e.payload);
   }
-  // 取 max：離線佇列裡還沒送達伺服器的組，伺服器當然看不到——直接用伺服器的數字會讓
-  // 下一組的 set_number 與那些待送組撞號。往大的取，寧可跳號也不撞號。
-  const merged = { ...state.setCounts };
-  for (const [id, n] of Object.entries(counts)) {
-    merged[id] = Math.max(n, state.setCounts[id] || 0);
+  for (const arr of Object.values(grouped)) {
+    arr.sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0));
   }
-  state.setCounts = merged;
-  // 既有鏡射優先（可能含尚未上 server 的離線組），只補伺服器有、鏡射缺的動作（同 pickExercise 的規則）
-  state.doneByExercise = { ...grouped, ...state.doneByExercise };
+
+  state.doneByExercise = grouped;
+  state.setCounts = Object.fromEntries(
+    Object.entries(grouped).map(([id, arr]) => [id, arr.length]),
+  );
   saveActiveWorkout();
-  if (state.screen === "home") render();
+  render();
 }
 guard(confirmActiveWorkout);
 // F62：app 版的通知權限／精確鬧鐘狀態是非同步查詢，但 render() 是同步的——

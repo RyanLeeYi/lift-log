@@ -13,6 +13,10 @@ const LANG_KEY = "liftlog.lang"; // zh | en
 export const state = {
   screen: "home", // setup | home | templateSelect | picker | logger | templates | templateEdit | calendar | body
   workoutId: null,
+  // F90 ②：這場 workout **自己**的日期（伺服器給的），不是「上次存檔的時間」。
+  // 練過午夜時兩者會分岔——用存檔時間的話，跨日後再記一組就會把昨天那場的日期改寫成今天，
+  // 於是重載後把昨天的訓練當成今天的續接下去，組全部寫進昨天（Codex P1）。
+  workoutDate: null,
   template: null, // 開練選中的課表快照 {id, name, exercises}；刪課表不影響進行中訓練
   exercise: null, // {id, name_zh, name_en, is_bodyweight}
   weightKg: 20,
@@ -56,7 +60,7 @@ export function exerciseAlias(exercise) {
 }
 
 /** 本地日期 YYYY-MM-DD。刻意不用 toISOString——那是 UTC，台灣早上八點前會算成昨天。 */
-function todayIso() {
+export function todayIso() {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -68,7 +72,9 @@ export function saveActiveWorkout() {
     WORKOUT_KEY,
     JSON.stringify({
       workoutId: state.workoutId,
-      date: todayIso(), // F90 ②：跨日不續接的判斷依據
+      // F90 ②：存這場 workout 自己的日期。不知道時（舊資料遷移過來的）才退回今天，
+      // 但**不要**每次存檔都重寫成今天——那正是跨午夜會出事的原因。
+      date: state.workoutDate ?? todayIso(),
       template: state.template,
       setCounts: state.setCounts, // 續接恢復：重新整理後 set_number 不得與已存組撞號
       doneByExercise: state.doneByExercise, // F32：本次各動作已做組，換動作/重整後還原不丟
@@ -105,6 +111,7 @@ export function restoreActiveWorkout() {
       return;
     }
     state.workoutId = saved.workoutId;
+    state.workoutDate = saved.date || null; // 由 confirmActiveWorkout 用伺服器的 detail.date 覆蓋校正
     state.template = saved.template || null;
     state.setCounts = saved.setCounts || {};
     state.doneByExercise = saved.doneByExercise || {};
@@ -118,6 +125,7 @@ export function clearActiveWorkout() {
   localStorage.removeItem(WORKOUT_KEY);
   sessionStorage.removeItem(WORKOUT_KEY); // 遷移期的殘留也一併清掉
   state.workoutId = null;
+  state.workoutDate = null;
   state.template = null;
   state.setCounts = {}; // F90：不清會讓下一場的組號從上一場接續下去
   state.doneByExercise = {}; // F32：收工/結束訓練清掉本次各動作組的鏡射

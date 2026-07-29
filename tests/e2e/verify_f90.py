@@ -252,6 +252,90 @@ def main() -> int:  # noqa: C901
                 f"⑥ 休息倒數不在本條範圍（F66 負責）；實際欄位 {sorted(payload_keys)}",
             )
 
+            # ---------- Codex review 回歸 ----------
+            # P1-1：存的必須是「這場 workout 自己的日期」，不是「上次存檔的時間」。
+            # 練過午夜時兩者分岔——若每次存檔都寫今天，跨日後再記一組就會把昨天那場
+            # 標成今天，重載後續接下去、組全寫進昨天。
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(1500)
+            start_free_workout(page)
+            log_one_set(page)
+            page.wait_for_timeout(500)
+            wid2 = page.evaluate(
+                "async () => (await import('/js/state.js')).state.workoutId"
+            )
+            server_date = api(base, f"/api/workouts/{wid2}")["date"]
+            # 把本地日期改成昨天（模擬「這場其實是昨天開的」），再記一組觸發存檔
+            page.evaluate(
+                """([key, d]) => {
+                    const saved = JSON.parse(localStorage.getItem(key));
+                    saved.date = d;
+                    localStorage.setItem(key, JSON.stringify(saved));
+                }""",
+                [WORKOUT_KEY, (date.today() - timedelta(days=1)).isoformat()],
+            )
+            page.evaluate(
+                """async ([d]) => {
+                    const s = await import('/js/state.js');
+                    s.state.workoutDate = d;
+                    s.saveActiveWorkout();
+                }""",
+                [(date.today() - timedelta(days=1)).isoformat()],
+            )
+            kept = stored(page, "local")
+            check(
+                kept and kept.get("date") == (date.today() - timedelta(days=1)).isoformat(),
+                f"P1-1 存檔不把日期改寫成今天（實際 {kept and kept.get('date')}）",
+            )
+
+            # P1-1 續：日期是昨天就不續接，而且**不需要問伺服器**就能判斷——
+            # 這條路徑離線也要成立（健身房沒網路時同樣不該把昨天的訓練接下去）。
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+            check(
+                stored(page, "local") is None,
+                "P1-1 本地日期是昨天 → 不問伺服器就清掉（離線時同樣成立）",
+            )
+
+            # 反向：日期正常時 workoutDate 由伺服器的 detail.date 填上，不是由時鐘推。
+            start_free_workout(page)
+            log_one_set(page)
+            page.wait_for_timeout(500)
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+            confirmed_date = page.evaluate(
+                "async () => (await import('/js/state.js')).state.workoutDate"
+            )
+            check(
+                confirmed_date == server_date,
+                f"P1-1 workoutDate 來自伺服器（{confirmed_date} vs {server_date}）",
+            )
+            wid3 = page.evaluate(
+                "async () => (await import('/js/state.js')).state.workoutId"
+            )
+
+            # P2-2：本地鏡射不得覆蓋伺服器。刪掉伺服器上那組，本地鏡射仍是舊快照，
+            # 重載後該組不該復活。
+            detail2 = api(base, f"/api/workouts/{wid3}")
+            api(base, f"/api/sets/{detail2['sets'][0]['id']}", method="DELETE")
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+            mirrored = page.evaluate(
+                """async () => {
+                    const s = await import('/js/state.js');
+                    return Object.values(s.state.doneByExercise).flat().length;
+                }"""
+            )
+            check(
+                mirrored == 0,
+                f"P2-2 伺服器刪掉的組不因本地鏡射而復活（鏡射剩 {mirrored} 組，應為 0）",
+            )
+            counts_after = (stored(page, "local") or {}).get("setCounts", {})
+            check(
+                sum(counts_after.values()) == 0,
+                f"P2-2 setCounts 跟著伺服器縮回（實際 {counts_after}）",
+            )
+
             browser.close()
     finally:
         proc.terminate()
