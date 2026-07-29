@@ -244,6 +244,58 @@ def main() -> int:
             )
             check(drained == [], f"④ 補送成功後佇列清空（實際 {drained}）")
 
+            # ---------- 複審 P2：補送期間新入列的那筆不得被舊快照抹掉 ----------
+            # flushPendingEnds 在每個 await 之間都可能有新的結束事件寫進同一個 key，
+            # 用函式開頭的快照寫回會把它一起刪掉，那場的結束就永遠送不出去。
+            concurrent = page.evaluate(
+                """async () => {
+                    const q = await import('/js/queue.js');
+                    q.rememberPendingEnd(101);
+                    q.rememberPendingEnd(102);
+                    // 慢速的假 endWorkout：處理 101 的期間插進 103（模擬使用者又結束一場）
+                    const flush = q.flushPendingEnds(async (id) => {
+                      if (id === 101) {
+                        q.rememberPendingEnd(103);
+                        await new Promise((r) => setTimeout(r, 50));
+                      }
+                    });
+                    await flush;
+                    return q.listPendingEnds();
+                }"""
+            )
+            check(
+                concurrent == [103],
+                f"複審 P2 補送期間新入列的 103 必須留著（實際 {concurrent}）",
+            )
+            page.evaluate("() => localStorage.removeItem('liftlog.pendingEnds')")
+
+            # ---------- 複審 P2：重新登入後要重放佇列 ----------
+            # 401 把項目留在佇列，但重新登入既不改網路狀態也不重載頁面，
+            # 沒有既有觸發點會重放它們。
+            start_free_workout(page)
+            log_one_set(page)
+            page.wait_for_timeout(500)
+            relogin_wid = page.evaluate(
+                "async () => (await import('/js/state.js')).state.workoutId"
+            )
+            page.evaluate(
+                """async ([wid]) => {
+                    const q = await import('/js/queue.js');
+                    q.rememberPendingEnd(wid);
+                }""",
+                [relogin_wid],
+            )
+            # 清掉 token 回 setup，再重新輸入一次（不重載頁面，正是那條沒被覆蓋的路徑）
+            page.evaluate("() => localStorage.removeItem('liftlog.token')")
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_selector("input", timeout=10_000)
+            setup_and_home(page)
+            page.wait_for_timeout(2500)
+            check(
+                api(base, f"/api/workouts/{relogin_wid}")["ended_at"] is not None,
+                "複審 P2 重新登入後補送佇列被重放，伺服器收到 ended_at",
+            )
+
             browser.close()
     finally:
         proc.terminate()

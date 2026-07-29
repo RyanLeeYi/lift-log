@@ -141,23 +141,28 @@ export function listPendingEnds() {
  * 永久性 4xx（404＝workout 已被刪）就不必再送了，直接移除。
  */
 export async function flushPendingEnds(endWorkout) {
-  const remaining = [];
-  const ids = readPendingEnds();
-  for (let i = 0; i < ids.length; i += 1) {
-    const id = ids[i];
+  const done = new Set();
+
+  // 寫回時**重讀當下的清單**再扣掉已處理的，不能拿函式開頭的快照覆蓋——
+  // 每個 await 之間使用者都可能又結束一場，rememberPendingEnd() 會寫進同一個 key，
+  // 用舊快照寫回會把剛加入的那筆抹掉，那場的結束事件就永遠送不出去（Codex P2）。
+  const commit = () => writePendingEnds(readPendingEnds().filter((id) => !done.has(id)));
+
+  for (const id of readPendingEnds()) {
     try {
       await endWorkout(id);
+      done.add(id);
     } catch (err) {
       if (err && err.status === 401) {
-        writePendingEnds([...remaining, ...ids.slice(i)]); // 原封保留，重新登入後再試
+        commit(); // 已送成功的先扣掉，其餘保留給重新登入後再試
         throw err;
       }
       if (err && (err.status === 0 || err.status >= 500)) {
-        writePendingEnds([...remaining, ...ids.slice(i)]);
+        commit(); // 連不上／伺服器暫時故障：留著下次
         return;
       }
-      /* 404 等永久性 4xx：那場已經不在了，不用再送 */
+      done.add(id); // 404 等永久性 4xx：那場已經不在了，不用再送
     }
   }
-  writePendingEnds(remaining);
+  commit();
 }

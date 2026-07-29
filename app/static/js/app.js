@@ -330,6 +330,10 @@ function renderSetup() {
     state.screen = "home";
     render();
     runUpdateCheck(); // F67：剛設好 token 才查得動——開機那次在 setup 畫面必然 401
+    // F91 ④：401 會把待補送的項目留在佇列，而重新登入既不改變網路狀態、也不重載頁面，
+    // 沒有任何既有觸發點會重放它們——不在這裡補，ended_at 會一直是 null（Codex P2）。
+    // 組的佇列同理，所以整支 syncQueue 都跑。
+    guard(syncQueue);
   };
   return el("section", { class: "screen setup" }, [
     el("div", { class: "mark" }, [icon("dumbbell", { size: 44, label: "lift-log" })]),
