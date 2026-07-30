@@ -2334,7 +2334,11 @@ document.addEventListener("visibilitychange", () => {
   // 而照 README 去開精確鬧鐘的人也會看到按鈕永遠停在「可能延遲」。
   if (!document.hidden) {
     refreshRestNotifyState().then(() => {
-      if (state.screen === "home") render();
+      // ⚠ 不能只在首頁重繪。F81 把通知開關搬進**設定畫面**之後，「跑去系統設定關掉
+      // 這類通知再切回來」剛好落在唯一不重繪的畫面上——開關繼續顯示舊狀態，
+      // 上面那條 F62 review HIGH 就這樣悄悄復活了（2026-07-30 真機實測抓到）。
+      // 兩個畫面都會顯示這些狀態，兩個都要更新。
+      if (state.screen === "home" || state.screen === "settings") render();
     });
   }
 });

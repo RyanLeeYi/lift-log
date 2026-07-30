@@ -59,7 +59,7 @@ window.Capacitor = {{
       checkPermissions: async () => ({{ display: 'granted' }}),
       requestPermissions: async () => ({{ display: 'granted' }}),
       areEnabled: async () => ({{ value: true }}),
-      listChannels: async () => ({channels_js}),
+      listChannels: async () => (window.__channels || {channels_js}),
     }},
     RestTimer: {{
       start: async () => ({{ started: true }}),
@@ -179,6 +179,20 @@ def run_checks(base: str) -> None:
         check(
             "休息提醒：關" in toggle_label(page),
             "③ 回歸 F65：default importance=0 仍然要顯示「關」",
+        )
+        ctx.close()
+
+        # 回前景要重查——而且**在設定畫面上也要重繪**。
+        # F81 把開關搬進設定畫面後，原本「只有首頁重繪」的條件剛好蓋不到它：
+        # 使用者跑去系統設定關掉這類通知、切回來，開關繼續顯示舊狀態（真機實測抓到）。
+        ctx, page = open_app(browser, base, BOTH_OK)
+        check("休息提醒：開" in toggle_label(page), "前提：一開始顯示「開」（人在設定畫面）")
+        page.evaluate(f"() => {{ window.__channels = {TIMER_MUTED}; }}")
+        page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
+        page.wait_for_timeout(900)
+        check(
+            "休息提醒：關" in toggle_label(page),
+            f"切回前景後，設定畫面上的開關要跟著更新（實際：{toggle_label(page)}）",
         )
         ctx.close()
 
