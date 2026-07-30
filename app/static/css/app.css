@@ -1439,7 +1439,12 @@ body {
   border-top: 1px solid var(--line); padding-top: 12px;
 }
 .tpl-item-rest .sub { font-size: 13px; color: var(--text-mute); margin-right: 2px; }
-.tpl-item-rest .chip.on { color: var(--accent); font-weight: 600; }
+/* ⚠ 一定要連 background 一起覆寫。全域 .chip.on 會上琥珀色**底**，只改文字色就是
+   琥珀字配琥珀底＝字整個消失（真機截圖才看出來，因為 E2E 只問了我自己設的那個色，
+   沒問它與背景的對比——那正是「檢查自己設的值」型的假綠）。 */
+.tpl-item-rest .chip.on {
+  background: transparent; color: var(--accent); font-weight: 600;
+}
 
 /* ⑤ 「＋ 加動作」：透明底＋細框，與下方的實心「儲存課表」分出主次 */
 .tpl-add-open {

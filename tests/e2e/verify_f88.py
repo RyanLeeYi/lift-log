@@ -137,8 +137,13 @@ def run_checks(base: str) -> None:  # noqa: C901
         rest.locator("button").filter(has_text="90s").first.click()
         page.wait_for_timeout(500)
         on_color = css(page, ".tpl-item-rest .chip.on", "color")
+        on_bg = css(page, ".tpl-item-rest .chip.on", "backgroundColor")
         accent = css(page, ".btn-primary", "backgroundColor")
         check(on_color == accent, f"④ 選中的秒數用 --accent 字（{on_color} vs {accent}）")
+        # ⚠ 只驗文字色會漏掉「琥珀字配琥珀底、字整個消失」——真機截圖抓到的。
+        # 條文要的是「--accent 字」，那就必須看得見，所以字色與底色不能相同。
+        check(on_bg != on_color,
+              f"④ 選中的秒數看得見（字 {on_color} 不等於底 {on_bg}）")
 
         # ⑤ 加動作鈕
         check(css(page, ".tpl-add-open", "backgroundColor") in ("rgba(0, 0, 0, 0)", "transparent"),
