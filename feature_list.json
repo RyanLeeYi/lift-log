@@ -1785,6 +1785,14 @@
         "android-device"
       ],
       "acceptance": "（2026-07-30 F65 的 code review 發現，同日 Ryan 簽核凍結）\n① 背景：F65 ② 凍結時寫的是「Capacitor 的 default channel」，但**使用者實際看到、也實際會去長按的那則通知不在那個 channel 上**。F63 之後休息倒數由前景服務負責（`RestTimerService`，channel id `rest-timer`、顯示名「休息倒數」、IMPORTANCE_LOW），F62 的 default channel 只是它啟不動時的退路。\n② 後果：長按通知列的休息倒數選「關閉這類通知」→ 系統把 `rest-timer` 設成 IMPORTANCE_NONE → `areEnabled()` 仍 true、default channel 也仍正常 → 開關顯示「開」→ 前景服務照跑但通知不顯示、歸零也看不到。**F65 想消滅的靜默失敗，在主要路徑上原封不動。**\n③ 要做的事：把 `rest-timer` channel 的 importance 一併納入 granted 判定（與 F65 的 default channel 同一套規則：查不到不算被關、拋錯退回 areEnabled）。\n④ E2E 補回歸情境：app 層允許 ＋ default channel 正常 ＋ `rest-timer` importance=0 → 顯示「關」。F65 的 verify_f65.py 沒有這條（假 plugin 沒有 RestTimer，測到的一律是 F62 退路）。\n⑤ 提示文案要能指到對的地方，但**不要寫死類別名稱**——default 在系統設定顯示為 Capacitor 寫死的「Default」、前景服務那則叫「休息倒數」，講錯名字會讓人在正確的頁面上找不到東西。可考慮改用 ACTION_CHANNEL_NOTIFICATION_SETTINGS 直接深連到該 channel。\n⑥ 真機驗：長按休息倒數通知 →「關閉這類通知」→ 回 app 確認開關變「關」並給引導。"
+    },
+    {
+      "id": "F96",
+      "name": "編輯課表拿掉第一張動作卡的高亮",
+      "status": "failing",
+      "evidence": "",
+      "touches": [],
+      "acceptance": "（2026-07-30 Ryan 選項 1，待簽核）\n① 背景：F88 ② 訂「每個動作一張卡；第一張（或選中的）用 --card-hi 底」，實作成 `index === 0` 上高亮。但編輯課表**沒有「選中」這個概念**——第一個動作並不特別，它只是排在第一。那個高亮因此是純裝飾，而且會誤導（看起來像被選起來或是主要動作）。對照組是挑今日課表：那裡的高亮有意義（今天排到的那份），這裡沒有。\n② 拿掉 `.tpl-item.hi`：六張動作卡一律 --card 底，視覺一致。\n③ 不新增替代的高亮機制。若之後真的做出「選中／正在編輯」的狀態，再回頭談要不要用底色表示——現在沒有那個狀態，就不要先畫一個假的。\n④ F88 ② 的「第一張（或選中的）用 --card-hi」標 superseded_by 本條；F88 的其餘條文（卡片、圓鈕、圖示、參考休息、加動作鈕、底部按鈕、觸控目標）全部不變。\n⑤ verify_f88 的「② 第一張用 --card-hi 站出來」那條斷言跟著改成「六張卡底色一致」——驗的是新條文的目的，不是把斷言刪掉。\n⑥ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f88.py 全過；F21／F51／F52 的行為不回歸（清單捲動、按鈕貼底）。"
     }
   ]
 }
