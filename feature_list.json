@@ -1766,11 +1766,11 @@
     },
     {
       "id": "F94",
-      "name": "修復 F81 之後失效的 F48–F60 E2E 腳本",
+      "name": "E2E 隔離區復活：13 支腳本換共用進入點 ＋ 暫存 DB 移出 repo",
       "status": "failing",
       "evidence": "",
       "touches": [],
-      "acceptance": "（2026-07-30 F93 驗收發現，待簽核）\n① 背景：F81「重建首頁並拆出設定畫面」(5a72c95, 2026-07-29) 移除了首頁的 `.home-start` 元素，但 tests/e2e/verify_f48.py–verify_f60.py 共 13 支仍以 `.home-start` 當進入點，全部在 wait_for_selector 逾時失敗。這批從 F81 起就是壞的，不是 F93 造成的回歸。\n② 逐支改用現行首頁的實際進入點（不是把斷言刪掉或放寬——要驗的行為不變，只換選取器）。\n③ 完成後 tests/e2e/verify_f4*.py–verify_f6*.py 全數 exit 0。\n④ 找出「E2E 腳本會隨 UI 改版靜默失效」的防呆做法並提案（例如共用的頁面進入點 helper，改一處即可），寫進提案不強制實作。"
+      "acceptance": "（2026-07-30 Ryan 簽核凍結；B 案——只讓腳本重新跑得起來，不管改版後的畫面）\n① 背景一：F81「重建首頁並拆出設定畫面」(5a72c95, 2026-07-29) 移除了首頁的 `.home-start`，但 tests/e2e/verify_f48.py–verify_f60.py 共 13 支仍以它當進入點，全部 wait_for_selector 逾時。這批自 F81 起就是壞的，不是後續 feature 造成的回歸——F93 驗收為此耗掉一輪重新調查，這條的存在理由就是止住那個重複成本。\n② 13 支改用 `verify_f67` 的共用啟動 helper，`.home-start` 換成 `start_from_home()`，刪掉各自帶的啟動樣板。**只換進入點與樣板，不動任何斷言**——要驗的行為完全不變，更不改 F48–F60 各自凍結的 acceptance。\n③ 範圍界線（與 F86–F88 的分工）：這條只負責「跑得起來」。腳本對**改版後**的動作表現／體重／編輯課表畫面是否成立，仍分別留在 F86 ⑩、F87 ⑭、F88 ⑩，那三條的條文不因本條改寫。所以本條完成時，13 支要在**現行（改版前）畫面**上全部 exit 0。\n④ 暫存 DB 移出 repo：E2E 腳本建立的測試 DB 一律改建在系統暫存目錄，不再落在 repo 根目錄。背景——repo 根曾累積 12 顆測試 DB ＋ 2 個空目錄（7/17 起）。**原因不是忘了寫清理，是 Windows 檔案鎖**：`proc.terminate()` 後 uvicorn 握把還沒放掉，`unlink` 丟 `PermissionError`。f85 是 `except PermissionError: pass` 直接放過，f90–f92 改成重試 10 次×0.3 秒（較好但仍會漏）。移到系統暫存目錄後，漏刪的檔案由 OS 回收，不再污染工作樹（也不再有被 `git add -A` 掃進 commit 的風險）。\n⑤ ④ 要套用到**所有**會建 DB 的 E2E 腳本，不只這 13 支；改法收斂在共用 helper 一處，不要每支各寫一份。\n⑥ 防呆提案（寫進 `tests/e2e/README.md`，不強制實作）：怎麼讓「E2E 腳本隨 UI 改版靜默失效」下次能被更早發現。共用進入點 helper 已經是其中一半（改一處即可），另一半是偵測機制——例如定期全量跑一次、或讓長期失敗的腳本無法被當成「既有債」無限期擱置。\n⑦ 驗收：ruff clean；`tests/e2e/verify_f48.py`–`verify_f60.py` 全數 exit 0（逐支貼輸出）；跑完後 `git status --short` 乾淨、repo 根目錄沒有新增 `.db` 檔；抽驗至少 3 支已通過的既有腳本（如 f90/f91/f92）確認 ④ 的改動沒有讓它們回歸。"
     }
   ]
 }
