@@ -167,7 +167,7 @@ def main() -> int:
             page.wait_for_timeout(1200)
             check(page.locator(".exercise-detail").count() == 1,
                   "F38 入口真的進得去動作表現頁")
-            page.locator(".ex-back").click()
+            page.locator(".exercise-detail .back-btn").click()
             page.wait_for_timeout(1000)
 
             # 有課表時也要有中／EN 切換（改版第一版只留在自由訓練那支，review MEDIUM-2）

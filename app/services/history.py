@@ -25,9 +25,13 @@ def months_ago(d: date, n: int) -> date:
 
 
 def _all_time_prs(session: Session, exercise_id: int) -> PrSummary:
-    """全期（不限日期）單組最大 weight_kg、與單組最大 weight_kg×reps。無資料為 None。"""
+    """全期（不限日期）的個人紀錄。無資料時各欄位為 None。
+
+    F86 ② 起共四項：單組最重、單組最大量、推估 1RM、單次訓練總量。
+    四項都刻意不看 from/to——PR 卡講的是「歷來最好」，用區間值填會是靜默的謊。
+    """
     rows = session.execute(
-        select(WorkoutSet.weight_kg, WorkoutSet.reps).where(
+        select(WorkoutSet.workout_id, WorkoutSet.weight_kg, WorkoutSet.reps).where(
             WorkoutSet.exercise_id == exercise_id,
             WorkoutSet.deleted_at.is_(None),
         )
@@ -36,9 +40,23 @@ def _all_time_prs(session: Session, exercise_id: int) -> PrSummary:
         return PrSummary(top_weight=None, top_set_volume=None)
     top_weight = max(rows, key=lambda r: r.weight_kg)
     top_volume = max(rows, key=lambda r: r.weight_kg * r.reps)
+
+    # Epley：w × (1 + reps/30)。勝出的不一定是最重那組——這正是這張卡的用處
+    # （100×12 推估 140，勝過 120×2 的 128）。
+    top_est_1rm = max(r.weight_kg * (1 + r.reps / 30) for r in rows)
+
+    # 單次量＝一次訓練的總量，不是單組量。⚠ 這裡是**原始** weight×reps：
+    # 自體重動作的「有效重量」要加上當下體重，而體重是前端才知道的資料
+    # （日曆與歷來紀錄卡的噸位都在前端加）。兩邊因此會有落差，是已知的。
+    per_workout: dict[int, float] = {}
+    for r in rows:
+        per_workout[r.workout_id] = per_workout.get(r.workout_id, 0.0) + r.weight_kg * r.reps
+
     return PrSummary(
         top_weight=PrEntry(weight_kg=top_weight.weight_kg, reps=top_weight.reps),
         top_set_volume=PrEntry(weight_kg=top_volume.weight_kg, reps=top_volume.reps),
+        top_est_1rm=top_est_1rm,
+        top_session_volume=max(per_workout.values()),
     )
 
 

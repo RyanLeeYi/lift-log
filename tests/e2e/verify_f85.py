@@ -498,12 +498,16 @@ def main() -> int:  # noqa: C901, PLR0915
                     page.wait_for_timeout(1600)
                     break
             check(page.locator(".exercise-detail").count() == 1, "⑩ 進得去動作表現頁")
-            tag4, d4 = chevron_of(page.locator(".ex-mhead .car"))
-            check(tag4 == "svg" and d4 in (CHEVRON_DOWN, CHEVRON_RIGHT),
-                  f"⑩ 動作表現頁的月份指示符是 chevron svg（{tag4} / {d4}）")
+            # F86 取代：動作表現頁的月份摺疊已經拿掉（改成一次訓練一張卡），
+            # 所以這裡不再有月份指示符可驗。⑩ 的目的是「展開指示符不用幾何字元」，
+            # 剩下的兩處（日曆、體重）仍在上面驗過——不是放寬，是這一處不存在了。
+            check(page.locator(".ex-mhead").count() == 0,
+                  "⑩ 動作表現頁已無月份摺疊（F86 改成一次訓練一張卡）")
+            check(not any(ch in page.locator(".exercise-detail").inner_text() for ch in "▸▾▴◂"),
+                  "⑩ 動作表現頁沒有幾何字元指示符殘留")
 
             # ⑨ logger 側的 🗑 不受這次改版影響（規格明說「logger 側的 🗑 不動」）
-            page.locator(".ex-back").click()
+            page.locator(".exercise-detail .back-btn").click()
             page.wait_for_timeout(800)
             page.get_by_role("button", name="回首頁").first.click()
             page.wait_for_timeout(900)

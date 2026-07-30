@@ -313,6 +313,10 @@ class PrEntry(BaseModel):
 class PrSummary(BaseModel):
     top_weight: PrEntry | None  # 全期單組最大 weight_kg
     top_set_volume: PrEntry | None  # 全期單組最大 weight_kg × reps
+    # F86 ②：PR 卡改成三張，這兩個是新的。都是**全期**值——
+    # 從畫面當下的區間去算等於把「這三個月最好的一次」當成個人紀錄顯示。
+    top_est_1rm: float | None = None  # Epley：max(w × (1 + reps/30))
+    top_session_volume: float | None = None  # 單次訓練總量 Σ(w × reps) 的全期最大值
 
 
 class HistorySet(BaseModel):

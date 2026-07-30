@@ -206,9 +206,13 @@ def rendered_checks(page, base: str) -> None:
     for label in ("日曆", "表現", "體重"):  # F81：底部四格導覽（「動作表現」縮寫成「表現」）
         page.locator(".bottom-nav .nav-item", has_text=label).click()
         page.wait_for_timeout(800)
+        # F86 ③：動作表現的時間窗收成五顆等寬藥丸後，那頁不再需要 allow_narrow 例外。
+        # /body 還是八顆（F87 才改版），所以例外**只留給體重頁**——留成全域的話，
+        # 之後 /body 改完也沒人會記得拿掉，例外就永久化了。
         small = undersized(
             page,
-            allow_narrow={"1M", "3M", "6M", "9M", "1Y", "2Y", "3Y"},
+            allow_narrow={"1M", "3M", "6M", "9M", "1Y", "2Y", "3Y", "自訂"}
+            if label == "體重" else None,
             skip_class="cal-day" if label == "日曆" else None,
         )
         check(not small, f"⑦ {label}頁觸控區 ≥44px（不足：{small}）")

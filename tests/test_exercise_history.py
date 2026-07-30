@@ -223,3 +223,61 @@ class TestFirstSessionDate:
 
         out = exercise_history(db_session, ex.id, date(2026, 1, 1), date(2026, 12, 31))
         assert out.first_session_date == date(2026, 7, 1)
+
+
+# ---------- F86 ②：PR 卡改成「推估 1RM／最重／單次量」三張 ----------
+#
+# 前兩張現有欄位就有；「推估 1RM」與「單次量」得補。都要是**全期**值——
+# 從畫面當下的區間去算，等於把「這三個月最好的一次」當成個人紀錄顯示，是靜默的謊。
+
+
+def test_history_prs_include_all_time_estimated_1rm(db_session: Session) -> None:
+    """推估 1RM 用 Epley（w × (1 + reps/30)），取全期所有組的最大值。
+
+    ⚠ 勝出的那一組**不一定**是最重的那組——這正是這個欄位存在的理由。
+    """
+    squat = _seed(db_session)
+    # 60×20 → 100.0；不是最重（120）也不是最大單組量（750），但 1RM 推估最高的是 120×2＝128
+    result = exercise_history(db_session, squat.id, date(2026, 7, 1), date(2026, 7, 31))
+    assert result.prs.top_est_1rm == pytest.approx(128.0)  # 120 × (1 + 2/30)
+
+    # 換一組讓「最重」與「推估 1RM」分家：100×12 → 140，勝過 120×2 的 128
+    w3 = Workout(date=date(2026, 7, 20))
+    db_session.add(w3)
+    db_session.flush()
+    db_session.add(
+        WorkoutSet(
+            client_uuid="uuid-1rm", workout_id=w3.id, exercise_id=squat.id,
+            set_number=1, weight_kg=100.0, reps=12,
+        )
+    )
+    db_session.commit()
+    result = exercise_history(db_session, squat.id, date(2026, 7, 1), date(2026, 7, 31))
+    assert result.prs.top_est_1rm == pytest.approx(140.0)  # 100 × (1 + 12/30)
+    assert result.prs.top_weight.weight_kg == 120.0  # 最重那張卡不受影響
+
+
+def test_history_prs_include_all_time_best_session_volume(db_session: Session) -> None:
+    """單次量＝一次訓練的總量（Σ weight×reps）中的全期最大值，不是單組量。"""
+    squat = _seed(db_session)
+    result = exercise_history(db_session, squat.id, date(2026, 7, 1), date(2026, 7, 31))
+    # 4/10：240；7/10：640＋750＝1390；7/16：510＋500＝1010（軟刪那組不計）
+    assert result.prs.top_session_volume == pytest.approx(1390.0)
+
+
+def test_history_new_prs_are_all_time_not_range_limited(db_session: Session) -> None:
+    """區間內完全沒有資料時，兩個新欄位仍要有值（與既有 PR 欄位同語意）。"""
+    squat = _seed(db_session)
+    result = exercise_history(db_session, squat.id, date(2026, 1, 1), date(2026, 1, 31))
+    assert result.sessions == []
+    assert result.prs.top_est_1rm == pytest.approx(128.0)
+    assert result.prs.top_session_volume == pytest.approx(1390.0)
+
+
+def test_history_no_data_new_prs_are_null(db_session: Session) -> None:
+    empty = Exercise(name_zh="臥推", name_en="Bench Press", muscle_group="胸")
+    db_session.add(empty)
+    db_session.commit()
+    result = exercise_history(db_session, empty.id, date(2026, 7, 1), date(2026, 7, 31))
+    assert result.prs.top_est_1rm is None
+    assert result.prs.top_session_volume is None

@@ -1,5 +1,5 @@
-// F36 動作詳情頁：曲線（最重重量／最重總訓練量，時間窗＋自訂區間＋折點自動疏密）＋全期 PR。
-// 歷來紀錄清單由 F37 補在 .ex-hist 容器。資料源＝GET /api/exercises/{id}/history（F35）。
+// 動作表現頁（F36 起，F86 改版）：三張全期 PR 卡 ＋ 五檔時間窗 ＋ 每次最佳組長條圖 ＋ 歷來紀錄卡。
+// 資料源＝GET /api/exercises/{id}/history（F35；F86 起 prs 多了 top_est_1rm 與 top_session_volume）。
 
 import { api } from "./api.js";
 import { el } from "./dom.js";
@@ -11,25 +11,21 @@ const detail = {
   exerciseId: null,
   exercise: null, // {id, name_zh, name_en}
   returnScreen: "picker", // 返回目的地（F38 兩入口各自帶入）
-  metric: "w", // w＝最重重量（不乘次數）／v＝最重總訓練量（單組 weight×reps）
-  range: { kind: "preset", months: 3 }, // 或 {kind:"custom", from, to}
+  range: { kind: "preset", months: 3 }, // months=null＝「全部」
   rangeNote: null, // F59：點到停用檔位時的一次性說明（初次退檔是靜默的，同 F58 的 openBody）
-  data: { prs: { top_weight: null, top_set_volume: null }, sessions: [] },
-  customOpen: false,
-  customFrom: "",
-  customTo: "",
-  expandedMonths: new Set(), // F37：歷來紀錄展開中的月份 key（載入時預設近 3 個月）
+  data: { prs: {}, sessions: [] },
   bodyweight: 0, // F37：自體重動作噸位用（取最新體重，同日曆的近似）
 };
 
 // ⚠ 必須由短到長遞增：longestAvailablePreset() 取 filter 後的最後一個當「最長可用」。
 // ⚠ 這份與 body.js 的 PRESETS／presetAvailable／longestAvailablePreset **是同一套規則的第二份拷貝**
 //   （F58 在 body.js、F59 複製到這裡）。改任一邊都要改另一邊；抽成共用模組的提案見 session-handoff。
+// F86 ③：五顆等寬藥丸。9M/2Y/3Y 與「自訂」一起拿掉（D2 簽核）——
+// 七顆＋自訂擠在 390px 寬度上，每顆連 44px 的觸控目標都做不到。
+// ALL 用 months=null 表示「全部」：datesFor 會退到最早訓練日。
 const PRESETS = [
-  ["1M", 1], ["3M", 3], ["6M", 6], ["9M", 9], ["1Y", 12], ["2Y", 24], ["3Y", 36],
+  ["1M", 1], ["3M", 3], ["6M", 6], ["1Y", 12], ["全部", null],
 ];
-const METRICS = { w: { lbl: "最重重量", u: "kg" }, v: { lbl: "最重總訓練量", u: "kg" } };
-const BUCKET_CAP = 16; // 折點上限；超過就聚合每週／每月最佳
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -44,8 +40,12 @@ function monthsAgo(d, n) {
 }
 
 function datesFor(range) {
-  if (range.kind === "custom") return { from: range.from, to: range.to };
   const today = new Date();
+  // 「全部」：從最早訓練日起。還不知道最早日（第一次開頁）時退到一個夠早的日期，
+  // 不用 null——後端的 from 是必填，少一個參數會變成 422。
+  if (range.months === null) {
+    return { from: detail.data.first_session_date || "2000-01-01", to: iso(today) };
+  }
   return { from: iso(monthsAgo(today, range.months)), to: iso(today) };
 }
 
@@ -53,11 +53,12 @@ function datesFor(range) {
 // 可用 =「檔位起始日 ≥ 最早訓練日」或「它是第一個完整涵蓋所有資料的檔位」；沒有紀錄時不限制。
 // 後者的例外是必要的：否則資料 100 天時最大只能選 3M，最舊 10 天用任何 preset 都看不到（只能自訂）。
 function presetAvailable(months) {
+  if (months === null) return true; // 「全部」永遠可用——它的定義就是資料的全長
   const first = detail.data.first_session_date;
   if (!first) return true;
   const startOf = (m) => iso(monthsAgo(new Date(), m));
   if (startOf(months) >= first) return true;
-  const covering = PRESETS.map(([, m]) => m).filter((m) => startOf(m) < first);
+  const covering = PRESETS.map(([, m]) => m).filter((m) => m !== null && startOf(m) < first);
   return covering.length > 0 && months === covering[0];
 }
 
@@ -77,9 +78,6 @@ async function loadRange(newRange) {
   if (seq !== reqSeq) return; // 較舊但較慢的回應——丟棄
   detail.range = newRange;
   detail.data = data;
-  // F37：每次換區間重設月份展開＝近 3 個月自動攤開
-  const months = [...new Set(data.sessions.map((s) => s.date.slice(0, 7)))].sort().reverse();
-  detail.expandedMonths = new Set(months.slice(0, 3));
 }
 
 export function detailReturnScreen() {
@@ -91,12 +89,8 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
   detail.exerciseId = exercise.id;
   detail.exercise = exercise;
   detail.returnScreen = returnScreen;
-  detail.metric = "w";
   detail.range = { kind: "preset", months: 3 };
-  detail.data = { prs: { top_weight: null, top_set_volume: null }, sessions: [] }; // 清掉上一個動作殘留
-  detail.customOpen = false;
-  detail.customFrom = "";
-  detail.customTo = "";
+  detail.data = { prs: {}, sessions: [] }; // 清掉上一個動作殘留
   // 自體重動作：取最新體重，噸位才不會把引體向上算成 0（同日曆 set_tonnage 的近似）
   detail.bodyweight = 0;
   if (exercise.is_bodyweight) {
@@ -128,113 +122,121 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
       ...detail.data,
       sessions: detail.data.sessions.filter((x) => x.date >= from),
     };
-    // 與 loadRange 一致：換區間後重設月份展開＝近 3 個月自動攤開
-    const ms = [...new Set(detail.data.sessions.map((x) => x.date.slice(0, 7)))].sort().reverse();
-    detail.expandedMonths = new Set(ms.slice(0, 3));
   }
 }
 
-// ---------- 指標與折點疏密 ----------
+// ---------- F86：每次最佳組 ----------
 
-const metricOf = {
-  w: (s) => Math.max(...s.sets.map((x) => x.weight_kg)),
-  v: (s) => Math.max(...s.sets.map((x) => x.weight_kg * x.reps)),
-};
-
-function isoWeekKey(dateStr) {
-  const d = new Date(dateStr);
-  const jan1 = new Date(d.getFullYear(), 0, 1);
-  return `${d.getFullYear()}-W${Math.floor((d - jan1) / 6048e5)}`;
+// 一次訓練的「最佳組」＝重量最大者；同重量取次數多的。
+// ⚠ 這是整個畫面的軸心（長條圖的高度、chip 的獎盃、右上角的最大值都問它），
+// 所以只能有一個定義。先前 dayBlock 自己用 `Math.max(weight)` 判當日最重，
+// 遇到同重量不同次數會同時標兩顆——那不是「最佳組」，是「最重的重量」。
+function bestSet(session) {
+  return session.sets.reduce((a, b) => {
+    if (b.weight_kg !== a.weight_kg) return b.weight_kg > a.weight_kg ? b : a;
+    return b.reps > a.reps ? b : a;
+  });
 }
 
-// 回 {gran, pts:[{x,v}]}；折點數控制在 BUCKET_CAP 內
-function buckets(sessions) {
-  const fn = metricOf[detail.metric];
-  const pts = sessions.map((s) => ({ x: s.date.slice(5), v: fn(s), date: s.date }));
-  if (pts.length <= BUCKET_CAP) return { gran: "每次訓練", pts };
-  for (const [keyer, label] of [[isoWeekKey, "每週最佳"], [(d) => d.slice(0, 7), "每月最佳"]]) {
-    const map = new Map();
-    for (const p of pts) {
-      const k = keyer(p.date);
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push(p);
-    }
-    if (map.size <= BUCKET_CAP || label === "每月最佳") {
-      const agg = [...map.values()].map((g) => ({
-        x: g[g.length - 1].x,
-        v: Math.max(...g.map((p) => p.v)),
-      }));
-      return { gran: label, pts: agg };
-    }
-  }
-  return { gran: "每次訓練", pts };
+function sessionTonnage(session) {
+  // 自體重動作以（最新體重＋額外負重）計，同日曆 set_tonnage 規則
+  const bw = detail.exercise?.is_bodyweight && detail.bodyweight ? detail.bodyweight : 0;
+  return session.sets.reduce((a, x) => a + (x.weight_kg + bw) * x.reps, 0);
 }
 
 // ---------- render ----------
 
-// kind："weight"＝主值顯示重量；"volume"＝主值顯示 weight×reps（總訓練量）
-function prCard(k, entry, kind) {
-  let v = "—", u = "";
-  if (entry) {
-    if (kind === "weight") {
-      v = String(entry.weight_kg);
-      u = `kg × ${entry.reps}`;
-    } else {
-      v = String(entry.weight_kg * entry.reps);
-      u = `kg (${entry.weight_kg}×${entry.reps})`;
-    }
+function fmtNum(v) {
+  // 26px 的數字欄位放不下無意義的小數：整數就不補 .0
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+function prCards() {
+  const prs = detail.data.prs || {};
+  const top = prs.top_weight;
+  const cards = [
+    // 主卡（--card-hi 底 ＋ --accent 數字）：推估 1RM 是三者中最能一眼看出進步的
+    ["推估 1RM", prs.top_est_1rm == null ? "—" : fmtNum(Math.round(prs.top_est_1rm)), "", true],
+    ["最重", top ? fmtNum(top.weight_kg) : "—", "", false],
+    [
+      "單次量",
+      prs.top_session_volume == null ? "—" : fmtNum(Math.round(prs.top_session_volume / 100) / 10),
+      "t",
+      false,
+    ],
+  ];
+  return el(
+    "div",
+    { class: "pr-cards" },
+    cards.map(([label, value, unit, hi]) =>
+      el("div", { class: `pr-card${hi ? " hi" : ""}` }, [
+        el("div", { class: "pr-k" }, [label]),
+        el("div", { class: "pr-v" }, [value, ...(unit ? [el("span", { class: "pr-u" }, [unit])] : [])]),
+      ]),
+    ),
+  );
+}
+
+/**
+ * 每次最佳組長條圖。
+ *
+ * 高度＝值／最大值，所以最高那根一定滿格——這是設計稿的規則，代價是「全部都很接近」
+ * 時看起來差距被放大。可接受：這張圖要回答的是「有沒有在進步」，不是絕對值比較
+ * （絕對值在右上角與 chips 上都有）。
+ *
+ * PR 那次的判定用**累進**最佳（到那次為止的最高），不是「等於全期最大值」——
+ * 後者只會標到最後一次，而設計稿裡的星號是一路上的每一次突破。
+ */
+function barChart() {
+  const sessions = detail.data.sessions;
+  if (!sessions.length) {
+    return el("div", { class: "bars-card" }, [
+      el("p", { class: "bars-empty" }, ["這個區間內沒有紀錄"]),
+    ]);
   }
-  return el("div", { class: "pr" }, [
-    el("div", { class: "k" }, [k]),
-    el("div", { class: "v" }, [v]),
-    el("div", { class: "u" }, [u]),
+  const points = sessions.map((s) => ({ date: s.date, best: bestSet(s) }));
+  const max = Math.max(...points.map((x) => x.best.weight_kg));
+  let running = -Infinity;
+  for (const point of points) {
+    point.isPr = point.best.weight_kg > running;
+    if (point.isPr) running = point.best.weight_kg;
+  }
+  const monthOf = (d) => `${+d.slice(5, 7)}月`;
+  return el("div", { class: "bars-card" }, [
+    el("div", { class: "bars-head" }, [
+      el("span", { class: "bars-title" }, ["每次最佳組"]),
+      el("span", { class: "bars-max" }, [`${fmtNum(max)} kg`]),
+    ]),
+    el(
+      "div",
+      { class: "bars" },
+      points.map((point) =>
+        el("div", { class: "bar-col" }, [
+          // ⚠ 獎盃那一列**每一欄都要有**（非 PR 的隱藏起來）。只在 PR 欄放的話，
+          // 有獎盃的欄可用高度少 12px，最高那根被擠短，長條比例就不再是「值／最大值」
+          // ——60/75 會量到 0.88 而不是 0.80。這是實際量出來才發現的。
+          el("span", { class: `bar-flag${point.isPr ? " on" : ""}` },
+            [icon("trophy", { size: 9, label: point.isPr ? "個人紀錄" : "" })]),
+          // 長條放在自己的軌道裡，百分比才是「值／最大值」——直接掛在 bar-col 上的話
+          // 100% 會連同獎盃列一起超出欄高，被 flex 壓縮，最高那根反而變矮（比例失真）
+          el("div", { class: "bar-track" }, [
+            el("div", {
+              class: `bar${point.isPr ? " pr" : ""}`,
+              // 高度用 style 而非 class：值是連續的，沒辦法用固定幾檔 class 表達
+              style: `height:${Math.max(4, (point.best.weight_kg / max) * 100)}%`,
+              "aria-label": `${point.date} 最佳組 ${point.best.weight_kg}kg × ${point.best.reps}`,
+            }, []),
+          ]),
+        ]),
+      ),
+    ),
+    el("div", { class: "bars-foot" }, [
+      el("span", {}, [monthOf(points[0].date)]),
+      el("span", { class: "bars-legend" }, [icon("trophy", { size: 9 }), "個人紀錄"]),
+      el("span", {}, [monthOf(points[points.length - 1].date)]),
+    ]),
   ]);
 }
-
-function drawChart(container, capNow, capGran) {
-  const { gran, pts } = buckets(detail.data.sessions);
-  const d = pts.map((p) => p.v);
-  const xs = pts.map((p) => p.x);
-  capGran.textContent = pts.length ? `· ${gran} · ${pts.length} 點` : "";
-  if (!d.length) {
-    container.innerHTML = "";
-    container.append(el("p", { class: "ex-chart-empty" }, ["這個區間內沒有紀錄"]));
-    capNow.textContent = "—";
-    return;
-  }
-  capNow.textContent = String(d[d.length - 1]);
-  const W = 330, H = 150, padL = 30, padR = 8, padT = 12, padB = 22;
-  const min = Math.min(...d), max = Math.max(...d);
-  const lo = min - (max - min) * 0.15 - 0.1, hi = max + (max - min) * 0.15 + 0.1;
-  const X = (i) => padL + (W - padL - padR) * (d.length < 2 ? 0.5 : i / (d.length - 1));
-  const Y = (v) => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
-  const P = d.map((v, i) => [X(i), Y(v)]);
-  const line = P.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  const area = line + ` L${X(d.length - 1).toFixed(1)} ${H - padB} L${padL} ${H - padB} Z`;
-  let g = "";
-  for (let k = 0; k <= 2; k++) {
-    const v = lo + (hi - lo) * k / 2, y = Y(v);
-    g += `<line class="ex-grid" x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"/>`;
-    g += `<text class="ex-axis" x="0" y="${(y + 3).toFixed(1)}">${Math.round(v)}</text>`;
-  }
-  const idxs = [...new Set(d.length <= 5 ? d.map((_, i) => i) : [0, Math.floor(d.length / 2), d.length - 1])];
-  let xl = "";
-  for (const i of idxs) {
-    xl += `<text class="ex-axis" x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${xs[i]}</text>`;
-  }
-  const idxBest = d.indexOf(Math.max(...d));
-  const dots = P.map((p, i) =>
-    `<circle class="ex-dot${i === idxBest ? " pr" : ""}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(i === d.length - 1 || i === idxBest) ? 4 : (d.length > 14 ? 1.8 : 2.5)}"/>`,
-  ).join("");
-  container.innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}">` +
-    `<defs><linearGradient id="exg" x1="0" y1="0" x2="0" y2="1">` +
-    `<stop offset="0" stop-color="#ffb020" stop-opacity=".22"/>` +
-    `<stop offset="1" stop-color="#ffb020" stop-opacity="0"/></linearGradient></defs>` +
-    g + `<path class="ex-area" d="${area}"/><path class="ex-line" d="${line}"/>${dots}${xl}</svg>`;
-}
-
-// ---------- F37 歷來紀錄（綁時間窗、月份摺疊、內捲） ----------
 
 function relTime(dateStr) {
   const days = Math.round((new Date(iso(new Date())) - new Date(dateStr)) / 864e5);
@@ -245,103 +247,44 @@ function relTime(dateStr) {
   return `${Math.floor(days / 365)} 年前`;
 }
 
-function dayBlock(s) {
-  // 自體重動作以（最新體重＋額外負重）計有效重量，同日曆 set_tonnage 規則
-  const isBW = detail.exercise?.is_bodyweight;
-  const bw = isBW && detail.bodyweight ? detail.bodyweight : 0;
-  const tonnage = s.sets.reduce((a, x) => a + (x.weight_kg + bw) * x.reps, 0);
-  const bestW = Math.max(...s.sets.map((x) => x.weight_kg)); // 當日最重那組掛 🏆（比額外負重）
-  return el("div", { class: "ex-day" }, [
-    el("div", { class: "d" }, [
-      el("span", { class: "date" }, [s.date.slice(5)]),
-      ...(relTime(s.date) ? [el("span", { class: "rel" }, [relTime(s.date)])] : []),
-      el("span", { class: "vol" }, [`${Math.round(tonnage).toLocaleString()} kg`]),
+// F86 ⑥：一次訓練一張卡。F37 的月份摺疊拿掉——改版後每張卡本來就只有兩行，
+// 摺疊層級反而讓「最近練得如何」要多點兩下才看得到。
+function sessionCard(session) {
+  const best = bestSet(session);
+  return el("div", { class: "hist-card" }, [
+    el("div", { class: "hist-head" }, [
+      el("span", { class: "hist-date" }, [session.date.slice(5).replace("-", "/")]),
+      el("span", { class: "hist-rel" }, [relTime(session.date)]),
+      el("span", { class: "hist-vol" }, [`${Math.round(sessionTonnage(session)).toLocaleString()} kg`]),
     ]),
-    el("div", { class: "sets" },
-      s.sets.map((x) =>
-        el("span", { class: `set${x.weight_kg === bestW ? " best" : ""}` }, [
-          `${x.weight_kg}×${x.reps}`,
+    el(
+      "div",
+      { class: "hist-sets" },
+      session.sets.map((x) =>
+        el("span", { class: `set-chip${x === best ? " best" : ""}` }, [
+          `${fmtNum(x.weight_kg)}×${x.reps}`,
           ...(x.rpe ? [el("span", { class: "rpe" }, [`@${x.rpe}`])] : []),
+          ...(x === best ? [icon("trophy", { size: 11, label: "當次最佳組" })] : []),
         ]),
       ),
     ),
   ]);
 }
 
-function renderHistory(rerender) {
+function renderHistory() {
   const sessions = [...detail.data.sessions].reverse(); // 新→舊
-  if (!sessions.length) return [el("p", { class: "ex-hist-empty" }, ["這個區間內沒有紀錄"])];
-  const byMonth = new Map();
-  for (const s of sessions) {
-    const k = s.date.slice(0, 7);
-    if (!byMonth.has(k)) byMonth.set(k, []);
-    byMonth.get(k).push(s);
-  }
-  const nodes = [];
-  for (const [k, ss] of byMonth) {
-    const [y, m] = k.split("-");
-    const open = detail.expandedMonths.has(k);
-    const maxW = Math.max(...ss.flatMap((s) => s.sets.map((x) => x.weight_kg)));
-    nodes.push(
-      el("div", { class: `ex-month${open ? "" : " collapsed"}` }, [
-        el("div", {
-          class: "ex-mhead",
-          onclick: () => {
-            if (open) detail.expandedMonths.delete(k);
-            else detail.expandedMonths.add(k);
-            rerender();
-          },
-        }, [
-          el("span", { class: "mo" }, [`${y} 年 ${+m} 月`]),
-          el("span", { class: "sum" }, [`${ss.length} 次 · 最重 ${maxW} kg`]),
-          el("span", { class: "car" }, [
-            icon(open ? "chevron-down" : "chevron-right", { size: 16 }),
-          ]),
-        ]),
-        ...(open ? [el("div", { class: "ex-mbody" }, ss.map(dayBlock))] : []),
-      ]),
-    );
-  }
-  return nodes;
+  if (!sessions.length) return [el("p", { class: "hist-empty" }, ["這個區間內沒有紀錄"])];
+  return sessions.map(sessionCard);
 }
 
 export function renderExerciseDetail(rerender, goBack, guard) {
-  const capNow = el("b", { class: "ex-now" }, ["—"]);
-  const capGran = el("span", { class: "ex-gran" }, []);
-  const capLbl = el("span", { class: "ex-lbl-text" }, [METRICS[detail.metric].lbl]);
-  const chart = el("div", { class: "ex-chart" });
-  const histBox = el("div", { class: "ex-hist" });
-
-  // R2：切 metric 只重畫曲線＋cap＋按鈕高亮，不 rerender()（整頁重繪）、不打 API
-  // F59：說明節點——setMetric 是就地更新（F36 起刻意不整頁重繪），所以切 metric 時要自己把它移掉
-  const noteNode = detail.rangeNote
-    ? el("p", { class: "range-note" }, [detail.rangeNote])
-    : null;
-
-  const mBtn = { w: null, v: null };
-  function setMetric(m) {
-    detail.metric = m;
-    // F59（acceptance ⑤）：切 metric 後舊說明就過期了；就地移除，不走 rerender
-    detail.rangeNote = null;
-    if (noteNode && noteNode.isConnected) noteNode.remove();
-    mBtn.w.classList.toggle("on", m === "w");
-    mBtn.v.classList.toggle("on", m === "v");
-    capLbl.textContent = METRICS[m].lbl;
-    drawChart(chart, capNow, capGran);
-  }
-  const metricBtn = (m) => {
-    const b = el("button", { class: detail.metric === m ? "on" : "", onclick: () => setMetric(m) }, [METRICS[m].lbl]);
-    mBtn[m] = b;
-    return b;
-  };
-
   const presetBtn = ([label, months]) => {
-    // F59：超出資料範圍的檔位灰掉但**仍可點**——點了顯示說明（用 disabled 就點不到；
-    // 也不能用 aria-disabled，它宣告「不可互動」且會讓 Playwright 拒絕點擊，見 F58 P3-6）
+    // F86 ④（承 F59）：超出資料範圍的檔位灰掉但**仍可點**——點了顯示說明。
+    // 不能用 disabled／aria-disabled：前者點不到，後者宣告「不可互動」會讓 Playwright 拒絕點擊。
     const available = presetAvailable(months);
-    const on = detail.range.kind === "preset" && detail.range.months === months;
+    const on = detail.range.months === months;
     return el("button", {
-      class: `${on ? "on" : ""}${available ? "" : " off"}`.trim(),
+      class: `range-pill${on ? " on" : ""}${available ? "" : " off"}`,
       ...(available ? {} : { "aria-label": `${label}（超出資料範圍，點擊查看說明）` }),
       onclick: () => {
         if (!available) {
@@ -352,86 +295,31 @@ export function renderExerciseDetail(rerender, goBack, guard) {
         guard(async () => {
           detail.rangeNote = null;
           await loadRange({ kind: "preset", months }); // 成功才提交檔位＋資料
-          detail.customOpen = false;
           rerender();
         });
       },
     }, [label]);
   };
 
-  const customChip = el("button", {
-    class: detail.range.kind === "custom" ? "on" : "",
-    onclick: () => { detail.customOpen = !detail.customOpen; detail.rangeNote = null; rerender(); },
-  }, ["自訂"]);
-
-  const customPanel = detail.customOpen
-    ? el("div", { class: "ex-custom" }, [
-        el("input", {
-          type: "date", class: "ex-date", value: detail.customFrom, max: iso(new Date()),
-          oninput: (e) => { detail.customFrom = e.target.value; },
-        }),
-        el("span", { class: "ex-dash" }, ["→"]),
-        el("input", {
-          type: "date", class: "ex-date", value: detail.customTo, max: iso(new Date()),
-          oninput: (e) => { detail.customTo = e.target.value; },
-        }),
-        el("button", {
-          class: "btn btn-primary sm ex-custom-apply",
-          onclick: () =>
-            guard(async () => {
-              const f = detail.customFrom, t = detail.customTo;
-              detail.rangeNote = null; // review P3-4：驗證失敗會早退，說明要在早退前就清掉
-              // to 上限 today：max 屬性只是控制項提示，手打的未來日期仍要自己擋
-              if (!f || !t || f > t || t > iso(new Date())) {
-                state.error = "起訖日期不對（起要早於訖，且不能超過今天）";
-                rerender();
-                return;
-              }
-              state.error = null;
-              await loadRange({ kind: "custom", from: f, to: t }); // 成功才提交檔位＋資料
-              rerender();
-            }),
-        }, ["套用"]),
-      ])
-    : null;
-
-  const node = el("section", { class: "screen exercise-detail" }, [
-    el("header", { class: "topbar" }, [
-      el("button", { class: "btn btn-ghost chip ex-back", onclick: goBack }, ["←"]),
-      el("h1", {}, [exerciseName(detail.exercise)]),
+  return el("section", { class: "screen exercise-detail" }, [
+    // 沿用 F81 起的 .screen-head 慣例（.back-btn／.screen-head-text／.st），
+    // 不另立一套類名——版面規則已經在 CSS 那邊定義過一次了
+    el("header", { class: "screen-head" }, [
+      el("button", {
+        class: "btn btn-ghost back-btn", "aria-label": "返回", onclick: goBack,
+      }, [icon("back", { size: 20, label: "返回" })]),
+      el("div", { class: "screen-head-text" }, [
+        el("h1", {}, [exerciseName(detail.exercise)]),
+        el("span", { class: "st" }, [
+          `${detail.exercise?.name_en ?? ""} · ${detail.data.sessions.length} 次紀錄`,
+        ]),
+      ]),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
-    el("div", { class: "ex-prs" }, [
-      prCard("最重重量", detail.data.prs.top_weight, "weight"),
-      prCard("最重總訓練量", detail.data.prs.top_set_volume, "volume"),
-    ]),
-    el("div", { class: "seg ex-metric" }, [metricBtn("w"), metricBtn("v")]),
-    el("div", { class: "ex-range" }, [...PRESETS.map(presetBtn), customChip]),
-    // F59：點到停用檔位／初次退檔時的說明（節點抽成變數，讓 setMetric 能就地移除）
-    ...(noteNode ? [noteNode] : []),
-    ...(customPanel ? [customPanel] : []),
-    el("div", { class: "ex-chartcard" }, [
-      el("div", { class: "ex-cap" }, [
-        el("span", { class: "ex-lbl" }, [capLbl, capGran]),
-        el("span", { class: "ex-nowwrap" }, [capNow, " ", el("span", { class: "ex-unit" }, ["kg"])]),
-      ]),
-      chart,
-    ]),
-    el("div", { class: "ex-hhead" }, [
-      el("span", {}, ["歷來紀錄"]),
-      el("span", { class: "cnt" }, [`此區間 ${detail.data.sessions.length} 次`]),
-    ]),
-    histBox, // F37 歷來紀錄清單
+    prCards(),
+    el("div", { class: "range-pills" }, PRESETS.map(presetBtn)),
+    ...(detail.rangeNote ? [el("p", { class: "range-note" }, [detail.rangeNote])] : []),
+    barChart(),
+    el("div", { class: "hist-list" }, renderHistory()),
   ]);
-
-  // 月份摺疊就地更新，保留內捲位置（全頁 rerender 會讓 scrollTop 歸零）
-  function refreshHist() {
-    const st = histBox.scrollTop;
-    histBox.replaceChildren(...renderHistory(refreshHist));
-    histBox.scrollTop = st;
-  }
-  histBox.replaceChildren(...renderHistory(refreshHist));
-
-  drawChart(chart, capNow, capGran);
-  return node;
 }
