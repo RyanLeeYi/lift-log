@@ -1,6 +1,58 @@
 # session handoff
 
-最後更新：2026-07-30 深夜（**F66/F65/F95/F86/F87/F88 實作完成，v102；剩 F89**）
+最後更新：2026-07-31 凌晨（**95/103 passing，v106 已上線；F89 有兩條缺實作**）
+
+## 下一場照這個順序做（已排好，不必重新判斷）
+
+### 1. F89 ⑥⑨ — 兩條**真的沒實作**，驗收讀 code 判 fail
+
+- **⑥ 未授權時的設定列**：現在「浮動計時」只有開／關兩態。`overlayGranted` 是 native-notify.js 的模組內變數、**沒有 export**，所以 app.js 分不出「使用者沒開」與「系統未授權」，只有點下去失敗才跳一次性 error。條文要的是**常駐副標**「需系統授權 · 點此前往設定」＋軌道 `--card-hi`／鈕 `--text-faint` 的第三態。
+  → 要 export 一個 `restOverlayPermitted()` 給 UI，設定列改三態。
+- **⑨ 動效與 reduced-motion**：原生層**一行動效程式碼都沒有**。我第一版草稿寫過 `reduceMotion()`（讀 `Settings.Global.ANIMATOR_DURATION_SCALE`），最後寫檔時掉了；收合⇄展開是直接 detach+rebuild，沒有 160ms 過場。
+  → 補 transition ＋ reduced-motion 判斷。
+
+### 2. 翻新 verify_f48–f60 那 13 支（一次解掉三條的卡點）
+
+F86 ⑩（f59/f60）、F87 ⑬⑭（f53–f58）、F88 ⑨⑩（f48–f52）——**三條都卡在這裡，全部不能 passing**。
+F94 當初判斷「現在做等於做兩次」是對的，但**現在畫面已經改版完了**，這件事終於做得成。
+共用 helper 都在 `verify_f67`（`wait_home`／`start_from_home`／`open_templates`／`read_version`／
+`end_workout`／`e2e_tmp`／`safe_port`／`reroute_public_host`），照 `tests/e2e/README.md` 的說明改。
+
+### 3. F96 → F97（都已簽核／待簽核，條文寫好了）
+
+F96 拿掉編輯課表第一張卡的高亮；F97 拖曳排序取代 ↑↓（Ryan 定案拿掉 ↑↓、F96 先行）。
+F97 的坑寫在條文裡：長按門檻 vs 清單捲動搶手勢、邊緣自動捲動、取消路徑。
+
+## ⚠ 我在這一輪犯的一個錯，值得記著
+
+**F86 ⑩ 沒做，而且我的 commit message 完全沒提。** F87 ⑭、F88 ⑨⑩ 我都在 commit 裡寫了
+「尚未做，另行回報」，唯獨 F86 沒有——驗收者是自己跑腳本、再查 git log 才發現的。
+
+比「沒做」更糟的是**紀錄裡看不到**：另外兩條的缺口留了線索，這條沒有。如果驗收者沒有逐支跑，
+它會以「範圍外」的樣子混過去。**往後條文有做不完的子句，一律寫進 commit message，沒有例外。**
+
+驗收者也給了對應的規格回饋：F86/F87/F88 三條對「翻新隔離區腳本」的用詞不一致（有的坦承、
+有的沒提），建議條文明確標成「阻斷 passing 的硬性條件」或「可延後的技術債」。**下次寫條文時採納。**
+
+## 現況
+
+- **95/103 passing**。剩 F86／F87／F88（卡 13 支腳本）、F89（⑥⑨ 缺實作＋⑩ 真機）、F95（⑥ 手勢）、F96／F97（未動工）
+- 線上 **v106**（快照 `83080bf`），正式資料 4 場 85 組完好；測試站同版
+- Google Drive：`lift-log-v106.apk`（正式）／`lift-log-dev-v105.apk`（測試）
+- **手機**：正式版 v106、測試版 v105-dev 並存。adb 可直接用，路徑
+  `$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe`，裝置 SM-N9750
+- ⚠ **Codex 額度到 2026-08-05 12:46**。這批的 review 與驗收都是同模型 fresh context，
+  獨立性較弱；重條目（F89）想要跨模型把關就排 8/5 之後
+
+## 真機驗證的三個坑（這場學到的，下次直接用）
+
+1. **`adb install -r` 會重置使用者鎖定的 channel importance**（0 → 3）。驗 channel 行為時**不能中途重裝 APK**——我第一次就是這樣誤判成「F95 沒生效」
+2. **視窗根 view 的尺寸由 `WindowManager.LayoutParams` 決定**，設在 root 的 LayoutParams 會被忽略。F89 的 214dp 因此變成約 120dp，是「LIFT·LOG」被擠成三行才露餡的
+3. **測試站的 Python 行為在 dev 服務啟動時就載入了**——改後端要 `restart lift-log-dev`，只有 `app/static/` 是每次讀檔。F86 的 PR 卡一開始顯示 `—` 就是這個
+
+---
+
+## 前一場：F66→F88 那一批（v102）
 
 ## 現況（一口氣做完 F66 → F88）
 
