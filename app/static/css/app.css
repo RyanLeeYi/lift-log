@@ -1407,6 +1407,20 @@ body {
   background: var(--card); border-radius: var(--r-card);
   padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
 }
+/* F97 ③ 拖曳中的那張卡：--card-hi ＋ 更重的陰影浮起來。
+   這就是 F96 拿掉的高亮回來的方式——它現在對應「正在被拖」這個真實狀態。 */
+.tpl-item.dragging {
+  background: var(--card-hi);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .42);
+  position: relative; z-index: 2;
+}
+/* 讓位要看得出是「讓」出來的，所以只有沒被拖的卡片吃過場；被拖的那張要貼著手指走 */
+.tpl-items.drag-active .tpl-item:not(.dragging) { transition: transform 160ms ease-out; }
+/* 拖曳中不讓瀏覽器同時解讀成捲動手勢（② 搶手勢） */
+.tpl-items.drag-active { touch-action: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tpl-items.drag-active .tpl-item:not(.dragging) { transition: none; }
+}
 .tpl-item-name { display: flex; flex-direction: column; gap: 2px; }
 .tpl-item-name .n-zh { font-family: var(--sans); font-weight: 700; font-size: 16px; }
 .tpl-item-name .n-alias { font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--text-mute); }

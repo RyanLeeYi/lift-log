@@ -15,6 +15,7 @@ const SHELL = [
   "/js/calendar.js",
   "/js/custom-exercise.js",
   "/js/dom.js",
+  "/js/drag-sort.js",
   "/js/icons.js",
   "/js/env.js",
   "/js/exercise-detail.js",

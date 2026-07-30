@@ -110,13 +110,15 @@ def run_checks(base: str) -> None:  # noqa: C901
         check(css(page, ".tpl-item-name .n-zh", "fontSize") == "16px", "② 名稱 16px")
         check(css(page, ".tpl-item-name .n-alias", "fontSize") == "11px", "② 別名 11px")
 
-        # ③ 圓鈕與圖示
+        # ③ 圓鈕與圖示。
+        # F97 ⑦：排序改拖曳後控制列從五顆變三顆（減 加 刪除），F88 ③ 的「右 上下箭頭 刪除」
+        # 那一句已 superseded_by F97。圓鈕本身的規格（圓形、向量圖示、間距、觸控區）不變。
         rounds = page.locator(".tpl-item").first.locator(".round-btn")
-        check(rounds.count() == 5, f"③ 一張卡五顆圓鈕（− ＋ ↑ ↓ ✕，實際 {rounds.count()}）")
+        check(rounds.count() == 3, f"③ 一張卡三顆圓鈕（減 加 刪除，實際 {rounds.count()}）")
         radius = css(page, ".round-btn", "borderRadius")
         check(radius == "50%", f"③ 圓鈕是圓的（{radius}）")
         svgs = page.locator(".tpl-item").first.locator(".tpl-item-move svg")
-        check(svgs.count() == 3, f"③ ↑↓✕ 三顆都用向量圖示（實際 {svgs.count()}）")
+        check(svgs.count() == 1, f"③ 刪除鈕用向量圖示（實際 {svgs.count()}）")
         src_dir = Path(__file__).resolve().parents[2] / "app/static/js"
         chars = {
             f.name: [c for c in "↑↓✕" if c in f.read_text(encoding="utf-8")]
@@ -125,13 +127,13 @@ def run_checks(base: str) -> None:  # noqa: C901
         leftover = {k: v for k, v in chars.items() if v}
         check(not leftover, f"③ app/static/js 內不再出現 ↑↓✕ 字元（殘留：{leftover}）")
         del_color = css(page, ".tpl-item-del", "color")
-        move_color = css(page, ".tpl-item-move .round-btn:not(.tpl-item-del)", "color")
-        check(del_color != move_color,
-              f"③ 刪除鈕用 --over，與排序鈕不同色（{del_color} vs {move_color}）")
+        other_color = css(page, ".tpl-item-sets .round-btn", "color")
+        check(del_color != other_color,
+              f"③ 刪除鈕用 --over，與其餘圓鈕不同色（{del_color} vs {other_color}）")
         del_box = page.locator(".tpl-item").first.locator(".tpl-item-del").bounding_box()
-        down_box = page.locator(".tpl-item").first.locator(".round-btn").nth(3).bounding_box()
-        gap = round(del_box["x"] - (down_box["x"] + down_box["width"]))
-        check(gap >= 6, f"③ ✕ 與 ↓ 間距 ≥6px（實際 {gap}px，誤觸防線）")
+        plus_box = page.locator(".tpl-item").first.locator(".round-btn").nth(1).bounding_box()
+        gap = round(del_box["x"] - (plus_box["x"] + plus_box["width"]))
+        check(gap >= 6, f"③ 刪除鈕與加組鈕間距 ≥6px（實際 {gap}px，誤觸防線）")
 
         # ④ 分隔線後的參考休息
         rest = page.locator(".tpl-item").first.locator(".tpl-item-rest")

@@ -4,6 +4,7 @@
 import { api } from "./api.js";
 import { customExerciseModal } from "./custom-exercise.js";
 import { el } from "./dom.js";
+import { attachDragSort, cancelDragSort } from "./drag-sort.js";
 import { icon } from "./icons.js";
 import { exerciseAlias, exerciseName, state } from "./state.js";
 
@@ -285,12 +286,6 @@ async function loadPickable(q) {
 
 function itemRow(item, index, rerender) {
   const items = tpl.editing.items;
-  const swap = (i, j) => {
-    const next = [...items];
-    [next[i], next[j]] = [next[j], next[i]];
-    tpl.editing = { ...tpl.editing, items: next };
-    rerender();
-  };
   const setSets = (delta) => {
     const next = items.map((it, i) =>
       i === index ? { ...it, default_sets: Math.max(1, it.default_sets + delta) } : it,
@@ -331,22 +326,9 @@ function itemRow(item, index, rerender) {
         el("button", { class: "btn round-btn", "aria-label": "加一組",
           onclick: () => setSets(+1) }, ["＋"]),
       ]),
-      // 刪除鈕與排序鈕同列，間距是唯一的誤觸防線（見 .tpl-item-del 的 margin-left）
+      // F97：排序改成長按拖曳，上下箭頭兩顆鈕拿掉（Ryan 2026-07-30 定案，不留備援）。
+      // 這一列現在只剩刪除鈕；間距仍是誤觸的防線（見 .tpl-item-del 的 margin-left）。
       el("div", { class: "tpl-item-move" }, [
-        el(
-          "button",
-          { class: "btn round-btn", "aria-label": "往上移",
-            ...(index === 0 ? { disabled: "" } : {}),
-            onclick: () => swap(index, index - 1) },
-          [icon("arrow-up", { size: 16, label: "往上移" })],
-        ),
-        el(
-          "button",
-          { class: "btn round-btn", "aria-label": "往下移",
-            ...(index === items.length - 1 ? { disabled: "" } : {}),
-            onclick: () => swap(index, index + 1) },
-          [icon("arrow-down", { size: 16, label: "往下移" })],
-        ),
         el(
           "button",
           {
@@ -662,6 +644,20 @@ export function renderTemplateEdit(rerender, guard) {
   if (scrollable) {
     requestAnimationFrame(() => { itemsNode.scrollTop = tpl.itemsScrollTop; });
   }
+  // F97：長按拖曳排序（取代上下箭頭鈕）。整頁重繪會換掉整棵清單，所以每次重繪都重新掛——
+  // 監聽跟著舊節點一起被丟掉，不會累積。順序寫回草稿走 rerender，saveTemplateDraft
+  // 在下一輪重繪時把它存進 localStorage（⑤），F30 的未儲存判斷因為快照含 items 順序而自動涵蓋。
+  cancelDragSort(); // 上一次拖曳若還沒收乾淨（例如重繪被別的路徑觸發），先歸零
+  attachDragSort(itemsNode, {
+    itemSelector: ".tpl-item",
+    onReorder: (from, to) => {
+      const next = [...editing.items];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      tpl.editing = { ...tpl.editing, items: next };
+      rerender();
+    },
+  });
 
   saveTemplateDraft(); // F30：每次重繪（結構性變更後）自動存草稿；即時輸入的名稱/休息由 app.js 的 visibility/beforeunload 補存
 
