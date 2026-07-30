@@ -1724,13 +1724,13 @@
         "tests/e2e/verify_f88.py"
       ],
       "requires": [],
-      "superseded_by": "F96（僅 ② 的「第一張（或選中的）用 --card-hi 站出來」一句：編輯課表沒有「選中」這個狀態，該高亮是純裝飾且會誤導，已拿掉；F88 其餘條文全部有效）"
+      "superseded_by": "F96（僅 ② 的「第一張（或選中的）用 --card-hi 站出來」一句：編輯課表沒有「選中」這個狀態，該高亮是純裝飾且會誤導，已拿掉；F88 其餘條文全部有效）；F97（僅 ③ 的「右「上下箭頭 刪除」」一句：排序改為長按拖曳，上下箭頭兩顆鈕移除，控制列剩三顆圓鈕；圓鈕本身的規格不變）"
     },
     {
       "id": "F89",
       "name": "浮動休息視窗原生重做（收合／展開兩態 ＋ 圓環倒數）",
       "status": "failing",
-      "evidence": "",
+      "evidence": "（2026-07-31 v107，⑥⑨ 補完、①–⑦ 真機驗過，維持 failing——⑨ 的動效與 reduced-motion 只驗到「不壞」沒驗到「有動」，⑧ 的執行緒條文與 F63 回歸未逐條驗。）\n⑥ 設定列三態（新增 restOverlayPermitted() 讓 UI 分得出「使用者關的」與「系統沒授權」）：\n  自動化 verify_f89.py 15/15（三態各配反面；顏色驗 computed style）。\n  真機（SM-N9750，dev v107）：appops deny 後設定列顯示「浮動計時：關」＋常駐副標「需系統授權 · 點此前往設定」、字轉 --text-faint（截圖 dev-02）；點擊後 mCurrentFocus=com.android.settings/.Settings$OverlaySettingsActivity（截圖 dev-03）；appops allow 後回前景自動翻成「開」（截圖 dev-04）。\n⑨ 原生動效：reduceMotion() 讀 Settings.Global.ANIMATOR_DURATION_SCALE、animateIn() 160ms DecelerateInterpolator。**只做入場不做出場**（出場要等 callback 才 removeView，期間 hide()／服務回收會留下移不掉的 view，見 toggleExpanded 的 javadoc）。\n①–⑤ 真機驗過（截圖 dev-13～dev-18）：展開態 214dp、把手列＋LIFT·LOG＋收合圖示、126dp 圓環＋狀態字「休息中」＋動作提示「肩推 · 第 3 組」、四顆控制鈕＋「回 app 記下一組」；點本體收合成 76dp 圓（圓環＋秒數）；拖曳移動位置成功且展開後沿用新位置；歸零後轉「+0:37 超時了」、倒數與主按鈕轉 --over、停止鈕轉警示色（F72／F73 不回歸）；按停止後前景服務與通知都消失。\n⑥ 的規格落差：條文寫「軌道 --card-hi、鈕 --text-faint」是設計稿的 switch 結構，但這個設定列自 F81 起就是藥丸按鈕、沒有獨立軌道與鈕。實作對應成「按鈕底＝軌道、文字與圖示＝鈕」，需簽核確認這個對應可接受（規格與現狀的落差，非實作偷工）。\n**仍缺**：⑨ 的 160ms 過場與 reduced-motion 實際觀感（靜態截圖看不出來，animator_duration_scale=0 的路徑只驗到不崩；驗完已把該設定還原成 1）；⑧ 的 onMain 條文與 F63／F64／F69–F71 逐條回歸未做。\n**順帶觀察（非本條缺陷）**：按下 overlay 的停止鈕後，那一下的 UP 會落到底下的桌面上（實測誤開了另一個 app）——window 在 DOWN 當下被移除所致。要修的話得延後 removeView。",
       "acceptance": "（2026-07-30 Ryan 簽核凍結）\n（依 design_handoff_liftlog_clay README 與 screenshots「浮動休息計時視窗」與 screenshots/10~12-floating-timer-*.png；原生 Java，最重的一條）\n① 收合態：76×76 圓形、--card 底、box-shadow 0 14px 32px rgba(0,0,0,.42)；內嵌圓環 r=26 stroke-width=7、dasharray=163.4、dashoffset = 163.4 * (1 - 剩餘/目標)；中央倒數 Mono 600 17px（--accent；超時轉 --over 並顯示 +m:ss）。\n② 展開態：寬 214px、--card 底、border-radius 24px、box-shadow 0 18px 44px rgba(0,0,0,.42)；頂部把手列（padding 12/16/10）含 22×3px 拖曳條（--line）＋「LIFT·LOG」（Mono 500 10px、letter-spacing .18em、--text-mute）＋右側收合圖示。\n③ 展開態圓環 126px（r=44 stroke-width=8、dasharray 276.5），中央倒數 Mono 600 30px ＋狀態字 Mono 400 9px；下方動作提示「動作名 · 第 N 組」（Archivo 500 11px、--text-dim）。\n④ 控制鈕**維持四顆**（暫停/繼續、停止、−15s、+15s；Ryan 開工時定的，覆寫設計稿的兩顆），--card-hi 底藥丸，214px 寬內可排兩列；主按鈕「回 app 記下一組」--accent 藥丸（超時轉 --over），點擊拉起 app 到 logger。停止鈕在鬧鐘響著時轉警示色（F73 不回歸，且要驗渲染結果不是 class）。\n⑤ 點本體收合⇄展開；長按拖曳移動位置，位置持久化於原生層 SharedPreferences（設計稿寫 localStorage，但這是系統 overlay 不經 WebView），下次出現在原位。\n⑥ 未授權時：設定列開關維持 OFF（軌道 --card-hi、鈕 --text-faint），副標「需系統授權 · 點此前往設定」，點擊送到系統「顯示在其他應用程式上層」頁；未授權時倒數仍走通知列（F63 不回歸），功能不消失。\n⑦ 觸控目標 ≥48dp、鈕間距 ≥8dp（F74 訂的，比全域 44px 嚴——濕手在健身房按錯 ✕ 與 ⏹ 後果完全不同）。\n⑧ 所有碰 view 的進入點經 onMain() 繞回 main looper（F69 的 CalledFromWrongThreadException 不回歸）；F64 的 dismissed 旗標與 F69 的 shouldShow() 規則不變；F72 的歸零後繼續往上數、三條停止路徑全部有效。\n⑨ 動效 160ms ease-out；圓環 stroke-dashoffset 每秒線性更新；prefers-reduced-motion 時取消 transition（原生層以對應設定判斷）。\n⑩ 驗收：**必須真機**（模擬器測不到 OEM overlay 行為），附截圖；F63／F64／F69–F73 全數回歸驗過。",
       "touches": [
         "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java",
@@ -1807,9 +1807,16 @@
       "id": "F97",
       "name": "編輯課表：拖曳排序（取代 ↑↓）",
       "status": "failing",
-      "evidence": "",
-      "touches": [],
-      "acceptance": "（2026-07-30 Ryan 提案並定案兩項取捨，待簽核）\n① 編輯課表的動作卡改為**拖曳排序**，取代 ↑↓ 兩顆鈕。Ryan 2026-07-30 決定**拿掉 ↑↓**（不保留備援）——理由：編輯課表不是高頻操作，版面乾淨優先。代價已知並接受：排序只剩拖曳這一條路，手滑成本較高。\n② 長按進入拖曳（300ms 門檻），避免與清單捲動搶手勢——`.tpl-items` 超過 2 個動作就是可捲容器，按下去要能分辨「捲清單」與「拖卡片」。長按不好按與 F74「濕手好按」的拉扯已知；拖曳是次要操作，可接受。\n③ 拖曳中的那張卡：`--card-hi` 底 ＋ 較高的陰影，其餘卡片讓位。**這就是 F96 拿掉的高亮回來的方式——它現在對應一個真實狀態。**\n④ 拖到清單上下邊緣時自動捲動，否則長清單根本拖不到目的地。\n⑤ 放開後把新順序寫回 `tpl.editing.items` 並存草稿；F30 的「未儲存變更」判斷要涵蓋順序變更（拖完沒存就離開要跳確認）。\n⑥ 取消路徑：拖到一半放回原位＝不變更；拖曳中被中斷（來電、切背景、view 被移除）要回到穩定狀態，不得留下半拖曳的卡片或錯位的清單。\n⑦ ✕ 保留。移除 ↑↓ 後控制列剩「− N 組 ＋」與 ✕，觸控目標與間距仍照 F74（≥44px、鈕間 ≥8px）；F88 ③ 的「右「↑ ↓ ✕」」一句標 superseded_by 本條。\n⑧ F21 的清單捲動門檻與捲動位置保留、F51 的按鈕貼底、F52 的加動作視窗高度穩定，全部不回歸。\n⑨ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f97.py（Playwright 用 mouse.down/move/up 模擬拖曳，斷言順序真的改變且草稿有更新）＋ **真機用真手指測一次**（滑鼠模擬測不到長按與捲動搶手勢的衝突）。\n⑩ 無障礙備援的取捨已記錄：拿掉 ↑↓ 之後，沒有非拖曳的排序方式。單人自用 app 且 Ryan 明確選擇，接受；若日後對外分享，這條要重新評估。"
+      "evidence": "（2026-07-31 v107，實作完成、①–⑧ 全綠，⑨ 的真機那半未驗故維持 failing。）\n實作：新檔 app/static/js/drag-sort.js（Pointer Events；300ms 長按閘門 + 8px slop 分辨捲清單／拖卡片；內容座標避開邊緣自動捲動時的整批錯位；單一可重入 cleanup 收所有中斷路徑）、templates.js 移除上下箭頭與 swap()、app.css 的 .tpl-item.dragging、sw.js SHELL。\n自動化：verify_f97.py 31/31（含 ② 反面「沒長按就移動不排序」、④ 反面「拖在中央不自動捲」、⑥ 拖回原位與切背景中斷、⑤ F30 未儲存判斷涵蓋順序變更、⑧ F21/F51/F52 回歸）；verify_f88 31/31；ruff All checks passed；pytest 274 passed。\n⑦ F88 ③ 的「右 上下箭頭 刪除」一句已標 superseded_by 本條。\n**缺口（⑨ 的真機那半）**：真手指長按 vs 清單捲動搶手勢尚未驗。adb 的 `input motionevent` 分次呼叫不共用同一條手勢流（downTime 不同，MOVE 被丟棄）、`input draganddrop` 的 hold 壓不過 300ms 門檻——兩種注入都試過都拖不動，這是注入限制不是實作問題（同一支 APK 用滑鼠模擬 31/31 全綠）。這條要 Ryan 用手指拖一次才算數。",
+      "touches": [
+        "app/static/js/drag-sort.js",
+        "app/static/js/templates.js",
+        "app/static/css/app.css",
+        "app/static/sw.js",
+        "tests/e2e/verify_f97.py",
+        "tests/e2e/verify_f88.py"
+      ],
+      "acceptance": "（2026-07-30 Ryan 提案並定案兩項取捨；同日以「1.拿掉 2.照做」簽核凍結——①拿掉上下箭頭不留備援、②F96 先行）\n① 編輯課表的動作卡改為**拖曳排序**，取代 ↑↓ 兩顆鈕。Ryan 2026-07-30 決定**拿掉 ↑↓**（不保留備援）——理由：編輯課表不是高頻操作，版面乾淨優先。代價已知並接受：排序只剩拖曳這一條路，手滑成本較高。\n② 長按進入拖曳（300ms 門檻），避免與清單捲動搶手勢——`.tpl-items` 超過 2 個動作就是可捲容器，按下去要能分辨「捲清單」與「拖卡片」。長按不好按與 F74「濕手好按」的拉扯已知；拖曳是次要操作，可接受。\n③ 拖曳中的那張卡：`--card-hi` 底 ＋ 較高的陰影，其餘卡片讓位。**這就是 F96 拿掉的高亮回來的方式——它現在對應一個真實狀態。**\n④ 拖到清單上下邊緣時自動捲動，否則長清單根本拖不到目的地。\n⑤ 放開後把新順序寫回 `tpl.editing.items` 並存草稿；F30 的「未儲存變更」判斷要涵蓋順序變更（拖完沒存就離開要跳確認）。\n⑥ 取消路徑：拖到一半放回原位＝不變更；拖曳中被中斷（來電、切背景、view 被移除）要回到穩定狀態，不得留下半拖曳的卡片或錯位的清單。\n⑦ ✕ 保留。移除 ↑↓ 後控制列剩「− N 組 ＋」與 ✕，觸控目標與間距仍照 F74（≥44px、鈕間 ≥8px）；F88 ③ 的「右「↑ ↓ ✕」」一句標 superseded_by 本條。\n⑧ F21 的清單捲動門檻與捲動位置保留、F51 的按鈕貼底、F52 的加動作視窗高度穩定，全部不回歸。\n⑨ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f97.py（Playwright 用 mouse.down/move/up 模擬拖曳，斷言順序真的改變且草稿有更新）＋ **真機用真手指測一次**（滑鼠模擬測不到長按與捲動搶手勢的衝突）。\n⑩ 無障礙備援的取捨已記錄：拿掉 ↑↓ 之後，沒有非拖曳的排序方式。單人自用 app 且 Ryan 明確選擇，接受；若日後對外分享，這條要重新評估。"
     }
   ]
 }
