@@ -467,8 +467,8 @@
     {
       "id": "F92",
       "name": "空的 workout 不該看起來像練過",
-      "status": "failing",
-      "evidence": "",
+      "status": "passing",
+      "evidence": "2026-07-30：ruff clean、pytest 267 passed（新增 TestDeleteWorkout 4 條）、tests/e2e/verify_f92.py 15/15；回歸 verify_f90 30/30、verify_f91 20/20、verify_f85 92/92。commit a3e859d..d88a728。review：/codex-review 跨模型，2 條 findings 全部成立、全部修掉——P1 清理前的 DB 備份被 git add -A 掃進 commit（含 push_subscriptions 憑證與體重體脂；未推送過，已從 commit 移除、備份移出 repo、blob 已 gc，.gitignore 補 *.db.bak*）；P2 離線結束空 workout 只記 id 不記動作，回線上會補成標記結束而永遠不刪（佇列改帶 mode）。驗收：2026-07-30 codex-verify 跨模型，①–⑪ 全部 pass，事後 git status 乾淨。驗收者另驗到我沒測的情境：同日「空場課表」與「有效課表」兩場並存時，標題只取有有效組的那場。",
       "acceptance": "（2026-07-30 Ryan 簽核凍結）\n① 統一「練過」的定義為**有未刪除的組**，日曆與本週進度共用同一套判定（現在兩邊不一致：本週進度看 sets、日曆看 workout）。\n② 日曆明細：當天所有 workout 都沒有有效組時顯示「休息日」（現在會顯示「M月D日 · 課表名」，看起來像練過）。\n③ 日曆明細標題的課表名只取**有有效組**的那場 workout（同日多場仍取第一個有課表的，行為不變）。\n④ 熱力格子的階層也依有效組判定，空 workout 不得讓格子看起來有練。\n⑤ 新增 `DELETE /api/workouts/{id}`：**僅在該 workout 連軟刪除的組都沒有時**才允許刪除，否則回 409。有已刪組代表確實練過又刪掉，那是歷史不能清。\n⑥ 前端「結束訓練」時若該場沒有任何組，改為刪除該場，不呼叫 F91 的結束端點。\n⑦ **不採用「記第一組才建立 workout」**：線上按開始、到現場才失去訊號時會沒有 workout 可掛，離線第一組就記不成（現行行為是按開始時就建立，離線起始本來就不支援）。理由寫進 docs/decisions/。\n⑧ F90／F91 不回歸：被回收後仍可續接、已結束不得續接、離線不清本地狀態。\n⑨ 已知殘留（刻意接受）：app 被系統回收而沒按結束時，空 workout 仍會留在資料庫。此時 F90 會**續接**它而不是另建一場，且 ①–④ 讓它不顯示，因此不造成可見問題。\n⑩ pytest 涵蓋刪除端點兩條路（無組可刪／有軟刪組回 409）；E2E 涵蓋 ②③⑥。\n⑪ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f92.py 全過，verify_f90.py 與 verify_f91.py 回歸綠。\n\n背景：2026-07-30 Ryan 問「日曆當天沒訓練為什麼標訓練項目」。查證＝日曆明細來自 listWorkouts（回當天所有 workout，不管有沒有組），本週進度來自 trained_days（workouts JOIN sets，空的不算）——同一天一邊說沒練、一邊標課表名。當時資料庫 113 場 workout 有 109 場沒有有效組。"
     },
     {

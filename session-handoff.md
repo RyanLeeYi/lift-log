@@ -1,17 +1,20 @@
 # session handoff
 
-最後更新：2026-07-30（**F90 ＋ F91 完成並 passing，85/91；線上與 APK 同為 v94**）
+最後更新：2026-07-30（**F90 ＋ F91 ＋ F92 完成並 passing，86/92；線上與 APK 同為 v95**）
 
 ## 現況
 
 `docs/signoff-2026-07-30.md` 的簽核已全數落地（D1 選 B 保留時間窗、D2 照建議、其餘照建議）。
-**85/91 passing**，線上與 APK 同為 **v94**，`lift-log-v94-F91.apk` 已上 Google Drive
-（`versionCode='94'` 已用 aapt2 確認）。
+**86/92 passing**，線上與 APK 同為 **v95**，`lift-log-v95-F92.apk` 已上 Google Drive
+（`versionCode='95'` 已用 aapt2 確認）。
 
 ### 下一場從這裡開始
 
 **F66 休息倒數持久化**（feature_list 的第一個 failing 就是它）。剩餘順序：
 **F66 → F65 → F86 → F87 → F88 → F89**。
+
+⚠ **開工時先寫 `.harness/current_feature`**（單行 feature id）。trace 歸因 2026-07-30 起改讀這個檔，
+不再猜「第一個 failing」——沒寫的話 trace 全記成 `?`，`/harness-retro` 就少了那段資料。
 
 F66 走的是 F90/F91 剛做完的那條還原路徑（`restoreActiveWorkout()` → `confirmActiveWorkout()`），
 動工前先讀那兩支的實作，特別是 `confirmActiveWorkout()` 裡「送出當下的 id 快照」與
@@ -76,6 +79,45 @@ F90 驗收 ④ fail 長出來的——伺服器沒有「已結束」的概念，
 ④ 原文寫「「結束訓練」與「收工」」，但 F42 起「收工」已改名並移到 picker，UI 只有一個入口。
 是我起草時照抄了 `app.js` 裡一句過期註解，沒確認 UI 現況。Ryan 裁決修正條文、不新增第二個入口。
 （同 F34「把紅寫成琥珀」那一類：**fail 不一定是實作錯，可能是凍結條文描述錯了現狀**。）
+
+### F92（commit `a3e859d`..`d88a728`）：空的 workout 不該看起來像練過
+
+Ryan 問「日曆當天沒訓練為什麼標訓練項目」查出來的。**兩個畫面對「有沒有練」的定義不一致**：
+日曆明細來自 `listWorkouts`（回當天所有 workout，不管有沒有組），本週進度來自 `trained_days`
+（`workouts JOIN sets`）。所以按過一次「開始訓練」就會顯示「7月30日 · 上半身」。
+
+改法：`selectDay()` 濾掉沒有有效組的 workout；新增 `DELETE /api/workouts/{id}`（**連軟刪除的組
+都沒有時**才允許，否則 409）；「結束訓練」時該場沒組就刪掉。⑦ **不改成「記第一組才建 workout」**，
+理由見 `docs/decisions/workout-created-eagerly-not-on-first-set.md`。
+
+**實作時差點做錯**：把空場從 `cal.detail` 濾掉後，補記會找不到當天既有那場而**另建一場**——
+反而製造新的空 workout。要分成「顯示用 `cal.detail`」與「寫入目標 `cal.reuseWorkoutId`」。
+
+**測試**：`verify_f92.py` 15/15、pytest 267（新增 TestDeleteWorkout 4 條）。
+驗收 ①–⑪ 全 pass（codex-verify 跨模型），它另驗到我沒測的情境：同日「空場課表」與「有效課表」
+兩場並存時，標題只取有有效組的那場。
+
+#### 一次安全事故（未外洩，但值得記）
+
+清理前的 DB 備份被 `git add -A` 掃進 commit——裡面有 `push_subscriptions` 的
+endpoint/p256dh/auth（手機推播憑證）與 6 筆體重體脂。**從未推送**，已從 commit 移除、
+備份移到 repo 外的 `SideProject/lift-log-backups/`、blob 已 gc 回收。
+根因：`.gitignore` 只有 `*.db`，而 `liftlog.db.bak-...` 結尾不是 `.db`。已補 `*.db.bak*`。
+**教訓：要備份就一開始放 repo 外，不是先放進去再想辦法擋。**
+
+### 2026-07-30 的資料清理（一次性，已執行）
+
+清理前 113 場 workout 有 109 場沒有有效組（開發與測試留下的）。Ryan 選「全清」，
+已刪 109 場 ＋ 連帶 129 筆軟刪除的 sets，剩 4 場 85 組、0 孤兒。
+真正練過的四天：7/20、7/22、7/24、7/27。備份在 `SideProject/lift-log-backups/`。
+
+### E2E 暫存檔會愈積愈多（未解，建議綁進 F86–F88）
+
+repo 根目錄一度累積 12 顆測試 DB ＋ 2 個空目錄（7/17 起），2026-07-30 已手動清空。
+**原因不是忘了寫清理**——是 Windows 檔案鎖：`proc.terminate()` 後 uvicorn 握把還沒放掉，
+`unlink` 丟 `PermissionError`。f85 是 `except PermissionError: pass` 放過，
+f90/f91/f92 改成重試 10 次×0.3 秒（比較好但仍可能漏）。
+**根治**：暫存 DB 改建在系統暫存目錄而不是 repo 內。翻新隔離區腳本時（F86–F88）一起做最划算。
 
 ## 🟠 另一件要 Ryan 決定的事：線上站直接吃 repo 工作目錄
 
