@@ -28,3 +28,10 @@ debug.log
 *.db.bak*
 *.db-wal
 *.db-shm
+
+# F93 開發／正式環境分離
+.env.dev
+.env.bak-*
+deploy/
+liftlog-dev.db
+release-dev/
