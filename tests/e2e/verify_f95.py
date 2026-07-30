@@ -1,0 +1,197 @@
+"""F95 E2E：前景服務的 rest-timer channel 被單獨關閉時也要擋下（①–⑤）。
+
+跑法：`PYTHONUTF8=1 uv run python tests/e2e/verify_f95.py`
+
+**與 F65 的差別**：F65 只看 Capacitor 的 `default` channel，但 F63 之後使用者實際
+看到、也實際會去長按的那則倒數通知掛在前景服務自己的 `rest-timer`（RestTimerService，
+顯示名「休息倒數」）。default 那條只是前景服務啟不動時的退路——平常根本走不到。
+
+⚠ 所以這支腳本的假 plugin **一定要有 RestTimer**。F65 的 verify_f65.py 沒有它，
+測到的一律是退路那條，那正是這個缺口能躲過整輪測試的原因。
+（F62 的教訓：假物件會複製實作者的誤解。這次的誤解是「假物件缺了某個 plugin」。）
+
+⚠ 每組情境都配一條反面，否則「永遠顯示關」的實作也會全綠。
+"""
+
+from __future__ import annotations
+
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from playwright.sync_api import sync_playwright  # noqa: E402
+from verify_f67 import (  # noqa: E402
+    PHONE,
+    open_settings,
+    reroute_public_host,
+    safe_port,
+    setup_and_home,
+    start_server,
+)
+
+NOTIFY_FLAG = "liftlog.nativeNotifyEnabled"
+
+results: list[tuple[bool, str]] = []
+
+
+def check(ok: bool, label: str) -> None:
+    results.append((bool(ok), label))
+    print(f"{'PASS' if ok else 'FAIL'}  {label}")
+
+
+def fake_plugins(channels_js: str) -> str:
+    """假 LocalNotifications（含 listChannels）＋ RestTimer ＋ NotifyStatus。
+
+    RestTimer 存在才會走到 F63 的前景服務路徑——這正是 F65 漏掉的那條。
+    """
+    return f"""
+window.__notifyStatus = {{ openedSettings: 0 }};
+window.Capacitor = {{
+  isNativePlatform: () => true,
+  getPlatform: () => 'android',
+  Plugins: {{
+    LocalNotifications: {{
+      schedule: async () => ({{}}),
+      cancel: async () => ({{}}),
+      checkPermissions: async () => ({{ display: 'granted' }}),
+      requestPermissions: async () => ({{ display: 'granted' }}),
+      areEnabled: async () => ({{ value: true }}),
+      listChannels: async () => ({channels_js}),
+    }},
+    RestTimer: {{
+      start: async () => ({{ started: true }}),
+      stop: async () => ({{}}),
+      pause: async () => ({{}}),
+      resume: async () => ({{}}),
+      overlayPermitted: async () => ({{ granted: false }}),
+      setCardVisible: async () => ({{}}),
+      addListener: async () => ({{ remove: () => {{}} }}),
+    }},
+    NotifyStatus: {{
+      openSettings: async () => {{ window.__notifyStatus.openedSettings += 1; }},
+    }},
+  }},
+}};
+"""
+
+
+BOTH_OK = "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 }] }"
+TIMER_MUTED = (
+    "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 0 }] }"
+)
+DEFAULT_MUTED = (
+    "{ channels: [{ id: 'default', importance: 0 }, { id: 'rest-timer', importance: 2 }] }"
+)
+TIMER_ABSENT = "{ channels: [{ id: 'default', importance: 3 }] }"
+
+
+def toggle_label(page) -> str:
+    loc = page.locator(".push-toggle")
+    return loc.first.inner_text().strip() if loc.count() else "(沒有開關)"
+
+
+def open_app(browser, base: str, channels_js: str):
+    ctx = browser.new_context(viewport=PHONE)
+    page = ctx.new_page()
+    page.add_init_script(fake_plugins(channels_js))
+    reroute_public_host(page, base)
+    page.goto(base, wait_until="domcontentloaded")
+    page.wait_for_selector("input", timeout=10_000)
+    setup_and_home(page)
+    page.evaluate(f"() => localStorage.setItem('{NOTIFY_FLAG}', '1')")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    open_settings(page)
+    page.wait_for_timeout(600)
+    return ctx, page
+
+
+def main() -> int:
+    port = safe_port()
+    tmp = Path(tempfile.mkdtemp(prefix="liftlog-f95-"))
+    release = tmp / "release"
+    release.mkdir()
+    proc = start_server(port, tmp / "e2e.db", release)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        run_checks(base)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            proc.kill()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    passed = sum(1 for ok, _ in results if ok)
+    print(f"\n{passed}/{len(results)} passed")
+    if passed != len(results):
+        print("\nFAILED:")
+        for ok, label in results:
+            if not ok:
+                print(f"  - {label}")
+    return 0 if passed == len(results) else 1
+
+
+def run_checks(base: str) -> None:
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+
+        # 反面（前提）：兩個 channel 都正常時要顯示「開」
+        ctx, page = open_app(browser, base, BOTH_OK)
+        label = toggle_label(page)
+        check(
+            "休息提醒：開" in label,
+            f"前提：default 與 rest-timer 都正常 → 開關顯示「開」（實際：{label}）",
+        )
+        ctx.close()
+
+        # ③ 主要情境：前景服務那個 channel 被單獨關掉
+        ctx, page = open_app(browser, base, TIMER_MUTED)
+        label = toggle_label(page)
+        check(
+            "休息提醒：關" in label,
+            f"③ rest-timer importance=0（default 正常）→ 顯示「關」（實際：{label}）",
+        )
+        # ⑤ 引導：把人送到設定頁，訊息不寫死類別名稱
+        page.locator(".push-toggle").first.click()
+        page.wait_for_timeout(1200)
+        opened = page.evaluate("() => window.__notifyStatus.openedSettings")
+        check(opened >= 1, f"⑤ 點開關會開啟系統通知設定頁（實際 {opened} 次）")
+        msg = page.locator(".error-banner").first.inner_text() if page.locator(
+            ".error-banner"
+        ).count() else ""
+        check(
+            "這類" in msg or "類別" in msg,
+            f"⑤ 訊息指出是「通知類別」被單獨關掉（實際：{msg[:40] or '(無)'}）",
+        )
+        check(
+            "Default" not in msg and "休息倒數" not in msg and "休息結束" not in msg,
+            "⑤ 訊息不寫死類別名稱——講錯名字會讓人在對的頁面上找不到東西",
+        )
+        ctx.close()
+
+        # ③ 回歸 F65：default 被關同樣要擋（不能因為改看 rest-timer 就把舊的漏掉）
+        ctx, page = open_app(browser, base, DEFAULT_MUTED)
+        check(
+            "休息提醒：關" in toggle_label(page),
+            "③ 回歸 F65：default importance=0 仍然要顯示「關」",
+        )
+        ctx.close()
+
+        # 邊界：rest-timer 還沒建立（服務從未啟動過）不算被關
+        ctx, page = open_app(browser, base, TIMER_ABSENT)
+        check(
+            "休息提醒：開" in toggle_label(page),
+            "邊界：rest-timer 尚未建立（服務沒跑過）不算被關——否則新裝置永遠開不了",
+        )
+        ctx.close()
+
+        browser.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

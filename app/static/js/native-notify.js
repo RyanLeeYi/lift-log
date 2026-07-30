@@ -36,8 +36,16 @@ async function systemNotificationsEnabled() {
 // importance 設成 IMPORTANCE_NONE(0)，app 層仍是允許的。只看 areEnabled 的話，
 // 開關會顯示「開」而提醒永遠不出現——F62 review 指出的靜默失敗。
 const IMPORTANCE_NONE = 0;
-// 我們排通知時沒有指定 channelId，Capacitor LocalNotifications 一律走它的預設 channel。
-const REST_CHANNEL_ID = "default";
+// F95：休息提醒實際上會出現在**兩個** channel 的其中一個，兩個都要看。
+// - `rest-timer`：F63 前景服務自己建的（RestTimerService，顯示名「休息倒數」）。
+//   平常就是這一則——使用者被吵到時長按的也是它。
+// - `default`：Capacitor LocalNotifications 的預設 channel（我們排通知時沒指定 channelId）。
+//   只有前景服務啟不動時才走到。
+//
+// 任一個被關就顯示「關」是刻意的保守：JS 這一側無法預知這次休息會走哪一條
+// （startForegroundRest 成不成功要到當下才知道），寧可多提醒一次，
+// 也不要讓使用者以為提醒是開著的。
+const REST_CHANNEL_IDS = ["rest-timer", "default"];
 
 /**
  * 這一類通知是不是被單獨關掉了。
@@ -57,9 +65,12 @@ async function restChannelMuted() {
   if (!api?.listChannels) return false;
   try {
     const res = await api.listChannels();
-    const channel = res?.channels?.find((c) => c?.id === REST_CHANNEL_ID);
-    if (!channel) return false; // 還沒建立過
-    return channel.importance === IMPORTANCE_NONE;
+    const channels = res?.channels ?? [];
+    return REST_CHANNEL_IDS.some((id) => {
+      const channel = channels.find((c) => c?.id === id);
+      // 不存在就跳過：`rest-timer` 要到前景服務第一次啟動才建立，全新裝置上本來就沒有。
+      return channel ? channel.importance === IMPORTANCE_NONE : false;
+    });
   } catch {
     return false; // 舊版／不支援：退回 areEnabled 的判定
   }
