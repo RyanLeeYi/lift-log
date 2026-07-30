@@ -20,6 +20,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.Interpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -98,6 +100,11 @@ final class RestOverlay {
     private static final int TOUCH_TARGET_DP = 48;
     private static final int BUTTON_GAP_DP = 8;
 
+    // F89 ⑨：動效 160ms ease-out。ease-out ≒ DecelerateInterpolator（快進慢收），
+    // 與 app.css 那邊的 cubic-bezier 同一個調性。
+    private static final int ANIM_MS = 160;
+    private static final Interpolator EASE_OUT = new DecelerateInterpolator();
+
     private RestOverlay() {}
 
     /**
@@ -112,6 +119,41 @@ final class RestOverlay {
     private static void onMain(Runnable action) {
         if (Looper.myLooper() == Looper.getMainLooper()) action.run();
         else MAIN.post(action);
+    }
+
+    /**
+     * F89 ⑨：原生層的 prefers-reduced-motion。
+     *
+     * <p>Android 沒有跟 CSS 那個 media query 對應的 API；系統層最接近的是開發者選項／協助工具
+     * 把「動畫比例」關掉（`Settings.Global.ANIMATOR_DURATION_SCALE` = 0），Google 自家 app
+     * 也是拿它當減少動態的判斷。查不到就當作要動效（預設 1.0）——判不出來時給正常體驗，
+     * 不要反過來把所有人的動效都關掉。
+     */
+    private static boolean reduceMotion(Context context) {
+        try {
+            float scale = Settings.Global.getFloat(
+                context.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
+            return scale == 0f;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** F89 ⑨：出現／換態時的 160ms ease-out。reduced-motion 時直接就位，不做過場。 */
+    private static void animateIn(Context context, View target) {
+        if (target == null) return;
+        if (reduceMotion(context)) {
+            target.setAlpha(1f);
+            target.setScaleX(1f);
+            target.setScaleY(1f);
+            return;
+        }
+        target.setAlpha(0f);
+        target.setScaleX(.92f);
+        target.setScaleY(.92f);
+        target.animate()
+            .alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(ANIM_MS).setInterpolator(EASE_OUT).start();
     }
 
     /** Android 6 起 SYSTEM_ALERT_WINDOW 是「特殊權限」，宣告了也要使用者逐 app 手動開。 */
@@ -268,6 +310,7 @@ final class RestOverlay {
             params = buildParams(context);
             windowManager(context).addView(view, params);
             paintTime();
+            animateIn(context, view); // ⑨：出現時淡入放大，不要硬跳出來
         } catch (Exception e) {
             // OEM（例如 Samsung）可能在授權之外再擋一層，或 token 失效 —— 加不上就退回只有通知列
             clearRefs();
@@ -293,6 +336,7 @@ final class RestOverlay {
     /** 只收起 window，不動狀態——F69 的「暫時藏起來」（這輪休息還在跑）。 */
     private static void detach(Context context) {
         if (view == null) return;
+        view.animate().cancel(); // ⑨：view 要被移掉了，別讓動畫還抓著它跑
         try {
             windowManager(context).removeViewImmediate(view);
         } catch (Exception e) {
@@ -312,7 +356,13 @@ final class RestOverlay {
         params = null;
     }
 
-    /** F89 ⑤：切換收合／展開——重建 view（兩態版面差太多，共用一棵樹反而更難讀）。 */
+    /**
+     * F89 ⑤：切換收合／展開——重建 view（兩態版面差太多，共用一棵樹反而更難讀）。
+     *
+     * <p>⑨ 的過場由 {@link #attach} 的 {@link #animateIn} 接手：**只做入場、不做出場**。
+     * 出場動畫要等 callback 跑完才 removeView，那段期間 hide()／服務被回收都可能插進來，
+     * 留下移不掉的 view——在一個「關不掉的浮動視窗」上，那個風險換不到那 160ms。
+     */
     private static void toggleExpanded(Context context) {
         onMain(() -> {
             expanded = !expanded;

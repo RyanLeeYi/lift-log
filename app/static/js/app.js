@@ -35,6 +35,7 @@ import {
   restNotifyEnabled,
   restNotifySupported,
   restOverlayEnabled,
+  restOverlayPermitted,
   restOverlaySupported,
   restTimerRunning,
   scheduleRestNotify,
@@ -686,6 +687,43 @@ function weeklyTargetRow() {
   ];
 }
 
+// F89 ⑥：浮動計時的設定列是**三態**，不是開／關兩態。
+//
+//   開       —— 使用者要，系統也允許
+//   關       —— 使用者自己關掉的；不需要引導，點一下就開
+//   未授權   —— 系統不允許畫在其他 app 上。開關維持 OFF 外觀（--card-hi 底、--text-faint 字），
+//               但**常駐**一行副標把出路寫出來。原本只有點下去才跳一次性錯誤訊息，
+//               訊息消失後畫面上就再也看不出「為什麼開不起來」——那是靜默失敗的一種。
+//
+// 未授權時倒數不會消失：它退回通知列（F63），只是少了浮動視窗那個顯示面。
+function restOverlayRow() {
+  const on = restOverlayEnabled();
+  const locked = !on && !restOverlayPermitted();
+  const toggle = el(
+    "button",
+    {
+      class: `btn push-toggle${on ? " on" : ""}${locked ? " locked" : ""}`,
+      onclick: () =>
+        guard(async () => {
+          if (on) {
+            await disableRestOverlay();
+            render();
+            return;
+          }
+          // 未授權時 enableRestOverlay() 本來就會把人送到系統授權頁（F64 ②）
+          const res = await enableRestOverlay();
+          if (res.ok) render();
+          else showError(res.reason);
+        }),
+    },
+    [
+      iconLabel("window", `浮動計時：${on ? "開" : "關"}`),
+      ...(locked ? [el("span", { class: "toggle-sub" }, ["需系統授權 · 點此前往設定"])] : []),
+    ],
+  );
+  return toggle;
+}
+
 function renderSettings() {
   return el("section", { class: "screen settings-screen" }, [
     el("header", { class: "topbar" }, [
@@ -736,28 +774,7 @@ function renderSettings() {
       : []),
     // F64：浮動計時視窗。只在 app 版出現，且必須先開休息提醒——
     // overlay 是前景服務的第二個顯示面，服務沒跑就沒有秒數可畫
-    ...(restOverlaySupported() && restNotifyEnabled()
-      ? [
-          el(
-            "button",
-            {
-              class: `btn push-toggle${restOverlayEnabled() ? " on" : ""}`,
-              onclick: () =>
-                guard(async () => {
-                  if (restOverlayEnabled()) {
-                    await disableRestOverlay();
-                    render();
-                    return;
-                  }
-                  const res = await enableRestOverlay();
-                  if (res.ok) render();
-                  else showError(res.reason);
-                }),
-            },
-            [iconLabel("window", `浮動計時：${restOverlayEnabled() ? "開" : "關"}`)],
-          ),
-        ]
-      : []),
+    ...(restOverlaySupported() && restNotifyEnabled() ? [restOverlayRow()] : []),
     versionTag(),
     ...envTag(),
     // F68 ⑦：手動檢查後沒有新版的短暫提示

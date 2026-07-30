@@ -254,6 +254,15 @@ export function restOverlayEnabled() {
   return localStorage.getItem(OVERLAY_FLAG) === "1" && overlayGranted;
 }
 
+// F89 ⑥：把「系統有沒有授權」單獨透出去。
+//
+// 原本只有 restOverlayEnabled() 一個位元，UI 因此分不出兩種「關」——「使用者自己不要」
+// 與「系統沒授權所以畫不了」。前者不需要引導，後者需要（而且要常駐，不是點下去才跳一次
+// 錯誤訊息就消失）。授權狀態由 refreshNativeNotifyState() 每次回前景一併重查。
+export function restOverlayPermitted() {
+  return overlayGranted;
+}
+
 async function refreshOverlayGranted() {
   const api = restTimerPlugin();
   if (!api?.overlayPermitted) {

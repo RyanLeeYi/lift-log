@@ -20,6 +20,7 @@ import {
   refreshNativeNotifyState,
   requestNativeExactAlarm,
   restOverlayEnabled as nativeOverlayEnabled,
+  restOverlayPermitted as nativeOverlayPermitted,
   restOverlaySupported as nativeOverlaySupported,
   restTimerActive,
   resumeForegroundRest,
@@ -73,6 +74,11 @@ export function restOverlaySupported() {
 
 export function restOverlayEnabled() {
   return native() ? nativeOverlayEnabled() : false;
+}
+
+// F89 ⑥：系統授權狀態。web 版沒有這個概念，回 false（那一列本來就不會出現）。
+export function restOverlayPermitted() {
+  return native() ? nativeOverlayPermitted() : false;
 }
 
 export async function enableRestOverlay() {
