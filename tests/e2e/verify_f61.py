@@ -172,8 +172,12 @@ def verify_native_sim(page, base: str) -> None:
     count = round_trip(page)
     check(count > 0, f"③ app 版經公開站 base URL 往返成功（取回 {count} 筆動作）")
     check(len(seen) >= 2, f"③ app 版 API 打向公開站（攔到 {len(seen)} 個請求，前提非空）")
-    check(all(u.startswith(f"{PUBLIC_HOST}/api/") for u in seen),
-          "③ app 版的公開站請求都落在 /api/ 之下")
+    # F61 ③ 的凍結條文只要求「app 版指向公開站」，沒有限定 /api/ 前綴；原本寫死 /api/
+    # 是這支腳本自己加嚴的。F93 ⑫（後簽核）明訂環境標示的來源是**免 auth 的 /health**
+    # ——setup 畫面還沒 token 時就得顯示得出來，它天生不在 /api/ 下。故白名單放行 /health。
+    allowed = (f"{PUBLIC_HOST}/api/", f"{PUBLIC_HOST}/health")
+    check(all(u.startswith(allowed) for u in seen),
+          "③ app 版的公開站請求只落在 /api/ 與免 auth 的 /health")
     check(not other, f"③ app 版沒有殘留的同源 API 請求（殘留 {len(other)} 個）")
 
     registered = page.evaluate(

@@ -1761,6 +1761,14 @@
         "android-device"
       ],
       "acceptance": "（2026-07-30 Ryan 簽核凍結）\n① 測試站：port 8138、獨立 DB、**獨立 LIFTLOG_TOKEN**（不得與正式站共用——測試站的 token 會出現在腳本、log 與對話記錄裡）、seed 假資料的腳本。公開 hostname 為 lift-log-dev.my-super-dev-server.work（Ryan 已在 Cloudflare 後台建好 ingress → 127.0.0.1:8138，2026-07-30 實測 curl 得 200）。\n② 正式站改吃 `git archive` 出來的快照（例如 `deploy/current/`），不再直接吃工作目錄。部署＝展開指定 commit → restart。部署腳本要能指定 commit/tag，預設 HEAD。\n③ mission-control 收兩個服務：`lift-log`（8137，正式，吃快照）與 `lift-log-dev`（8138，測試，吃工作目錄）。\n④ Android 兩個 build flavor：`prod` → applicationId `com.ryanleeyi.liftlog`；`dev` → `com.ryanleeyi.liftlog.dev`。**兩顆必須能同時安裝在同一支手機上**，且**桌面上可一眼分辨**（app 名稱不同，icon 不同更好）。\n⑤ API base 依 flavor 決定：prod 指正式站、dev 指測試站。建置腳本產出後**必須驗證 APK 內的 `assets/public/js/env.js` 真的是該 flavor 預期的網址、且 applicationId 正確，不符就讓建置失敗**（F67 教訓：多步驟建置腳本前一步失敗不中止，會產出內容與檔名不符的 APK 且沒有任何錯誤訊息）。\n⑥ dev 版的自我更新（F67）指向測試站自己的 release 目錄，不得把 prod 的 APK 推給 dev 版（applicationId 不同，裝不上去）。\n⑦ 兩顆 APK 檔名可區分（例 `lift-log-v96.apk` / `lift-log-dev-v96.apk`），都上 Google Drive。\n⑧ **正式站行為零改變**：token、資料、公開網址、PWA 全部不受影響；`liftlog.db` 不得被測試站碰到。\n⑨ 透過公開 hostname 的驗證腳本要帶正常 User-Agent——Cloudflare 對 `Python-urllib` 回 **403**（2026-07-30 實測：同一個 endpoint，curl 得 200、urllib 得 403）。不知道這件事會把 403 誤判成服務故障。\n⑩ pytest 涵蓋：兩站的設定互不污染（token／DB 路徑取自各自環境）。\n⑪ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f93.py 全過；既有 E2E 不回歸；兩顆 APK 同時裝在手機上、各自連對站、資料互不干擾（此項需真機）。\n⑫（2026-07-30 回簽核追加，Ryan 要求）畫面要標示這是哪一站：版號**下面**顯示「正式環境」／「測試環境」。來源是免 auth 的 `/health` 回傳的 `env`（LIFTLOG_ENV，預設 prod——忘了設就當正式站，把正式站誤標成測試站比較危險），所以 setup 畫面還沒有 token 時也顯示得出來。測試站用警示色，正式站低調。問不到時不顯示，不得猜成正式站。\n  ※ 與 ④ 是同一件事的兩半：④ 管桌面圖示可分辨，⑫ 管進到畫面後可分辨。"
+    },
+    {
+      "id": "F94",
+      "name": "修復 F81 之後失效的 F48–F60 E2E 腳本",
+      "status": "failing",
+      "evidence": "",
+      "touches": [],
+      "acceptance": "（2026-07-30 F93 驗收發現，待簽核）\n① 背景：F81「重建首頁並拆出設定畫面」(5a72c95, 2026-07-29) 移除了首頁的 `.home-start` 元素，但 tests/e2e/verify_f48.py–verify_f60.py 共 13 支仍以 `.home-start` 當進入點，全部在 wait_for_selector 逾時失敗。這批從 F81 起就是壞的，不是 F93 造成的回歸。\n② 逐支改用現行首頁的實際進入點（不是把斷言刪掉或放寬——要驗的行為不變，只換選取器）。\n③ 完成後 tests/e2e/verify_f4*.py–verify_f6*.py 全數 exit 0。\n④ 找出「E2E 腳本會隨 UI 改版靜默失效」的防呆做法並提案（例如共用的頁面進入點 helper，改一處即可），寫進提案不強制實作。"
     }
   ]
 }

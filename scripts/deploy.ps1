@@ -47,10 +47,18 @@ $previous = Join-Path $deploy "previous"
 if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
-# 展開快照：git archive 出 tar 再解開（Windows 內建 tar）
+# 展開快照：git archive 出 tar 再解開（用 Windows 內建 tar）
+#
+# ⚠ 一定要走絕對路徑。裸打 `tar` 會依 PATH 順序解析，而 Git for Windows 也帶一支
+# MSYS2 的 tar——它把 `C:\...` 當成「主機 C 的遠端路徑」，回
+# `/usr/bin/tar: Cannot connect to C: resolve failed` 並 exit 128（2026-07-30 驗收在
+# 另一台 PATH 順序不同的環境上實際踩到，本機剛好 System32 在前才沒發現）。
+$tar = Join-Path $env:SystemRoot "System32\tar.exe"
+if (-not (Test-Path $tar)) { throw "找不到 $tar——Windows 內建 tar 缺席，不換版。" }
+
 $tarball = Join-Path $deploy "snapshot.tar"
 Invoke-Native { git archive --format=tar -o $tarball $Ref } "git archive"
-Invoke-Native { tar -x -f $tarball -C $staging } "tar 解壓"
+Invoke-Native { & $tar -x -f $tarball -C $staging } "tar 解壓"
 Remove-Item $tarball
 
 # 逐項確認執行時要用到的東西都在——只檢查一個檔案不夠，
