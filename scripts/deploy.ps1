@@ -17,6 +17,15 @@ param(
 
 $ErrorActionPreference = "Stop"   # 前一步失敗就中止——F67 的教訓：多步驟腳本不中止會產出殘缺結果
 
+# ⚠ $ErrorActionPreference **管不到原生指令**（git / tar）——它們失敗只是回非零 exit code，
+# PowerShell 不會拋。2026-07-30 首次執行就踩到：tar 因中文檔名整批解壓失敗、腳本照樣往下跑、
+# 還印出「已部署」。每個原生指令後面都要自己檢查。
+function Invoke-Native {
+    param([Parameter(Mandatory)][scriptblock]$Command, [string]$What)
+    & $Command
+    if ($LASTEXITCODE -ne 0) { throw "$What 失敗（exit $LASTEXITCODE）——不換版。" }
+}
+
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
@@ -40,14 +49,25 @@ New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
 # 展開快照：git archive 出 tar 再解開（Windows 內建 tar）
 $tarball = Join-Path $deploy "snapshot.tar"
-git archive --format=tar -o $tarball $Ref
-tar -x -f $tarball -C $staging
+Invoke-Native { git archive --format=tar -o $tarball $Ref } "git archive"
+Invoke-Native { tar -x -f $tarball -C $staging } "tar 解壓"
 Remove-Item $tarball
 
-# 沒有 app/main.py 就是打包錯了，不要換上去
-if (-not (Test-Path (Join-Path $staging "app\main.py"))) {
-    throw "快照裡沒有 app\main.py——打包失敗，不換版。"
+# 逐項確認執行時要用到的東西都在——只檢查一個檔案不夠，
+# tar 中途失敗時前面幾個目錄仍會存在，看起來像成功。
+foreach ($must in @(
+    "app\main.py", "app\static\index.html", "app\static\js\app.js",
+    "app\static\js\state.js", "app\static\sw.js", "pyproject.toml"
+)) {
+    if (-not (Test-Path (Join-Path $staging $must))) {
+        throw "快照缺少 $must——打包不完整，不換版。"
+    }
 }
+
+# 版號要與來源一致（快照裡的 APP_VERSION 就是上線後畫面顯示的版號）
+$snapVersion = (Select-String -Path (Join-Path $staging "app\static\js\state.js") `
+    -Pattern 'APP_VERSION\s*=\s*"(v\d+)"').Matches[0].Groups[1].Value
+Write-Host "快照版號：$snapVersion"
 
 # 原子性換版：current → previous、staging → current（出事可以把 previous 換回來）
 if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }

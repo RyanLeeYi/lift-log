@@ -1,0 +1,7 @@
+# F93：`git archive` 的部署快照不需要這些——它們是開發參考，不是執行時資產。
+# design_handoff 另有一個實際理由：裡面有含中文的檔名，Windows 內建的 tar 解壓時會
+# 報 `Invalid empty pathname` 而整批失敗（2026-07-30 實測）。快照本來就不該包它。
+design_handoff_liftlog_clay/ export-ignore
+docs/ export-ignore
+.harness/ export-ignore
+.gitattributes export-ignore
