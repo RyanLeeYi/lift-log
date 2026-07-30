@@ -453,15 +453,15 @@
     {
       "id": "F90",
       "name": "進行中訓練在 app 被回收後遺失（另開一場、組號重來）",
-      "status": "failing",
+      "status": "passing",
       "acceptance": "（2026-07-30 Ryan 簽核凍結）\n① 進行中訓練狀態（`workoutId`、各動作 `setCounts`）從 sessionStorage 搬到 localStorage，分頁關閉、app 被系統回收、裝置重開後仍在。\n② 還原條件：該 workout 的日期是今天，且未被標記結束。不符合就清掉本地狀態，不做跨日續接。\n③ 首頁按鈕在還原成立時顯示「繼續訓練」，點擊進入該 workout 而不新建；「接著做」的 set_number 從伺服器既有組數推算，不從 0 重來。\n④ 還原前先向伺服器確認該 workout 仍存在（404／已結束就清掉本地狀態，退回「開始訓練」）；伺服器是唯一事實來源，本地只是快取。\n   ⚠ 2026-07-30 驗收：404 分支 pass，「已結束」分支 fail——伺服器當時沒有結束狀態可問。Ryan 裁決補伺服器端（選項 A），該工作為 F91；**本條在 F91 完成後重驗才可改 passing**。\n⑤ E2E 回歸：記 2 組 → 清掉 sessionStorage 並重載 → 首頁顯示「繼續訓練」→ 進入後第 3 組的 set_number 是 3、當日 workout 總數仍為 1。\n⑥ 與 F66 的分工：這條管「哪一場訓練、記到第幾組」，F66 管休息倒數。兩者各自獨立還原，一邊失敗不影響另一邊。\n現象（2026-07-29 由 F83 驗收過程中的實測發現，不是 F83 造成的既有邊界）：進行中訓練的 workoutId 與 setCounts 存在 sessionStorage。分頁關閉或 app 被系統回收後這份狀態消失：首頁按鈕從「繼續訓練」變回「開始訓練」，按下去會另建一場 workout，「接著做」從第 1 組重來；先前記的組仍留在舊 workout 裡，於是同一天同一場訓練被切成兩筆。\nCodex 2026-07-29 實測：關閉分頁前 workoutId=1、setCounts={\"1\":2}；新分頁 liftlog.activeWorkout=null；按下後建立 workout 2，其 set_number 從 [1] 重新開始。",
-      "evidence": ""
+      "evidence": "2026-07-30：ruff clean、pytest 263 passed、tests/e2e/verify_f90.py 30/30；回歸 F70 18/18、F71 27/27、F83 35/35、F84 54/54。commit be0785a..b344c67（1 實作 + 5 筆 review 修正）。review：/codex-review 跨模型五輪，10 條 findings 全部成立、全部修掉（組號撞號、setCounts 語意、佇列殘影重複計組、過期回應競態、SW 快取版號…）。驗收：2026-07-30 codex-verify 跨模型，①②③⑤⑥ pass、④「已結束」分支 fail（伺服器當時沒有結束狀態可問＝規格描述了不存在的東西）→ Ryan 裁決補伺服器端（選項 A）＝F91；F91 完成後由 acceptance-verifier 重驗 ④ pass，F90 全條成立。"
     },
     {
       "id": "F91",
       "name": "workout 結束狀態進伺服器（跨裝置一致）",
-      "status": "failing",
-      "evidence": "",
+      "status": "passing",
+      "evidence": "2026-07-30：ruff clean、pytest 263 passed（含 TestEndWorkout 6 條 + migration 2 條）、tests/e2e/verify_f91.py 20/20；回歸 verify_f90.py 30/30、F70 18/18、F83 35/35。commit ca65e58..44b4061。review：/codex-review 跨模型兩輪，3 條 findings 全部成立、全部修掉（離線結束未進補送佇列＝這條 feature 會白做、重新登入不重放佇列、補送期間舊快照抹掉新入列項）。驗收：codex-verify 跨模型判 ①②③⑤⑥⑦⑧⑨⑩ pass、④ fail（實作先清本地才呼叫端點，與條文順序相反；且條文提到 F42 已移除的「收工」按鈕）；順序已修並補上執行期斷言（攔 fetch 讀 localStorage 得 [True]），「收工」那半經 Ryan 回簽核修正條文為單一入口。④ 重驗由 acceptance-verifier（同模型 fresh context）四項全 pass。",
       "acceptance": "（2026-07-30 Ryan 簽核凍結；F90 驗收時 ④ fail 長出來的——伺服器沒有「已結束」的概念，前端問不到）\n① `workouts` 加 `ended_at`（nullable datetime），附 migration；既有資料一律 null（＝未結束），不回填。\n② 新增結束端點 `POST /api/workouts/{id}/end`：設 `ended_at` 為當下；對已結束的 workout 重複呼叫是冪等的（回 200，不更新時間、不報錯）——離線補傳與連點都會重送。\n③ `GET /api/workouts/{id}` 與 workout 列表都回傳 `ended_at`。\n④ 前端「結束訓練」（picker；F42 前原稱「收工」、位於 logger，現已合併為單一入口）在清本地狀態前呼叫該端點；呼叫失敗不阻擋本地結束（離線時照樣結束，之後由佇列補送）。\n   ※ 2026-07-30 回簽核修正：原文寫「「結束訓練」與「收工」」，但 F42 起「收工」已改名並移到 picker，UI 只有一個入口——條文描述了不存在的按鈕（規格 bug，非實作缺漏）。Ryan 裁決修正條文，不新增第二個入口。\n⑤ `confirmActiveWorkout()` 還原時檢查：`ended_at` 非 null → 清掉本地狀態、退回「開始訓練」，與 404 走同一條處置。\n⑥ 已結束的 workout 仍接受 `POST /sets`（不得回 409）：離線佇列裡先記的組必須補得進去。此為刻意決定——擋寫入會讓「離線記完、在另一台按結束」的組被標成 failed 而遺失，而本 feature 要解的是「續接」不是「寫入」。理由記進 docs/decisions/。\n⑦ F90 ④ 的「已結束」分支由本條達成；F90 的 404 分支、離線不清、跨日不續接全部不回歸。\n⑧ pytest 涵蓋：端點冪等、`ended_at` 出現在單筆與列表回應、已結束仍可寫入 sets、migration 對既有 DB 可跑。\n⑨ E2E：記 2 組 → 呼叫結束端點 → 放回結束前的舊快取 → 重載 → 不得顯示「繼續訓練」且本地狀態被清（這正是驗收 F90 ④ 時 fail 的那條情境）。\n⑩ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f91.py 全過，verify_f90.py 30/30 回歸綠。\n\n設計問題的答案（簽核時定案，不再重議）：關掉 app 再也沒回來的那場不自動結束（ended_at 留 null，跨日續接已由 F90 ② 擋掉）；不做過午夜自動結束；結束是終態、不可反悔（誤按的救濟是日曆補記）。"
     },
     {
