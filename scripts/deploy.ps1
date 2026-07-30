@@ -31,9 +31,23 @@ function Invoke-Native {
 # 2026-07-30 部署時才發現這幾行從來沒能執行過；當時 Codex 用 -NoRestart 驗，
 # 剛好繞過這條路徑）。API 才是中台實際對外的介面。
 $MC = "http://127.0.0.1:18600/api/services"
+
+# 中台 /api/* 有 Bearer token。**不得把 token 寫進這個 repo**——改從中台自己的
+# .env 現讀（或用同名環境變數覆寫）。讀不到就直說，不要靜默跳過重啟：
+# 那會留下「檔案換了、服務還跑舊碼」的半吊子狀態。
+function Get-McToken {
+    if ($env:MC_API_TOKEN) { return $env:MC_API_TOKEN }
+    $mcEnv = Join-Path (Split-Path -Parent $repo) "mission-control\.env"
+    if (-not (Test-Path $mcEnv)) { throw "找不到中台的 .env（$mcEnv），無法重啟服務。" }
+    $line = Select-String -Path $mcEnv -Pattern '^\s*MC_API_TOKEN\s*=\s*(.+)$'
+    if (-not $line) { throw "中台的 .env 沒有 MC_API_TOKEN，無法重啟服務。" }
+    return $line.Matches[0].Groups[1].Value.Trim().Trim('"')
+}
+
 function Invoke-MissionControl {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Action)
-    $resp = Invoke-RestMethod -Method Post -Uri "$MC/$Name/$Action" -TimeoutSec 30
+    $headers = @{ Authorization = "Bearer $(Get-McToken)" }
+    $resp = Invoke-RestMethod -Method Post -Uri "$MC/$Name/$Action" -Headers $headers -TimeoutSec 30
     if (-not $resp.success) { throw "mission-control $Action $Name 失敗：$($resp.error)" }
 }
 
