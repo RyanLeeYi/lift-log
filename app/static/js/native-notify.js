@@ -7,7 +7,7 @@
 const REST_ID = 1001; // 固定 id：同一次休息只會有一則，取消時不必記錄 id
 const FLAG = "liftlog.nativeNotifyEnabled";
 
-let cache = { granted: false, exact: false };
+let cache = { granted: false, exact: false, channelOff: false };
 
 function plugin() {
   return globalThis.Capacitor?.Plugins?.LocalNotifications ?? null;
@@ -28,6 +28,40 @@ async function systemNotificationsEnabled() {
     return Boolean(res?.value);
   } catch {
     return false;
+  }
+}
+
+// F65：Android 的通知開關有兩層——app 層（areEnabled）與 channel 層。
+// 使用者被吵到時最直覺的動作是長按通知選「關閉這類通知」，那只會把 channel 的
+// importance 設成 IMPORTANCE_NONE(0)，app 層仍是允許的。只看 areEnabled 的話，
+// 開關會顯示「開」而提醒永遠不出現——F62 review 指出的靜默失敗。
+const IMPORTANCE_NONE = 0;
+// 我們排通知時沒有指定 channelId，Capacitor LocalNotifications 一律走它的預設 channel。
+const REST_CHANNEL_ID = "default";
+
+/**
+ * 這一類通知是不是被單獨關掉了。
+ *
+ * ⚠ 「查不到」**不等於**「被關掉」，這裡刻意與 systemNotificationsEnabled() 的
+ * 保守方向相反。理由不是「channel 還沒建立」——Capacitor 的 default channel 在
+ * plugin load 時就無條件建好了，API 26+ 一定查得到（review 查證）。真正的理由是
+ * **這道只是額外的一層限制**：`listChannels` 不存在或拋錯（API 25 以下根本沒有
+ * channel 概念）時，該由 areEnabled() 這個 app 層的事實來源說了算，不該因為問不到
+ * 附加條件就把功能擋死。
+ *
+ * ⚠ 這裡只看 default channel。F63 前景服務那則倒數通知掛在自己的 `rest-timer`
+ * channel（RestTimerService.java），**不在這道判定裡**——見 F95。
+ */
+async function restChannelMuted() {
+  const api = plugin();
+  if (!api?.listChannels) return false;
+  try {
+    const res = await api.listChannels();
+    const channel = res?.channels?.find((c) => c?.id === REST_CHANNEL_ID);
+    if (!channel) return false; // 還沒建立過
+    return channel.importance === IMPORTANCE_NONE;
+  } catch {
+    return false; // 舊版／不支援：退回 areEnabled 的判定
   }
 }
 
@@ -81,12 +115,16 @@ export async function refreshNativeNotifyState() {
   await refreshOverlayGranted();
   const api = plugin();
   if (!api) {
-    cache = { granted: false, exact: false };
+    cache = { granted: false, exact: false, channelOff: false };
     return cache;
   }
   let exact = true; // 查不到就不報警——Android 11 以下沒有這個設定
   // 唯一事實來源：系統當下是否允許本 app 發通知（見上方 systemNotificationsEnabled 的說明）
-  const granted = await systemNotificationsEnabled();
+  const appAllowed = await systemNotificationsEnabled();
+  // F65 ②：channel 被單獨關掉時通知同樣不會出現，所以它與 areEnabled 一起構成 granted。
+  // channelOff 另外留著——UI 要能講出是「這類通知」被關，而不是籠統說「通知被關閉」。
+  const channelOff = appAllowed ? await restChannelMuted() : false;
+  const granted = appAllowed && !channelOff;
   try {
     // Android 12+ 專有；舊版會拋錯，視同不受限
     const setting = await api.checkExactNotificationSetting();
@@ -94,7 +132,7 @@ export async function refreshNativeNotifyState() {
   } catch {
     /* 舊版沒有此 API：維持 exact = true */
   }
-  cache = { granted, exact };
+  cache = { granted, exact, channelOff };
   return cache;
 }
 
@@ -116,7 +154,17 @@ export async function enableNativeNotify() {
     // 走到這裡＝系統當下不允許發通知。直接把人送到設定頁，不要只丟一句話
     // （⑤ 的「明確引導、不靜默失敗」）
     await openNativeNotifySettings();
-    return { ok: false, reason: "通知被系統關閉——已為你開啟設定頁，打開後回來再按一次" };
+    // F65 ①：兩層要分開講。「整個 app 的通知被關」與「這類通知被單獨關掉」在設定頁裡
+    // 是不同的兩個開關，講錯的話使用者會在正確的頁面上找不到該開的東西。
+    return {
+      ok: false,
+      // ⚠ 不要在文案裡寫死類別名稱。default channel 在系統設定裡顯示為 Capacitor 寫死的
+      // 「Default」，而 F63 前景服務那則叫「休息倒數」——講一個對不上的名字，等於讓人
+      // 在正確的頁面上找不到該開的東西（正是 ① 要避免的）。只指路，不報名字。
+      reason: cache.channelOff
+        ? "休息提醒的通知類別被單獨關掉了——已開啟設定頁，在通知類別清單裡打開後回來再按一次"
+        : "通知被系統關閉——已為你開啟設定頁，打開後回來再按一次",
+    };
   }
   localStorage.setItem(FLAG, "1");
   return { ok: true };

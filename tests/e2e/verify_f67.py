@@ -107,10 +107,47 @@ def native(page, base: str, current: int, can_install: bool = True):
     args = f"({current}, {str(can_install).lower()})"
     page.add_init_script(FAKE_PLUGIN.strip().join(["(", f"){args}"]))
 
-    # app 版的 API 會打向公開站（F61 ③）——導回本機測試伺服器，別碰正式站。
-    # 不能用 continue_(url=...)：Playwright 不允許改協定（https→http）。
-    # 補 ACAO 是模擬環境的權宜；真機的 origin 是 https://localhost，由後端白名單放行。
-    def reroute(route):
+    # app 版的 API 會打向公開站（F61 ③）——導回本機測試伺服器，別碰正式站
+    reroute_public_host(page, base)
+    page.goto(base, wait_until="domcontentloaded")
+    page.wait_for_selector("input", timeout=10_000)
+    return page
+
+
+def setup_and_home(page) -> None:
+    page.fill("input", TOKEN)
+    page.get_by_role("button").first.click()
+    page.wait_for_timeout(1200)
+
+
+def safe_port() -> int:
+    """避開 Chromium 的 unsafe port 黑名單（6669 等 IRC 埠會直接 ERR_UNSAFE_PORT）。
+
+    不能只靠 free_port() 重抽：這台的 Windows dynamic port range 是 1024-15000，
+    臨時埠幾乎都落在黑名單所在的區間。2026-07-30 verify_f66 實際抽到 6669 才發現。
+    """
+    import random
+
+    for _ in range(200):
+        port = random.randint(20000, 60000)
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+        return port
+    raise RuntimeError("找不到安全的埠")
+
+
+def reroute_public_host(page, base: str) -> None:
+    """把 app 版打向公開站的請求轉回本機。
+
+    注入 window.Capacitor 之後 env.js 判定為原生殼，API base 換成**真的正式站**——
+    不攔的話測試會去打線上資料。不能用 route.continue_(url=...)：Playwright
+    不允許改協定（https→http），只能自己抓再 fulfill（同 verify_f61）。
+    """
+
+    def handler(route):
         req = route.request
         allow = {"access-control-allow-origin": base, "access-control-allow-headers": "*"}
         if req.method == "OPTIONS":
@@ -124,16 +161,7 @@ def native(page, base: str, current: int, can_install: bool = True):
         )
         route.fulfill(response=resp, headers={**resp.headers, **allow})
 
-    page.route(f"{PUBLIC_HOST}/**", reroute)
-    page.goto(base, wait_until="domcontentloaded")
-    page.wait_for_selector("input", timeout=10_000)
-    return page
-
-
-def setup_and_home(page) -> None:
-    page.fill("input", TOKEN)
-    page.get_by_role("button").first.click()
-    page.wait_for_timeout(1200)
+    page.route(f"{PUBLIC_HOST}/**", handler)
 
 
 def start_from_home(page) -> None:

@@ -17,9 +17,7 @@
 from __future__ import annotations
 
 import json
-import random
 import shutil
-import socket
 import sys
 import tempfile
 from pathlib import Path
@@ -29,12 +27,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
+    reroute_public_host,
+    safe_port,
     setup_and_home,
     start_from_home,
     start_server,
 )
-
-PUBLIC_HOST = "https://lift-log.my-super-dev-server.work"  # env.js 的 prod base
 
 WORKOUT_KEY = "liftlog.activeWorkout"
 TWELVE_HOURS_MS = 12 * 60 * 60 * 1000
@@ -156,50 +154,6 @@ window.Capacitor = {
   },
 };
 """
-
-
-def reroute_public_host(page, base: str) -> None:
-    """把 app 版打向公開站的請求轉回本機（沿用 verify_f61 的做法）。
-
-    注入 window.Capacitor 之後 env.js 會判定是原生殼，API base 換成**真的正式站**——
-    不攔的話這支測試會去打 Ryan 的線上資料。不能用 route.continue_(url=...)：
-    Playwright 不允許改協定（https→http），只能自己抓再 fulfill。
-    """
-
-    def handler(route):
-        req = route.request
-        allow = {"access-control-allow-origin": base, "access-control-allow-headers": "*"}
-        if req.method == "OPTIONS":
-            route.fulfill(status=200, headers={**allow, "access-control-allow-methods": "*"})
-            return
-        resp = page.context.request.fetch(
-            req.url.replace(PUBLIC_HOST, base),
-            method=req.method,
-            headers=req.headers,
-            data=req.post_data,
-        )
-        route.fulfill(response=resp, headers={**resp.headers, **allow})
-
-    page.route(f"{PUBLIC_HOST}/**", handler)
-
-
-def safe_port() -> int:
-    """避開 Chromium 的 unsafe port 黑名單（6669 等 IRC 埠會直接 ERR_UNSAFE_PORT）。
-
-    不能只靠 free_port() 重抽——這台的 Windows dynamic port range 是 1024-15000
-    （見 mission-control 的設定註解），臨時埠幾乎都落在黑名單所在的區間裡。
-    直接自己挑 15000 以上的埠來綁。這次實際抽到 6669 才發現；共用的 free_port()
-    不管這件事，其他腳本只是還沒中過。
-    """
-    for _ in range(200):
-        port = random.randint(20000, 60000)
-        with socket.socket() as s:
-            try:
-                s.bind(("127.0.0.1", port))
-            except OSError:
-                continue
-        return port
-    raise RuntimeError("找不到安全的埠")
 
 
 def main() -> int:  # noqa: C901
