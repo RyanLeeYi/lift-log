@@ -1407,7 +1407,6 @@ body {
   background: var(--card); border-radius: var(--r-card);
   padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
 }
-.tpl-item.hi { background: var(--card-hi); }
 .tpl-item-name { display: flex; flex-direction: column; gap: 2px; }
 .tpl-item-name .n-zh { font-family: var(--sans); font-weight: 700; font-size: 16px; }
 .tpl-item-name .n-alias { font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--text-mute); }
@@ -1422,7 +1421,6 @@ body {
   color: var(--text); font-size: 16px; cursor: pointer;
   position: relative;
 }
-.tpl-item.hi .round-btn { background: var(--card); }
 /* 觸控區補到 44×44（視覺仍是 38）——量 bounding_box 驗得到 */
 .round-btn::after {
   content: ""; position: absolute; top: 50%; left: 50%;

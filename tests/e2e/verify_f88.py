@@ -100,9 +100,12 @@ def run_checks(base: str) -> None:  # noqa: C901
 
         cards = page.locator(".tpl-item")
         check(cards.count() == 3, f"② 三個動作三張卡（實際 {cards.count()}）")
+        # F96 ⑤：原本驗「第一張用 --card-hi 站出來」。編輯課表沒有「選中」這個概念，
+        # 那個高亮是純裝飾又會誤導，F96 拿掉了——所以這裡改驗新條文的目的：**底色一致**。
+        # 不是把斷言刪掉；一致性同樣需要有人守著（下一個誤加高亮的實作要在這裡掛掉）。
         first_bg = css(page, ".tpl-item:nth-of-type(1)", "backgroundColor")
         other_bg = css(page, ".tpl-item:nth-of-type(2)", "backgroundColor")
-        check(first_bg != other_bg, f"② 第一張用 --card-hi 站出來（{first_bg} vs {other_bg}）")
+        check(first_bg == other_bg, f"② 每張卡底色一致，第一張不特別（{first_bg} vs {other_bg}）")
         check(css(page, ".tpl-item-name .n-zh", "fontWeight") == "700", "② 名稱 700")
         check(css(page, ".tpl-item-name .n-zh", "fontSize") == "16px", "② 名稱 16px")
         check(css(page, ".tpl-item-name .n-alias", "fontSize") == "11px", "② 別名 11px")

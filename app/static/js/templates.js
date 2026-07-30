@@ -310,8 +310,13 @@ function itemRow(item, index, rerender) {
       rerender();
     }
   };
-  // F88 ②：一個動作一張卡；第一張用 --card-hi 站出來（同 F78 ⑤：靠底色差不靠外框）
-  const row = el("div", { class: `tpl-item${index === 0 ? " hi" : ""}` }, [
+  // F88 ②：一個動作一張卡。
+  //
+  // F96：第一張卡的 --card-hi 高亮拿掉了。編輯課表**沒有「選中」這個概念**——第一個動作
+  // 並不特別，它只是排在第一，那個高亮因此是純裝飾而且會誤導（看起來像被選起來）。
+  // 對照組是挑今日課表：那裡的高亮綁著「今天排到的那份」，有真實狀態撐著。
+  // 高亮之後會以 F97 拖曳中的那張卡的形式回來——那時它才對應一個真實狀態。
+  const row = el("div", { class: "tpl-item" }, [
     // 名稱獨立一行（中英並列，別名不再被擠到換行）
     el("div", { class: "tpl-item-name" }, [
       el("span", { class: "n-zh" }, [exerciseName(item)]),

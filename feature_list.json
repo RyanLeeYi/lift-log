@@ -1723,7 +1723,8 @@
         "tests/e2e/verify_f52.py",
         "tests/e2e/verify_f88.py"
       ],
-      "requires": []
+      "requires": [],
+      "superseded_by": "F96（僅 ② 的「第一張（或選中的）用 --card-hi 站出來」一句：編輯課表沒有「選中」這個狀態，該高亮是純裝飾且會誤導，已拿掉；F88 其餘條文全部有效）"
     },
     {
       "id": "F89",
@@ -1793,9 +1794,13 @@
     {
       "id": "F96",
       "name": "編輯課表拿掉第一張動作卡的高亮",
-      "status": "failing",
-      "evidence": "",
-      "touches": [],
+      "status": "passing",
+      "evidence": "（2026-07-31 v107）拿掉 `.tpl-item.hi`：templates.js 不再對 index===0 加 hi，app.css 移除 `.tpl-item.hi` 與 `.tpl-item.hi .round-btn` 兩條規則（③：沒有加任何替代高亮，高亮要等 F97 綁到「正在拖的那張」才回來）。\n⑤ verify_f88 的 ② 斷言改成驗底色一致（first_bg == other_bg），不是刪掉——一致性同樣需要有人守著，下一個誤加高亮的實作要在那裡掛掉。\n⑥ 完成定義：ruff All checks passed；pytest 274 passed；tests/e2e/verify_f88.py 31/31（含 ⑦ F21 清單捲動門檻與捲動位置保留、⑥ F51 底部三顆鈕、⑧ 觸控目標 44px，F21／F51／F52 均不回歸）。\n④ F88 ② 的「第一張（或選中的）用 --card-hi」已標 superseded_by 本條，F88 其餘條文不變。\nreviewed_by / verified_by：見下方 session 註記——這批的 review 與驗收在 Codex 額度恢復前都是同模型 fresh context，獨立性較弱。",
+      "touches": [
+        "app/static/js/templates.js",
+        "app/static/css/app.css",
+        "tests/e2e/verify_f88.py"
+      ],
       "acceptance": "（2026-07-30 Ryan 簽核凍結）\n① 背景：F88 ② 訂「每個動作一張卡；第一張（或選中的）用 --card-hi 底」，實作成 `index === 0` 上高亮。但編輯課表**沒有「選中」這個概念**——第一個動作並不特別，它只是排在第一。那個高亮因此是純裝飾，而且會誤導（看起來像被選起來或是主要動作）。對照組是挑今日課表：那裡的高亮有意義（今天排到的那份），這裡沒有。\n② 拿掉 `.tpl-item.hi`：六張動作卡一律 --card 底，視覺一致。\n③ 不新增替代的高亮機制——**除非它綁定一個真實狀態**（見 F97：拖曳排序時把高亮給「正在拖的那張」）。現在沒有那個狀態，就不要先畫一個假的；F97 做好之後高亮會以有意義的形式回來。\n④ F88 ② 的「第一張（或選中的）用 --card-hi」標 superseded_by 本條；F88 的其餘條文（卡片、圓鈕、圖示、參考休息、加動作鈕、底部按鈕、觸控目標）全部不變。\n⑤ verify_f88 的「② 第一張用 --card-hi 站出來」那條斷言跟著改成「六張卡底色一致」——驗的是新條文的目的，不是把斷言刪掉。\n⑥ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f88.py 全過；F21／F51／F52 的行為不回歸（清單捲動、按鈕貼底）。"
     },
     {
