@@ -89,13 +89,33 @@ export function attachDragSort(list, {
       if (ev && ev.pointerId !== undefined && ev.pointerId !== pending.pointerId) return;
       cleanup(pending); // ⑥ 中斷＝不變更順序
     };
+    // ⚠ 手指與滑鼠在這裡是**兩套機制**（2026-07-31 真機回報「拖不動」的成因）。
+    //
+    // 觸控時，捲動容器上的手指預設由 compositor 接管；一旦它判定這是捲動，就送 pointercancel
+    // 給我們、然後自己捲——長按明明已經進入拖曳態，手指一動就被抽走。
+    // pointermove 的 preventDefault() 對觸控**無效**（規格如此），要擋只能擋底層的 touchmove，
+    // 而且監聽必須是 non-passive，否則瀏覽器不等 JS 就先捲了。
+    //
+    // 監聽在 pointerdown 當下就掛（不是等長按門檻過了才掛）：等到那時候再掛，第一個 touchmove
+    // 可能已經送出，來不及。沒進入拖曳態就不擋，捲清單照常。
+    const blockScroll = (ev) => {
+      if (pending.dragging && ev.cancelable) ev.preventDefault();
+    };
     pending.detach = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("blur", onCancel);
+      window.removeEventListener("touchmove", blockScroll);
+      window.removeEventListener("contextmenu", onContextMenu);
       document.removeEventListener("visibilitychange", onHidden);
     };
+    // 長按在 WebView 裡也會叫出文字選取／長按選單，那同樣會把觸控收走
+    const onContextMenu = (ev) => {
+      if (pending.dragging) ev.preventDefault();
+    };
+    window.addEventListener("touchmove", blockScroll, { passive: false });
+    window.addEventListener("contextmenu", onContextMenu);
     const onHidden = () => {
       if (document.visibilityState === "hidden") cleanup(pending);
     };

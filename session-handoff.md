@@ -1,23 +1,35 @@
 # session handoff
 
-最後更新：2026-07-31 凌晨（**91/97 passing，v107；F89／F97 各剩一個真機缺口**）
+最後更新：2026-07-31 早上（**91/97 passing，v108；F97 真機已修好，等 Ryan 拖一次**）
 
-## 這一場做完的（Ryan 睡覺，我一路做到用量門檻）
+## 先看這個：F97 真機拖不動已修好（Ryan 2026-07-31 回報）
 
-- **F89 ⑥⑨ 補完**（commit 0648e8d）：設定列三態＋原生動效與 reduced-motion
-- **F96 passing**（commit 1bd640f）：拿掉編輯課表第一張卡的高亮
-- **F97 實作完成**（commit 57e3c66）：長按拖曳排序取代上下箭頭鈕，31/31 綠
-- **真機驗過一輪**（dev v107 已裝上 SM-N9750）：F89 ①–⑦ 全部看過，截圖在 scratchpad
-  `dev-02`～`dev-19`。F72／F73 不回歸確認
+**Ryan 回報「他沒辦法拖曳」，是真的 bug，不是操作問題。**
+
+成因：手指與滑鼠在瀏覽器裡是兩套機制。捲動容器上的觸控預設由 compositor 接管，
+它一判定是捲動就送 `pointercancel` 把拖曳抽走——長按明明已經進入拖曳態，手指一動就被抽掉。
+`pointermove` 的 `preventDefault()` 對觸控**無效**（規格如此），要擋只能擋 non-passive 的
+`touchmove`；另外長按會叫出文字選取，那也會收走觸控，所以再加 `user-select: none`。
+
+修法在 `drag-sort.js` 的 `blockScroll`／`onContextMenu` 與 app.css 的 `.tpl-item`。
+**verify_f97 加了觸控節**（CDP `Input.dispatchTouchEvent`），修之前會 fail、修之後 36/36；
+反面「清單真的捲得動」也在裡面（把捲動擋死同樣會讓拖曳那條變綠）。
+真機 dev v108 用 `adb input draganddrop` 拖曳成功（截圖 dev-25）。
+
+→ **Ryan 起床後用手指拖一次**，成功就把 F97 改 passing。手機上的測試版已經是 v108。
+
+### 我上一輪推論錯的地方（記著）
+
+前一份 evidence 寫「adb 注入模擬不了長按後拖曳，是注入限制不是實作問題」——**錯的**。
+當時拖不動就是這個 bug。**工具測不出來時先假設是自己的東西壞了，不要先怪工具。**
+更根本的：整批滑鼠斷言全綠卻在真機掛掉，是「測試方法選錯」的假綠，
+跟先前 F88 選中 chip 看不見、F87 假存在是同一類。**碰觸控手勢就要用觸控事件測。**
 
 ## 下一場照這個順序做
 
-### 1. 兩個真機缺口（各 5 分鐘，要人在場）
+### 1. 真機缺口（要人在場）
 
-- **F97 ⑨ 的真機那半**：用**真手指**在編輯課表長按拖一次，確認長按門檻不會跟清單捲動打架。
-  我試過 adb 的兩種注入都拖不動——`input motionevent` 分次呼叫不共用手勢流（downTime 不同，
-  MOVE 被丟棄）、`input draganddrop` 的 hold 壓不過 300ms 門檻。**這是注入限制不是實作問題**
-  （同一支 APK 用滑鼠模擬 31/31 全綠）。拖得動就可以改 passing
+- **F97**：用手指拖一次（見最上面那節），成功就改 passing
 - **F89 ⑨ 的動效觀感**：靜態截圖看不出 160ms 過場。收合⇄展開切兩次看順不順；
   再把開發者選項的動畫比例調 0，確認過場消失但功能正常（我驗過不崩，沒驗過「有動」）
 
@@ -50,9 +62,9 @@ F86 ⑩（f59/f60）、F87 ⑬⑭（f53–f58）、F88 ⑨⑩（f48–f52）—�
 
 - **91/97 passing**（feature_list 實數；上一份 handoff 寫的 95/103 分母算法不同）。剩 F86／F87／F88（卡 13 支腳本）、F89（真機動效＋規格落差簽核）、
   F95（⑥ 手勢）、F97（真手指拖一次）
-- 線上 **v106**（快照 `83080bf`）；工作樹是 v107，未部署
-- Google Drive：`lift-log-v106.apk`（正式）／`lift-log-dev-v107-F89.apk`（測試）
-- **手機**：正式版 v106、測試版 v107-dev 並存。adb 路徑
+- 線上 **v106**（快照 `83080bf`）；工作樹是 v108，未部署
+- Google Drive：`lift-log-v106.apk`（正式）／`lift-log-dev-v108-F97.apk`（測試）
+- **手機**：正式版 v106、測試版 v108-dev 並存。adb 路徑
   `$env:LOCALAPPDATA\Android\Sdk\platform-toolsdb.exe`，裝置 SM-N9750
 - ⚠ **Codex 額度到 2026-08-05 12:46**。這批的 review 與驗收都是同模型 fresh context，
   獨立性較弱；重條目想要跨模型把關就排 8/5 之後
@@ -63,9 +75,12 @@ F86 ⑩（f59/f60）、F87 ⑬⑭（f53–f58）、F88 ⑨⑩（f48–f52）—�
 2. **視窗根 view 的尺寸由 `WindowManager.LayoutParams` 決定**，設在 root 的 LayoutParams 會被忽略
 3. **測試站的 Python 行為在 dev 服務啟動時就載入了**——改後端要 `restart lift-log-dev`，
    只有 `app/static/` 是每次讀檔
-4. **adb 注入模擬不了「長按後拖曳」**（新增於本場）：`input motionevent` 分次呼叫的 downTime 不同、
-   MOVE 會被丟棄；`input draganddrop` 的 hold 太短。要驗長按手勢只能用真手指
-5. **`app/static/js` 的註解裡不要出現 UI 字元**（↑↓✕ 那類）：verify_f88 ③ 是純文字掃描，
+4. **`input motionevent` 分次呼叫不共用手勢流**（downTime 不同，MOVE 被丟棄）——
+   要用 **`input draganddrop`**，它的 hold 過得了 300ms 門檻，實測拖得動。
+   ⚠ 我一度把「拖不動」歸咎於注入限制，那是錯的判斷，實際是實作有 bug
+5. **APK 內是打包的資產，改 `app/static/` 不重出 APK 就測不到**——設定頁版號還會顯示舊版號，
+   那是最快的判斷方式（這一場浪費了三次重啟才想起來）
+6. **`app/static/js` 的註解裡不要出現 UI 字元**（↑↓✕ 那類）：verify_f88 ③ 是純文字掃描，
    註解提到就算殘留。這一場又踩到一次
 
 ---

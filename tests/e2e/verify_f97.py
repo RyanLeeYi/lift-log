@@ -357,8 +357,89 @@ def run_checks(base: str) -> None:  # noqa: C901
             page.locator(".confirm-modal").count() == 1,
             "⑤ F30 涵蓋順序變更：只改了順序沒存就離開，要跳未儲存確認",
         )
+        ctx.close()
 
+        run_touch_checks(browser, base)
         browser.close()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 觸控（真手指走的那條路）
+#
+# 2026-07-31：上面那整批滑鼠斷言全綠，Ryan 在真機上卻**拖不動**。
+# 成因是手指與滑鼠在瀏覽器裡是兩套機制：捲動容器上的觸控預設由 compositor 接管，
+# 它一判定是捲動就送 pointercancel 把拖曳抽走；而 pointermove 的 preventDefault()
+# 對觸控無效，要擋只能擋 non-passive 的 touchmove。滑鼠 pipeline 完全碰不到這一段。
+#
+# 所以這一節用 CDP 的 Input.dispatchTouchEvent 發真的觸控事件，
+# 並且**一定要配一條「捲動仍然正常」的反面**——把捲動整個擋死也會讓上面那條變綠。
+# ──────────────────────────────────────────────────────────────────────
+
+
+def touch(cdp, kind, x=0.0, y=0.0) -> None:
+    points = [] if kind == "touchEnd" else [{"x": x, "y": y}]
+    cdp.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints": points})
+
+
+def run_touch_checks(browser, base: str) -> None:
+    ctx = browser.new_context(viewport=PHONE, has_touch=True, is_mobile=True)
+    page = ctx.new_page()
+    cdp = ctx.new_cdp_session(page)
+    page.goto(base, wait_until="domcontentloaded")
+    page.wait_for_selector("input", timeout=10_000)
+    setup_and_home(page)
+    open_templates(page)
+    page.get_by_role("button", name="新課表").first.click()
+    page.wait_for_selector(".template-edit", timeout=8000)
+    page.wait_for_timeout(400)
+    page.locator(".tpl-name-input").fill("F97 觸控")
+    for name in ("深蹲", "臥推", "引體向上"):
+        add_exercise(page, name)
+
+    before = order(page)
+    box = page.locator(".tpl-item").nth(0).bounding_box()
+    x = box["x"] + box["width"] / 2
+    y = box["y"] + 14
+    box2 = page.locator(".tpl-item").nth(1).bounding_box()
+    target_y = box2["y"] + box2["height"] / 2 + 20
+
+    # 反面（先驗）：手指按下就滑＝捲清單，順序不變且清單真的捲了
+    page.eval_on_selector(".tpl-items", "e => { e.scrollTop = 0; }")
+    touch(cdp, "touchStart", x, y)
+    for step in range(1, 7):
+        touch(cdp, "touchMove", x, y - 30 * step)
+        page.wait_for_timeout(30)
+    touch(cdp, "touchEnd")
+    page.wait_for_timeout(400)
+    scrolled = page.eval_on_selector(".tpl-items", "e => e.scrollTop")
+    check(order(page) == before, "觸控反面：按下就滑＝捲清單，順序不變")
+    check(
+        scrolled > 0,
+        f"觸控反面：清單**真的捲得動**（scrollTop {scrolled}）——擋死捲動也會讓拖曳那條變綠",
+    )
+
+    # 正面：長按過門檻後拖曳，中途不得被 pointercancel 抽走
+    page.eval_on_selector(".tpl-items", "e => { e.scrollTop = 0; }")
+    page.wait_for_timeout(200)
+    box = page.locator(".tpl-item").nth(0).bounding_box()
+    x = box["x"] + box["width"] / 2
+    y = box["y"] + 14
+    touch(cdp, "touchStart", x, y)
+    page.wait_for_timeout(LONG_PRESS_MS + 150)
+    check(page.locator(".tpl-item.dragging").count() == 1, "觸控：長按 300ms 進入拖曳態")
+    for step in range(1, 9):
+        touch(cdp, "touchMove", x, y + (target_y - y) * step / 8)
+        page.wait_for_timeout(40)
+    # 這一條就是真機掛掉的地方：長按有進拖曳態，手指一動就被 compositor 抽走
+    check(
+        page.locator(".tpl-item.dragging").count() == 1,
+        "觸控：**手指移動後仍在拖曳態**（真機拖不動就是掛在這裡）",
+    )
+    touch(cdp, "touchEnd")
+    page.wait_for_timeout(500)
+    after = order(page)
+    check(after != before, f"觸控：拖曳真的改變了順序（{before} → {after}）")
+    ctx.close()
 
 
 if __name__ == "__main__":

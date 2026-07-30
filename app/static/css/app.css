@@ -1416,8 +1416,13 @@ body {
 }
 /* 讓位要看得出是「讓」出來的，所以只有沒被拖的卡片吃過場；被拖的那張要貼著手指走 */
 .tpl-items.drag-active .tpl-item:not(.dragging) { transition: transform 160ms ease-out; }
-/* 拖曳中不讓瀏覽器同時解讀成捲動手勢（② 搶手勢） */
+/* 拖曳中不讓瀏覽器同時解讀成捲動手勢（② 搶手勢）。
+   ⚠ 這一條對「手勢進行中」才加的 class 其實**來不及**——touch-action 在 touchstart 當下就決定了。
+   真正在擋捲動的是 drag-sort.js 的 non-passive touchmove preventDefault；這行留著是給
+   拖曳期間才出現的新觸控用（例如第二根手指）。 */
 .tpl-items.drag-active { touch-action: none; }
+/* 長按在 WebView 裡會叫出文字選取，選取一開始就把觸控收走＝拖曳被取消（真機實測的成因之一） */
+.tpl-item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 @media (prefers-reduced-motion: reduce) {
   .tpl-items.drag-active .tpl-item:not(.dragging) { transition: none; }
 }
