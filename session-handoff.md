@@ -1,12 +1,11 @@
 # session handoff
 
-最後更新：2026-07-30 下午（**F93 實作完成、驗收第二輪進行中；正式站已切快照制、v96**）
+最後更新：2026-07-30 下午（**F93 passing，87/94；正式站已切快照制、v96**）
 
-## 現況（F93：測試站／正式站分離）
+## 現況（F93：測試站／正式站分離，已完成）
 
-**89/94 passing。F93 仍是 failing**——不是實作有缺口，是 ④ 與 ⑪ 需要真機：
-**Ryan 要把兩顆 APK 同時裝上手機**，確認並存、桌面分得出來、各自連對站。
-在那之前不改 passing（同 F64 ⑤-b 的處理方式）。
+**87/94 passing。** F93 的 ④ 與 ⑪ 卡在真機，2026-07-30 Ryan 實測回報全部 ok
+（兩顆 APK 並存、桌面可分辨、各自連對站、資料互不干擾），已改 passing。
 
 - 正式站 `deploy\current` 快照 = commit `a454db3`、v96、`env=prod`；測試站 8138 吃工作目錄、`env=dev`
 - 兩站公開 hostname 都回 200（打公開站**一定要帶正常 UA**，Cloudflare 對 `Python-urllib` 回 403）
@@ -64,9 +63,12 @@
 
 ### 下一場
 
-1. Ryan 真機驗兩顆 APK → F93 改 passing（evidence 附第二輪驗收報告）
-2. 回到 **F66 → F65 → F86 → F87 → F88 → F89**（F94 插在哪由 Ryan 決定）
-3. ⚠ 開工先寫 `.harness/current_feature`
+1. **F66 → F65 → F86 → F87 → F88 → F89**（F94 插在哪由 Ryan 決定）
+2. ⚠ 開工先寫 `.harness/current_feature`
+3. ⚠ **Codex 額度用盡到 8/5 12:46**——這段期間 review 與驗收都只能同模型 fresh context
+
+**現在有測試站可以用了**：改前端不必再直接推到正式站。工作目錄的改動即時反映在
+8138／lift-log-dev.my-super-dev-server.work，正式站只在跑 `pwsh scripts/deploy.ps1` 時才換版。
 
 ---
 
