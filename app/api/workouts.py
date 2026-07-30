@@ -44,6 +44,12 @@ def get_workout(workout_id: int, session: DbSession) -> WorkoutDetailOut:
     )
 
 
+@router.delete("/workouts/{workout_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workout(workout_id: int, session: DbSession) -> None:
+    """F92 ⑤：清掉沒記任何組的空 workout；有組（含軟刪除）一律 409。"""
+    svc.delete_workout(session, workout_id)
+
+
 @router.post("/workouts/{workout_id}/end", response_model=WorkoutOut)
 def end_workout(workout_id: int, session: DbSession) -> WorkoutOut:
     """F91：標記訓練結束。冪等；不影響 sets 寫入（離線佇列的組仍要補得進來）。"""

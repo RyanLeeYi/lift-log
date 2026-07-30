@@ -206,6 +206,22 @@ def end_workout(session: Session, workout_id: int) -> Workout:
     return workout
 
 
+def delete_workout(session: Session, workout_id: int) -> None:
+    """F92 ⑤：刪掉一場沒有任何組的 workout（按了「開始訓練」卻沒記東西留下的）。
+
+    **連軟刪除的組都不能有**——有的話代表確實練過又刪掉，那是歷史紀錄，
+    不得因為「查詢起來看不到組」就當成空的清掉。
+    """
+    workout = get_workout(session, workout_id)
+    any_set = session.scalar(
+        select(WorkoutSet.id).where(WorkoutSet.workout_id == workout_id).limit(1)
+    )
+    if any_set is not None:
+        raise ConflictError("這場訓練有紀錄過的組，不能刪除")
+    session.delete(workout)
+    session.commit()
+
+
 def get_active_sets(session: Session, workout_id: int) -> list[WorkoutSet]:
     """該 workout 未刪除的組，SQL 端過濾與排序（軟刪除不變量的唯一入口）。"""
     return list(

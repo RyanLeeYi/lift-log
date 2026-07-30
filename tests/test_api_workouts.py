@@ -401,3 +401,32 @@ class TestEndWorkout:
         client.post(f"/api/workouts/{workout_id}/end")
         listed = {w["id"]: w for w in client.get("/api/workouts").json()}
         assert listed[workout_id]["ended_at"] is not None
+
+
+class TestDeleteWorkout:
+    """F92 ⑤：空的 workout 可以刪掉，練過又刪組的不行（那是歷史）。"""
+
+    def test_delete_empty_workout(self, client):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        assert client.delete(f"/api/workouts/{workout_id}").status_code == 204
+        assert client.get(f"/api/workouts/{workout_id}").status_code == 404
+
+    def test_delete_workout_with_sets_returns_409(self, client, exercise_id):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        client.post(f"/api/workouts/{workout_id}/sets", json=make_set_payload(exercise_id))
+        resp = client.delete(f"/api/workouts/{workout_id}")
+        assert resp.status_code == 409
+        assert client.get(f"/api/workouts/{workout_id}").status_code == 200
+
+    def test_delete_workout_with_only_soft_deleted_sets_returns_409(self, client, exercise_id):
+        """有軟刪除的組＝確實練過又刪掉，那是歷史，不得因為「看起來是空的」就清掉。"""
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        set_id = client.post(
+            f"/api/workouts/{workout_id}/sets", json=make_set_payload(exercise_id)
+        ).json()["id"]
+        assert client.delete(f"/api/sets/{set_id}").status_code == 204
+        assert client.get(f"/api/workouts/{workout_id}").json()["sets"] == []
+        assert client.delete(f"/api/workouts/{workout_id}").status_code == 409
+
+    def test_delete_unknown_workout_returns_404(self, client):
+        assert client.delete("/api/workouts/999999").status_code == 404

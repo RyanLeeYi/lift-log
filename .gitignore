@@ -23,3 +23,8 @@ inst_user_settings.tmp
 
 # Playwright/Chromium 偶爾在 repo 根目錄留下的 GPU 錯誤紀錄
 debug.log
+
+# 資料庫備份／SQLite 副檔（含真實健康資料與 push 訂閱憑證，一律不進版控）
+*.db.bak*
+*.db-wal
+*.db-shm

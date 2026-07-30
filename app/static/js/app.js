@@ -931,14 +931,31 @@ function endWorkout() {
   state.pendingRestSeconds = null;
   editDraft = null;
   const ending = state.workoutId;
-  // F91 ④：**先發出**結束請求，再清本地狀態。
-  // 「發出」不等於「等它回來」——guard 的 async body 會同步執行到第一個 await，
+  // F92 ⑥：這場一組都沒記 → 刪掉它，不要留一場空的在資料庫。
+  // 本地判斷可能不完整（另一台裝置在同一場記過組），所以伺服器端還有一道 409 擋著；
+  // 撞到就退回正常的「結束」流程。
+  const loggedNothing =
+    Object.values(state.setCounts).reduce((sum, n) => sum + n, 0) === 0;
+  // F91 ④：「發出」不等於「等它回來」——guard 的 async body 會同步執行到第一個 await，
   // 也就是 fetch 已經送出去了，下面才清狀態。使用者不會多等一毫秒，
   // 而伺服器收到請求時本地狀態仍在，順序與規格一致。
   // 失敗不回滾本地結束（那只會讓人卡在一場他已經結束的訓練裡），改進補送佇列：
-  // 不補的話伺服器的 ended_at 永遠是 null，另一台裝置照樣能續接——那正是這條要解掉的東西。
+  // 不補的話伺服器的 ended_at 永遠是 null，另一台裝置照樣能續接——那正是 F91 要解掉的東西。
   if (ending) {
     guard(async () => {
+      if (loggedNothing) {
+        try {
+          await api.deleteWorkout(ending);
+          return; // 刪掉了就沒有「結束」可言
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return; // 已經不在了
+          if (!(err instanceof ApiError) || err.status !== 409) {
+            rememberPendingEnd(ending); // 離線／5xx：當成一般結束補送，別把它留成進行中
+            return;
+          }
+          /* 409＝伺服器上其實有組（別台記的）→ 往下走正常的結束流程 */
+        }
+      }
       try {
         await api.endWorkout(ending);
       } catch (err) {

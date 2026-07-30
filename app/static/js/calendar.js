@@ -132,12 +132,20 @@ async function selectDay(dateStr, keepExpanded = false) {
     api.listDailyStatus(dateStr, dateStr),
   ]);
   cal.status = statuses[0] || null;
-  cal.detail = await Promise.all(
+  const loaded = await Promise.all(
     workouts.map(async (w) => ({
       workout: w,
       sets: (await api.workoutDetail(w.id)).sets,
     })),
   );
+  // F92 ①②：「練過」＝有未刪除的組。listWorkouts 會回當天所有 workout，包含
+  // 「按了開始訓練卻一組都沒記」的空場——留著它們的話，明細卡會顯示「7月30日 · 上半身」，
+  // 但同一天的本週進度卻不算練（那邊是 workouts JOIN sets）。兩個畫面對同一天說不同的話。
+  // 在這裡濾掉，後面所有判斷（休息日、課表名、展開預設）就自動一致。
+  cal.detail = loaded.filter((d) => d.sets.length > 0);
+  // 但補記要寫進**當天既有的**那場（含空場），不能因為顯示濾掉就另建一場——
+  // 那樣只會把空 workout 愈補愈多。顯示用 cal.detail，寫入目標用這個。
+  cal.reuseWorkoutId = loaded[0]?.workout.id ?? null;
   // F85（設計 ⑧）：第一個動作預設展開、第二個起收合。展開態是使用者操作的產物，
   // 所以只在「切日/切月」這種重置時機給預設值，keepExpanded（刪/改/補記後重載）不動它。
   if (!keepExpanded) {
@@ -409,7 +417,7 @@ async function addSet(rerender) {
     const d = cal.addDraft;
     const ex = cal.addExercise;
     // 目標 workout：該日已有就附加、沒有就以選中日新建（不影響今天進行中的 workout）
-    let workoutId = cal.detail[0]?.workout.id;
+    let workoutId = cal.reuseWorkoutId;
     if (workoutId == null) {
       workoutId = (await api.createWorkout({ date: cal.selected })).id;
     }
@@ -478,7 +486,7 @@ async function batchLog(rerender) {
   try {
     // Codex P1：新建的 workout id 要記在批次草稿裡。部分失敗後重試時 cal.detail 仍是空的，
     // 若再建一筆新 workout，既有 uuid 會撞到前一筆 workout 的組而 409、永遠重試不成功。
-    let workoutId = cal.batch.workoutId ?? cal.detail[0]?.workout.id;
+    let workoutId = cal.batch.workoutId ?? cal.reuseWorkoutId;
     if (workoutId == null) {
       workoutId = (await api.createWorkout({ date: cal.selected })).id;
       cal.batch.workoutId = workoutId;
