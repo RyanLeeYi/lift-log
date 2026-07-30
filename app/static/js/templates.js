@@ -4,6 +4,7 @@
 import { api } from "./api.js";
 import { customExerciseModal } from "./custom-exercise.js";
 import { el } from "./dom.js";
+import { icon } from "./icons.js";
 import { exerciseAlias, exerciseName, state } from "./state.js";
 
 // R10 參考休息：快選值與範圍（與後端 schema 的 15–600 一致）
@@ -309,47 +310,53 @@ function itemRow(item, index, rerender) {
       rerender();
     }
   };
-  const row = el("div", { class: "tpl-item" }, [
+  // F88 ②：一個動作一張卡；第一張用 --card-hi 站出來（同 F78 ⑤：靠底色差不靠外框）
+  const row = el("div", { class: `tpl-item${index === 0 ? " hi" : ""}` }, [
     // 名稱獨立一行（中英並列，別名不再被擠到換行）
     el("div", { class: "tpl-item-name" }, [
       el("span", { class: "n-zh" }, [exerciseName(item)]),
       el("span", { class: "n-alias" }, [exerciseAlias(item)]),
     ]),
-    // 控制列：組數 stepper 靠左、排序/刪除靠右（刪除遠離 stepper，不易誤觸）
+    // 控制列：組數 stepper 靠左、排序與刪除靠右（刪除遠離 stepper，不易誤觸）
     el("div", { class: "tpl-item-controls" }, [
       el("div", { class: "tpl-item-sets" }, [
-        el("button", { class: "btn chip", onclick: () => setSets(-1) }, ["−"]),
+        el("button", { class: "btn round-btn", "aria-label": "減一組",
+          onclick: () => setSets(-1) }, ["−"]),
         el("span", { class: "n" }, [`${item.default_sets} 組`]),
-        el("button", { class: "btn chip", onclick: () => setSets(+1) }, ["＋"]),
+        el("button", { class: "btn round-btn", "aria-label": "加一組",
+          onclick: () => setSets(+1) }, ["＋"]),
       ]),
+      // 刪除鈕與排序鈕同列，間距是唯一的誤觸防線（見 .tpl-item-del 的 margin-left）
       el("div", { class: "tpl-item-move" }, [
         el(
           "button",
-          { class: "btn chip", ...(index === 0 ? { disabled: "" } : {}),
+          { class: "btn round-btn", "aria-label": "往上移",
+            ...(index === 0 ? { disabled: "" } : {}),
             onclick: () => swap(index, index - 1) },
-          ["↑"],
+          [icon("arrow-up", { size: 16, label: "往上移" })],
         ),
         el(
           "button",
-          { class: "btn chip", ...(index === items.length - 1 ? { disabled: "" } : {}),
+          { class: "btn round-btn", "aria-label": "往下移",
+            ...(index === items.length - 1 ? { disabled: "" } : {}),
             onclick: () => swap(index, index + 1) },
-          ["↓"],
+          [icon("arrow-down", { size: 16, label: "往下移" })],
         ),
         el(
           "button",
           {
-            class: "btn chip btn-danger tpl-item-del",
+            class: "btn round-btn tpl-item-del", "aria-label": "移除這個動作",
             onclick: () => {
               tpl.editing = { ...tpl.editing, items: items.filter((_, i) => i !== index) };
               rerender();
             },
           },
-          ["✕"],
+          [icon("x", { size: 16, label: "移除這個動作" })],
         ),
       ]),
     ]),
     el("div", { class: "tpl-item-rest" }, [
-      el("span", { class: "sub" }, ["休息"]),
+      el("span", { class: "sub" }, ["參考休息"]),
       ...REST_QUICK_PICKS.map((s) =>
         el(
           "button",
@@ -598,6 +605,7 @@ export function renderTemplateEdit(rerender, guard) {
   const editing = tpl.editing;
   const nameInput = el("input", {
     type: "text",
+    class: "tpl-name-input",
     placeholder: "課表名稱（練腿日、上半身日⋯）",
     value: editing.name,
     oninput: (e) => {
@@ -662,13 +670,13 @@ export function renderTemplateEdit(rerender, guard) {
     // F21：動作清單可捲，儲存/加動作按鈕不被推走；高度由 F51 改為填滿剩餘空間（見 app.css .tpl-items）
     itemsNode,
     // F51（Ryan 拍板）：三顆鈕包一層貼底容器——清單在 3→2 個動作跨門檻塌陷時，按鈕位置若跟著上移
-    // 156px（高螢幕更多），剛按完 ✕ 的手指正落在「儲存課表」上＝誤存離開。margin-top: auto 讓按鈕
+    // 156px（高螢幕更多），剛按完刪除鈕的手指正落在「儲存課表」上＝誤存離開。margin-top: auto 讓按鈕
     // 位置與清單長度脫鉤；清單可捲時 flex 已吃滿空間，這個 auto 邊界不生效。
     el("div", { class: "tpl-edit-foot" }, [
       el(
         "button",
         {
-          class: "btn",
+          class: "btn tpl-add-open",
           onclick: () =>
             guard(async () => {
               tpl.searchQ = ""; // 每次開窗都從完整清單開始（免得上次無結果的搜尋字讓重開變空白）

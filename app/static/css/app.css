@@ -217,7 +217,8 @@ body {
 /* ---------- picker（選動作） ---------- */
 /* 文字/搜尋輸入框共用樣式（picker 搜尋、課表名稱、加動作搜尋） */
 .picker input[type="search"],
-.template-edit input[type="text"],
+/* F88 ①：課表名 input 移出這條共用規則——它現在有自己的 .tpl-name-input（17px/700/r18）。
+   留在這裡的話兩條同 specificity，靠檔案順序決勝，改動時很容易靜默失效（F52 P2-1 踩過）。 */
 .tpl-add-modal input[type="search"] { /* F52 review P2-2：原寫 .tpl-add-panel，那個 class 從未存在
     → 加動作視窗的搜尋框一直是原生白底 19px、字 13.3px（iOS focus 會放大整頁） */
   background: var(--card);
@@ -1383,4 +1384,65 @@ body {
   background: var(--over);
   color: var(--text);
   font-weight: 600;
+}
+
+
+/* ---------- F88：編輯課表改版（陶土夜色） ---------- */
+/* ① 課表名 input：無邊框、卡片底，讓它讀起來像標題而不是表單欄位 */
+.template-edit .tpl-name-input {
+  background: var(--card); border: none; border-radius: 18px;
+  padding: 16px 20px; color: var(--text);
+  font-family: var(--sans); font-weight: 700; font-size: 17px;
+}
+.tpl-name-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ② 一個動作一張卡 */
+.tpl-item {
+  background: var(--card); border-radius: var(--r-card);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
+}
+.tpl-item.hi { background: var(--card-hi); }
+.tpl-item-name { display: flex; flex-direction: column; gap: 2px; }
+.tpl-item-name .n-zh { font-family: var(--sans); font-weight: 700; font-size: 16px; }
+.tpl-item-name .n-alias { font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--text-mute); }
+
+/* ③ 控制列：38px 圓鈕。⑧ 視覺維持 38px，觸控區用透明外框補到 44——
+   直接把 width 改成 44 會讓一列六顆塞不下 390px。 */
+.tpl-item-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.round-btn {
+  width: 38px; height: 38px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--card-hi); border: none; border-radius: 50%;
+  color: var(--text); font-size: 16px; cursor: pointer;
+  position: relative;
+}
+.tpl-item.hi .round-btn { background: var(--card); }
+/* 觸控區補到 44×44（視覺仍是 38）——量 bounding_box 驗得到 */
+.round-btn::after {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  width: 44px; height: 44px; transform: translate(-50%, -50%);
+}
+.round-btn[disabled] { opacity: .35; }
+.round-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tpl-item-sets { display: flex; align-items: center; gap: 8px; }
+.tpl-item-sets .n {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 14px; min-width: 46px; text-align: center;
+}
+.tpl-item-move { display: flex; align-items: center; gap: 0; }
+/* ✕ 用 --over，且與 ↑↓ 拉開 6px：刪除與排序放同一列，間距是唯一的誤觸防線 */
+.tpl-item-del { color: var(--over); margin-left: 6px; }
+
+/* ④ 分隔線後的參考休息 */
+.tpl-item-rest {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  border-top: 1px solid var(--line); padding-top: 12px;
+}
+.tpl-item-rest .sub { font-size: 13px; color: var(--text-mute); margin-right: 2px; }
+.tpl-item-rest .chip.on { color: var(--accent); font-weight: 600; }
+
+/* ⑤ 「＋ 加動作」：透明底＋細框，與下方的實心「儲存課表」分出主次 */
+.tpl-add-open {
+  background: transparent; border: 1px solid var(--line);
+  border-radius: var(--r-pill); color: var(--text-mid); min-height: 44px;
 }
