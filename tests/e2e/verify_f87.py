@@ -162,9 +162,11 @@ def run_checks(base: str) -> None:  # noqa: C901
         heights = [bars.nth(i).bounding_box()["height"] for i in range(bars.count())]
         track = page.locator(".body-bars").bounding_box()["height"]
         ratios = sorted(h / track for h in heights)
-        check(0.13 <= ratios[0] <= 0.15,
-              f"⑤ 最小值保底 14%（實際 {ratios[0]:.3f}）")
-        check(0.95 <= ratios[-1] <= 1.0, f"⑤ 最大值約 96%（14+82，實際 {ratios[-1]:.3f}）")
+        # 下限 24%（Ryan 2026-07-30 裁決，偏離設計稿的 14%）——理由見 body.js barChart 的說明：
+        # 80px 的長條區上 14% 只有 11px，圓角之下看起來是點不是長條
+        check(0.23 <= ratios[0] <= 0.25,
+              f"⑤ 最小值保底 24%（實際 {ratios[0]:.3f}）")
+        check(0.95 <= ratios[-1] <= 1.0, f"⑤ 最大值約 96%（24+72，實際 {ratios[-1]:.3f}）")
         colors = [css(page, f".body-bar:nth-child({i + 1})", "backgroundColor") for i in range(15)]
         check(colors[-1] == accent, "⑤ 最新一根用 --accent")
         check(all(c != accent for c in colors[:-1]), "⑤ 其餘用 --line（不是全部都染色）")

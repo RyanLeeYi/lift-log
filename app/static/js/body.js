@@ -180,9 +180,13 @@ function mainCard(points, unit, domain) {
 }
 
 /**
- * 24 根長條。高度＝14% + 正規化 * 82%（設計稿的算式）。
+ * 24 根長條。高度＝**24% + 正規化 * 72%**（Ryan 2026-07-30 裁決，偏離設計稿的 14%+82%）。
  *
- * 為什麼保底 14%：純比例的話最小值會變成一條看不見的線，而「最低點在哪」正是看體重的重點之一。
+ * 設計稿的 14% 下限是對著較高的圖表區訂的；F87 ⑪ 為了讓版面門檻避開 Ryan 的 727px 裝置，
+ * 把長條區壓到 80px，14% 只剩 11px——圓角 99px 之下看起來是一顆點而不是長條，
+ * 而那顆點正好是「最新值」的強調色，反而最不明顯（真機截圖才看出來）。
+ * 提到 24%（約 19px）後最矮的仍讀得出是長條；最高仍是 96%，兩端的對比沒有變。
+ *
  * 只有一筆資料時全部值相同，正規化分母為 0 → 一律給滿（不是 0）。
  */
 function barChart(points, unit) {
@@ -200,7 +204,7 @@ function barChart(points, unit) {
         const norm = span === 0 ? 1 : (point.value - min) / span;
         return el("div", {
           class: `body-bar${i === shown.length - 1 ? " latest" : ""}`,
-          style: `height:${(14 + norm * 82).toFixed(1)}%`,
+          style: `height:${(24 + norm * 72).toFixed(1)}%`,
           "aria-label": `${point.date} ${point.value}${unit}`,
         }, []);
       }),

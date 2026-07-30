@@ -1658,7 +1658,8 @@
         "tests/e2e/verify_f81.py",
         "tests/e2e/verify_f85.py"
       ],
-      "requires": []
+      "requires": [],
+      "superseded_by": "⑩ 的「動作表現頁月份指示符」一項由 F86 取代（2026-07-30 Ryan 簽核）：F86 把該頁的月份摺疊改成一次訓練一張卡，那個指示符不再存在。⑩ 的其餘兩處（日曆、體重）不受影響，仍然有效；verify_f85 改驗「該頁已無月份摺疊且無幾何字元殘留」。"
     },
     {
       "id": "F86",
@@ -1682,7 +1683,7 @@
       "name": "體重體脂改版（大數字主卡 ＋ 24 根長條圖，保留時間窗）",
       "status": "failing",
       "evidence": "",
-      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n（依 design_handoff_liftlog_clay README 與 screenshots「7. 體重體脂 body」與 screenshots/07-body.png；D1 簽核選 B＝保留時間窗）\n① 頁頭改 .screen-head：返回鍵 ＋「體重 · 體脂」＋副標「最近一次 M月D日」。\n② 體重／體脂兩顆藥丸 toggle 等寬，選中 --accent；F53 的切換行為（圖表＋清單一起切）不變。\n③ **時間窗 chips 保留**（D1 選 B）：五顆藥丸置於 toggle 下方，長條圖與歷史清單都跟著篩；F56 的自選區間、F58 的「資料不足停用檔位」與自動退檔規則全部不回歸。設計稿未畫此列是作者不知道 F56–F58 存在，刻意偏離。\n④ 主卡（.card、--card 底、r26、padding 24/20/18）：左側大數字（Mono 600 52px、line-height .9、--accent）＋單位（Mono 400 15px）；右側差值（Mono 600 13px，下降 --good、上升 --text-mute）＋區間文字。\n⑤ 長條圖 24 根、flex:1、r99、高度＝14% + 正規化 * 82%；最新一根 --accent、其餘 --line；底部標示區間起訖日期（Mono 400 10px）。資料點少於 24 筆時不補空條、不變形。\n⑥ 「記錄今天」--accent 藥丸大按鈕，仍開 F54 的懸浮視窗表單；**位置維持在歷史清單下方**（F55 訂的單手可及位置，不採設計稿的清單上方）。\n⑦ 歷史清單卡（--card、r22、padding 10/8）：日期 / 「78.4 kg · 16.2 %」 / 差值（下降 --good、上升 --text-mute）；清單填滿剩餘空間（F50/F53 行為不回歸）。\n⑧ 體脂頁籤改為「全部日子都列、沒體脂顯示 —」（原本「只列有體脂的日子」是 F53 的實作解讀，acceptance ② 沒明說，導致沒量體脂的日子在該頁籤看不到也改不到）；F53 條目加附註說明此變更。\n⑨ 抽出共用 range.js：PRESETS／monthsAgo／iso／presetAvailable／longestAvailablePreset 從 body.js 與 exercise-detail.js 兩份逐字重複收斂成一份，兩頁改為 import。\n⑩ save() 的 saving 旗標要立即反映到 DOM（送出期間按鈕視覺上可見已停用），修掉 verifier 發現的 UX 落差。\n⑪ 版面門檻算式重算（app.css 那段註解是唯一來源，五次踩坑的規則照舊）；矮螢幕退讓用 flex: none，不得把 min-height 設 0。E2E 不得寫死門檻，一律從服役中的 /css/app.css 讀 @media (max-height: N) 再推算。\n⑫ 觸控目標 ≥44px、無水平捲動。\n⑬ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f87.py 全過，F53–F58 既有 E2E 回歸綠，並附實機截圖。\n⑭ 翻新隔離區腳本 verify_f53–verify_f58（見 tests/e2e/README.md）：刪掉自帶的啟動樣板改用 verify_f67 的共用 helper、`.home-start` 換成 start_from_home()，並讓它們對新版 /body 成立。驗的是原條文的目的，不改寫 F53–F58 凍結的 acceptance；因 D1 保留時間窗，F56／F58 的條文目的完全不變。",
+      "acceptance": "（2026-07-30 Ryan 簽核凍結）\n（依 design_handoff_liftlog_clay README 與 screenshots「7. 體重體脂 body」與 screenshots/07-body.png；D1 簽核選 B＝保留時間窗）\n① 頁頭改 .screen-head：返回鍵 ＋「體重 · 體脂」＋副標「最近一次 M月D日」。\n② 體重／體脂兩顆藥丸 toggle 等寬，選中 --accent；F53 的切換行為（圖表＋清單一起切）不變。\n③ **時間窗 chips 保留**（D1 選 B）：五顆藥丸置於 toggle 下方，長條圖與歷史清單都跟著篩；F56 的自選區間、F58 的「資料不足停用檔位」與自動退檔規則全部不回歸。設計稿未畫此列是作者不知道 F56–F58 存在，刻意偏離。\n④ 主卡（.card、--card 底、r26、padding 24/20/18）：左側大數字（Mono 600 52px、line-height .9、--accent）＋單位（Mono 400 15px）；右側差值（Mono 600 13px，下降 --good、上升 --text-mute）＋區間文字。\n⑤ 長條圖 24 根、flex:1、r99、高度＝14% + 正規化 * 82%；最新一根 --accent、其餘 --line；底部標示區間起訖日期（Mono 400 10px）。資料點少於 24 筆時不補空條、不變形。\n⑥ 「記錄今天」--accent 藥丸大按鈕，仍開 F54 的懸浮視窗表單；**位置維持在歷史清單下方**（F55 訂的單手可及位置，不採設計稿的清單上方）。\n⑦ 歷史清單卡（--card、r22、padding 10/8）：日期 / 「78.4 kg · 16.2 %」 / 差值（下降 --good、上升 --text-mute）；清單填滿剩餘空間（F50/F53 行為不回歸）。\n⑧ 體脂頁籤改為「全部日子都列、沒體脂顯示 —」（原本「只列有體脂的日子」是 F53 的實作解讀，acceptance ② 沒明說，導致沒量體脂的日子在該頁籤看不到也改不到）；F53 條目加附註說明此變更。\n⑨ 抽出共用 range.js：PRESETS／monthsAgo／iso／presetAvailable／longestAvailablePreset 從 body.js 與 exercise-detail.js 兩份逐字重複收斂成一份，兩頁改為 import。\n⑩ save() 的 saving 旗標要立即反映到 DOM（送出期間按鈕視覺上可見已停用），修掉 verifier 發現的 UX 落差。\n⑪ 版面門檻算式重算（app.css 那段註解是唯一來源，五次踩坑的規則照舊）；矮螢幕退讓用 flex: none，不得把 min-height 設 0。E2E 不得寫死門檻，一律從服役中的 /css/app.css 讀 @media (max-height: N) 再推算。\n⑫ 觸控目標 ≥44px、無水平捲動。\n⑬ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f87.py 全過，F53–F58 既有 E2E 回歸綠，並附實機截圖。\n⑭ 翻新隔離區腳本 verify_f53–verify_f58（見 tests/e2e/README.md）：刪掉自帶的啟動樣板改用 verify_f67 的共用 helper、`.home-start` 換成 start_from_home()，並讓它們對新版 /body 成立。驗的是原條文的目的，不改寫 F53–F58 凍結的 acceptance；因 D1 保留時間窗，F56／F58 的條文目的完全不變。\n⑮（2026-07-30 真機後 Ryan 裁決）長條高度下限由設計稿的 14% 改為 **24%**（算式 24% + 正規化 × 72%，最高仍 96%）：⑪ 把長條區壓到 80px 之後 14% 只剩 11px，圓角 99px 讓最矮那根看起來像一顆點——而它正好常是「最新值」的強調色。",
       "touches": [
         "app/static/css/app.css",
         "app/static/js/app.js",
@@ -1766,11 +1767,13 @@
     },
     {
       "id": "F94",
-      "name": "E2E 隔離區復活：13 支腳本換共用進入點 ＋ 暫存 DB 移出 repo",
-      "status": "failing",
-      "evidence": "",
+      "name": "E2E 共用 helper ＋ 暫存 DB 移出 repo",
+      "status": "passing",
+      "evidence": "2026-07-30：ruff clean、pytest 274；24 支腳本的暫存 DB 改建在系統暫存目錄，跑完 repo 根目錄只剩 liftlog.db 與 liftlog-dev.db（正式站與測試站的真實 DB），無新增 .db；順手清掉先前殘留的 6 顆 .db 與 4 個空目錄。共用 helper 收斂後回歸 f61 14/14、f66 22/22、f67 20/20、f70 18/18、f84 54/54、f90 30/30、f92 15/15、f93 12/12 全綠。防呆提案（腳本清單化／每晚全量跑／入口 smoke test，推薦第三個）已寫進 tests/e2e/README.md。 【範圍變更】原 ②③⑦ 經實測證明前提錯誤，同日回簽核刪除，13 支腳本留給 F86 ⑩／F87 ⑭／F88 ⑩。",
       "touches": [],
-      "acceptance": "（2026-07-30 Ryan 簽核凍結；B 案——只讓腳本重新跑得起來，不管改版後的畫面）\n① 背景一：F81「重建首頁並拆出設定畫面」(5a72c95, 2026-07-29) 移除了首頁的 `.home-start`，但 tests/e2e/verify_f48.py–verify_f60.py 共 13 支仍以它當進入點，全部 wait_for_selector 逾時。這批自 F81 起就是壞的，不是後續 feature 造成的回歸——F93 驗收為此耗掉一輪重新調查，這條的存在理由就是止住那個重複成本。\n② 13 支改用 `verify_f67` 的共用啟動 helper，`.home-start` 換成 `start_from_home()`，刪掉各自帶的啟動樣板。**只換進入點與樣板，不動任何斷言**——要驗的行為完全不變，更不改 F48–F60 各自凍結的 acceptance。\n③ 範圍界線（與 F86–F88 的分工）：這條只負責「跑得起來」。腳本對**改版後**的動作表現／體重／編輯課表畫面是否成立，仍分別留在 F86 ⑩、F87 ⑭、F88 ⑩，那三條的條文不因本條改寫。所以本條完成時，13 支要在**現行（改版前）畫面**上全部 exit 0。\n④ 暫存 DB 移出 repo：E2E 腳本建立的測試 DB 一律改建在系統暫存目錄，不再落在 repo 根目錄。背景——repo 根曾累積 12 顆測試 DB ＋ 2 個空目錄（7/17 起）。**原因不是忘了寫清理，是 Windows 檔案鎖**：`proc.terminate()` 後 uvicorn 握把還沒放掉，`unlink` 丟 `PermissionError`。f85 是 `except PermissionError: pass` 直接放過，f90–f92 改成重試 10 次×0.3 秒（較好但仍會漏）。移到系統暫存目錄後，漏刪的檔案由 OS 回收，不再污染工作樹（也不再有被 `git add -A` 掃進 commit 的風險）。\n⑤ ④ 要套用到**所有**會建 DB 的 E2E 腳本，不只這 13 支；改法收斂在共用 helper 一處，不要每支各寫一份。\n⑥ 防呆提案（寫進 `tests/e2e/README.md`，不強制實作）：怎麼讓「E2E 腳本隨 UI 改版靜默失效」下次能被更早發現。共用進入點 helper 已經是其中一半（改一處即可），另一半是偵測機制——例如定期全量跑一次、或讓長期失敗的腳本無法被當成「既有債」無限期擱置。\n⑦ 驗收：ruff clean；`tests/e2e/verify_f48.py`–`verify_f60.py` 全數 exit 0（逐支貼輸出）；跑完後 `git status --short` 乾淨、repo 根目錄沒有新增 `.db` 檔；抽驗至少 3 支已通過的既有腳本（如 f90/f91/f92）確認 ④ 的改動沒有讓它們回歸。"
+      "acceptance": "（2026-07-30 Ryan 簽核凍結；同日**縮小範圍**再簽核一次）\n⚠ 原條文 ②③⑦ 要求「讓 verify_f48–f60 那 13 支在現行畫面上 exit 0」，前提是錯的：\n實測 verify_f48 一層層卡的是 .home-start(F81) → 版號搬進設定(F81) → 課表入口 emoji 沒了(F76)\n→ 挑課表項目改名 .tpl-choice(F82) → 結束訓練搬出 .picker-foot(F83) → 今日菜單整段重做(F83)，\n改到第六層還沒到底。那些畫面**已經改版過了**，沒有「改版前畫面」可以讓它們跑起來。\ntests/e2e/README.md 早就寫過這個判斷（「翻新綁在對應的改版 feature，現在做等於做兩次」），\n起草時沒讀它。13 支照原規劃留給 F86 ⑩／F87 ⑭／F88 ⑩。\n\n① 共用 helper 補齊並收斂在 verify_f67 一處：safe_port（避開 Chromium unsafe port，實際抽到過 6669）、\ne2e_tmp、wait_home、back_home、read_version、open_templates、end_workout、reroute_public_host。\n② 暫存 DB 與 release 目錄改建在系統暫存目錄的 liftlog-e2e/，套用到所有會建 DB 的腳本（24 支）。\n根因是 Windows 檔案鎖（uvicorn 還握著 .db 時 unlink 丟 PermissionError），重試次數加再多都只是\n降低機率——根治是一開始就別建在 repo 內。\n③ 防呆提案寫進 tests/e2e/README.md（推薦「入口 smoke test」），不強制實作。\n④ 驗收：ruff clean；跑完 repo 根目錄沒有新增 .db；抽驗既有腳本確認 ② 沒造成回歸。",
+      "reviewed_by": "無（純測試基礎設施，未動產品程式碼）",
+      "verified_by": "實作者自驗（ruff＋pytest＋8 支回歸腳本＋repo 根目錄殘留檢查）"
     },
     {
       "id": "F95",
