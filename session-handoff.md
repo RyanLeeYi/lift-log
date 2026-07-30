@@ -1,6 +1,76 @@
 # session handoff
 
-最後更新：2026-07-30（**F90 ＋ F91 ＋ F92 完成並 passing，86/92；線上與 APK 同為 v95**）
+最後更新：2026-07-30 下午（**F93 實作完成、驗收第二輪進行中；正式站已切快照制、v96**）
+
+## 現況（F93：測試站／正式站分離）
+
+**89/94 passing。F93 仍是 failing**——不是實作有缺口，是 ④ 與 ⑪ 需要真機：
+**Ryan 要把兩顆 APK 同時裝上手機**，確認並存、桌面分得出來、各自連對站。
+在那之前不改 passing（同 F64 ⑤-b 的處理方式）。
+
+- 正式站 `deploy\current` 快照 = commit `a454db3`、v96、`env=prod`；測試站 8138 吃工作目錄、`env=dev`
+- 兩站公開 hostname 都回 200（打公開站**一定要帶正常 UA**，Cloudflare 對 `Python-urllib` 回 403）
+- prod DB 4 場 85 組完好；dev DB 43 場 216 組，互不相干
+- Google Drive：`lift-log-v96-F93.apk`（正式）／`lift-log-dev-v96-F93.apk`（測試，橘色圖示、名稱「lift-log 測試」）
+
+### 第一輪驗收判 fail 的兩條，與修法
+
+1. **② `deploy.ps1` 用裸 `tar`** → PATH 順序不同的機器會選到 Git for Windows 的 MSYS2 tar，
+   它把 `C:\...` 當遠端主機，回 `Cannot connect to C: resolve failed`、exit 128。
+   改走 `System32\tar.exe` 絕對路徑。**我這台剛好 System32 在前，所以自己測不出來**——
+   驗收者換了個環境就踩到，這正是跨環境驗收的價值。
+2. **⑪ 既有 E2E 回歸**：`verify_f61.py` 的「app 版請求都在 `/api/` 之下」比 F61 凍結條文更嚴
+   （③ 只寫「指向公開站」），而 F93 ⑫ 明訂環境標示來源是**免 auth 的 `/health`**，天生不在 `/api/` 下。
+   白名單放行 `/health`，其餘不放寬。→ 14/14。
+
+### 部署腳本還藏著兩個「從來沒執行過」的 bug
+
+跑真實部署才浮出來，兩個都是 `-NoRestart` 路徑掩護的：
+
+- **`mission-control` 這個 CLI 根本不存在**（中台沒裝 console script）。stop/start 三行從第一天起
+  就是 CommandNotFoundException，先前每次部署都是手動重啟才沒發現。改打中台 REST（18600）。
+- 中台 `/api/*` 擋 Bearer token。改從中台自己的 `.env` 現讀 `MC_API_TOKEN`（**token 不進這個 repo**），
+  讀不到就中止——不能靜默跳過重啟，那會留下「檔案換了、服務跑舊碼」的半吊子狀態。
+
+**教訓：`-NoRestart` 之類的旁路參數會讓主路徑長期無人執行。** 驗收者也用了它，所以第一輪也沒抓到。
+
+### 自行補驗的兩條（第一輪判 unverified）
+
+- **⑤ 建置腳本會不會擋不符的產物**：故意把 `env.js` 裡 dev 的網址改成 prod 再 build，
+  腳本在核對 APK 內 `env.js` 那步 throw、exit 1，`release-dev\` 與 Drive 的 APK hash 完全沒變。
+- **⑦ Drive 檔名可分辨**：兩顆同時在，SHA-256 與 `release\`／`release-dev\` 及兩站
+  `/api/app/apk` 下載到的完全一致。
+
+### 第二輪驗收結果：10 pass / 2 unverified（只差真機）
+
+⚠ **Codex 額度用盡到 8/5 12:46**，第二輪是 **acceptance-verifier（同模型 fresh context）** 跑的，
+不是跨模型。獨立性來自乾淨上下文，比 F92 那輪弱，判讀時要打折。
+
+驗收者實際做了（不是讀 code 推論）：真的跑了一次 `deploy.ps1` 完整部署（含 stash → 部署 →
+還原，並額外驗了 dirty-worktree 保護會拒絕部署）；真的做了一顆網址不符的 dev APK 確認 exit 1
+且不出貨；自己查 git 證實 F48–F60 那 13 支確實壞在 F81 之後、與 F93 無關；
+另外回歸跑了 f61/f67/f78–f85/f90–f92 共 13 支全綠。
+
+**剩下的 ④ 與 ⑪ 只差真機**，Ryan 的待辦見上方「下一場」。
+
+一個與 F93 無關但會咬人的環境瑕疵：**Windows PowerShell 5.1 讀不了這兩支腳本的中文註解**
+（非 UTF-8 codepage → 解析失敗）。手動跑 `deploy.ps1`／`build-apk.ps1` 一律用 `pwsh`。
+
+### 新開 F94（待簽核）
+
+`verify_f48.py`–`verify_f60.py` 共 13 支自 commit `5a72c95`（F81 重建首頁、移除 `.home-start`）起
+**全數逾時失敗**，是既有債不是 F93 回歸。原先打算綁進 F86–F88 順手修，但那三條還很遠，
+先獨立成 F94 免得繼續被當成「F93 的回歸」重複調查。
+
+### 下一場
+
+1. Ryan 真機驗兩顆 APK → F93 改 passing（evidence 附第二輪驗收報告）
+2. 回到 **F66 → F65 → F86 → F87 → F88 → F89**（F94 插在哪由 Ryan 決定）
+3. ⚠ 開工先寫 `.harness/current_feature`
+
+---
+
+## 前一場：F90 ＋ F91 ＋ F92（86/92；線上與 APK 同為 v95）
 
 ## 現況
 
