@@ -85,7 +85,9 @@ def create_app(settings: Settings) -> FastAPI:
         # mission-control 健康檢查：無 auth（不吐資料）、實際探 DB——靜態 / 反映不了 DB 壞掉
         with session_factory() as session:
             session.execute(select(1))
-        return {"status": "ok"}
+        # F93：env 也從這裡出——前端在還沒有 token 時就要能顯示「測試環境」，
+        # 而 /health 是唯一免 auth 的端點。只吐一個 prod/dev 字串，不涉及資料。
+        return {"status": "ok", "env": settings.env_label}
 
     register_error_handlers(app)
     app.include_router(workouts.router)

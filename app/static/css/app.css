@@ -581,6 +581,23 @@ body {
   opacity: 0.6;
 }
 
+/* F93 環境標示：接在版號下面。正式站低調（跟版號同一個調性，不搶注意力），
+   測試站用 --over 的警示色 —— 看到它就代表「你現在動的不是真資料」。 */
+.env-tag {
+  text-align: center;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  margin-top: 2px;
+  opacity: 0.55;
+}
+.env-tag-dev {
+  color: var(--over);
+  opacity: 1;
+  font-weight: 600;
+}
+
 /* F10 自訂動作視窗 */
 /* chips 多行或手機鍵盤縮小視窗高度時內容可垂直捲動，建立/取消鈕不落到可視範圍外（Codex P2） */
 .custom-ex-modal { overflow-y: auto; -webkit-overflow-scrolling: touch; }

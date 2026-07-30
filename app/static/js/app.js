@@ -14,7 +14,7 @@ import {
 import { el, RPE_WORDS, rpePicker, stepper } from "./dom.js";
 // F76：結構性圖示一律走這裡（emoji 是彩色字形，跨平台不一致且吃不到 CSS 顏色）
 import { icon, iconLabel } from "./icons.js";
-import { isNativeApp } from "./env.js";
+import { apiBase, isNativeApp } from "./env.js";
 import {
   detailReturnScreen,
   openExerciseDetail,
@@ -120,12 +120,45 @@ function fmtRest(remaining) {
 }
 
 // F24：畫面角落的版本標記——手機載入哪版一眼可辨（快取過期會顯示舊版號）
+// F93：這台服務是正式站還是測試站。/health 是免 auth 的，所以 setup 畫面（還沒有 token）
+// 也顯示得出來——「我到底連到哪一站」正是那個當下最需要知道的事。
+// null＝還沒問到（開站的第一瞬間或離線），那時不顯示，不要猜。
+let envLabel = null;
+
+async function loadEnvLabel() {
+  try {
+    const resp = await fetch(`${apiBase()}/health`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.env && data.env !== envLabel) {
+      envLabel = data.env;
+      render();
+    }
+  } catch {
+    /* 離線／連不上：不顯示，不要猜成正式站 */
+  }
+}
+
+function envTag() {
+  if (!envLabel) return [];
+  const isProd = envLabel === "prod";
+  return [
+    el(
+      "div",
+      { class: `env-tag${isProd ? "" : " env-tag-dev"}` },
+      [isProd ? "正式環境" : "測試環境"],
+    ),
+  ];
+}
+
 function versionTag() {
   // F68 ③⑦：app 版的版號身兼三職——顯示目前版本、提示有新版（`v67 → v68`）、
   // 以及手動檢查的入口。原本另有一條更新橫幅，2026-07-28 回簽核拿掉：
   // 兩個入口重疊，而提示併進版號就不必多佔一行版面。
   // web 版維持純文字：那邊部署完自動到位，沒有「檢查更新」這回事。
   if (!isNativeApp()) return el("div", { class: "version-tag" }, [APP_VERSION]);
+  // 環境標示由 envTag() 接在版號**下面**（見 settingsScreen），不併進這顆按鈕的文字——
+  // app 版的版號兼任「有新版」提示與檢查入口，塞進去會讓 `v95 → v96` 更難讀。
   const hasUpdate = pendingUpdate !== null;
   return el(
     "button",
@@ -343,6 +376,7 @@ function renderSetup() {
     input,
     el("button", { class: "btn btn-primary", onclick: () => guard(save) }, ["連線"]),
     versionTag(),
+    ...envTag(),
   ]);
 }
 
@@ -717,6 +751,7 @@ function renderSettings() {
         ]
       : []),
     versionTag(),
+    ...envTag(),
     // F68 ⑦：手動檢查後沒有新版的短暫提示
     ...(updateFlash ? [el("div", { class: "update-flash" }, [updateFlash])] : []),
     // F68 ④：更新視窗在首頁與設定都掛得住——訓練途中的畫面一律不被它打斷
@@ -2264,6 +2299,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+loadEnvLabel(); // F93：開站就問一次「我連到哪一站」（免 auth，setup 畫面也顯示得出來）
 restoreActiveWorkout();
 
 /**

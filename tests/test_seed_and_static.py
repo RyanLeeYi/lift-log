@@ -42,7 +42,9 @@ class TestStatic:
         """mission-control 健康檢查入口：無 auth、實際碰 DB（靜態 / 的 200 反映不了 DB 壞掉）。"""
         resp = anon_client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        # 只檢查必要欄位在不在，不做整份相等比對——/health 是給 mission-control 用的外部契約，
+        # 之後多帶欄位（F93 加了 env）是常態，鎖死欄位集合會讓每次擴充都假性失敗。
+        assert resp.json()["status"] == "ok"
 
     def test_root_serves_pwa_index_without_token(self, anon_client: TestClient) -> None:
         resp = anon_client.get("/")
@@ -148,3 +150,22 @@ class TestStatic:
         ]:
             url = "/" + file.relative_to(static_dir).as_posix()
             assert url in shell, f"{url} 沒列進 sw.js 的 SHELL，離線時會載不到"
+
+
+class TestEnvLabel:
+    """F93 追加：畫面要能一眼看出這是正式站還是測試站。"""
+
+    def test_health_reports_env(self, client):
+        body = client.get("/health").json()
+        assert body["status"] == "ok"
+        assert body["env"] == "prod"  # 預設值：沒設 LIFTLOG_ENV 就是正式站
+
+    def test_env_label_comes_from_settings(self, tmp_path):
+        from fastapi.testclient import TestClient
+
+        from app.config import Settings
+        from app.main import create_app
+
+        app = create_app(Settings(token="t", db_path=str(tmp_path / "e.db"), env_label="dev"))
+        with TestClient(app) as c:
+            assert c.get("/health").json()["env"] == "dev"
