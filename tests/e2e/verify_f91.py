@@ -245,7 +245,7 @@ def main() -> int:
                 "async () => (await import('/js/queue.js')).listPendingEnds()"
             )
             check(
-                pending == [offline_wid],
+                [e["id"] for e in pending] == [offline_wid],
                 f"④ 離線按結束 → 進補送佇列（實際 {pending}）",
             )
             check(
@@ -285,7 +285,7 @@ def main() -> int:
                 }"""
             )
             check(
-                concurrent == [103],
+                [e["id"] for e in concurrent] == [103],
                 f"複審 P2 補送期間新入列的 103 必須留著（實際 {concurrent}）",
             )
             page.evaluate("() => localStorage.removeItem('liftlog.pendingEnds')")

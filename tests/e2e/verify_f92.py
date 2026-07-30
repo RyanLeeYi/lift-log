@@ -175,6 +175,39 @@ def main() -> int:
                 f"②③ 真的練過的一天不得顯示休息日（實際「{text}」）",
             )
 
+            # ---------- ⑥ 離線結束空 workout → 回線上要「刪掉」而不是「標記結束」 ----------
+            # 補送佇列若只記 id 不記動作，回線上會補成 POST /end，那場空的就永遠留著（Codex P2）。
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(1200)
+            start_free_workout(page)
+            # 取**當前**這場的 id，不要拿列表第一筆——那是前面段落留下的舊場
+            offline_wid = page.evaluate(
+                "async () => (await import('/js/state.js')).state.workoutId"
+            )
+            check(offline_wid is not None, f"前置：新開的這場 id={offline_wid}")
+            ctx.set_offline(True)
+            page.get_by_role("button", name="結束訓練").first.click()
+            page.wait_for_timeout(2000)
+            queued = page.evaluate(
+                "async () => (await import('/js/queue.js')).listPendingEnds()"
+            )
+            check(
+                queued and queued[0]["mode"] == "delete",
+                f"⑥ 離線結束空 workout → 佇列記的是 delete 不是 end（實際 {queued}）",
+            )
+            ctx.set_offline(False)
+            page.goto(base, wait_until="domcontentloaded")
+            page.wait_for_timeout(3000)
+            left = api(base, "/api/workouts")
+            check(
+                all(w["id"] != offline_wid for w in left),
+                f"⑥ 回線上後那場空的被刪掉，不是被標記結束（剩 {[w['id'] for w in left]}）",
+            )
+            drained = page.evaluate(
+                "async () => (await import('/js/queue.js')).listPendingEnds()"
+            )
+            check(drained == [], f"⑥ 補送後佇列清空（實際 {drained}）")
+
             # ---------- ⑧ F90／F91 不回歸（快速冒煙） ----------
             page.goto(base, wait_until="domcontentloaded")
             page.wait_for_timeout(1200)

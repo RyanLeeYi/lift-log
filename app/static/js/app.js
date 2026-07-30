@@ -266,7 +266,7 @@ async function syncQueue() {
   const synced = await flushQueue(api.logSet);
   // F91 ④：組補完再補「結束」。順序有意義——先送結束的話，同一場還沒補完的組
   // 會落在 ended_at 之後（雖然 ⑥ 允許寫入，但時間軸會更難讀）。
-  await flushPendingEnds(api.endWorkout);
+  await flushPendingEnds(api.endWorkout, api.deleteWorkout);
   // 補傳成功者把含 server id 的回應寫回 doneSets 與鏡射——否則使用者仍停在 logger 時，
   // 該筆缺 id 會被誤判未同步，之後在畫面上刪/改會打不到伺服器（Codex P1）
   if (synced.length > 0) {
@@ -950,7 +950,7 @@ function endWorkout() {
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) return; // 已經不在了
           if (!(err instanceof ApiError) || err.status !== 409) {
-            rememberPendingEnd(ending); // 離線／5xx：當成一般結束補送，別把它留成進行中
+            rememberPendingEnd(ending, "delete"); // 離線／5xx：回線上要**刪掉**，不是標記結束
             return;
           }
           /* 409＝伺服器上其實有組（別台記的）→ 往下走正常的結束流程 */

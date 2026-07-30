@@ -110,24 +110,41 @@ export async function discardFailed() {
 
 const PENDING_ENDS_KEY = "liftlog.pendingEnds";
 
+/**
+ * 每筆是 `{id, mode}`：`mode` 為 "end"（標記結束）或 "delete"（刪掉空 workout）。
+ * 舊格式是純數字陣列，一律當成 "end"（那時還沒有 delete 這條路）。
+ */
 function readPendingEnds() {
   try {
     const raw = JSON.parse(localStorage.getItem(PENDING_ENDS_KEY));
-    return Array.isArray(raw) ? raw.filter((id) => Number.isInteger(id)) : [];
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((e) => (Number.isInteger(e) ? { id: e, mode: "end" } : e))
+      .filter((e) => e && Number.isInteger(e.id) && (e.mode === "end" || e.mode === "delete"));
   } catch {
     return [];
   }
 }
 
-function writePendingEnds(ids) {
-  if (ids.length === 0) localStorage.removeItem(PENDING_ENDS_KEY);
-  else localStorage.setItem(PENDING_ENDS_KEY, JSON.stringify(ids));
+function writePendingEnds(entries) {
+  if (entries.length === 0) localStorage.removeItem(PENDING_ENDS_KEY);
+  else localStorage.setItem(PENDING_ENDS_KEY, JSON.stringify(entries));
 }
 
-/** 結束請求沒送成功 → 記下來，等回線上補送。 */
-export function rememberPendingEnd(workoutId) {
-  const ids = readPendingEnds();
-  if (!ids.includes(workoutId)) writePendingEnds([...ids, workoutId]);
+/**
+ * 收尾請求沒送成功 → 記下來等回線上補送。
+ *
+ * `mode` 一定要跟著記：F92 ⑥ 的空 workout 該被**刪掉**，只記 id 的話回線上會補成
+ * 「標記結束」，那場空的就永遠留在資料庫（Codex P2）。
+ */
+export function rememberPendingEnd(workoutId, mode = "end") {
+  const entries = readPendingEnds();
+  const found = entries.find((e) => e.id === workoutId);
+  if (!found) writePendingEnds([...entries, { id: workoutId, mode }]);
+  else if (found.mode !== mode) {
+    // 同一場先記了 end 又要 delete（或反之）→ 以最後一次為準
+    writePendingEnds(entries.map((e) => (e.id === workoutId ? { id: e.id, mode } : e)));
+  }
 }
 
 export function listPendingEnds() {
@@ -140,29 +157,49 @@ export function listPendingEnds() {
  * 錯誤分類與 flushQueue 一致：401 上拋交 guard；連不上／5xx 留著下次再試；
  * 永久性 4xx（404＝workout 已被刪）就不必再送了，直接移除。
  */
-export async function flushPendingEnds(endWorkout) {
+export async function flushPendingEnds(endWorkout, deleteWorkout) {
   const done = new Set();
 
   // 寫回時**重讀當下的清單**再扣掉已處理的，不能拿函式開頭的快照覆蓋——
   // 每個 await 之間使用者都可能又結束一場，rememberPendingEnd() 會寫進同一個 key，
   // 用舊快照寫回會把剛加入的那筆抹掉，那場的結束事件就永遠送不出去（Codex P2）。
-  const commit = () => writePendingEnds(readPendingEnds().filter((id) => !done.has(id)));
+  const commit = () => writePendingEnds(readPendingEnds().filter((e) => !done.has(e.id)));
 
-  for (const id of readPendingEnds()) {
+  /** true＝這筆處理完了；false＝留著下次；throw＝上拋給呼叫端。 */
+  const attempt = async (fn, id) => {
     try {
-      await endWorkout(id);
-      done.add(id);
+      await fn(id);
+      return true;
     } catch (err) {
       if (err && err.status === 401) {
-        commit(); // 已送成功的先扣掉，其餘保留給重新登入後再試
+        commit();
         throw err;
       }
-      if (err && (err.status === 0 || err.status >= 500)) {
-        commit(); // 連不上／伺服器暫時故障：留著下次
+      if (err && (err.status === 0 || err.status >= 500)) return null; // 連不上／5xx：留著
+      if (err && err.status === 409) return "conflict"; // 刪不得（伺服器上其實有組）
+      return true; // 404 等永久性 4xx：那場已經不在了
+    }
+  };
+
+  for (const { id, mode } of readPendingEnds()) {
+    if (mode === "delete" && deleteWorkout) {
+      const r = await attempt(deleteWorkout, id);
+      if (r === null) {
+        commit();
         return;
       }
-      done.add(id); // 404 等永久性 4xx：那場已經不在了，不用再送
+      if (r !== "conflict") {
+        done.add(id);
+        continue;
+      }
+      // 409＝別台在同一場記過組 → 這場不該刪，退回標記結束
     }
+    const r = await attempt(endWorkout, id);
+    if (r === null) {
+      commit();
+      return;
+    }
+    done.add(id);
   }
   commit();
 }
