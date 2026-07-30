@@ -5,7 +5,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v96";
+export const APP_VERSION = "v97";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -34,6 +34,10 @@ export const state = {
   restAccumulatedMs: 0, // 先前各段「計時中」的總和
   restResumedAt: null, // 這一段計時開始的時間戳；null = 目前暫停中
   restTargetSeconds: null, // F70：這輪休息的目標秒數（休息開始時快照；改秒數時同步）——換動作後倒數基準不跳
+  // F66 ④：存過休息但還原不了（過舊或壞資料）。畫面要講出來，不得靜默沒有倒數。
+  // 生命週期：還原時設起 → logger 顯示 → 離開 logger／開新一輪休息／換一場訓練時清掉。
+  // 不持久化——它描述的是「這次還原」發生了什麼，不是訓練的狀態。
+  restRestoreDropped: false,
   lastRef: null, // F84：上次提示卡的結構化資料 {date, weight, reps}；沒有歷史時為 null
   restHintOverrides: {}, // {exerciseId: 秒}——R10 訓練中臨時調整，僅本次 workout、不寫回課表
   pendingRestSeconds: null, // F15：按「繼續下一組」凍結的休息秒數，寫進下一組後清空（transient，不持久化）
@@ -70,6 +74,9 @@ export function todayIso() {
 }
 
 export function saveActiveWorkout() {
+  // F66：休息狀態變動時也會呼叫這支，而那些路徑（結束訓練、登出）可能已經沒有 workout 了。
+  // 沒有 workout 就沒有東西該被續接——寫下去只會留一份 restore 一定會忽略的殘骸。
+  if (!state.workoutId) return;
   localStorage.setItem(
     WORKOUT_KEY,
     JSON.stringify({
@@ -81,8 +88,54 @@ export function saveActiveWorkout() {
       setCounts: state.setCounts, // 續接恢復：重新整理後 set_number 不得與已存組撞號
       doneByExercise: state.doneByExercise, // F32：本次各動作已做組，換動作/重整後還原不丟
       restHintOverrides: state.restHintOverrides, // 臨時調整跟著本次訓練走，重整不丟
+      // F66 ①：休息倒數也要活過 app 被回收。四個欄位缺一都算不出剩餘秒數——
+      // startedAt 判時效、accumulatedMs＋resumedAt 是 F71 的累計制、targetSeconds 是 F70 的目標快照。
+      rest: restSnapshot(),
     }),
   );
+}
+
+/** F66 ①：休息狀態的持久化快照；沒在休息回 null。 */
+function restSnapshot() {
+  if (state.restStartedAt === null) return null;
+  return {
+    startedAt: state.restStartedAt,
+    accumulatedMs: state.restAccumulatedMs,
+    resumedAt: state.restResumedAt, // null＝暫停中（⑤ 還原後仍要是暫停態）
+    targetSeconds: state.restTargetSeconds,
+  };
+}
+
+/**
+ * F66 ②④⑤：把快照還原回 state，回傳「有沒有還原成功」。
+ *
+ * ⑥ 這支刻意不碰 workout 的任何欄位，也不被 workout 的還原結果影響——
+ * 兩者各自獨立，一邊失敗不影響另一邊。
+ *
+ * ⑤ 為什麼「回收期間不計入」不必特別處理：暫停時 `resumedAt` 是 null，
+ * restElapsedSeconds() 只算 accumulatedMs；跑著時 resumedAt 是時間戳，
+ * 經過的真實時間本來就該算進去（②）。兩條語意由同一個算式自然得出。
+ */
+function restoreRestSnapshot(rest) {
+  if (!rest || typeof rest !== "object") return false;
+  if (typeof rest.startedAt !== "number") return false;
+  // ④ 資料過舊就不還原：12 小時前開始的休息還原出來只會是一個荒謬的超時數字。
+  if (Date.now() - rest.startedAt > REST_STALE_AFTER_MS) return false;
+  // 差值為負＝startedAt 在未來。裝置時鐘往回調（跨時區、手動改時間）會讓上面那道
+  // 門檻失效，而經過時間變負數會算出「比目標還多」的剩餘秒數，排出一個很久以後才響的鬧鐘。
+  if (Date.now() < rest.startedAt) return false;
+  // targetSeconds 缺了就**當壞資料**，不要退成 null 硬還原（review MEDIUM-4）：
+  // 那會做出一個永遠停在 0:01、不會響、也不顯示 ④ 提示的假倒數——正是 ④ 禁止的靜默失敗。
+  // 合法的快照一定有它（startRestTimer 沒有動作時也會退 DEFAULT_REST_HINT_SECONDS）。
+  if (typeof rest.targetSeconds !== "number") return false;
+  // 同理，accumulatedMs 壞掉會把已累計的秒數靜默歸零，違反 ⑤。
+  if (typeof rest.accumulatedMs !== "number") return false;
+  if (rest.resumedAt !== null && typeof rest.resumedAt !== "number") return false;
+  state.restStartedAt = rest.startedAt;
+  state.restAccumulatedMs = rest.accumulatedMs;
+  state.restResumedAt = rest.resumedAt;
+  state.restTargetSeconds = rest.targetSeconds;
+  return true;
 }
 
 /**
@@ -118,6 +171,11 @@ export function restoreActiveWorkout() {
     state.setCounts = saved.setCounts || {};
     state.doneByExercise = saved.doneByExercise || {};
     state.restHintOverrides = saved.restHintOverrides || {};
+    // F66 ⑥：休息倒數獨立還原。放在最後、且不讓它的結果影響上面任何一行——
+    // rest 區段壞掉時只是「這次沒有倒數」，不該連整場訓練一起丟掉。
+    if (saved.rest) {
+      state.restRestoreDropped = !restoreRestSnapshot(saved.rest);
+    }
   } catch {
     /* 壞資料當沒存過 */
   }
@@ -132,7 +190,12 @@ export function clearActiveWorkout() {
   state.setCounts = {}; // F90：不清會讓下一場的組號從上一場接續下去
   state.doneByExercise = {}; // F32：收工/結束訓練清掉本次各動作組的鏡射
   state.restHintOverrides = {};
+  state.restRestoreDropped = false; // F66：換一場訓練，上一場的還原失敗提示不該跟著走
 }
+
+// F66 ④：距休息開始超過這個時間就不還原倒數（訓練本身仍依 F90 還原）。
+// 12 小時是簽核凍結的門檻——健身房不會休息這麼久，超過就是「開著沒收工過夜」那種情況。
+export const REST_STALE_AFTER_MS = 12 * 60 * 60 * 1000;
 
 // F71 ③：只算「計時中」的時間，暫停的那幾段不計入。
 export function restElapsedSeconds() {

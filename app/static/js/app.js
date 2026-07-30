@@ -1689,6 +1689,7 @@ function renderPicker() {
 // ---------- logger ----------
 
 function startRestTimer() {
+  state.restRestoreDropped = false; // F66 ④：開了新的一輪休息，上一輪的還原失敗提示就過去了
   state.restStartedAt = Date.now();
   state.restAccumulatedMs = 0; // F71：新的一輪休息，累計歸零
   state.restResumedAt = state.restStartedAt;
@@ -1699,6 +1700,18 @@ function startRestTimer() {
     : DEFAULT_REST_HINT_SECONDS;
   // F31/F62：排定「休息結束」提醒（切到別的 app 也收得到）；未開通知＝no-op
   if (state.exercise) scheduleRestNotify(restHintFor(state.exercise.id));
+  saveActiveWorkout(); // F66 ①：倒數一開始就要進持久化，否則下一秒被回收就沒了
+  startRestTicker();
+}
+
+/**
+ * F66 ②：只跑碼表，不碰狀態。
+ *
+ * 從 startRestTimer() 拆出來的原因是還原路徑——那時 state 已經由 localStorage 填好，
+ * 再走一次 startRestTimer() 會把 restStartedAt 重設成「現在」，倒數就從頭開始，
+ * 正是這條 feature 要消滅的行為。
+ */
+function startRestTicker() {
   if (restTicker) clearInterval(restTicker);
   restTicker = setInterval(() => {
     // F84：休息卡是圓環了——每秒更新數字、環的比例與超時樣式。
@@ -1746,11 +1759,20 @@ async function togglePauseRest() {
   if (restPaused()) {
     resumeRest();
     restAlerted = false; // 繼續後重新武裝提醒
-    await resumeRestNotify();
+    // F66（review HIGH-1）：「叫醒既有服務」與「服務已經死了」是兩件事。
+    // app 在暫停中被回收過的話，原生 RestTimerService 已經不存在——這時送 ACTION_RESUME
+    // 會建出一個 remainingSeconds=0 的**全新實例**，CountDownTimer(0) 立刻 onFinish → 鬧鐘當場炸響，
+    // 而真正該在剩餘秒數後響的那次從頭到尾沒排。所以服務不在時要用「排一次新的」重建。
+    if (restTimerRunning()) await resumeRestNotify();
+    else {
+      const remaining = restRemainingSeconds();
+      if (remaining !== null && remaining > 0) scheduleRestNotify(remaining);
+    }
   } else {
     pauseRest();
     await pauseRestNotify();
   }
+  saveActiveWorkout(); // F66 ⑤：暫停態與累計秒數都要落地，被回收後才還原得回同一態
   render();
 }
 
@@ -1772,6 +1794,7 @@ function stopRestTimer() {
   // F31/F62：休息被使用者結束（繼續下一組／收工／登出）→ 取消未觸發的提醒。
   // F70 起「換動作」不再走這裡——換個地方看不算休息結束。
   cancelRestNotify();
+  saveActiveWorkout(); // F66：休息結束了，持久化的快照要跟著變 null（沒有 workout 時是 no-op）
 }
 
 function cycleRestHint(exerciseId) {
@@ -1820,6 +1843,7 @@ function adjustRest(delta) {
   if ((remaining ?? -1) > 0) restAlerted = false; // 調長回到未到點：重新武裝提醒
   if (remaining !== null && remaining > 0) scheduleRestNotify(remaining);
   else cancelRestNotify();
+  saveActiveWorkout(); // F66 ①：目標秒數改了，快照要跟著更新（否則還原後倒數用舊基準）
   render();
 }
 
@@ -2013,6 +2037,9 @@ function renderLogger() {
     // F70 ①：換動作**不再**結束休息——「換個地方看」不等於「休息結束」。
     // 倒數、通知列與浮動視窗照常走完；真正結束休息的只有「繼續下一組」與收工（②）。
     state.pendingRestSeconds = null; // 換動作：未用的凍結休息值不跨動作帶
+    // F66 ④（review MEDIUM-3）：「倒數沒還原」的提示看過一次就夠。離開 logger 就消掉，
+    // 否則它會黏著整個 session——每次回到 logger 都再說一次同一件已經知道的事。
+    state.restRestoreDropped = false;
     editDraft = null; // 離開 logger 清編輯草稿，否則殘留會讓下個動作的 scrollable 失效（F20/Codex P2）
     state.exercise = null;
     state.screen = "picker";
@@ -2140,6 +2167,11 @@ function renderLogger() {
     ]),
     // F84 ④：休息態把「上次提示卡＋快調列」整塊換成休息卡，其餘版面不動
     resting ? restCard() : lastRefCard(),
+    // F66 ④：存過休息但還原不了時，在倒數本來該在的地方講一句。
+    // 不得靜默——不然使用者以為倒數還在跑，回頭一看什麼都沒有。
+    ...(!resting && state.restRestoreDropped
+      ? [el("div", { class: "notice-banner" }, ["休息倒數已過期，沒有還原（訓練本身還在）"])]
+      : []),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...syncStatusLine(),
     // F20：新→舊排序（最新在最上）；組數 > 2 時固定高度內部捲動（編輯中不限高，讓編輯表單完整可見）
@@ -2309,6 +2341,42 @@ document.addEventListener("visibilitychange", () => {
 
 loadEnvLabel(); // F93：開站就問一次「我連到哪一站」（免 auth，setup 畫面也顯示得出來）
 restoreActiveWorkout();
+resumeRestAfterRestore();
+
+/**
+ * F66 ②③④：restoreActiveWorkout() 只把狀態填回 state，碼表與提醒要在這裡接回去。
+ *
+ * 分成兩支的理由同 F90：state.js 那半是純粹的同步狀態還原（好測、無副作用），
+ * 碼表（setInterval）與通知（原生外掛）是副作用，留在 app.js。
+ */
+async function resumeRestAfterRestore() {
+  // 沒有 token 就停在 setup 畫面——那個 app 連不進去，卻讓碼表跑著、鬧鐘照排，
+  // 幾分鐘後在一個進不去的畫面上響（review LOW-5）。401 那條路有 guard 的
+  // stopRestTimer() 擋著，開機這條原本沒有。
+  if (!getToken()) return;
+  // ④ 存過休息但還原不了（過舊或壞資料）→ 旗標留著，由 logger 在「倒數本來該在的位置」
+  // 講出來。**不要**用 state.error：那個一換畫面就被清掉，而還原後人是先落在首頁的，
+  // 等他走回 logger 時提示早就沒了——那還是靜默沒有倒數。
+  if (state.restRestoreDropped) return;
+  if (state.restStartedAt === null) return;
+
+  const remaining = restRemainingSeconds();
+  // 已經超時的話不要再武裝一次提醒——還原當下立刻震動／響鈴，等於把使用者嚇一跳，
+  // 而該響的那一次在被回收之前就已經由原生鬧鐘響過了。
+  restAlerted = remaining !== null && remaining <= 0;
+  startRestTicker(); // 碼表先跑——它是同步的，不該等權限查詢
+
+  // ⚠ 排通知前**必須先等權限快取回來**。app 版的「有沒有授權」是非同步查的，
+  // 開機當下 cache 還是空的，直接排會被 nativeNotifyEnabled() 擋掉而**靜默失敗**——
+  // 畫面有倒數、通知卻沒排，正是這條 feature 要消滅的那種無聲落差。
+  await refreshRestNotifyState();
+
+  // ③ 依**剩餘**秒數重排（不是原本的目標秒數）；已超時則不排。
+  // 暫停中也不排——F71 的暫停語意是「時間不走」，排了就會在不該響的時候響。
+  // 秒數在等待期間會往前走，所以重算一次而不是沿用上面那個。
+  const now = restRemainingSeconds();
+  if (!restPaused() && now !== null && now > 0) scheduleRestNotify(now);
+}
 
 /**
  * F90 ③④：向伺服器確認還原出來的 workout 還在，並用伺服器的組數重建 set 編號。
@@ -2331,6 +2399,11 @@ async function confirmActiveWorkout() {
 
   /** 快取指向的訓練不存在／不是今天 → 清掉，並把人帶離已經沒有依據的畫面。 */
   const dropStale = (message) => {
+    // F66（review HIGH-2）：這場訓練沒了，掛在它上面的休息倒數也要一起收掉。
+    // 不收的話：①鬧鐘仍會在幾分鐘後為一場已不存在的訓練響 ②下一場訓練一進 logger
+    // 就顯示上一場殘留的休息卡（restStartedAt 還不是 null）。
+    // F66 之前撞不到——開機時 restStartedAt 恆為 null，是這次還原路徑新開的洞。
+    stopRestTimer(); // 內含 cancelRestNotify()
     clearActiveWorkout();
     state.error = message;
     // 慢網路下使用者可能已經按「繼續訓練」進了 picker，清掉 workoutId 後留在那裡的話，

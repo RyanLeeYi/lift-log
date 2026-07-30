@@ -164,6 +164,17 @@ body {
   font-size: 14px;
 }
 
+/* F66 ④：資訊性提示（休息倒數沒還原）。不是錯誤——沒人做錯事，只是狀態沒了，
+   所以走低調的卡片色而不是 --over 的警示紅，但仍要看得見（不是靜默）。 */
+.notice-banner {
+  background: var(--card-hi);
+  border: 1px solid var(--card-edge);
+  color: var(--fg-dim);
+  border-radius: var(--r-card);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
 /* F76：圖示與文字的標準組合。圖示尺寸走 token（sm/md），線寬統一 2、顏色吃 currentColor，
    所以深色主題與各狀態（danger、dim）都自動正確。 */
 .icon { flex: none; vertical-align: -0.15em; }
