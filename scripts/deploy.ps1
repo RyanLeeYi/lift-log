@@ -26,6 +26,17 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) { throw "$What 失敗（exit $LASTEXITCODE）——不換版。" }
 }
 
+# 起停服務走 mission-control 的 REST API。
+# ⚠ 不要用 `mission-control` 指令——**它不存在**（中台沒有裝 console script，
+# 2026-07-30 部署時才發現這幾行從來沒能執行過；當時 Codex 用 -NoRestart 驗，
+# 剛好繞過這條路徑）。API 才是中台實際對外的介面。
+$MC = "http://127.0.0.1:18600/api/services"
+function Invoke-MissionControl {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Action)
+    $resp = Invoke-RestMethod -Method Post -Uri "$MC/$Name/$Action" -TimeoutSec 30
+    if (-not $resp.success) { throw "mission-control $Action $Name 失敗：$($resp.error)" }
+}
+
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
@@ -83,7 +94,7 @@ Write-Host "快照版號：$snapVersion"
 $serviceStopped = $false
 if (-not $NoRestart) {
     Write-Host "換版前先停 lift-log（Windows 會鎖住執行中程序的 cwd）"
-    mission-control stop lift-log | Out-Null
+    Invoke-MissionControl -Name "lift-log" -Action "stop"
     Start-Sleep -Seconds 2
     $serviceStopped = $true
 }
@@ -103,7 +114,7 @@ if (-not $serviceStopped) {
     exit 0
 }
 
-mission-control start lift-log | Out-Null
+Invoke-MissionControl -Name "lift-log" -Action "start"
 Start-Sleep -Seconds 4
 try {
     $health = Invoke-WebRequest -Uri "http://127.0.0.1:8137/health" -TimeoutSec 10 -UseBasicParsing
@@ -113,11 +124,11 @@ try {
     Write-Host "部署後起不來：$_" -ForegroundColor Red
     if (Test-Path $previous) {
         # 回退同樣要先停——服務可能已經起來並鎖住 current（Codex P1 的同一個問題）
-        mission-control stop lift-log | Out-Null
+        Invoke-MissionControl -Name "lift-log" -Action "stop"
         Start-Sleep -Seconds 2
         Remove-Item -Recurse -Force $current
         Move-Item $previous $current
-        mission-control start lift-log | Out-Null
+        Invoke-MissionControl -Name "lift-log" -Action "start"
         Write-Host "已回退到上一版。" -ForegroundColor Yellow
     }
     throw
