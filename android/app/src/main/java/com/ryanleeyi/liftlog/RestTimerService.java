@@ -39,9 +39,13 @@ public class RestTimerService extends Service {
     public static final String EXTRA_SECONDS = "seconds";
     /** F64：這次休息要不要同時畫浮動視窗。使用者沒開就是 false，行為與 F64 之前完全一致。 */
     public static final String EXTRA_OVERLAY = "overlay";
+    /** F89 ③：浮動視窗要顯示的「動作名 · 第 N 組」。純顯示用，服務自己不解讀。 */
+    public static final String EXTRA_HINT = "hint";
     /** F71 ②：暫停與繼續。倒數凍結、通知改成暫停樣式，到點提醒不觸發。 */
     public static final String ACTION_PAUSE = "com.ryanleeyi.liftlog.REST_PAUSE";
     public static final String ACTION_RESUME = "com.ryanleeyi.liftlog.REST_RESUME";
+    /** F89 ④：浮動視窗的 ±15s。原生自己調，不能繞前端——人在別的 app 裡時 WebView 被節流。 */
+    public static final String ACTION_ADJUST = "com.ryanleeyi.liftlog.REST_ADJUST";
     /**
      * F72 ⑤：通知列上的「停止」動作鈕。
      *
@@ -103,6 +107,17 @@ public class RestTimerService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (intent != null && ACTION_ADJUST.equals(intent.getAction())) {
+            // 下限 1 秒：調到 0 或負數等於「立刻超時」，那是停止鈕的語意，不是 −15s 的
+            int delta = intent.getIntExtra(EXTRA_SECONDS, 0);
+            remainingSeconds = Math.max(1, remainingSeconds + delta);
+            if (!paused) startTimer(remainingSeconds);
+            notifyUpdate(buildNotification(remainingSeconds, false));
+            RestOverlay.update(this, remainingSeconds);
+            RestTimerPlugin.emit(delta > 0 ? "plus15" : "minus15");
+            return START_NOT_STICKY;
+        }
+
         int seconds = intent == null ? 0 : intent.getIntExtra(EXTRA_SECONDS, 0);
         if (seconds <= 0) {
             stopSelf();
@@ -118,7 +133,7 @@ public class RestTimerService extends Service {
         if (intent != null && intent.getBooleanExtra(EXTRA_OVERLAY, false)) {
             // F69：這裡只宣告「這輪休息要顯示 overlay」，真的畫不畫由 RestOverlay 的
             // shouldShow() 決定（app 在前景又看得到 REST 卡片時就先藏著）
-            RestOverlay.setActive(this, true, seconds);
+            RestOverlay.setActive(this, true, seconds, intent.getStringExtra(EXTRA_HINT));
         }
         startTimer(seconds);
         // 不用 START_STICKY：休息被系統中斷後自己復活沒有意義（剩餘秒數已經不對了），
@@ -327,12 +342,20 @@ public class RestTimerService extends Service {
     // F72 之後歸零**不再結束服務**（要繼續計時與持續提醒），那個方法沒有呼叫點了，故移除——
     // 留著會讓下一個人以為還有這條路徑。
 
-    static void start(Context context, int seconds, boolean overlay) {
+    static void start(Context context, int seconds, boolean overlay, String hint) {
         Intent intent = new Intent(context, RestTimerService.class)
             .setAction(ACTION_START)
             .putExtra(EXTRA_SECONDS, seconds)
-            .putExtra(EXTRA_OVERLAY, overlay);
+            .putExtra(EXTRA_OVERLAY, overlay)
+            .putExtra(EXTRA_HINT, hint == null ? "" : hint);
         context.startForegroundService(intent);
+    }
+
+    static void adjust(Context context, int deltaSeconds) {
+        Intent intent = new Intent(context, RestTimerService.class)
+            .setAction(ACTION_ADJUST)
+            .putExtra(EXTRA_SECONDS, deltaSeconds);
+        context.startService(intent);
     }
 
     static void pause(Context context) {

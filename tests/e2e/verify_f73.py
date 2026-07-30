@@ -37,11 +37,14 @@ def source_checks() -> None:
     overlay = (REPO / "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java").read_text(
         encoding="utf-8")
     check("applyAlarmTint" in overlay, "② 浮動視窗的停止鈕會換色")
-    # 實測抓到的坑：⏹ 是 emoji，emoji 是彩色字形，setTextColor 對它無效——
+    # 實測抓到的坑：第一版的停止鈕是 emoji，而 emoji 是彩色字形、setTextColor 對它無效——
+    # 改文字色時畫面上完全看不出變化。要改的是 view 的底色。
+    # F89 把它換成文字藥丸之後，「不能用 setTextColor」的前提消失了，但底色仍是
+    # 這條真正要保證的東西，所以只驗底色有換、不再禁止同時換字色。
     # 第一版改文字色，畫面上完全看不出變化。要改的是 view 的底色。
     tint = overlay.split("applyAlarmTint(boolean alarming)")[1].split("\n    }")[0]
-    check("setBackground" in tint and "setTextColor" not in tint,
-          "② 用底色而非文字色（emoji 吃不到 setTextColor）")
+    check("setBackground" in tint,
+          "② 警示狀態換的是 view 的底色（小尺寸下一眼看得到）")
     check("remainingSeconds < 0 && !paused" in overlay,
           "③ 只有「超時且非暫停」才算響著（暫停中不變色）")
 

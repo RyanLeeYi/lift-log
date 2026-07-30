@@ -308,13 +308,14 @@ export function syncRestCardVisible(visible) {
 }
 
 // 回傳 true＝前景服務接手了（呼叫端就不要再排本機通知）
-export async function startForegroundRest(seconds) {
+export async function startForegroundRest(seconds, hint = "") {
   const api = restTimerPlugin();
   if (!api || !nativeNotifyEnabled()) return false;
   try {
     const { available } = await api.available();
     if (!available) return false;
-    await api.start({ seconds, overlay: restOverlayEnabled() });
+    // F89 ③：hint 是「動作名 · 第 N 組」，只給浮動視窗顯示；服務自己不解讀
+    await api.start({ seconds, overlay: restOverlayEnabled(), hint });
     foregroundActive = true;
     return true;
   } catch {

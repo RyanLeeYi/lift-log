@@ -113,14 +113,14 @@ export async function disableRestNotify() {
   return native() ? disableNativeNotify() : disablePush();
 }
 
-export function scheduleRestNotify(seconds) {
+export function scheduleRestNotify(seconds, hint = "") {
   if (!native()) {
     scheduleRestPush(seconds);
     return;
   }
   // F63 ⑥：優先交給前景服務（通知列看得到剩幾秒）；它接手就不排 F62 的本機通知，
   // 一次休息只有一則通知行為。啟不動（權限被關、Android 12+ 背景限制）才退回 F62。
-  startForegroundRest(seconds).then((taken) => {
+  startForegroundRest(seconds, hint).then((taken) => {
     if (!taken) scheduleNativeRest(seconds);
   });
 }

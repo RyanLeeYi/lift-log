@@ -126,7 +126,7 @@ public class RestTimerPlugin extends Plugin {
         }
         boolean overlay = Boolean.TRUE.equals(call.getBoolean("overlay", false));
         try {
-            RestTimerService.start(getContext(), seconds, overlay);
+            RestTimerService.start(getContext(), seconds, overlay, call.getString("hint"));
             call.resolve();
         } catch (Exception e) {
             // Android 12+ 對背景啟動前景服務有限制；啟不起來要讓前端知道好退回 F62

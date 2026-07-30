@@ -1699,7 +1699,11 @@ function startRestTimer() {
     ? restHintFor(state.exercise.id)
     : DEFAULT_REST_HINT_SECONDS;
   // F31/F62：排定「休息結束」提醒（切到別的 app 也收得到）；未開通知＝no-op
-  if (state.exercise) scheduleRestNotify(restHintFor(state.exercise.id));
+  // F89 ③：把「動作名 · 第 N 組」一起送下去給浮動視窗顯示——人在別的 app 裡時，
+  // 光有秒數看不出這是哪一組（同時開兩個訓練頁的情況雖然沒有，回頭看一眼仍然要對得上）。
+  if (state.exercise) {
+    scheduleRestNotify(restHintFor(state.exercise.id), restHintText());
+  }
   saveActiveWorkout(); // F66 ①：倒數一開始就要進持久化，否則下一秒被回收就沒了
   startRestTicker();
 }
@@ -1711,6 +1715,12 @@ function startRestTimer() {
  * 再走一次 startRestTimer() 會把 restStartedAt 重設成「現在」，倒數就從頭開始，
  * 正是這條 feature 要消滅的行為。
  */
+/** F89 ③：浮動視窗的動作提示。沒有動作時回空字串（那一行整條不畫）。 */
+function restHintText() {
+  if (!state.exercise) return "";
+  return `${exerciseName(state.exercise)} · 第 ${state.setNumber} 組`;
+}
+
 function startRestTicker() {
   if (restTicker) clearInterval(restTicker);
   restTicker = setInterval(() => {
@@ -1811,7 +1821,7 @@ function cycleRestHint(exerciseId) {
   if ((remaining ?? -1) > 0) restAlerted = false; // 目標調長回到未到點：重新武裝提醒
   // F31/F62：休息進行中改秒數 → 依新剩餘時間重排，否則仍照舊秒數響（Codex P2）
   if (state.restStartedAt !== null) {
-    if (remaining !== null && remaining > 0) scheduleRestNotify(remaining);
+    if (remaining !== null && remaining > 0) scheduleRestNotify(remaining, restHintText());
     else cancelRestNotify();
   }
 }
@@ -1841,7 +1851,7 @@ function adjustRest(delta) {
   state.restTargetSeconds = next;
   const remaining = restRemainingSeconds();
   if ((remaining ?? -1) > 0) restAlerted = false; // 調長回到未到點：重新武裝提醒
-  if (remaining !== null && remaining > 0) scheduleRestNotify(remaining);
+  if (remaining !== null && remaining > 0) scheduleRestNotify(remaining, restHintText());
   else cancelRestNotify();
   saveActiveWorkout(); // F66 ①：目標秒數改了，快照要跟著更新（否則還原後倒數用舊基準）
   render();
@@ -2379,7 +2389,7 @@ async function resumeRestAfterRestore() {
   // 暫停中也不排——F71 的暫停語意是「時間不走」，排了就會在不該響的時候響。
   // 秒數在等待期間會往前走，所以重算一次而不是沿用上面那個。
   const now = restRemainingSeconds();
-  if (!restPaused() && now !== null && now > 0) scheduleRestNotify(now);
+  if (!restPaused() && now !== null && now > 0) scheduleRestNotify(now, restHintText());
 }
 
 /**
