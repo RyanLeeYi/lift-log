@@ -4,6 +4,13 @@
 import { api } from "./api.js";
 import { el } from "./dom.js";
 import { icon } from "./icons.js";
+import {
+  PRESETS,
+  iso,
+  longestAvailable,
+  monthsAgo,
+  presetAvailable as presetUsable,
+} from "./range.js";
 import { exerciseName, state } from "./state.js";
 
 // 本模組畫面狀態（不進全域 state：換畫面即重置無妨）
@@ -17,28 +24,6 @@ const detail = {
   bodyweight: 0, // F37：自體重動作噸位用（取最新體重，同日曆的近似）
 };
 
-// ⚠ 必須由短到長遞增：longestAvailablePreset() 取 filter 後的最後一個當「最長可用」。
-// ⚠ 這份與 body.js 的 PRESETS／presetAvailable／longestAvailablePreset **是同一套規則的第二份拷貝**
-//   （F58 在 body.js、F59 複製到這裡）。改任一邊都要改另一邊；抽成共用模組的提案見 session-handoff。
-// F86 ③：五顆等寬藥丸。9M/2Y/3Y 與「自訂」一起拿掉（D2 簽核）——
-// 七顆＋自訂擠在 390px 寬度上，每顆連 44px 的觸控目標都做不到。
-// ALL 用 months=null 表示「全部」：datesFor 會退到最早訓練日。
-const PRESETS = [
-  ["1M", 1], ["3M", 3], ["6M", 6], ["1Y", 12], ["全部", null],
-];
-
-function iso(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function monthsAgo(d, n) {
-  const total = d.getFullYear() * 12 + d.getMonth() - n;
-  const y = Math.floor(total / 12);
-  const m = ((total % 12) + 12) % 12; // 0-11
-  const lastDay = new Date(y, m + 1, 0).getDate();
-  return new Date(y, m, Math.min(d.getDate(), lastDay));
-}
-
 function datesFor(range) {
   const today = new Date();
   // 「全部」：從最早訓練日起。還不知道最早日（第一次開頁）時退到一個夠早的日期，
@@ -47,24 +32,6 @@ function datesFor(range) {
     return { from: detail.data.first_session_date || "2000-01-01", to: iso(today) };
   }
   return { from: iso(monthsAgo(today, range.months)), to: iso(today) };
-}
-
-// F59：檔位可用性——規則與 F58（/body）**完全相同**，改一邊要改另一邊：
-// 可用 =「檔位起始日 ≥ 最早訓練日」或「它是第一個完整涵蓋所有資料的檔位」；沒有紀錄時不限制。
-// 後者的例外是必要的：否則資料 100 天時最大只能選 3M，最舊 10 天用任何 preset 都看不到（只能自訂）。
-function presetAvailable(months) {
-  if (months === null) return true; // 「全部」永遠可用——它的定義就是資料的全長
-  const first = detail.data.first_session_date;
-  if (!first) return true;
-  const startOf = (m) => iso(monthsAgo(new Date(), m));
-  if (startOf(months) >= first) return true;
-  const covering = PRESETS.map(([, m]) => m).filter((m) => m !== null && startOf(m) < first);
-  return covering.length > 0 && months === covering[0];
-}
-
-function longestAvailablePreset() {
-  const usable = PRESETS.filter(([, m]) => presetAvailable(m));
-  return usable.length ? usable[usable.length - 1][1] : PRESETS[0][1];
 }
 
 let reqSeq = 0; // 過期回應丟棄：快速連點時只採用最新一次查詢
@@ -111,11 +78,11 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
   if (detail.exerciseId !== myId) return;
   // F59（同 F58 P3-4）：first_session_date 要等第一次查詢回來才知道；若 3M 其實不可用就退檔，
   // 否則畫面會出現「被選中的那顆是灰的」。
-  // review P2-2：**不再發第二次請求**——可以證明它必然多餘：presetAvailable(3) 為 false
+  // review P2-2：**不再發第二次請求**——可以證明它必然多餘：presetUsable(3, detail.data.first_session_date) 為 false
   // ⇒ 資料全落在最近一個月內 ⇒ 可用集合恆為 {1M} ⇒ 1M 的資料是剛拿到的 3M 的嚴格子集。
   // 而那次請求若失敗會讓使用者「明明資料在手上卻進不去頁面」。所以就地過濾。
-  if (!presetAvailable(3)) {
-    const months = longestAvailablePreset(); // 依上述推導必為 1M
+  if (!presetUsable(3, detail.data.first_session_date)) {
+    const months = longestAvailable(detail.data.first_session_date); // 依上述推導必為 1M
     const from = iso(monthsAgo(new Date(), months));
     detail.range = { kind: "preset", months };
     detail.data = {
@@ -281,7 +248,7 @@ export function renderExerciseDetail(rerender, goBack, guard) {
   const presetBtn = ([label, months]) => {
     // F86 ④（承 F59）：超出資料範圍的檔位灰掉但**仍可點**——點了顯示說明。
     // 不能用 disabled／aria-disabled：前者點不到，後者宣告「不可互動」會讓 Playwright 拒絕點擊。
-    const available = presetAvailable(months);
+    const available = presetUsable(months, detail.data.first_session_date);
     const on = detail.range.months === months;
     return el("button", {
       class: `range-pill${on ? " on" : ""}${available ? "" : " off"}`,

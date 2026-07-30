@@ -2,14 +2,18 @@
 
 import { api, ApiError } from "./api.js";
 import { el } from "./dom.js";
+import { icon } from "./icons.js";
+import {
+  PRESETS,
+  iso as isoOf,
+  longestAvailable,
+  monthsAgo,
+  presetAvailable as presetUsable,
+  startOfPreset,
+  todayIso,
+} from "./range.js";
 import { state } from "./state.js";
 
-// F56：區間檔位沿用「動作表現」（exercise-detail.js）那組，行為與樣式一致
-// ⚠ 必須由短到長遞增：F58 的 longestAvailablePreset() 取 filter 後的最後一個當「最長可用」。
-// ⚠ 這份與 exercise-detail.js 的同名規則是**同一套規則的兩份拷貝**（F58 在此、F59 複製過去）——改一邊要改另一邊
-const PRESETS = [
-  ["1M", 1], ["3M", 3], ["6M", 6], ["9M", 9], ["1Y", 12], ["2Y", 24], ["3Y", 36],
-];
 // 折線最多畫的點數上限（保險，避免極長區間畫出上千個點）。**刻意不做聚合抽樣**：
 // 體重是天天量的連續數列，取週/月最佳會抹掉短期波動，而波動正是看體重的重點（F56 簽核時已告知 Ryan）
 const CHART_POINTS = 1200;
@@ -23,11 +27,8 @@ const body = {
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
   editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
   metric: "weight", // F53：圖表與紀錄清單顯示哪一項（weight|fat）；不持久化，進畫面一律回體重
-  // F56：查詢區間。{kind:"preset",months} 或 {kind:"custom",from,to}；不持久化，進畫面回 3M
+  // F56：查詢區間。{kind:"preset",months}；F87 起沒有自訂區間（五顆藥丸取代）。不持久化，進畫面回 3M
   range: { kind: "preset", months: 3 },
-  customOpen: false,
-  customFrom: "",
-  customTo: "",
   // F58：資料起訖 {weight_first, fat_first, last}——判斷哪些區間檔位有意義（分體重／體脂各自判定）
   bounds: { weight_first: null, fat_first: null, last: null },
   rangeNote: null, // F58：點到停用檔位／自動退檔時的一次性說明
@@ -37,16 +38,6 @@ const body = {
   form: null, // F11：頂部補記表單草稿 {date,weight,fat}——失敗重繪時保留（尤其目標日期，
   // 否則重試會誤寫今天／覆蓋既有資料，Codex P1）；成功儲存後清空 → 回預設今天
 };
-
-function isoOf(d) {
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-function todayIso() {
-  return isoOf(new Date()); // review P3-3：原本與 isoOf 重複實作
-}
 
 // F53 review P2-1：重繪前把清單捲動位置抓下來（由 app.js 的 render() 統一呼叫）。
 // 讀 DOM 而不掛 onscroll——節點被拆時瀏覽器補送的 scrollTop=0 會污染記錄（F48 首版的教訓）。
@@ -61,45 +52,23 @@ export function captureBodyScroll() {
 }
 
 // F56：月份回推（月底日期夾到當月最後一天，同 exercise-detail 的 monthsAgo）
-function monthsAgo(d, months) {
-  const y = d.getFullYear();
-  const m = d.getMonth() - months;
-  const lastDay = new Date(y, m + 1, 0).getDate();
-  return new Date(y, m, Math.min(d.getDate(), lastDay));
-}
-
 function datesFor(range) {
   // review P3-3：preset 一旦被 loadRange 解析過就帶著 from/to——直接用它，不再重算 new Date()。
   // 否則「/body 開著跨過午夜 → 切體重/體脂頁籤（paint 不重新查資料）」會讓 domain 前進一天，
   // foot 顯示一組從未被查詢過的區間、最舊的點還會被 clamp 壓到左緣
   if (range.from && range.to) return { from: range.from, to: range.to };
-  return { from: isoOf(monthsAgo(new Date(), range.months)), to: todayIso() };
+  // F87：months=null 代表「全部」——起點是資料的最早日。
+  // ⚠ 不能直接丟給 monthsAgo：`getMonth() - null` 是 `getMonth() - 0`，算出來是**今天**，
+  // 於是「全部」只查得到今天那一筆（E2E 量到只畫一根長條才發現）。
+  return {
+    from: startOfPreset(range.months, firstDateFor(body.metric)),
+    to: todayIso(),
+  };
 }
 
 // F58：當前 metric 的最早紀錄日（體脂比體重稀疏，故分開判定；null＝沒有資料）
 function firstDateFor(metric) {
   return metric === "fat" ? body.bounds.fat_first : body.bounds.weight_first;
-}
-
-// F58：這個 preset 檔位有意義嗎？
-// 規則＝「起始日落在資料範圍內」的檔位 ＋ **第一個完整涵蓋所有資料的檔位**。
-// 後面那個例外是必要的：若只留「起始日 >= 最早紀錄」的檔位，資料 100 天時最大只能選 3M（90 天），
-// 最舊的 10 天用任何 preset 都看不到、只能自訂——那不是「限制住」而是「藏起來」。
-// 完全沒有紀錄時不限制（否則會變成「全部灰掉」的死狀態）。
-function presetAvailable(months) {
-  const first = firstDateFor(body.metric);
-  if (!first) return true;
-  const startOf = (m) => isoOf(monthsAgo(new Date(), m));
-  if (startOf(months) >= first) return true; // 起始日在資料範圍內
-  // 是不是「第一個涵蓋得住全部資料」的那個檔位？（比它更長的才真的多餘）
-  const covering = PRESETS.map(([, m]) => m).filter((m) => startOf(m) < first);
-  return covering.length > 0 && months === covering[0];
-}
-
-// F58：切 metric 後若當前檔位不可用，退到「最長的可用檔位」
-function longestAvailablePreset() {
-  const usable = PRESETS.filter(([, m]) => presetAvailable(m));
-  return usable.length ? usable[usable.length - 1][1] : PRESETS[0][1];
 }
 
 let reqSeq = 0; // 過期回應丟棄：快速連點檔位時只採用最新一次查詢（同 exercise-detail 的 reqSeq）
@@ -142,12 +111,10 @@ export async function openBody() {
   } catch {
     body.bounds = { weight_first: null, fat_first: null, last: null }; // 拿不到就不限制，不擋開頁
   }
-  const initialMonths = presetAvailable(3) ? 3 : longestAvailablePreset();
+  const first = firstDateFor(body.metric);
+  const initialMonths = presetUsable(3, first) ? 3 : longestAvailable(first);
   await loadRange({ kind: "preset", months: initialMonths }); // F56：進畫面回預設（不記憶選擇）
   body.rangeNote = null;
-  body.customOpen = false;
-  body.customFrom = "";
-  body.customTo = "";
   body.savedFlash = null;
   body.editDate = null;
   body.form = null; // 進畫面回到預設今天
@@ -156,87 +123,93 @@ export async function openBody() {
   body.rowsScroll = { weight: 0, fat: 0 }; // 進畫面從頂端
 }
 
+/** F87 ⑩：把送出中的狀態直接寫進畫面（不重繪，才不會清掉正在輸入的值）。 */
+function setSavingUi(on) {
+  const modal = document.querySelector(".body-log-modal");
+  if (!modal) return;
+  modal.classList.toggle("saving", on);
+  for (const button of modal.querySelectorAll(".modal-actions button")) {
+    if (on) button.setAttribute("disabled", "");
+    else button.removeAttribute("disabled");
+  }
+}
+
 function latestMetric() {
   return body.metrics[body.metrics.length - 1] || null;
 }
 
-// 日期字串 → 天數。以 **UTC 午夜** 為基準（不是正午），手動 split 而不用 `new Date(iso)`——後者會把
-// 字串當 UTC 解析，再用本地 getter 取值就會差一天。UTC 午夜必為 86400000 的整數倍，除完是精確整數。
-// review P3-4：非法字串會回 NaN，呼叫端要擋（NaN 會讓整條 polyline 的 points 失效、不只壞那一點）
-function dayNum(iso) {
-  const [y, m, d] = String(iso).split("-").map(Number);
-  return Date.UTC(y, m - 1, d) / 86400000;
+// ---------- F87：主卡（大數字＋差值）＋ 24 根長條圖 ----------
+
+const BAR_COUNT = 24; // 設計稿訂的根數。資料不足 24 筆時**不補空條**（⑤）——補了會讓
+//                      「才記三天」看起來像「有 24 天資料但大多是 0」。
+
+function fmtValue(v) {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-// F53：圖表卡內容（不含 toggle 列）——切換時就地替換這一塊，不整頁重繪
-// F57：x 軸改為時間比例，domain＝當前選取區間（不是資料首末點）
-function chartBody(points, unit, domain) {
-  // points 升冪 [{date, value}]；y 自縮放，min/max 標示。
-  // 體脂沒量的日子已在呼叫端被 filter 掉＝有記的點才連線（F8 既有行為，F53 沿用）
-  if (points.length === 0) {
-    return [el("p", { class: "body-empty" }, ["還沒有紀錄"])];
+/**
+ * 主卡：左邊最新值（52px），右邊「這段區間變化了多少」。
+ *
+ * 差值的方向是有意義的：體重下降用 --good、上升用 --text-mute（⑤ 的凍結條文）。
+ * ⚠ 這是體重的語意，體脂同向。**不對「上升」用警示色**——那會把「今天多喝了水」
+ * 演成錯誤，而這個 app 不做價值判斷。
+ */
+function mainCard(points, unit, domain) {
+  if (!points.length) {
+    return el("div", { class: "body-main" }, [el("p", { class: "body-empty" }, ["還沒有紀錄"])]);
   }
-  const w = 320;
-  const h = 96;
-  const pad = 6;
-  const values = points.map((p) => p.value);
+  const last = points[points.length - 1];
+  const first = points[0];
+  const delta = last.value - first.value;
+  const down = delta < 0;
+  const spanText = domain.from === domain.to
+    ? domain.from
+    : `${domain.from.slice(5).replace("-", "/")} – ${domain.to.slice(5).replace("-", "/")}`;
+  return el("div", { class: "body-main" }, [
+    el("div", { class: "body-main-value" }, [
+      el("span", { class: "bm-big" }, [fmtValue(last.value)]),
+      el("span", { class: "bm-unit" }, [unit]),
+    ]),
+    el("div", { class: "body-main-delta" }, [
+      el("span", { class: `bm-delta${down ? " down" : ""}` }, [
+        `${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${fmtValue(Math.abs(delta))} ${unit}`,
+      ]),
+      el("span", { class: "bm-span" }, [spanText]),
+    ]),
+  ]);
+}
+
+/**
+ * 24 根長條。高度＝14% + 正規化 * 82%（設計稿的算式）。
+ *
+ * 為什麼保底 14%：純比例的話最小值會變成一條看不見的線，而「最低點在哪」正是看體重的重點之一。
+ * 只有一筆資料時全部值相同，正規化分母為 0 → 一律給滿（不是 0）。
+ */
+function barChart(points, unit) {
+  if (!points.length) return el("div", { class: "body-bars-empty" }, []);
+  const shown = points.slice(-BAR_COUNT);
+  const values = shown.map((p) => p.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || 1;
-  // F57：水平位置＝日期在區間內的比例。等距索引會讓「中間停記兩個月」看起來像等速變化（斜率騙人），
-  // 用區間當 domain 還能看出「區間前半沒資料」這件事。domain 跨度為 0（from=to／單日）時畫在中央。
-  const d0 = dayNum(domain.from);
-  const d1 = dayNum(domain.to);
-  // review P3-4：domain 解析不出數字（例如日期格式變動）時退回「全部畫在中央」，
-  // 而不是讓 NaN 汙染 points 讓整條線消失
-  const dspan = Number.isFinite(d0) && Number.isFinite(d1) ? d1 - d0 : 0;
-  const x = (iso) => {
-    if (dspan <= 0) return w / 2;
-    const ratio = (dayNum(iso) - d0) / dspan;
-    // clamp 是純防禦：同源查詢下點必在 domain 內，唯一例外是「頁面開著跨過午夜後切頁籤」
-    // （已由 P3-3 的 resolved from/to 消除）。留著是為了避免 x 跑出 viewBox 讓 SVG 破圖
-    return pad + Math.min(1, Math.max(0, Number.isFinite(ratio) ? ratio : 0.5)) * (w - pad * 2);
-  };
-  const y = (v) => h - pad - ((v - min) * (h - pad * 2)) / span;
-  const pts = points
-    .map((p) => `${x(p.date).toFixed(1)},${y(p.value).toFixed(1)}`)
-    .join(" ");
-  const last = points[points.length - 1];
-
-  const chart = el("div", { class: "body-chart" });
-  // 只嵌自家 API 的數值（Number 化過），無使用者字串——innerHTML 安全
-  // F57 review P2-1（Ryan 拍板）：點數少時每點畫小圓。時間軸下「資料跨度 << 區間」會讓折線塌成右緣
-  // 一根 0.3px 豎線（例如 3Y 區間只有兩天資料），斜率資訊歸零；小圓讓「有幾筆、落在哪」仍看得見。
-  // 門檻 30：再多點就會糊成一片，反而不如純線條乾淨。
-  const dots =
-    points.length <= 30
-      ? points
-          .map((p) => `<circle cx="${x(p.date).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="2" fill="currentColor" opacity="0.75"/>`)
-          .join("")
-      : "";
-  chart.innerHTML =
-    `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
-    `<polyline points="${pts}" fill="none" stroke="currentColor" ` +
-    `stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>` +
-    dots +
-    `<circle cx="${x(last.date).toFixed(1)}" cy="${y(last.value).toFixed(1)}" ` +
-    `r="3" fill="currentColor"/>` +
-    "</svg>";
-
-  return [
-    el("div", { class: "body-card-latest" }, [
-      el("span", { class: "n latest" }, [`${last.value} ${unit}`]),
-      // review P3-5：標出最新值是「哪天量的」——底部起訖是區間邊界，兩者語意不同
-      el("span", { class: "latest-date" }, [last.date.slice(5).replace("-", "/")]),
+  const span = max - min;
+  return el("div", { class: "body-bars-wrap" }, [
+    el(
+      "div",
+      { class: "body-bars" },
+      shown.map((point, i) => {
+        const norm = span === 0 ? 1 : (point.value - min) / span;
+        return el("div", {
+          class: `body-bar${i === shown.length - 1 ? " latest" : ""}`,
+          style: `height:${(14 + norm * 82).toFixed(1)}%`,
+          "aria-label": `${point.date} ${point.value}${unit}`,
+        }, []);
+      }),
+    ),
+    el("div", { class: "body-bars-foot" }, [
+      el("span", {}, [shown[0].date.slice(5).replace("-", "/")]),
+      el("span", {}, [shown[shown.length - 1].date.slice(5).replace("-", "/")]),
     ]),
-    chart,
-    // F57：起訖改顯示「區間」邊界而非資料首末點——x 軸的 domain 就是區間，兩者要一致
-    el("div", { class: "body-card-foot" }, [
-      el("span", {}, [domain.from]),
-      el("span", { class: "n" }, [`${min}–${max} ${unit}`]),
-      el("span", {}, [domain.to]),
-    ]),
-  ];
+  ]);
 }
 
 export function renderBody(rerender, goHome, guard) {
@@ -331,6 +304,11 @@ export function renderBody(rerender, goHome, guard) {
     }
     payload.date = dateSel; // F11：帶所選日期（預設今天）；同日重送為覆蓋
     body.saving = true;
+    // F87 ⑩：旗標要**立刻**進 DOM。原本只設變數，而下一次重繪要等 await 回來——
+    // 送出期間按鈕看起來完全正常，慢網路下使用者會一直按（邏輯上有 `if (body.saving) return`
+    // 擋住，但畫面沒有任何回饋等於沒說）。
+    // 用 class 而不是 rerender()：重繪會把視窗裡正在輸入的值與焦點一起打掉。
+    setSavingUi(true);
     try {
       await api.logBodyMetric(payload);
       await refetchCurrent(); // F56：維持當前區間（含 seq 保護）
@@ -341,6 +319,7 @@ export function renderBody(rerender, goHome, guard) {
       closeLogModal(); // 成功才關窗（含清草稿與錯誤）；失敗（拋錯）不關，輸入留在視窗裡可直接重試
     } finally {
       body.saving = false;
+      setSavingUi(false);
     }
     rerender();
   };
@@ -402,8 +381,10 @@ export function renderBody(rerender, goHome, guard) {
       ]);
     }
     // F53：清單跟著 toggle 只顯示該項數值（編輯/刪除仍是整筆操作，編輯表單維持體重＋體脂兩欄）
+    // F87 ⑧：體脂那天沒量就顯示 —（不再把整列藏起來）。用 em dash 而不是空字串，
+    // 空的話那一列看起來像壞掉的資料，而「沒量」是正常狀態。
     const valText = body.metric === "fat"
-      ? `${m.body_fat_pct} %`
+      ? (m.body_fat_pct != null ? `${m.body_fat_pct} %` : "—")
       : `${m.weight_kg} kg`;
     return el("div", { class: "bm-row" }, [
       el("span", { class: "bm-date" }, [m.date]),
@@ -449,7 +430,7 @@ export function renderBody(rerender, goHome, guard) {
     el(
       "button",
       {
-        class: `chip${body.metric === key ? " on" : ""}`,
+        class: `metric-pill${body.metric === key ? " on" : ""}`,
         onclick: () => {
           // 先把目前頁籤的捲動位置收起來，再換頁籤（否則切過去被夾成 0，切回來就回不去了）
           body.rowsScroll[body.metric] = rowsHost.scrollTop;
@@ -459,8 +440,8 @@ export function renderBody(rerender, goHome, guard) {
           body.rangeNote = null;
           // F58：分 metric 判定的代價——切過去後當前檔位可能不可用（體脂通常比體重晚開始記）。
           // 留在不可用的檔位只會給一張空圖，故自動退到最長的可用檔位並說明一次。
-          if (body.range.kind === "preset" && !presetAvailable(body.range.months)) {
-            const months = longestAvailablePreset();
+          if (body.range.kind === "preset" && !presetUsable(body.range.months, firstDateFor(key))) {
+            const months = longestAvailable(firstDateFor(key));
             const what = key === "fat" ? "體脂" : "體重";
             guard(async () => {
               await loadRange({ kind: "preset", months });
@@ -482,15 +463,20 @@ export function renderBody(rerender, goHome, guard) {
     );
   const tabW = mkTab("weight", "體重");
   const tabF = mkTab("fat", "體脂");
-  const toggle = el("div", { class: "chips body-metric-toggle" }, [tabW, tabF]);
+  const toggle = el("div", { class: "metric-toggle" }, [tabW, tabF]);
 
   function paint() {
     const isFat = body.metric === "fat";
+    const points = isFat ? fatPoints : weightPoints;
+    const unit = isFat ? "%" : "kg";
     chartHost.replaceChildren(
-      ...chartBody(isFat ? fatPoints : weightPoints, isFat ? "%" : "kg", datesFor(body.range)),
+      mainCard(points, unit, datesFor(body.range)),
+      barChart(points, unit),
     );
-    // 體脂頁籤只列有體脂的日子（沒量的日子在該頁籤沒有數值可顯示；要補記就切回體重頁籤編輯那天）
-    const rows = [...body.metrics].reverse().filter((m) => !isFat || m.body_fat_pct != null);
+    // F87 ⑧：體脂頁籤**列出全部日子**，沒量體脂的顯示 —。
+    // 原本只列有體脂的日子是 F53 的實作解讀（acceptance ② 沒明說），後果是
+    // 「那天忘了量體脂」在體脂頁籤完全看不到，也就改不到——要補記還得先切回體重頁籤。
+    const rows = [...body.metrics].reverse();
     rowsHost.replaceChildren(
       ...(rows.length > 0 ? rows.map(metricRow) : [el("p", { class: "body-empty" }, ["還沒有紀錄"])]),
     );
@@ -511,10 +497,10 @@ export function renderBody(rerender, goHome, guard) {
   // F56：區間 chips＋自訂面板。切換一律走 loadRange（成功才提交），失敗由 guard 接住、狀態不動
   const presetBtn = ([label, months]) => {
     // F58：超出資料範圍的檔位灰掉但**仍可點**——點了顯示說明（用 disabled 就點不到、給不了說明）
-    const available = presetAvailable(months);
+    const available = presetUsable(months, firstDateFor(body.metric));
     const on = body.range.kind === "preset" && body.range.months === months;
     return el("button", {
-      class: `${on ? "on" : ""}${available ? "" : " off"}`.trim(),
+      class: `range-pill${on ? " on" : ""}${available ? "" : " off"}`,
       // review P3-6：不能用 disabled（要能點以顯示說明）。**也不能用 aria-disabled**——它宣告的正是
       // 「不可互動」，與「點了給說明」自相矛盾，而且 Playwright 會據此拒絕點擊（實測踩到）。
       // 改用 aria-label 把狀態講給螢幕閱讀器聽，同時保留可互動語意。
@@ -530,56 +516,32 @@ export function renderBody(rerender, goHome, guard) {
         guard(async () => {
           body.rangeNote = null;
           await loadRange({ kind: "preset", months });
-          body.customOpen = false;
           rerender();
         });
       },
     }, [label]);
   };
-  const customChip = el("button", {
-    class: body.range.kind === "custom" ? "on" : "",
-    onclick: () => { body.customOpen = !body.customOpen; body.rangeNote = null; rerender(); },
-  }, ["自訂"]);
-  const customPanel = body.customOpen
-    ? el("div", { class: "ex-custom" }, [
-        el("input", {
-          type: "date", class: "ex-date", value: body.customFrom, max: todayIso(),
-          oninput: (e) => { body.customFrom = e.target.value; },
-        }),
-        el("span", { class: "ex-dash" }, ["→"]),
-        el("input", {
-          type: "date", class: "ex-date", value: body.customTo, max: todayIso(),
-          oninput: (e) => { body.customTo = e.target.value; },
-        }),
-        el("button", {
-          class: "btn btn-primary sm ex-custom-apply",
-          onclick: () =>
-            guard(async () => {
-              const f = body.customFrom, t = body.customTo;
-              // max 屬性只是控制項提示，手打的未來日期仍要自己擋（同 F35）
-              if (!f || !t || f > t || t > todayIso()) {
-                state.error = "起訖日期不對（起要早於訖，且不能超過今天）";
-                rerender();
-                return;
-              }
-              state.error = null;
-              body.rangeNote = null; // review P2-2：套用自訂後，「已改為顯示最近 N 個月」會變成謊話
-              await loadRange({ kind: "custom", from: f, to: t });
-              rerender();
-            }),
-        }, ["套用"]),
-      ])
-    : null;
 
   return el("section", { class: "screen body fills" }, [
-    el("header", { class: "topbar" }, [el("h1", {}, ["體重"])]),
+    // F87 ①：沿用 .screen-head 慣例。副標講「最近一次量是哪天」——
+    // 進這頁最常想確認的就是「我上次量是什麼時候」
+    el("header", { class: "screen-head" }, [
+      el("button", {
+        class: "btn btn-ghost back-btn", "aria-label": "回首頁", onclick: goHome,
+      }, [icon("back", { size: 20, label: "回首頁" })]),
+      el("div", { class: "screen-head-text" }, [
+        el("h1", {}, ["體重 · 體脂"]),
+        el("span", { class: "st" }, [
+          latest ? `最近一次 ${+latest.date.slice(5, 7)}月${+latest.date.slice(8, 10)}日` : "還沒有紀錄",
+        ]),
+      ]),
+    ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...(body.savedFlash ? [el("div", { class: "body-saved" }, [body.savedFlash])] : []),
 
-    el("div", { class: "ex-range body-range" }, [...PRESETS.map(presetBtn), customChip]),
+    el("div", { class: "range-pills body-range" }, PRESETS.map(presetBtn)),
     // F58：點到停用檔位／自動退檔時的說明（一次性，任何區間或頁籤操作即清）
     ...(body.rangeNote ? [el("p", { class: "range-note" }, [body.rangeNote])] : []),
-    ...(customPanel ? [customPanel] : []),
     el("div", { class: "body-card" }, [
       el("div", { class: "body-card-head" }, [toggle]),
       chartHost,

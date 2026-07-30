@@ -970,25 +970,54 @@ body {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 14px; color: var(--text-dim);
 }
-/* F53：體重／體脂 toggle（沿用 .chips/.chip 既有樣式）＋最新值靠右。
-   review P3-4：原 `.body-card-head .latest` 在 .latest 移出 head 後成死規則，已與這條併成一份 */
-.body-metric-toggle { flex: none; }
-/* F54：記錄表單收進懸浮視窗，畫面只留入口鈕。
-   review P3-2：原本加了 border-style: dashed，但 btn-primary 的邊框與底色同為主色＝虛線根本看不見（死規則）。
-   記體重是這頁的主要動作，保留 btn-primary 的視覺權重、不套其他「＋」入口的虛線範式。
-   review P3-3：`.body-log-modal .body-form { gap: 10px }` 與 .body-form 同值，已刪。 */
-.body-card-body { display: flex; flex-direction: column; gap: 8px; }
-.body-card-latest {
-  display: flex; justify-content: flex-end; align-items: baseline; gap: 6px;
-  font-family: var(--mono); font-size: 20px; color: var(--accent);
+/* F87 ②：體重／體脂兩顆等寬藥丸。等寬（flex:1）是刻意的——兩顆一樣重要，
+   不該由文字長度決定寬度。 */
+/* flex:1 而不是 none——父層 .body-card-head 是 space-between，不給它成長空間的話
+   兩顆藥丸會被壓成 28px 寬（量出來才發現，⑫ 的 44px 直接不合格）。 */
+.metric-toggle { display: flex; gap: 6px; flex: 1; }
+.metric-pill {
+  flex: 1; min-width: 0; min-height: 44px;
+  background: var(--card-hi); border: none; border-radius: var(--r-pill);
+  color: var(--text-dim); font-size: 14px; cursor: pointer;
 }
-/* F57 review P3-5：最新值旁的量測日期（小字）——與底部的「區間」邊界區分開 */
-.body-card-latest .latest-date { font-size: 12px; color: var(--text-dim); }
-.body-chart { color: var(--accent); }
-.body-chart svg { width: 100%; height: 96px; display: block; }
-.body-card-foot {
+.metric-pill.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.metric-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* F54：記錄表單收進懸浮視窗，畫面只留入口鈕。
+   review P3-2：原本加了 border-style: dashed，但 btn-primary 的邊框與底色同為主色＝虛線根本看不見。
+   記體重是這頁的主要動作，保留 btn-primary 的視覺權重。 */
+.body-card-body { display: flex; flex-direction: column; gap: 14px; }
+
+/* F87 ④ 主卡：左邊大數字、右邊區間變化 */
+.body-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.body-main-value { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.bm-big {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-weight: 600; font-size: 52px; line-height: .9; color: var(--accent);
+}
+.bm-unit { font-family: var(--mono); font-weight: 400; font-size: 15px; color: var(--text-dim); }
+.body-main-delta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+/* ⚠ 上升用 --text-mute 而不是警示色：這個 app 不對「今天多喝了水」做價值判斷。 */
+.bm-delta {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-weight: 600; font-size: 13px; color: var(--text-mute);
+}
+.bm-delta.down { color: var(--good); }
+.bm-span { font-family: var(--mono); font-size: 10px; color: var(--text-mute); }
+
+/* F87 ⑤ 24 根長條 */
+.body-bars-wrap { display: flex; flex-direction: column; gap: 6px; }
+/* ⚠ 80 而不是 96：門檻算式（見下方）是 96 時算出 726，而 Ryan 的 Note10+ 可視高度是 **727**
+   ——只差 1px 的「剛好過門檻」正是 F84 最貴的那個教訓（釘死高度卻塞不進，比沒過還糟）。
+   降到 80 讓門檻變 710，那台裝置有 17px 餘裕。設計稿沒有指定長條區高度，這是可動的那一項。 */
+.body-bars { display: flex; align-items: flex-end; gap: 4px; height: 80px; }
+.body-bar { flex: 1; min-width: 0; border-radius: 99px; background: var(--line); }
+.body-bar.latest { background: var(--accent); }
+/* F87 ⑩：送出中——按鈕在視覺上也要看得出來已停用 */
+.body-log-modal.saving .modal-actions button { opacity: .5; }
+.body-bars-foot {
   display: flex; justify-content: space-between;
-  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  font-family: var(--mono); font-weight: 400; font-size: 10px; color: var(--text-mute);
 }
 .body-empty { color: var(--text-dim); font-size: 14px; padding: 4px 0 8px; }
 /* F17 體重紀錄清單：每列可編輯/單擊刪除 */
@@ -1005,28 +1034,25 @@ body {
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
-/* F53／F54：門檻算式（唯一來源）
-   固定區塊 = 標頭 25 ＋ 區間 chips 30 ＋ 圖表卡 217 ＋「＋ 記錄」55 ＋「← 回首頁」55 ＋ 間距 70 = **452px**
-   （F54 把 231px 的輸入表單收進懸浮視窗 → 584 降到 408；F56 加了區間 chips 一列 → 408 升到 452。
+/* F53／F54／F87：門檻算式（唯一來源）
+   固定區塊 = 頁頭 50 ＋ 時間窗藥丸 44 ＋ 圖表卡 236 ＋「＋ 記錄」53 ＋「← 回首頁」53 ＋ 間距 70 = **506px**
+   （F54 把 231px 的輸入表單收進懸浮視窗 → 584 降到 408；F56 加了區間 chips 一列 → 408 升到 452；
+    F87 改版後重量：頁頭多了返回鍵與副標 25→50、chips 30→44、圖表卡 217→236。
     **每次動這個畫面的固定內容都要重量一次並改門檻**——F53/F54 各因少算一項各製造過一次死帶）
    ＋ **最壞情況的額外區塊 56px**：頁面層 error-banner 42＋gap 14（flash `.body-saved` 是 23＋14=37，較小）
-     ——review P2-1 抓到：408 只在「無 flash、無錯誤」時成立，而成功記錄一定有 flash，
-       原本用 556 會讓 557–592 在 flash 出現時溢出、底部鈕落到摺線下
    ＋ 清單 min-height 120 ＋ .app padding 28
-   **明確的例外（review P2-2）**：自訂區間面板（`.ex-custom`，約 50px）展開時**不**納入算式——它是暫時性的
-     （使用者打開來選日期、套用後就收起），此時允許整頁捲動而非永久提高門檻。若把它算進去，門檻要升到約 706，
-     657–706 的裝置就算面板收著也永遠拿不到「填滿」，代價更大。實測面板展開時：底部鈕捲得到、無元素重疊。
-   = **656px**：這是「填滿版面在任何狀態下都塞得下」的最低視窗高度。矮於此一律退出 flex-fill。
-   矮於此一律退出 flex-fill、卡片吃回內容高、整頁可捲。
-   ⚠ 兩個 review 教訓釘在這裡：
+   = **710px**：這是「填滿版面在任何狀態下都塞得下」的最低視窗高度。矮於此一律退出 flex-fill。
+   （F87 拿掉了自訂區間面板，先前那條「面板展開不納入算式」的例外一併消失——沒有暫時性區塊了。）
+   ⚠ 三個 review 教訓釘在這裡：
    ① 門檻必須 = 固定區塊 ＋ .body-list 的 min-height ＋ 28（三個數字綁在一起，改一個要重算）。
-      原本寫 700 造成 701–732 死帶：釘死高度但塞不進、
-      底部鈕落在可視區外，「剛好過門檻」比「剛好沒過」更糟（review P1-2）。
+      原本寫 700 造成 701–732 死帶：釘死高度但塞不進、底部鈕落在可視區外，
+      「剛好過門檻」比「剛好沒過」更糟（review P1-2）。
    ② 退讓要用 `flex: none`（吃回內容高），不是把 min-height 設 0——basis 0 ＋ 允許縮到 0 在 height:auto
-      的容器裡等於卡片塌成只剩標頭，而子節點 .bm-rows 的 60px 下限會穿出卡片、疊在「← 回首頁」上（review P1-1，
-      實測 667 溢出 47px、疊住按鈕 33px 且頁面捲不動＝真破圖）。
-   ⚠ 也必須放在 .screen.fills 之後：同 specificity 靠順序決勝（F52 P2-1 踩過）。 */
-@media (max-height: 656px) {
+      的容器裡等於卡片塌成只剩標頭，而子節點 .bm-rows 的 60px 下限會穿出卡片、疊在「← 回首頁」上（review P1-1）。
+   ③ **Ryan 的 Note10+ 可視高度是 727px**（顯示密度 600）。算式若把門檻推到 726，那台就是
+      「剛好過 1px」——F87 因此把長條區高度從 96 降到 80，換到 17px 餘裕。真實裝置的高度要當成約束，
+      不是事後才發現的意外（F84 的教訓）。 */
+@media (max-height: 710px) {
   .screen.body { height: auto; }
   .body-list { flex: none; min-height: 0; }
   .bm-rows.scrollable { flex: none; min-height: 0; max-height: 40dvh; }
@@ -1039,8 +1065,10 @@ body {
 }
 .bm-row .bm-date { color: var(--text-dim); flex: none; }
 .bm-row .bm-val { color: var(--text); flex: 1; }
+/* F87 ⑫：min-width 也要補到 44——先前只訂了高度，寬度分別只有 31／26px。
+   verify_f78 沒抓到是因為它的 DB 沒有體重資料，整份清單根本不存在（假綠的「假存在」型態）。 */
 .bm-row .icon-btn {
-  flex: none; padding: 2px 8px; min-height: 44px; font-size: 15px;
+  flex: none; padding: 2px 8px; min-height: 44px; min-width: 44px; font-size: 15px;
   background: var(--card-hi); border: none; border-radius: var(--r-pill);
 }
 .bm-row.editing { flex-wrap: wrap; }

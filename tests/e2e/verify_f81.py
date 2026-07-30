@@ -134,7 +134,8 @@ def main() -> int:
 
             # 導覽真的會到那些畫面
             # F85 起日曆的標題是「訓練日曆」（改版把標題列換成全站 .screen-head 樣式）
-            for label, marker in (("課表", "課表"), ("日曆", "訓練日曆"), ("體重", "體重")):
+            # F87 起體重頁的標題是「體重 · 體脂」（改版把兩個 metric 都寫進標題）
+            for label, marker in (("課表", "課表"), ("日曆", "訓練日曆"), ("體重", "體重 · 體脂")):
                 page.locator(".bottom-nav .nav-item", has_text=label).click()
                 page.wait_for_timeout(900)
                 shown = page.locator("h1").first.inner_text().strip()
