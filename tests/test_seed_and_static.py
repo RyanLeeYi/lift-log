@@ -169,3 +169,11 @@ class TestEnvLabel:
         app = create_app(Settings(token="t", db_path=str(tmp_path / "e.db"), env_label="dev"))
         with TestClient(app) as c:
             assert c.get("/health").json()["env"] == "dev"
+
+    def test_unknown_env_value_falls_back_to_prod(self):
+        """拼錯或用了變體（production）時要當正式站，不能被前端標成「測試環境」。"""
+        from app.config import Settings
+
+        assert Settings(token="t", env_label="production").env_label == "prod"
+        assert Settings(token="t", env_label="").env_label == "prod"
+        assert Settings(token="t", env_label="dev").env_label == "dev"

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- F93 ④：測試版在桌面上要一眼分辨得出來。只覆寫看得見的名稱；
+     package_name / custom_url_scheme 由 gradle 的 applicationIdSuffix 處理，不在這裡改。 -->
+<resources>
+    <string name="app_name">lift-log 測試</string>
+    <string name="title_activity_main">lift-log 測試</string>
+</resources>

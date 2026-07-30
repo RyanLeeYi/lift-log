@@ -56,6 +56,23 @@ android {
             }
         }
     }
+    // F93 ④：正式版與測試版要能**同時裝在同一支手機上**。
+    // Android 以 applicationId 認定「同一個 app」——沿用同一個 id 的話，裝測試版就是把正式版蓋掉。
+    flavorDimensions += "site"
+    productFlavors {
+        prod {
+            dimension "site"
+            // applicationId 沿用 defaultConfig，別動——動了等於換一個 app，
+            // 手機上既有的那顆會變成孤兒（資料還在但更新不到）。
+        }
+        dev {
+            dimension "site"
+            applicationIdSuffix ".dev"       // com.ryanleeyi.liftlog.dev
+            versionNameSuffix "-dev"
+            // 名稱與圖示由 src/dev/res 覆寫（不用 resValue——會與 strings.xml 既有的
+            // app_name 撞成重複資源；flavor 專屬 res 目錄也不會被 cap sync 重寫）
+        }
+    }
 }
 
 repositories {

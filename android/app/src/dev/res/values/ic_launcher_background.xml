@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F93 ④：測試版的圖示底色改成警示橘（陶土夜色的 over 色），
+     與正式版的白底一眼分得出來。只覆寫顏色，不必另做一套圖檔。 -->
+<resources>
+    <color name="ic_launcher_background">#C96A4E</color>
+</resources>

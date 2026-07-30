@@ -1,4 +1,4 @@
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +27,16 @@ class Settings(BaseSettings):
         default="prod",
         validation_alias=AliasChoices("LIFTLOG_ENV", "env_label"),
     )
+
+    @field_validator("env_label", mode="after")
+    @classmethod
+    def _known_env(cls, value: str) -> str:
+        """只接受 prod／dev；其餘（含拼錯的 production）一律當 prod。
+
+        往 prod 收斂是刻意的保守方向：把測試站誤標成正式站，最壞是你多做一次確認；
+        反過來把正式站標成「測試環境」，你會以為在動假資料而放心亂改。
+        """
+        return value if value in ("prod", "dev") else "prod"
     # F31 Web Push（休息結束通知）：缺任一則推播功能停用、其餘照常運作
     vapid_private_key: str = ""  # PKCS8 DER 的 base64url（.env 單行）
     vapid_public_key: str = ""  # 未壓縮公鑰點 base64url＝前端 applicationServerKey

@@ -69,7 +69,18 @@ $snapVersion = (Select-String -Path (Join-Path $staging "app\static\js\state.js"
     -Pattern 'APP_VERSION\s*=\s*"(v\d+)"').Matches[0].Groups[1].Value
 Write-Host "快照版號：$snapVersion"
 
-# 原子性換版：current → previous、staging → current（出事可以把 previous 換回來）
+# ⚠ Windows 會鎖住「有程序以它為 cwd」的目錄——正式站跑起來之後，deploy\current
+# 就搬不動也刪不掉，第二次部署會直接在這裡失敗，連回退路徑也一起壞掉（Codex P1）。
+# 所以換版前先停服務。停機時間就是換目錄那幾秒，部署本來就不頻繁。
+$serviceStopped = $false
+if (-not $NoRestart) {
+    Write-Host "換版前先停 lift-log（Windows 會鎖住執行中程序的 cwd）"
+    mission-control stop lift-log | Out-Null
+    Start-Sleep -Seconds 2
+    $serviceStopped = $true
+}
+
+# current → previous、staging → current（出事可以把 previous 換回來）
 if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }
 if (Test-Path $current) { Move-Item $current $previous }
 Move-Item $staging $current
@@ -79,14 +90,13 @@ $deployed = Join-Path $current ".deployed"
 
 Write-Host "已部署 $Ref ($sha) → deploy\current" -ForegroundColor Green
 
-if ($NoRestart) {
-    Write-Host "（-NoRestart：沒有重啟服務）"
+if (-not $serviceStopped) {
+    Write-Host "（-NoRestart：沒有停機也沒有重啟；服務仍在跑舊目錄）"
     exit 0
 }
 
-# 重啟後確認真的活著；起不來就把上一版換回去
-mission-control restart lift-log
-Start-Sleep -Seconds 3
+mission-control start lift-log | Out-Null
+Start-Sleep -Seconds 4
 try {
     $health = Invoke-WebRequest -Uri "http://127.0.0.1:8137/health" -TimeoutSec 10 -UseBasicParsing
     if ($health.StatusCode -ne 200) { throw "health 回 $($health.StatusCode)" }
@@ -94,9 +104,12 @@ try {
 } catch {
     Write-Host "部署後起不來：$_" -ForegroundColor Red
     if (Test-Path $previous) {
+        # 回退同樣要先停——服務可能已經起來並鎖住 current（Codex P1 的同一個問題）
+        mission-control stop lift-log | Out-Null
+        Start-Sleep -Seconds 2
         Remove-Item -Recurse -Force $current
         Move-Item $previous $current
-        mission-control restart lift-log
+        mission-control start lift-log | Out-Null
         Write-Host "已回退到上一版。" -ForegroundColor Yellow
     }
     throw

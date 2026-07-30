@@ -125,14 +125,22 @@ function fmtRest(remaining) {
 // null＝還沒問到（開站的第一瞬間或離線），那時不顯示，不要猜。
 let envLabel = null;
 
+// 只認得這兩個值。**不能把「非 prod」一律當成測試站**——`LIFTLOG_ENV` 打成
+// `production` 之類的變體時，正式站會被標成紅字「測試環境」，使用者以為在動假資料，
+// 那比沒有標示更危險（Codex P2）。未知值一律不顯示。
+const ENV_LABELS = { prod: "正式環境", dev: "測試環境" };
+
 async function loadEnvLabel() {
   try {
     const resp = await fetch(`${apiBase()}/health`);
     if (!resp.ok) return;
     const data = await resp.json();
-    if (data.env && data.env !== envLabel) {
+    if (data.env in ENV_LABELS && data.env !== envLabel) {
       envLabel = data.env;
-      render();
+      // renderUnlessTyping：這是背景查詢的結果，隨時可能在使用者打字時回來，
+      // 而 render() 會 replaceChildren 重建整個畫面、清掉還沒進 state 的輸入
+      // （setup 畫面的 token 就是這種）（Codex P2）。
+      renderUnlessTyping();
     }
   } catch {
     /* 離線／連不上：不顯示，不要猜成正式站 */
@@ -140,13 +148,13 @@ async function loadEnvLabel() {
 }
 
 function envTag() {
-  if (!envLabel) return [];
-  const isProd = envLabel === "prod";
+  const text = ENV_LABELS[envLabel];
+  if (!text) return [];
   return [
     el(
       "div",
-      { class: `env-tag${isProd ? "" : " env-tag-dev"}` },
-      [isProd ? "正式環境" : "測試環境"],
+      { class: `env-tag${envLabel === "dev" ? " env-tag-dev" : ""}` },
+      [text],
     ),
   ];
 }
