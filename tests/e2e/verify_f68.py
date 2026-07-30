@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
-    REPO,
+    e2e_tmp,
     free_port,
     native,
     open_settings,
@@ -40,8 +40,8 @@ def modal(page):
 
 def main() -> int:
     port = free_port()
-    db = REPO / f"liftlog_f68_e2e_{port}.db"
-    release = REPO / f"liftlog_f68_release_{port}"
+    db = e2e_tmp() / f"liftlog_f68_e2e_{port}.db"
+    release = e2e_tmp() / f"liftlog_f68_release_{port}"
     release.mkdir(exist_ok=True)
     (release / "lift-log-v99.apk").write_bytes(b"PK\x03\x04" + b"x" * 2_000_000)
     proc = start_server(port, db, release)

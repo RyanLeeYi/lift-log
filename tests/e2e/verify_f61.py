@@ -20,7 +20,10 @@ import time
 from pathlib import Path
 from urllib.request import urlopen
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from playwright.sync_api import sync_playwright
+from verify_f67 import e2e_tmp  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 TOKEN = "e2e-f61-token"
@@ -194,7 +197,7 @@ def verify_native_sim(page, base: str) -> None:
 
 def main() -> int:
     port = free_port()
-    db = REPO / f"liftlog_f61_e2e_{port}.db"
+    db = e2e_tmp() / f"liftlog_f61_e2e_{port}.db"
     proc = start_server(port, db)
     base = f"http://127.0.0.1:{port}"
     try:

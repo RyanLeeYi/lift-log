@@ -21,6 +21,7 @@ from verify_f67 import (  # noqa: E402
     PHONE,
     REPO,
     TOKEN,
+    e2e_tmp,
     free_port,
     setup_and_home,
     start_from_home,  # noqa: E402
@@ -146,8 +147,8 @@ def start_free_workout(page) -> None:
 
 def main() -> int:
     port = free_port()
-    db = REPO / f"liftlog_f71_e2e_{port}.db"
-    release = REPO / f"liftlog_f71_release_{port}"
+    db = e2e_tmp() / f"liftlog_f71_e2e_{port}.db"
+    release = e2e_tmp() / f"liftlog_f71_release_{port}"
     release.mkdir(exist_ok=True)
     proc = start_server(port, db, release)
     base = f"http://127.0.0.1:{port}"

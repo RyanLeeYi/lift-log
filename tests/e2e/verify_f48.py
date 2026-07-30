@@ -16,7 +16,18 @@ import time
 import urllib.request
 from pathlib import Path
 
-REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    open_templates,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
+# 硬編碼的絕對路徑換成相對推導——換一台機器就跑不動的東西不該留在測試裡
+REPO = Path(__file__).resolve().parents[2]
 TOKEN = "f48-own-token"
 
 SCROLLS = "e => e.scrollHeight > e.clientHeight + 2"
@@ -139,10 +150,10 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
             # ⑦ 版本
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            ver = read_version(page)
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             # 不釘死版號（之後每個 feature 都會 bump）——只驗兩處一致，這才是維護鐵則的內容
             check(
@@ -152,12 +163,9 @@ def main():
             )
             # F50 起容器填滿螢幕高度 → 要測「真的在捲」得讓內容確實溢出，故加量到 10 份課表 / 10 動作課表
 
-            def open_templates():
-                page.locator(".btn", has_text="📋 課表").click()
-                page.wait_for_selector(".screen.templates", timeout=8000)
 
             # ① 門檻下
-            open_templates()
+            open_templates(page)
             check(
                 "① 課表 2 份時不加捲軸（版面與現狀相同）",
                 page.locator(".tpl-row").count() == 2
@@ -169,8 +177,8 @@ def main():
             for i in range(14):  # 合計 16 份，844 高度下三處清單都必定溢出
                 make_tpl(f"F48 課表{i + 3}", [e3, e4])
             page.locator(".screen.templates button", has_text="← 回首頁").click()
-            page.wait_for_selector(".home-start", timeout=8000)
-            open_templates()
+            wait_home(page)
+            open_templates(page)
             scrolls = page.locator(".tpl-rows.scrollable").count() == 1 and page.eval_on_selector(
                 ".tpl-rows.scrollable", SCROLLS
             )
@@ -206,10 +214,10 @@ def main():
             )
 
             page.locator(".screen.templates button", has_text="← 回首頁").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
             # ② 開練挑課表
-            page.locator(".home-start").click()
+            start_from_home(page)
             page.wait_for_selector(".tpl-choice-list", timeout=8000)
             b_scrolls = page.locator(
                 ".tpl-choice-list.scrollable"
@@ -220,26 +228,26 @@ def main():
                 b_scrolls
                 and free_out
                 and in_viewport(page, ".free-choice")
-                and page.locator(".tpl-choice-list .exercise-item").count() >= 4,
+                and page.locator(".tpl-choice").count() >= 4,
                 f"scrolls={b_scrolls} free_out={free_out}",
             )
 
             # ③ 今日菜單門檻下
-            page.locator(".tpl-choice-list .exercise-item", has_text="F48 小課表").click()
+            page.locator(".tpl-choice", has_text="F48 小課表").click()
             page.wait_for_selector(".screen.picker", timeout=8000)
             check(
                 "③ 今日菜單 2 個動作時不加捲軸",
                 page.locator(".menu-list").count() == 1
                 and page.locator(".menu-list.scrollable").count() == 0,
             )
-            page.locator(".picker-foot button", has_text="結束訓練").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            end_workout(page)
+            wait_home(page)
 
             # ③ 今日菜單門檻上
             make_tpl("F48 大課表", [e1, e2, e3, e4] * 3)  # 12 個動作項，必定溢出
-            page.locator(".home-start").click()
+            start_from_home(page)
             page.wait_for_selector(".tpl-choice-list", timeout=8000)
-            page.locator(".tpl-choice-list .exercise-item", has_text="F48 大課表").click()
+            page.locator(".tpl-choice", has_text="F48 大課表").click()
             page.wait_for_selector(".screen.picker", timeout=8000)
             c_scrolls = page.locator(
                 ".menu-list.scrollable"
@@ -286,12 +294,12 @@ def main():
             )
 
             # ④（Codex P2）換一次訓練 → 新菜單從頂端
-            page.locator(".picker-foot button", has_text="結束訓練").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            end_workout(page)
+            wait_home(page)
             make_tpl("F48 大課表二", [e2, e3, e4, e1] * 3)
-            page.locator(".home-start").click()
+            start_from_home(page)
             page.wait_for_selector(".tpl-choice-list", timeout=8000)
-            page.locator(".tpl-choice-list .exercise-item", has_text="F48 大課表二").click()
+            page.locator(".tpl-choice", has_text="F48 大課表二").click()
             page.wait_for_selector(".screen.picker", timeout=8000)
             page.wait_for_timeout(400)
             fresh = page.eval_on_selector(".menu-list.scrollable", "e => e.scrollTop")
@@ -302,9 +310,9 @@ def main():
             )
 
             # ④ 從別的畫面重新進課表頁 → 從頂端
-            page.locator(".picker-foot button", has_text="結束訓練").click()
-            page.wait_for_selector(".home-start", timeout=8000)
-            open_templates()
+            end_workout(page)
+            wait_home(page)
+            open_templates(page)
             page.wait_for_timeout(400)
             tpl_fresh = page.eval_on_selector(".tpl-rows.scrollable", "e => e.scrollTop")
             check(

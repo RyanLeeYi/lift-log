@@ -20,7 +20,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from playwright.sync_api import sync_playwright  # noqa: E402
-from verify_f67 import PHONE, REPO, TOKEN, free_port, setup_and_home, start_server  # noqa: E402
+from verify_f67 import (  # noqa: E402
+    PHONE,
+    REPO,
+    TOKEN,
+    e2e_tmp,
+    free_port,
+    setup_and_home,
+    start_server,
+)
 
 results: list[tuple[bool, str]] = []
 
@@ -82,8 +90,8 @@ def make_template(page, name: str, weekdays: list[int]) -> None:
 
 def main() -> int:
     port = free_port()
-    db = REPO / f"liftlog_f80_{port}.db"
-    release = REPO / f"liftlog_f80_release_{port}"
+    db = e2e_tmp() / f"liftlog_f80_{port}.db"
+    release = e2e_tmp() / f"liftlog_f80_release_{port}"
     release.mkdir(exist_ok=True)
     proc = start_server(port, db, release)
     base = f"http://127.0.0.1:{port}"

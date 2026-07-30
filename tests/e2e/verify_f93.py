@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from playwright.sync_api import sync_playwright  # noqa: E402
-from verify_f67 import PHONE, REPO, free_port  # noqa: E402
+from verify_f67 import PHONE, REPO, e2e_tmp, free_port  # noqa: E402
 
 results: list[tuple[bool, str]] = []
 
@@ -74,8 +74,8 @@ def label_text(page, base: str) -> str:
 
 def main() -> int:
     p_port, d_port = free_port(), free_port()
-    p_db = REPO / f"liftlog_f93_prod_{p_port}.db"
-    d_db = REPO / f"liftlog_f93_dev_{d_port}.db"
+    p_db = e2e_tmp() / f"liftlog_f93_prod_{p_port}.db"
+    d_db = e2e_tmp() / f"liftlog_f93_dev_{d_port}.db"
     p_tok, d_tok = "f93-prod-token", "f93-dev-token"
     procs = []
     try:

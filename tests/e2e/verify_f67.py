@@ -164,6 +164,35 @@ def reroute_public_host(page, base: str) -> None:
     page.route(f"{PUBLIC_HOST}/**", handler)
 
 
+def e2e_tmp() -> Path:
+    """F94 ④：E2E 暫存檔的家——系統暫存目錄下的 `liftlog-e2e/`。
+
+    ⚠ 不要建在 repo 內。Windows 會鎖住 uvicorn 還握著的 .db，`unlink` 丟
+    PermissionError，清不掉的檔案就一顆顆留在工作目錄（2026-07-30 清過 12 顆
+    ＋ 2 個空目錄），而且其中一次還被 `git add -A` 掃進 commit。
+    重試次數加再多都只是降低機率——根治是一開始就別建在這裡。
+    漏刪的留給 OS 回收。
+    """
+    import tempfile
+
+    root = Path(tempfile.gettempdir()) / "liftlog-e2e"
+    root.mkdir(exist_ok=True)
+    return root
+
+
+def wait_home(page, timeout: int = 8000) -> None:
+    """等首頁的主要入口出現（F81 之前是 `.home-start`，現在按鈕文字隨當天狀態變）。
+
+    F94 ②：13 支隔離區腳本原本等的是 `.home-start`，F81 重建首頁時那個元素消失，
+    於是全部卡在 wait_for_selector 逾時。等「入口按鈕」而不是等某個 class，
+    下次改版才不會再一次全滅。
+    """
+    page.wait_for_selector(
+        "button:has-text('繼續訓練'), button:has-text('開始訓練'), button:has-text('挑一份課表')",
+        timeout=timeout,
+    )
+
+
 def start_from_home(page) -> None:
     """按下首頁的主要動作（開始一次訓練）。
 
@@ -183,6 +212,49 @@ def open_settings(page) -> None:
     """F81：版號、更新入口與提醒開關搬進設定畫面（首頁右上角齒輪）。"""
     page.locator(".home-settings").click()
     page.wait_for_timeout(700)
+
+
+def back_home(page) -> None:
+    page.get_by_role("button", name="回首頁").first.click()
+    page.wait_for_timeout(600)
+
+
+def read_version(page) -> str:
+    """F94 ②：讀畫面上的版號。
+
+    F81 把版號搬進設定畫面，隔離區腳本原本直接讀首頁的 `.version-tag`。
+    「去哪讀」是導覽不是斷言——條文驗的是「版號與 sw.js 一致」，那條沒有變。
+    """
+    open_settings(page)
+    version = page.locator(".version-tag").first.inner_text().strip()
+    back_home(page)
+    return version
+
+
+def end_workout(page) -> None:
+    """結束這場訓練。
+
+    F83 把「結束訓練」在**有課表**時搬出 `.picker-foot`（改成菜單底下的
+    `.end-workout`），自由訓練時仍在 picker 的頁腳。兩個位置都試，
+    因為條文要的是「結束訓練」這個行為，不是某個容器。
+    """
+    for selector in (".end-workout", ".picker-foot button"):
+        button = page.locator(selector).filter(has_text="結束訓練")
+        if button.count():
+            button.first.click()
+            page.wait_for_timeout(800)
+            return
+    raise AssertionError("找不到結束訓練的按鈕")
+
+
+def open_templates(page) -> None:
+    """底部導覽的「課表」。F76 把 emoji 換成向量圖示，舊腳本用的 `📋 課表` 文字沒了。
+
+    ⚠ 一定要限定在 `.bottom-nav` 裡。get_by_role 是**子字串**比對，首頁那顆
+    「挑一份課表」也會命中，`.first` 會挑到它然後進 picker（F77 踩過同一個坑）。
+    """
+    page.locator(".bottom-nav").get_by_role("button", name="課表").click()
+    page.wait_for_selector(".screen.templates", timeout=8000)
 
 
 def dismiss_modal(page) -> None:
@@ -211,8 +283,8 @@ def start_update_from_entry(page) -> None:
 
 def main() -> int:
     port = free_port()
-    db = REPO / f"liftlog_f67_e2e_{port}.db"
-    release = REPO / f"liftlog_f67_release_{port}"
+    db = e2e_tmp() / f"liftlog_f67_e2e_{port}.db"
+    release = e2e_tmp() / f"liftlog_f67_release_{port}"
     release.mkdir(exist_ok=True)
     (release / "lift-log-v99.apk").write_bytes(b"PK\x03\x04" + b"x" * 2_000_000)
     proc = start_server(port, db, release)
