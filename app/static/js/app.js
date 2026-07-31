@@ -23,6 +23,7 @@ import {
 // F62：休息提醒改走 rest-notify 這層統一入口（web＝F31 Web Push／app＝手機端本機通知）
 import {
   cancelRestNotify,
+  cancelRestNotifyScheduleOnly,
   disableRestNotify,
   disableRestOverlay,
   enableRestNotify,
@@ -1818,7 +1819,13 @@ async function stopRestFromUi() {
   render();
 }
 
-function stopRestTimer() {
+/**
+ * 結束這輪休息。
+ *
+ * @param {{ keepForegroundService?: boolean }} [opts] F100：原生端已經自己停好、
+ *   而且要繼續活著撐住浮動視窗時傳 true——這時回送停止指令會把視窗一起關掉。
+ */
+function stopRestTimer({ keepForegroundService = false } = {}) {
   if (restTicker) clearInterval(restTicker);
   restTicker = null;
   state.restStartedAt = null;
@@ -1827,7 +1834,8 @@ function stopRestTimer() {
   state.restTargetSeconds = null; // F70：目標秒數的快照跟著這輪休息一起結束
   // F31/F62：休息被使用者結束（繼續下一組／收工／登出）→ 取消未觸發的提醒。
   // F70 起「換動作」不再走這裡——換個地方看不算休息結束。
-  cancelRestNotify();
+  if (keepForegroundService) cancelRestNotifyScheduleOnly();
+  else cancelRestNotify();
   saveActiveWorkout(); // F66：休息結束了，持久化的快照要跟著變 null（沒有 workout 時是 no-op）
 }
 
@@ -2582,6 +2590,11 @@ subscribeRestControl((action) => {
   else if (action === "stop") {
     state.pendingRestSeconds = restElapsedSeconds(); // ④：等同繼續下一組
     stopRestTimer();
+  } else if (action === "halt") {
+    // F100：浮動視窗的停止＝停鈴並歸位，服務與視窗都留著。前端只收掉自己那份倒數，
+    // **不得**回送停止指令——那會把剛剛要留下的視窗一起關掉。
+    state.pendingRestSeconds = restElapsedSeconds();
+    stopRestTimer({ keepForegroundService: true });
   } else return;
   render();
 });

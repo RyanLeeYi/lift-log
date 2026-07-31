@@ -70,6 +70,8 @@ final class RestOverlay {
     private static TextView mainButton; // F89 ④：回 app 記下一組（超時轉 --over）
     /** F71：暫停狀態。兩邊（app 內卡片與這裡）必須顯示一致，否則使用者不知道該信誰。 */
     private static boolean paused;
+    /** F100：已停止但視窗留著——不倒數、不響，暫停與停止兩顆收起來。 */
+    private static boolean halted;
     private static WindowManager.LayoutParams params;
     /** F89 ⑤：收合／展開。記住使用者的選擇——每輪休息都要重按一次很煩。 */
     private static boolean expanded;
@@ -175,6 +177,8 @@ final class RestOverlay {
 
     /** 服務啟動／停止這輪休息。 */
     static void setActive(Context context, boolean value, int seconds, String hintText) {
+        // F100：新的一輪＝不再是「已停止」狀態（旗標留著會讓暫停鈕永遠消失）
+        halted = false;
         onMain(() -> {
             active = value;
             if (value) {
@@ -208,6 +212,26 @@ final class RestOverlay {
     }
 
     /** F71 ①：暫停狀態變了——換掉按鈕圖示與狀態字。狀態本身由服務與前端各自維護。 */
+    /**
+     * F100：切換「已停止但視窗還在」的顯示。
+     *
+     * <p>② 暫停在這個狀態下不可按——沒有在跑的倒數可暫停，按了沒反應比按不到更糟；
+     * 停止鈕同理（已經停了，再按一次沒有語意）。兩顆一起收起來，±15s 與主按鈕留著。
+     * ⑥ F73 的警示色也在這裡退回一般色（鈴已經停了，還紅著會讓人以為仍在響）。
+     */
+    static void setHalted(Context context, boolean value, int resetSeconds) {
+        onMain(() -> {
+            halted = value;
+            paused = false;
+            remaining = resetSeconds;
+            target = resetSeconds > 0 ? resetSeconds : target;
+            if (pauseButton != null) pauseButton.setVisibility(value ? View.GONE : View.VISIBLE);
+            if (stopButton != null) stopButton.setVisibility(value ? View.GONE : View.VISIBLE);
+            applyAlarmTint(false);
+            paintTime();
+        });
+    }
+
     static void setPaused(Context context, boolean value) {
         onMain(() -> {
             paused = value;
@@ -255,6 +279,7 @@ final class RestOverlay {
     }
 
     private static String statusText() {
+        if (halted) return "已停止";
         if (paused) return "已暫停";
         return remaining < 0 ? "超時了" : "休息中";
     }
@@ -276,8 +301,19 @@ final class RestOverlay {
     }
 
     /** 關掉顯示，並記住這輪休息不要再自己冒出來（倒數照常走完）。 */
+    /**
+     * F64 ④：使用者手動收起視窗。
+     *
+     * <p>F100 ③④：**已停止**的狀態下按 ✕ 等於「這輪結束了」——倒數早就停了，
+     * 只藏視窗會留下一個沒有倒數卻還活著的前景服務（孤兒）。所以這時候要一路收乾淨。
+     * 還在倒數時按 ✕ 仍是原本的語意：只藏視窗，通知列的倒數照走（F64 ④）。
+     */
     static void dismiss(Context context) {
         onMain(() -> {
+            if (halted) {
+                RestTimerService.stop(context); // ④ 不留孤兒服務／孤兒通知
+                return;
+            }
             dismissed = true;
             apply(context);
         });
@@ -478,8 +514,13 @@ final class RestOverlay {
         handle.addView(brand, new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        // 收合鈕。與「關閉」語意不同：這裡只是把卡片縮成圓，倒數與顯示都還在
-        handle.addView(iconButton(context, R.drawable.ic_rest_close, v -> toggleExpanded(context)));
+        // F100 ③：這顆改成**關閉**（原本是收合）。
+        //
+        // 規格衝突的處理：F89 ② 把它訂成「右側收合圖示」，但它長得就是一個 ✕，
+        // Ryan 2026-07-31 也是照著外觀理解的（「右上角的 x 可以讓他消失」）。
+        // 收合本來就有另一條路——F89 ⑤ 的「點本體收合⇄展開」——所以不需要兩個入口做同一件事，
+        // 反而是「關閉」一直沒有入口。F89 ② 的那半句由 F100 ③ 取代。
+        handle.addView(iconButton(context, R.drawable.ic_rest_close, v -> dismiss(context)));
         return handle;
     }
 
@@ -551,10 +592,9 @@ final class RestOverlay {
         pauseButton.setBackground(pauseBg);
         row1.addView(pauseButton);
 
-        stopButton = pillButton(context, "停止", v -> {
-            RestTimerPlugin.emit("stop");
-            RestTimerService.stop(context);
-        });
+        // F100：停止＝停鈴並歸位，**不結束這輪**。視窗留著，人才有一條「回 app 記下一組」的路；
+        // 真正讓它消失的是右上角的 ✕（③）。emit 由服務端統一送，這裡不重複送。
+        stopButton = pillButton(context, "停止", v -> RestTimerService.halt(context));
         row1.addView(stopButton, pillParams(context, false));
         wrap.addView(row1);
 
@@ -569,6 +609,13 @@ final class RestOverlay {
         row2.addView(pillButton(context, "+15s", v -> RestTimerService.adjust(context, 15)),
             pillParams(context, false));
         wrap.addView(row2);
+        // F100 ②：收合⇄展開會**重建**整棵 view，重建出來的兩顆是預設的 VISIBLE——
+        // 已停止的狀態下它們必須維持收起來，否則收合再展開一次，暫停與停止就自己跑回來了
+        //（2026-07-31 真機實測抓到；setHalted 只在按下停止的當下跑過一次，蓋不到之後的重建）。
+        if (halted) {
+            pauseButton.setVisibility(View.GONE);
+            stopButton.setVisibility(View.GONE);
+        }
         return wrap;
     }
 

@@ -140,3 +140,18 @@ export function cancelRestNotify() {
   stopForegroundRest();
   cancelNativeRest();
 }
+
+/**
+ * F100：只取消排程好的提醒，**不動前景服務**。
+ *
+ * <p>使用者在浮動視窗按了停止時走這條：原生那邊已經自己停了鈴、歸了位，而且要繼續活著撐住視窗。
+ * 這時候前端若照常走 cancelRestNotify()，等於回送一記 ACTION_STOP 把服務關掉，
+ * 剛好抵銷掉「視窗留著」——第一版真機實測就是這樣消失的。
+ */
+export function cancelRestNotifyScheduleOnly() {
+  if (!native()) {
+    cancelRestPush();
+    return;
+  }
+  cancelNativeRest();
+}

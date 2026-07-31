@@ -46,6 +46,15 @@ public class RestTimerService extends Service {
     public static final String ACTION_RESUME = "com.ryanleeyi.liftlog.REST_RESUME";
     /** F89 ④：浮動視窗的 ±15s。原生自己調，不能繞前端——人在別的 app 裡時 WebView 被節流。 */
     public static final String ACTION_ADJUST = "com.ryanleeyi.liftlog.REST_ADJUST";
+
+    /**
+     * F100：停止鈴聲並歸位，但**服務與視窗都留著**。
+     *
+     * <p>與 {@link #ACTION_STOP} 的差別是這條不結束這輪——人可能還在別的 app 裡，
+     * 需要一條「先安靜下來，等我回去記下一組」的路。真正的結束仍走 ACTION_STOP
+     * （浮動視窗的 ✕、記下一組開新的休息、結束訓練）。
+     */
+    public static final String ACTION_HALT = "com.ryanleeyi.liftlog.REST_HALT";
     /**
      * F72 ⑤：通知列上的「停止」動作鈕。
      *
@@ -63,6 +72,10 @@ public class RestTimerService extends Service {
     private boolean paused;
     /** F72 ①②：歸零之後的階段——服務繼續活著、秒數往負的走、鬧鐘一直響。 */
     private boolean overtime;
+    /** F100：這輪原本設定的秒數——停止後要歸回這個值，不是歸 0。 */
+    private int targetSeconds;
+    /** F100：已停止但視窗還在（不倒數、不響、暫停不可按）。 */
+    private boolean halted;
     private final Handler overtimeTicker = new Handler(Looper.getMainLooper());
     private MediaPlayer alarmPlayer;
 
@@ -91,7 +104,27 @@ public class RestTimerService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (ACTION_HALT.equals(action)) {
+            // ① 停鈴、歸回這輪原本設定的秒數（不是 0、也不繼續往上數），視窗留著不再倒數
+            stopAlarm();
+            stopTimer();
+            overtime = false;
+            paused = false;
+            halted = true;
+            remainingSeconds = targetSeconds;
+            // ⑤ 前景服務要繼續活著（視窗撐不住就沒得留），但通知列不得留一則還在倒數的假通知
+            notifyUpdate(buildNotification(targetSeconds, false));
+            RestOverlay.setHalted(this, true, targetSeconds);
+            // ⚠ 這裡**不能**送 "stop"：前端收到 stop 會走 cancelRestNotify() →
+            // stopForegroundRest() → ACTION_STOP，把服務與視窗一起關掉，
+            // 剛好抵銷掉本條要的「視窗留著」（2026-07-31 真機第一版實測就是這樣消失的）。
+            // 另開一個事件，前端只停自己那份倒數、不回送任何原生指令。
+            RestTimerPlugin.emit("halt");
+            return START_NOT_STICKY;
+        }
+
         if (ACTION_PAUSE.equals(action)) {
+            if (halted) return START_NOT_STICKY; // ② 沒有在跑的倒數可暫停
             // 只停計時器，服務與通知都留著——使用者要看得到「暫停中，剩餘 X」
             stopTimer();
             paused = true;
@@ -111,7 +144,9 @@ public class RestTimerService extends Service {
             // 下限 1 秒：調到 0 或負數等於「立刻超時」，那是停止鈕的語意，不是 −15s 的
             int delta = intent.getIntExtra(EXTRA_SECONDS, 0);
             remainingSeconds = Math.max(1, remainingSeconds + delta);
-            if (!paused) startTimer(remainingSeconds);
+            // F100 ②：停止後 ±15s 仍可按，但調的是**顯示的秒數**——不重新開始倒數。
+            // 要重新倒數就是回 app 記下一組（那會開一輪新的休息）。
+            if (!paused && !halted) startTimer(remainingSeconds);
             notifyUpdate(buildNotification(remainingSeconds, false));
             RestOverlay.update(this, remainingSeconds);
             RestTimerPlugin.emit(delta > 0 ? "plus15" : "minus15");
@@ -126,7 +161,11 @@ public class RestTimerService extends Service {
 
         ensureChannel();
         paused = false;
+        halted = false; // F100：新的一輪；上一輪停在哪裡跟這輪無關
         remainingSeconds = seconds;
+        // F100 ②：調整值不外溢到下一輪——targetSeconds 每輪由啟動的 intent 重設，
+        // 下一輪的長度仍照課表的參考休息
+        targetSeconds = seconds;
         startForegroundCompat(buildNotification(seconds, false));
         // F64 ③：overlay 與通知列倒數並存——這裡只是多開一個顯示面，
         // 沒授權或使用者關掉 overlay 都不影響下面的倒數
@@ -268,12 +307,22 @@ public class RestTimerService extends Service {
         PendingIntent contentIntent = launch == null ? null : PendingIntent.getActivity(
             this, 0, launch, PendingIntent.FLAG_IMMUTABLE);
 
-        String title = finished ? "休息結束" : (paused ? "休息暫停" : "休息中");
+        // F100 ⑤：已停止時不得留一則還在倒數的假通知——服務還活著（視窗要靠它撐），
+        // 但那一則必須誠實說出「已經停了」，否則使用者以為倒數還在跑。
+        String title = finished
+            ? "休息結束"
+            : halted ? "休息已停止" : (paused ? "休息暫停" : "休息中");
         // F72 ②：歸零後不停在一句話——繼續顯示超時秒數，與 app 內卡片一致
-        String text = finished
-            ? String.format("時間到！超時 %d:%02d", remainingSeconds / 60, remainingSeconds % 60)
-            : String.format(paused ? "已暫停・剩餘 %d:%02d" : "剩餘 %d:%02d",
+        String text;
+        if (finished) {
+            text = String.format("時間到！超時 %d:%02d", remainingSeconds / 60, remainingSeconds % 60);
+        } else if (halted) {
+            text = String.format("已停止・%d:%02d｜點此回 app 記下一組",
                 remainingSeconds / 60, remainingSeconds % 60);
+        } else {
+            text = String.format(paused ? "已暫停・剩餘 %d:%02d" : "剩餘 %d:%02d",
+                remainingSeconds / 60, remainingSeconds % 60);
+        }
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -356,6 +405,11 @@ public class RestTimerService extends Service {
             .setAction(ACTION_ADJUST)
             .putExtra(EXTRA_SECONDS, deltaSeconds);
         context.startService(intent);
+    }
+
+    /** F100：停止鈴聲並歸位，視窗與服務都留著。浮動視窗的停止鈕走這條，不走 stop()。 */
+    static void halt(Context context) {
+        context.startService(new Intent(context, RestTimerService.class).setAction(ACTION_HALT));
     }
 
     static void pause(Context context) {
