@@ -335,6 +335,20 @@ body {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .stepper .name { color: var(--text-dim); font-size: 12px; letter-spacing: .15em; }
+/* F112 ①：休息秒數自成一列，橫式且比 KG／REPS 輕——它是「等一下要休多久」，
+   不是這一組的量測值，份量不該跟重量次數一樣重。觸控目標不因此縮小（⑦）。 */
+.rest-preset { margin-top: 10px; }
+.rest-preset .stepper { flex-direction: row; align-items: center; gap: 10px; padding: 8px 10px; }
+.rest-preset .stepper .name { flex: none; }
+.rest-preset .stepper output { font-size: 24px; flex: 1; text-align: center; }
+/* ⚠ width: auto 是必要的——base 的 .stepper .pair 有 width: 100%，
+   在橫式版面裡那會把整列撐到超出螢幕（360px 上實測 docW 449）。 */
+.rest-preset .stepper .pair { flex: none; width: auto; display: flex; gap: 8px; }
+/* ⑦ min-height 明寫 44：這一列的字級比 KG／REPS 小，光靠內距撐不到 F74 的門檻
+   （第一版量到 39px）。觸控目標不因為「這是次要控制」就放寬。 */
+.rest-preset .stepper .pair .btn {
+  flex: none; min-width: 56px; min-height: 44px; font-size: 15px; padding: 8px;
+}
 .stepper output {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;

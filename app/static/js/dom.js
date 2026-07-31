@@ -98,6 +98,15 @@ export function parseReps(raw) {
   return n >= 1 && n <= 999 ? n : null;
 }
 
+// F112 ③④：休息秒數＝正整數，15–600（沿用 app.js 的 REST_MIN／MAX_SECONDS，這裡是同一組界線）。
+// 小數沒有意義（倒數以秒為單位），所以連 F102 給重量的一位小數都不收。
+export function parseRestSeconds(raw) {
+  const t = String(raw).trim();
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  return n >= 15 && n <= 600 ? n : null;
+}
+
 // F40：口語「累度軸」——一條 5 停點 slider（可左右拖、也可點停點），對應底層 rpe 6–10。
 // 一律有值（新組預設輕鬆＝6；value 為 null 的舊組亦起始 6），不再有「未記」空狀態。
 // 拖曳/點選時只就地更新本元件 DOM（形容詞＋停點高亮），絕不呼叫 rerender——否則整頁重繪會把

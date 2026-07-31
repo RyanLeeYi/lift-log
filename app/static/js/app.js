@@ -11,7 +11,15 @@ import {
   downloadAndInstall,
   isDismissed,
 } from "./app-update.js";
-import { el, parseReps, parseWeight, RPE_WORDS, rpePicker, stepper } from "./dom.js";
+import {
+  el,
+  parseReps,
+  parseRestSeconds,
+  parseWeight,
+  RPE_WORDS,
+  rpePicker,
+  stepper,
+} from "./dom.js";
 // F76：結構性圖示一律走這裡（emoji 是彩色字形，跨平台不一致且吃不到 CSS 顏色）
 import { icon, iconLabel } from "./icons.js";
 import { switchRow } from "./switch-row.js";
@@ -1903,6 +1911,20 @@ const REST_STEP_SECONDS = 15;
 const REST_MIN_SECONDS = 15;
 const REST_MAX_SECONDS = 600;
 
+/**
+ * F112 ②：就緒態先設定這個動作的休息秒數。
+ *
+ * <p>寫的是 `restHintOverrides`——與休息中按 ±15s **完全同一份狀態**（② 明訂不得另立一套）。
+ * 差別只在時機：這裡是「還沒記，先決定等一下休多久」，那裡是「已經在休息，臨時加減」。
+ * 界線也共用 REST_MIN_SECONDS／REST_MAX_SECONDS。
+ */
+function setRestPreset(exerciseId, seconds) {
+  if (!exerciseId) return;
+  const next = Math.min(REST_MAX_SECONDS, Math.max(REST_MIN_SECONDS, Math.round(seconds)));
+  state.restHintOverrides = { ...state.restHintOverrides, [exerciseId]: next };
+  saveActiveWorkout(); // 跟著本次訓練走，重整不丟（同 cycleRestHint／adjustRest）
+}
+
 function adjustRest(delta) {
   const exerciseId = state.exercise?.id;
   const current = state.restTargetSeconds
@@ -2361,6 +2383,25 @@ function renderLogger() {
         ], (d) => { state.reps = Math.max(1, state.reps + d); }, render,
         { set: (v) => { state.reps = v; }, parse: parseReps }),
       ]),
+      // F112 ①⑥：就緒態才顯示。休息中已經有 ±15s 在休息卡上，兩處同時可改
+      // 會讓人不知道該信哪一個——所以這一列在休息態整個不畫。
+      ...(resting
+        ? []
+        : [
+            el("div", { class: "rest-preset" }, [
+              stepper(
+                "休息 秒",
+                restHintFor(exercise.id),
+                [["−15", -15], ["+15", 15]],
+                (d) => setRestPreset(exercise.id, restHintFor(exercise.id) + d),
+                render,
+                {
+                  set: (v) => setRestPreset(exercise.id, v),
+                  parse: parseRestSeconds,
+                },
+              ),
+            ]),
+          ]),
       rpePicker(state.rpe, (v) => { state.rpe = v; }, render),
       el(
         "button",
