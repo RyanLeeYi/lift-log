@@ -557,7 +557,8 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 /* 控制列：組數靠左、排序/刪除靠右 */
-.tpl-item-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* F98：刪除鈕移到標題列後，這一列只剩組數 stepper */
+.tpl-item-controls { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
 .tpl-item-sets { display: flex; align-items: center; gap: 6px; }
 .tpl-item-sets .n {
   font-family: var(--mono);
@@ -565,8 +566,6 @@ body {
   min-width: 44px;
   text-align: center;
 }
-.tpl-item-move { display: flex; gap: 6px; }
-.tpl-item-move .tpl-item-del { margin-left: 6px; } /* 刪除與 ↑↓ 拉開，避免誤觸 */
 .tpl-item .chip { padding: 6px 12px; min-height: 44px; font-size: 15px; border-radius: var(--r-pill); }
 .tpl-item .chip:disabled { opacity: .3; cursor: default; }
 /* R10 參考休息列：佔滿整行 */
@@ -1488,6 +1487,33 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .tpl-items.drag-active .tpl-item:not(.dragging) { transition: none; }
 }
+/* F98：卡片兩態。收合是**預設**（②）——沒有 .expanded 就是收合。
+   收放只切 class 不重建 DOM：拖曳中要把全部卡片收起來（④），
+   那時若重繪整棵清單，drag-sort 手上的節點參照會全部失效、拖到一半整個斷掉。 */
+.tpl-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.tpl-item-head .tpl-item-name { flex: 1; min-width: 0; }
+/* 收合態的摘要（N 組 · 休息 Xs）；展開時換成下面完整的控制列 */
+.tpl-item-summary {
+  font-family: var(--mono); font-size: 13px; color: var(--text-mute);
+  /* ⑥ 收合後這是卡片的第二列，別讓卡片矮到不好按 */
+  min-height: 20px; display: flex; align-items: center;
+}
+.tpl-item:not(.expanded) .tpl-item-controls,
+.tpl-item:not(.expanded) .tpl-item-rest { display: none; }
+.tpl-item.expanded .tpl-item-summary { display: none; }
+/* ④ 拖曳中：**所有**卡片一律收起（含正在拖的那張與原本展開的那張）。
+   只收被拖的那張沒有意義——其餘卡片還是很高，一樣要拖很遠。
+   用 CSS 蓋過 .expanded，JS 的展開狀態原封不動，放開後自動恢復。 */
+.tpl-items.drag-active .tpl-item .tpl-item-controls,
+.tpl-items.drag-active .tpl-item .tpl-item-rest { display: none; }
+.tpl-items.drag-active .tpl-item .tpl-item-summary { display: flex; }
+/* 拖曳中不顯示刪除鈕——手指正壓在卡片上，這時候給一顆刪除鈕只有壞處 */
+.tpl-items.drag-active .tpl-item-del { visibility: hidden; }
+/* ⑦ 收放的過場沿用既有節奏 */
+.tpl-item { transition: padding 160ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .tpl-item { transition: none; }
+}
 .tpl-item-name { display: flex; flex-direction: column; gap: 2px; }
 .tpl-item-name .n-zh { font-family: var(--sans); font-weight: 700; font-size: 16px; }
 .tpl-item-name .n-alias { font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--text-mute); }
@@ -1514,7 +1540,6 @@ body {
   font-family: var(--mono); font-variant-numeric: tabular-nums;
   font-size: 14px; min-width: 46px; text-align: center;
 }
-.tpl-item-move { display: flex; align-items: center; gap: 0; }
 /* ✕ 用 --over，且與 ↑↓ 拉開 6px：刪除與排序放同一列，間距是唯一的誤觸防線 */
 .tpl-item-del { color: var(--over); margin-left: 6px; }
 

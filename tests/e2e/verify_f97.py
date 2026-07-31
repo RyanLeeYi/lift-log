@@ -82,6 +82,18 @@ def press_and_hold(page, index: int) -> tuple[float, float]:
     return x, y
 
 
+def ensure_expanded(page, index: int = 0) -> None:
+    """把第 index 張卡確保成展開態。
+
+    F98 之後卡片可收放，而前面的拖曳測試（放開時的那一下 click）也會動到收放狀態——
+    盲目點一下切換會時對時錯。這裡先看 class 再決定要不要點。
+    """
+    card = page.locator(".tpl-item").nth(index)
+    if "expanded" not in (card.get_attribute("class") or ""):
+        card.locator(".tpl-item-name").click()
+        page.wait_for_timeout(400)
+
+
 def drag_to(page, x: float, y: float, steps: int = 8) -> None:
     page.mouse.move(x, y, steps=steps)
     page.wait_for_timeout(120)
@@ -128,11 +140,12 @@ def run_checks(base: str) -> None:  # noqa: C901
         page.wait_for_selector(".template-edit", timeout=8000)
         page.wait_for_timeout(400)
         page.locator(".tpl-name-input").fill("F97 拖曳測試")
-        for name in ("深蹲", "臥推", "引體向上"):
+        # F98 之後卡片預設收合、清單變矮——要夠多動作，捲動相關的斷言才有東西可捲
+        for name in ("深蹲", "臥推", "引體向上", "肩推", "槓鈴彎舉", "腿推"):
             add_exercise(page, name)
 
         base_order = order(page)
-        check(len(base_order) == 3, f"前提：三張卡依序排好（{base_order}）")
+        check(len(base_order) == 6, f"前提：六張卡依序排好（{base_order}）")
 
         # ① ↑↓ 已移除，✕ 保留（⑦）
         check(
@@ -145,7 +158,7 @@ def run_checks(base: str) -> None:  # noqa: C901
             "⑦ ✕ 保留",
         )
         rounds = page.locator(".tpl-item").first.locator(".round-btn")
-        check(rounds.count() == 3, f"⑦ 一張卡剩三顆圓鈕（− ＋ ✕，實際 {rounds.count()}）")
+        check(rounds.count() == 3, f"⑦ 一張卡剩三顆圓鈕（減 加 刪除，實際 {rounds.count()}）")
         # F74／F88 ⑧ 的規矩：視覺 38、觸控區靠 ::after 補到 44——要量 ::after，不是元素本身
         touch = page.evaluate(
             """() => {
@@ -206,7 +219,7 @@ def run_checks(base: str) -> None:  # noqa: C901
 
         # ⑤ 放開後順序真的改變，且草稿跟著更新
         after = order(page)
-        expect = [base_order[1], base_order[0], base_order[2]]
+        expect = [base_order[1], base_order[0], *base_order[2:]]
         check(after == expect, f"① 拖曳把第一張移到第二個位置（{after}，預期 {expect}）")
         check(
             page.locator(".tpl-item.dragging").count() == 0
@@ -221,7 +234,7 @@ def run_checks(base: str) -> None:  # noqa: C901
             "⑥ 放開後不留殘餘位移（半拖曳的版面比拖不動更糟）",
         )
         draft = draft_order(page)
-        check(len(draft) == 3, f"⑤ 草稿有三個動作（{draft}）")
+        check(len(draft) == 6, f"⑤ 草稿有六個動作（{draft}）")
         dom_after_reload_ready = draft[:2] != draft[1:]  # 只是確保有內容可比
         check(dom_after_reload_ready, "⑤ 草稿內容可比對")
 
@@ -272,12 +285,15 @@ def run_checks(base: str) -> None:  # noqa: C901
             page.locator(".tpl-items.scrollable").count() == 1,
             "⑧ F21 不回歸：3 個動作時清單可捲",
         )
+        # F98：先把第一張點開再捲——展開的動作本身會捲動清單，順序反了會把 scrollTop 洗掉。
+        # 另外收合態只看得到刪除鈕，所以要明確指定組數列裡的「減一組」，別誤按到刪除。
+        ensure_expanded(page, 0)
         page.eval_on_selector(
             ".tpl-items",
             "e => { e.scrollTop = 30; e.dispatchEvent(new Event('scroll')); }",
         )
         page.wait_for_timeout(200)
-        page.locator(".tpl-item").first.locator(".round-btn").first.click()  # 減一組＝重繪
+        page.locator(".tpl-item").first.locator(".tpl-item-sets .round-btn").first.click()
         page.wait_for_timeout(400)
         kept = page.eval_on_selector(".tpl-items", "e => e.scrollTop")
         check(
@@ -393,7 +409,8 @@ def run_touch_checks(browser, base: str) -> None:
     page.wait_for_selector(".template-edit", timeout=8000)
     page.wait_for_timeout(400)
     page.locator(".tpl-name-input").fill("F97 觸控")
-    for name in ("深蹲", "臥推", "引體向上"):
+    # F98 之後卡片收合、清單變矮——要夠多動作，「清單真的捲得動」那條反面才有東西可捲
+    for name in ("深蹲", "臥推", "引體向上", "肩推", "槓鈴彎舉", "腿推"):
         add_exercise(page, name)
 
     before = order(page)

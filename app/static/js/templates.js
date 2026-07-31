@@ -28,6 +28,11 @@ const tpl = {
   searchQ: "",
   searchSeq: 0, // 搜尋回應排序：舊回應晚到不得覆蓋新結果
   busy: false, // 儲存/刪除進行中——防手機雙擊重複送出
+  // F98：目前展開的是哪個動作（exercise_id；null＝全部收合）。③ 互斥，同時只開一張。
+  // 用 id 不用索引——拖曳排序會讓索引失效，展開的卡會莫名跳到別張身上。
+  // ⑨ 這是純檢視狀態，刻意**不進 tpl.editing**：進去就會被 templateSnapshot 看見，
+  // 收放一下就變成「有未儲存的變更」。
+  expandedId: null,
 };
 
 export async function openTemplates() {
@@ -67,6 +72,7 @@ function startEditor(template) {
   tpl.itemsScrollTop = 0;
   tpl.searchQ = "";
   tpl.confirmLeave = false;
+  tpl.expandedId = null; // F98 ②：一進來全部收合
   tpl.savedSnapshot = templateSnapshot(tpl.editing); // 進編輯當下的基準，用來判斷未儲存變更
 }
 
@@ -311,13 +317,38 @@ function itemRow(item, index, rerender) {
   // 並不特別，它只是排在第一，那個高亮因此是純裝飾而且會誤導（看起來像被選起來）。
   // 對照組是挑今日課表：那裡的高亮綁著「今天排到的那份」，有真實狀態撐著。
   // 高亮之後會以 F97 拖曳中的那張卡的形式回來——那時它才對應一個真實狀態。
-  const row = el("div", { class: "tpl-item" }, [
-    // 名稱獨立一行（中英並列，別名不再被擠到換行）
-    el("div", { class: "tpl-item-name" }, [
-      el("span", { class: "n-zh" }, [exerciseName(item)]),
-      el("span", { class: "n-alias" }, [exerciseAlias(item)]),
+  // F98：卡片兩態。收合＝名稱＋「N 組 · 休息 Xs」摘要＋刪除鈕；展開＝完整內容。
+  //
+  // 收放**只靠 class 切換**、不重建 DOM——拖曳中要把全部卡片收起來（④），
+  // 那時若重繪整棵清單，drag-sort 手上的節點參照會全部失效、拖到一半整個斷掉。
+  // 所以「收合」是 CSS 的事，JS 只負責決定誰身上有 expanded。
+  const expanded = tpl.expandedId === item.exercise_id;
+  const restText = item.rest_hint_seconds ? `休息 ${item.rest_hint_seconds}s` : "休息未設定";
+  const removeBtn = el(
+    "button",
+    {
+      class: "btn round-btn tpl-item-del", "aria-label": "移除這個動作",
+      onclick: () => {
+        tpl.editing = { ...tpl.editing, items: items.filter((_, i) => i !== index) };
+        if (tpl.expandedId === item.exercise_id) tpl.expandedId = null;
+        rerender();
+      },
+    },
+    [icon("x", { size: 16, label: "移除這個動作" })],
+  );
+  const row = el("div", { class: `tpl-item${expanded ? " expanded" : ""}` }, [
+    // 名稱獨立一行（中英並列，別名不再被擠到換行）；刪除鈕移到這一列——
+    // 收合後它是唯一還看得到的一列，刪除鈕留在下面就會跟著被收起來。
+    el("div", { class: "tpl-item-head" }, [
+      el("div", { class: "tpl-item-name" }, [
+        el("span", { class: "n-zh" }, [exerciseName(item)]),
+        el("span", { class: "n-alias" }, [exerciseAlias(item)]),
+      ]),
+      removeBtn,
     ]),
-    // 控制列：組數 stepper 靠左、排序與刪除靠右（刪除遠離 stepper，不易誤觸）
+    // 收合態的摘要：不用點開也看得到份量
+    el("div", { class: "tpl-item-summary" }, [`${item.default_sets} 組 · ${restText}`]),
+    // 控制列：組數 stepper（刪除已移到標題列，這裡不再有它）
     el("div", { class: "tpl-item-controls" }, [
       el("div", { class: "tpl-item-sets" }, [
         el("button", { class: "btn round-btn", "aria-label": "減一組",
@@ -325,21 +356,6 @@ function itemRow(item, index, rerender) {
         el("span", { class: "n" }, [`${item.default_sets} 組`]),
         el("button", { class: "btn round-btn", "aria-label": "加一組",
           onclick: () => setSets(+1) }, ["＋"]),
-      ]),
-      // F97：排序改成長按拖曳，上下箭頭兩顆鈕拿掉（Ryan 2026-07-30 定案，不留備援）。
-      // 這一列現在只剩刪除鈕；間距仍是誤觸的防線（見 .tpl-item-del 的 margin-left）。
-      el("div", { class: "tpl-item-move" }, [
-        el(
-          "button",
-          {
-            class: "btn round-btn tpl-item-del", "aria-label": "移除這個動作",
-            onclick: () => {
-              tpl.editing = { ...tpl.editing, items: items.filter((_, i) => i !== index) };
-              rerender();
-            },
-          },
-          [icon("x", { size: 16, label: "移除這個動作" })],
-        ),
       ]),
     ]),
     el("div", { class: "tpl-item-rest" }, [
@@ -388,6 +404,14 @@ function itemRow(item, index, rerender) {
       }),
     ]),
   ]);
+  // ③ 點卡片切換收放，互斥——同時只開一張。點按鈕／輸入框不算（否則按刪除鈕會順手收放）。
+  // ⑤ 拖曳結束後瀏覽器會補一個 click，那一下不能觸發收放（拖完卡片自己收起來是 bug）——
+  // 由 drag-sort 的 swallowNextClick 在 capture 階段吃掉，這裡不必自己記狀態。
+  row.addEventListener("click", (e) => {
+    if (e.target.closest("button, input, select, textarea")) return;
+    tpl.expandedId = expanded ? null : item.exercise_id;
+    rerender();
+  });
   return row;
 }
 

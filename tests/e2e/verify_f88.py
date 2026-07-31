@@ -117,7 +117,8 @@ def run_checks(base: str) -> None:  # noqa: C901
         check(rounds.count() == 3, f"③ 一張卡三顆圓鈕（減 加 刪除，實際 {rounds.count()}）")
         radius = css(page, ".round-btn", "borderRadius")
         check(radius == "50%", f"③ 圓鈕是圓的（{radius}）")
-        svgs = page.locator(".tpl-item").first.locator(".tpl-item-move svg")
+        # F98：刪除鈕移到標題列（收合後那是唯一還看得到的一列，留在下面會跟著被收起來）
+        svgs = page.locator(".tpl-item").first.locator(".tpl-item-del svg")
         check(svgs.count() == 1, f"③ 刪除鈕用向量圖示（實際 {svgs.count()}）")
         src_dir = Path(__file__).resolve().parents[2] / "app/static/js"
         chars = {
@@ -130,10 +131,23 @@ def run_checks(base: str) -> None:  # noqa: C901
         other_color = css(page, ".tpl-item-sets .round-btn", "color")
         check(del_color != other_color,
               f"③ 刪除鈕用 --over，與其餘圓鈕不同色（{del_color} vs {other_color}）")
-        del_box = page.locator(".tpl-item").first.locator(".tpl-item-del").bounding_box()
-        plus_box = page.locator(".tpl-item").first.locator(".round-btn").nth(1).bounding_box()
-        gap = round(del_box["x"] - (plus_box["x"] + plus_box["width"]))
-        check(gap >= 6, f"③ 刪除鈕與加組鈕間距 ≥6px（實際 {gap}px，誤觸防線）")
+        # F98 起兩顆不在同一列了，量的是實際的最短距離（誤觸防線的本意），不是單軸差
+        gap = page.evaluate(
+            """() => {
+                 const card = document.querySelector('.tpl-item');
+                 const d = card.querySelector('.tpl-item-del').getBoundingClientRect();
+                 const p = card.querySelectorAll('.tpl-item-sets .round-btn')[1]
+                   .getBoundingClientRect();
+                 const dx = Math.max(0, Math.max(d.left - p.right, p.left - d.right));
+                 const dy = Math.max(0, Math.max(d.top - p.bottom, p.top - d.bottom));
+                 return Math.round(Math.hypot(dx, dy));
+               }"""
+        )
+        check(gap >= 6, f"③ 刪除鈕與加組鈕的實際距離 ≥6px（實際 {gap}px，誤觸防線）")
+
+        # F98 ②：卡片預設收合，參考休息在展開後才看得到——先點開第一張
+        page.locator(".tpl-item").first.locator(".tpl-item-name").click()
+        page.wait_for_timeout(400)
 
         # ④ 分隔線後的參考休息
         rest = page.locator(".tpl-item").first.locator(".tpl-item-rest")
@@ -180,12 +194,20 @@ def run_checks(base: str) -> None:  # noqa: C901
         # ⑦ 清單捲動位置保留（F21）
         check(page.locator(".tpl-items.scrollable").count() == 1,
               "⑦ 超過 2 個動作時清單可捲（F21 門檻不回歸）")
+        # F98：卡片收合後清單矮很多，3 個動作已經捲不動——補到有足夠捲動空間再驗
+        for name in ("肩推", "槓鈴彎舉", "腿推"):
+            add_exercise(page, name)
+        # 先展開一張把清單撐高，捲動空間才夠（也順帶讓「減一組」那顆看得到）
+        page.locator(".tpl-item").first.locator(".tpl-item-name").click()
+        page.wait_for_timeout(400)
+        room = page.eval_on_selector(".tpl-items", "e => e.scrollHeight - e.clientHeight")
+        assert room >= 40, f"捲動空間不足（{room}），這條斷言的前提不成立"
         page.eval_on_selector(
             ".tpl-items",
             "e => { e.scrollTop = 40; e.dispatchEvent(new Event('scroll')); }",
         )
         page.wait_for_timeout(300)
-        page.locator(".tpl-item").first.locator(".round-btn").first.click()  # 減一組 → 整頁重繪
+        page.locator(".tpl-item").first.locator(".tpl-item-sets .round-btn").first.click()
         page.wait_for_timeout(700)
         kept = page.eval_on_selector(".tpl-items", "e => e.scrollTop")
         check(kept >= 30, f"⑦ 重繪後捲動位置保留（{kept}）")

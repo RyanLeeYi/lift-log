@@ -226,9 +226,32 @@ function edgeDirection(s, listRect) {
 /** 放開：順序真的變了才回報（⑤），沒變＝取消（⑥）。 */
 function finish(s) {
   const { dragging, fromIndex, toIndex, onReorder } = s;
+  if (dragging) swallowNextClick();
   cleanup(s);
   if (!dragging || fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
   onReorder(fromIndex, toIndex);
+}
+
+/**
+ * F98 ⑤：拖曳結束後瀏覽器仍會補送一個 click。
+ *
+ * <p>卡片上掛著「點一下＝收放」，那一下會讓剛拖完的卡片自己收起來——看起來像 app 抽風。
+ * 在 capture 階段吃掉它，且**只吃緊接著的那一個**。
+ * 320ms 後自行解除：觸控放開後不一定有 click（例如拖到清單外），
+ * 留著不解除的話會吃掉使用者下一次真正的點擊。
+ */
+function swallowNextClick() {
+  const swallow = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    remove();
+  };
+  const remove = () => {
+    window.removeEventListener("click", swallow, true);
+    clearTimeout(timer);
+  };
+  const timer = setTimeout(remove, 320);
+  window.addEventListener("click", swallow, true);
 }
 
 /** ⑥ 唯一的收尾路徑：復原所有位移與 class，解除監聽。重複呼叫安全。 */
