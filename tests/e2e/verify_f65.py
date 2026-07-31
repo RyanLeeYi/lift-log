@@ -80,8 +80,17 @@ THROWS = "(() => { throw new Error('listChannels not supported'); })()"
 
 
 def toggle_label(page) -> str:
-    loc = page.locator(".push-toggle")
-    return loc.first.inner_text().strip() if loc.count() else "(沒有開關)"
+    """開關的狀態字串。
+
+    F106 起設定頁是 switch，狀態不再寫在文字裡（標籤永遠是「休息提醒」），
+    改由 `aria-checked` 表達——那是無障礙樹上的**渲染結果**，不是 class 名稱。
+    這裡沿用舊的 `「休息提醒：開／關」` 形式，讓下面每條斷言的語意保持不變。
+    """
+    loc = page.locator(".switch-row [role=switch]")
+    if not loc.count():
+        return "(沒有開關)"
+    on = loc.first.get_attribute("aria-checked") == "true"
+    return f"休息提醒：{'開' if on else '關'}"
 
 
 def open_app(browser, base: str, *, app_enabled: bool, channels_js: str, flag_on: bool):
@@ -161,7 +170,7 @@ def run_checks(base: str) -> None:  # noqa: C901
         )
 
         # ① 「給引導」：點下去要把人送到系統設定頁，並說明是哪一種問題
-        page.locator(".push-toggle").first.click()
+        page.locator(".switch-row [role=switch]").first.click()
         page.wait_for_timeout(1200)
         opened = page.evaluate("() => window.__notifyStatus.openedSettings")
         check(opened >= 1, f"① 點開關會開啟系統通知設定頁（實際開了 {opened} 次）")

@@ -200,7 +200,10 @@ def main() -> int:
             page.locator(".home-settings").click()
             page.wait_for_timeout(900)
             check(page.locator("h1").first.inner_text().strip() == "設定", "⑥ 齒輪進得去設定畫面")
-            check(page.locator(".push-toggle").count() >= 1, "⑥ 休息提醒開關搬進設定畫面")
+            check(
+                page.locator(".switch-row [role=switch]").count() >= 1,
+                "⑥ 休息提醒開關搬進設定畫面",
+            )
             check(page.locator(".version-tag").count() == 1, "⑦ 版號入口在設定畫面")
             check(page.locator(".set-row-val").inner_text() == "4", "⑥ 週目標顯示目前值")
             page.locator(".set-row-ctl button").last.click()
@@ -215,7 +218,7 @@ def main() -> int:
                   f"⑥ 首頁分母跟著週目標變（{page.locator('.week-count').inner_text()}）")
 
             # ⑥ 首頁不再有那兩顆開關
-            check(page.locator(".push-toggle").count() == 0, "⑥ 首頁不再放提醒/浮動計時開關")
+            check(page.locator(".switch-row").count() == 0, "⑥ 首頁不再放提醒/浮動計時開關")
             # ⑥ 週目標寫入失敗要回復畫面——留著未儲存的數字，下一次加減會從錯的值起算
             #（Codex 2026-07-29 P2）
             page.locator(".home-settings").click()

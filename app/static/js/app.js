@@ -14,6 +14,7 @@ import {
 import { el, parseReps, parseWeight, RPE_WORDS, rpePicker, stepper } from "./dom.js";
 // F76：結構性圖示一律走這裡（emoji 是彩色字形，跨平台不一致且吃不到 CSS 顏色）
 import { icon, iconLabel } from "./icons.js";
+import { switchRow } from "./switch-row.js";
 import { apiBase, isNativeApp } from "./env.js";
 import {
   detailReturnScreen,
@@ -697,32 +698,71 @@ function weeklyTargetRow() {
 //               訊息消失後畫面上就再也看不出「為什麼開不起來」——那是靜默失敗的一種。
 //
 // 未授權時倒數不會消失：它退回通知列（F63），只是少了浮動視窗那個顯示面。
+// F62 ③ ＋ F106 ③：精確鬧鐘被關時倒數會被系統延後，講出來而不是讓使用者以為壞了。
+//
+// ⚠ 出路住在副標，不在 switch 上。藥丸時代點整顆＝去開系統授權（**不是**關掉提醒），
+// 那是把兩個動作綁在同一個目標上；switch 的點擊語意固定是切換，兼任跳轉會讓
+// 想關提醒的人被丟到系統設定頁。
+function restNotifyRow() {
+  const on = restNotifyEnabled();
+  const delayed = on && restNotifyDelayed();
+  return switchRow({
+    icon: "bell",
+    label: "休息提醒",
+    on,
+    onToggle: () =>
+      guard(async () => {
+        if (on) {
+          await disableRestNotify();
+          render();
+          return;
+        }
+        const res = await enableRestNotify();
+        if (res.ok) render();
+        else showError(res.reason);
+      }),
+    sub: delayed
+      ? {
+          text: "可能延遲 · 點此修正",
+          onClick: () =>
+            guard(async () => {
+              await requestRestNotifyExact();
+              render();
+            }),
+        }
+      : null,
+  });
+}
+
 function restOverlayRow() {
   const on = restOverlayEnabled();
   const locked = !on && !restOverlayPermitted();
-  const toggle = el(
-    "button",
-    {
-      class: `btn push-toggle${on ? " on" : ""}${locked ? " locked" : ""}`,
-      onclick: () =>
-        guard(async () => {
-          if (on) {
-            await disableRestOverlay();
-            render();
-            return;
-          }
-          // 未授權時 enableRestOverlay() 本來就會把人送到系統授權頁（F64 ②）
-          const res = await enableRestOverlay();
-          if (res.ok) render();
-          else showError(res.reason);
-        }),
-    },
-    [
-      iconLabel("window", `浮動計時：${on ? "開" : "關"}`),
-      ...(locked ? [el("span", { class: "toggle-sub" }, ["需系統授權 · 點此前往設定"])] : []),
-    ],
-  );
-  return toggle;
+  // 未授權時 enableRestOverlay() 本來就會把人送到系統授權頁（F64 ②），
+  // 所以「撥開關」與「點副標」走的是同一條——差別只在副標把它講出來了。
+  const toSettings = () =>
+    guard(async () => {
+      const res = await enableRestOverlay();
+      if (res.ok) render();
+      else showError(res.reason);
+    });
+
+  return switchRow({
+    icon: "window",
+    label: "浮動計時",
+    on,
+    onToggle: () =>
+      guard(async () => {
+        if (on) {
+          await disableRestOverlay();
+          render();
+          return;
+        }
+        await toSettings();
+      }),
+    // F106 ③：出路從「點整顆」搬到這一行。F89 ⑥ 的三態語意不變——
+    // 開／關由 switch 表達，「需系統授權」由副標表達，兩者仍分得出來。
+    sub: locked ? { text: "需系統授權 · 點此前往設定", onClick: toSettings } : null,
+  });
 }
 
 function renderSettings() {
@@ -734,45 +774,7 @@ function renderSettings() {
     ...weeklyTargetRow(),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
     // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js
-    ...(restNotifySupported()
-      ? [
-          el(
-            "button",
-            {
-              class: `btn push-toggle${restNotifyEnabled() ? " on" : ""}`,
-              onclick: () =>
-                guard(async () => {
-                  // ③ 的出路：已開但精確鬧鐘被關 → 點擊改成開系統授權頁，
-                  // 而不是把提醒關掉（只標示「可能延遲」卻不告訴人去哪開，等於沒有出路）
-                  if (restNotifyEnabled() && restNotifyDelayed()) {
-                    await requestRestNotifyExact();
-                    render();
-                    return;
-                  }
-                  if (restNotifyEnabled()) {
-                    await disableRestNotify();
-                    render();
-                    return;
-                  }
-                  const res = await enableRestNotify();
-                  if (res.ok) render();
-                  else showError(res.reason);
-                }),
-            },
-            [
-              iconLabel(
-                "bell",
-                restNotifyEnabled()
-                  ? // F62 ③：精確鬧鐘被關時倒數會被系統延後，講出來而不是讓使用者以為壞了
-                    restNotifyDelayed()
-                    ? "休息提醒：開（可能延遲，點此修正）"
-                    : "休息提醒：開"
-                  : "休息提醒：關",
-              ),
-            ],
-          ),
-        ]
-      : []),
+    ...(restNotifySupported() ? [restNotifyRow()] : []),
     // F64：浮動計時視窗。只在 app 版出現，且必須先開休息提醒——
     // overlay 是前景服務的第二個顯示面，服務沒跑就沒有秒數可畫
     ...(restOverlaySupported() && restNotifyEnabled() ? [restOverlayRow()] : []),

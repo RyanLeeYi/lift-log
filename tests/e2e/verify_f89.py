@@ -82,7 +82,13 @@ window.Capacitor = {{
 
 def overlay_toggle(page):
     """設定畫面上「浮動計時」那一列（休息提醒是同 class 的第一列）。"""
-    return page.locator(".push-toggle", has_text="浮動計時").first
+    return page.locator(".switch-row", has_text="浮動計時").first
+
+
+def overlay_state(page) -> str:
+    """F106 起狀態由 switch 表達，不寫在文字裡——沿用舊的字串形式讓斷言語意不變。"""
+    sw = overlay_toggle(page).locator("[role=switch]").first
+    return f"浮動計時：{'開' if sw.get_attribute('aria-checked') == 'true' else '關'}"
 
 
 def open_app(browser, base: str, *, granted: bool, overlay_on: bool):
@@ -139,12 +145,12 @@ def run_checks(base: str) -> None:
         row = overlay_toggle(page)
         check(row.count() == 1, "設定畫面有「浮動計時」這一列")
         check(
-            "浮動計時：關" in row.inner_text(),
-            f"態1 已授權未開 → 顯示「關」（{row.inner_text()!r}）",
+            overlay_state(page) == "浮動計時：關",
+            f"態1 已授權未開 → switch 在 OFF（{overlay_state(page)}）",
         )
         check(
-            page.locator(".push-toggle.locked").count() == 0,
-            "態1 反面：使用者自己關的不掛 .locked——沒授權問題就不要喊授權",
+            row.locator(".switch-sub").count() == 0,
+            "態1 反面：使用者自己關的不掛副標——沒授權問題就不要喊授權",
         )
         check(
             "需系統授權" not in row.inner_text(),
@@ -156,8 +162,8 @@ def run_checks(base: str) -> None:
         ctx, page = open_app(browser, base, granted=True, overlay_on=True)
         row = overlay_toggle(page)
         check(
-            "浮動計時：開" in row.inner_text(),
-            f"態2 已授權且開啟 → 顯示「開」（{row.inner_text()!r}）",
+            overlay_state(page) == "浮動計時：開",
+            f"態2 已授權且開啟 → switch 在 ON（{overlay_state(page)}）",
         )
         check("需系統授權" not in row.inner_text(), "態2 反面：開著時沒有引導副標")
         ctx.close()
@@ -166,19 +172,25 @@ def run_checks(base: str) -> None:
         ctx, page = open_app(browser, base, granted=False, overlay_on=False)
         row = overlay_toggle(page)
         text = row.inner_text()
-        check("浮動計時：關" in text, f"⑥ 未授權 → 開關維持 OFF（{text!r}）")
+        check(overlay_state(page) == "浮動計時：關", f"⑥ 未授權 → 開關維持 OFF（{text!r}）")
         check(
             "需系統授權 · 點此前往設定" in text,
             f"⑥ 常駐副標「需系統授權 · 點此前往設定」（{text!r}）",
         )
-        color = row.evaluate("el => getComputedStyle(el).color")
-        bg = row.evaluate("el => getComputedStyle(el).backgroundColor")
-        check(color == TEXT_FAINT, f"⑥ 鈕（文字與圖示）用 --text-faint（實際 {color}）")
-        check(bg == CARD_HI, f"⑥ 軌道維持 --card-hi（實際 {bg}）")
+        # F106 之後「軌道」與「鈕」是真的存在的零件，這條終於能照凍結條文的字面驗
+        # （先前是藥丸按鈕，只能對應成「按鈕底＝軌道、文字＝鈕」）。
+        knob = row.locator(".switch-knob").first.evaluate(
+            "el => getComputedStyle(el).backgroundColor"
+        )
+        track = row.locator(".switch-track").first.evaluate(
+            "el => getComputedStyle(el).backgroundColor"
+        )
+        check(knob == TEXT_FAINT, f"⑥ 鈕用 --text-faint（實際 {knob}）")
+        check(track == CARD_HI, f"⑥ 軌道維持 --card-hi（實際 {track}）")
         # 反面：未授權時不能長得像「開」
         check(
-            page.locator(".push-toggle.on", has_text="浮動計時").count() == 0,
-            "⑥ 反面：未授權時不得掛 .on——顯示假的「開」正是 F64 ② 要防的事",
+            row.locator("[role=switch].on").count() == 0,
+            "⑥ 反面：未授權時不得顯示成開——假的「開」正是 F64 ② 要防的事",
         )
         # F74 觸控目標：多一行副標也不能把高度壓掉
         box = row.bounding_box()
@@ -187,14 +199,14 @@ def run_checks(base: str) -> None:
             f"F74 不回歸：未授權態的列高 ≥44px（實際 {box['height']:.0f}px）",
         )
 
-        # ⑥ 點下去要送到系統授權頁
-        row.click()
+        # ⑥ 點下去要送到系統授權頁（F106 ③ 起出路在副標那一行，不是整列）
+        row.locator(".switch-sub").first.click()
         page.wait_for_timeout(900)
         requested = page.evaluate("() => window.__overlay.requested")
         check(requested >= 1, f"⑥ 點擊送往系統「顯示在其他應用程式上層」頁（實際 {requested} 次）")
         # 未授權時按了也不能翻成「開」（假的成功比失敗更糟）
         check(
-            "浮動計時：關" in overlay_toggle(page).inner_text(),
+            overlay_state(page) == "浮動計時：關",
             "⑥ 反面：授權沒拿到就不能翻成「開」",
         )
         ctx.close()
@@ -203,7 +215,7 @@ def run_checks(base: str) -> None:
         ctx, page = open_app(browser, base, granted=False, overlay_on=True)
         text = overlay_toggle(page).inner_text()
         check(
-            "浮動計時：關" in text and "需系統授權" in text,
+            overlay_state(page) == "浮動計時：關" and "需系統授權" in text,
             f"邊界：旗標還在但授權被收回 → 仍是未授權態，不是「開」（{text!r}）",
         )
         ctx.close()
