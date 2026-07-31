@@ -31,6 +31,7 @@ import {
   enableRestOverlay,
   pauseRestNotify,
   refreshRestNotifyState,
+  reportLogResult,
   requestRestNotifyExact,
   resumeRestNotify,
   restNotifyDelayed,
@@ -634,6 +635,15 @@ function renderHome() {
       ),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    // F104 ⑦：浮動視窗就地記的組沒有累度（刻意不沿用上一組——沿用是猜一個值填進去）。
+    // 回到 logger 時提示補，但**不擋操作**：健身房當下不想填是正常的，補記是選項不是義務。
+    ...(pendingRpeCount() > 0
+      ? [
+          el("div", { class: "notice-banner" }, [
+            `有 ${pendingRpeCount()} 組還沒填累度（在浮動視窗記的）——點該組的編輯鈕補上`,
+          ]),
+        ]
+      : []),
     ...syncStatusLine(),
     ...(homeData ? [weekProgressCard()] : []),
     todayPlanCard(start, pickTemplate),
@@ -1738,7 +1748,13 @@ function startRestTimer() {
   // F89 ③：把「動作名 · 第 N 組」一起送下去給浮動視窗顯示——人在別的 app 裡時，
   // 光有秒數看不出這是哪一組（同時開兩個訓練頁的情況雖然沒有，回頭看一眼仍然要對得上）。
   if (state.exercise) {
-    scheduleRestNotify(restHintFor(state.exercise.id), restHintText());
+    scheduleRestNotify(restHintFor(state.exercise.id), restHintText(), {
+      // F104 ①：待記組＝這輪休息結束後要記的那一組。初值就是剛記完那組的數值
+      // （步進器此刻還停在上面），與「下一組多半跟這組一樣」的實際節奏一致。
+      weight: state.weightKg,
+      reps: state.reps,
+      bodyweight: Boolean(state.exercise.is_bodyweight),
+    });
     // ⚠ 原生會在這一刻重建 overlay，所以可見性要**強制**重送一次、不吃去重。
     // 少了這一行就得倚賴原生記得上一輪的值——而那正是 2026-07-31 那個回歸的成因
     // （原生在每輪結束時把它清掉，前端因為值沒變而不再送）。兩層都修，誰忘記都不會出事。
@@ -2091,7 +2107,7 @@ function refDateText(ref) {
  *
  * <p>讀的是 state 上的當前值（動作、組號、重量、次數、累度），呼叫端要先把它們設好。
  */
-async function logCurrentSet() {
+async function logCurrentSet({ rpe = undefined } = {}) {
   const exercise = state.exercise;
   // F104 ④：浮動視窗也會呼叫這支，而那時 app 可能在背景、畫面狀態不見得完整。
   // 沒有當前動作就什麼都不做——寧可讓呼叫端收到「沒記到」，也不要記到 undefined 上。
@@ -2105,7 +2121,10 @@ async function logCurrentSet() {
       set_number: state.setNumber,
       weight_kg: state.weightKg,
       reps: state.reps,
-      rpe: state.rpe, // F40：累度軸一律有值（6–10），新組必帶 rpe
+      // F40：app 內記的組累度軸一律有值（6–10）。
+      // F104 ⑦：**浮動視窗就地記的組留 null**（Ryan 2026-07-31 決定不沿用上一組）——
+      // 沿用是猜一個值填進去，填了就再也分不出哪些真哪些猜。回 app 時提示補。
+      rpe: rpe === undefined ? state.rpe : rpe,
       // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）。
       // F70 ③ 不必在這裡加第二條來源：休息中按鈕一律是「繼續下一組」，
       // 所以「休息還在跑就直接記組」在 UI 上不存在——跨畫面回來記組仍會先經過凍結那一步。
@@ -2144,6 +2163,11 @@ async function logCurrentSet() {
   }
   render();
   return true; // F104 ⑤：呼叫端要據此回報成功／失敗，不能靜默
+}
+
+/** F104 ⑦：本動作這次有幾組還沒填累度（就地記錄留 null）。 */
+function pendingRpeCount() {
+  return state.doneSets.filter((set) => set.rpe == null).length;
 }
 
 function renderLogger() {
@@ -2304,6 +2328,15 @@ function renderLogger() {
       ? [el("div", { class: "notice-banner" }, ["休息倒數已過期，沒有還原（訓練本身還在）"])]
       : []),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    // F104 ⑦：浮動視窗就地記的組沒有累度（刻意不沿用上一組——沿用是猜一個值填進去）。
+    // 回到 logger 時提示補，但**不擋操作**：健身房當下不想填是正常的，補記是選項不是義務。
+    ...(pendingRpeCount() > 0
+      ? [
+          el("div", { class: "notice-banner" }, [
+            `有 ${pendingRpeCount()} 組還沒填累度（在浮動視窗記的）——點該組的編輯鈕補上`,
+          ]),
+        ]
+      : []),
     ...syncStatusLine(),
     // F20：新→舊排序（最新在最上）；組數 > 2 時固定高度內部捲動（編輯中不限高，讓編輯表單完整可見）
     ...(state.doneSets.length > 0
@@ -2472,6 +2505,33 @@ function crossRestModal(onConfirm) {
       ]),
     ],
   );
+}
+
+/**
+ * F104 ③⑤：浮動視窗的「記下這組」。
+ *
+ * <p>⚠ 成功與失敗**都要**回報給原生（⑤：不得表現得像成功、不得靜默吞掉）。
+ * 原生那邊有 3 秒門檻，逾時就當作沒記到並把主按鈕退回「回 app 記下一組」。
+ *
+ * <p>失敗時**不開新的一輪休息**——休息開始了但組沒記到，是最糟的組合
+ * （人以為記完了，資料卻缺一筆）。這裡的做法是：只有 logCurrentSet() 回 true 時
+ * 才會走到它內部的 startRestTimer()，所以「不開新輪」是自然結果而不是另一段補償邏輯。
+ *
+ * @param {?{weight:number, reps:number}} draft 視窗上調整後的數值
+ */
+async function logFromOverlay(draft) {
+  const ok = await (async () => {
+    if (!draft || typeof draft.weight !== "number" || typeof draft.reps !== "number") {
+      return false; // 舊版 APK 或壞掉的 payload：寧可回報失敗，也不要拿當前值硬記
+    }
+    if (!state.exercise || state.workoutId === null) return false;
+    state.weightKg = draft.weight;
+    state.reps = draft.reps;
+    // ⑦ 就地記的組不填累度——回 app 進 logger 時再提示補
+    return await logCurrentSet({ rpe: null });
+  })().catch(() => false);
+  await reportLogResult(ok);
+  return ok;
 }
 
 /**
@@ -2718,7 +2778,7 @@ refreshRestNotifyState().then(() => {
 });
 // F71 ⑥：原生端（浮動視窗）的暫停／繼續／停止回傳。只訂閱一次，事件驅動不輪詢。
 // 前端仍是狀態的事實來源——原生只回報「使用者按了什麼」，實際的計時狀態在這裡改。
-subscribeRestControl((action, seconds) => {
+subscribeRestControl((action, seconds, draft) => {
   // F103 ③：「再開始」是唯一在「前端這份倒數已經停掉」時仍要處理的動作——
   // 其餘動作沒有進行中的休息就無事可做。這個判斷要放在 restStartedAt 檢查之前。
   if (action === "restart") {
@@ -2736,6 +2796,12 @@ subscribeRestControl((action, seconds) => {
   // null），但那輪還在原生那邊撐著，這顆鈕當然還要能把人帶回去記下一組。
   if (action === "focus") {
     focusRestExercise();
+    return;
+  }
+  // F104 ③⑤：浮動視窗按了「記下這組」。原生只回報「使用者按了什麼」與那兩個數值，
+  // 實際寫入一律走 logCurrentSet()（④：記錄邏輯只有一份）。
+  if (action === "logset") {
+    guard(() => logFromOverlay(draft));
     return;
   }
   if (state.restStartedAt === null) return;

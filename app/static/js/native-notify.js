@@ -328,6 +328,22 @@ export async function disableRestOverlay() {
   localStorage.removeItem(OVERLAY_FLAG);
 }
 
+/**
+ * F104 ⑤：把就地記錄的結果回報給浮動視窗。
+ *
+ * <p>沒有這個回報，視窗只能猜——而 ⑤ 明訂「不得表現得像成功、不得靜默吞掉」。
+ * 原生那邊有 3 秒門檻：逾時沒收到就當作沒記到（app 被回收、WebView 無回應）。
+ */
+export async function reportLogResult(ok) {
+  const api = restTimerPlugin();
+  if (!api?.logResult) return;
+  try {
+    await api.logResult({ ok: Boolean(ok) });
+  } catch {
+    /* 回報不了就讓原生那邊的 3 秒門檻接手，行為與「沒記到」一致 */
+  }
+}
+
 // F69 ③：回報「現在看不看得到 app 內的 REST 卡片」。
 //
 // render() 每秒都會跑，同值不重送——每秒打一次 bridge 沒有意義，也讓原生那邊每秒重算顯示。
@@ -356,14 +372,27 @@ export function syncRestCardVisible(visible, force = false) {
 }
 
 // 回傳 true＝前景服務接手了（呼叫端就不要再排本機通知）
-export async function startForegroundRest(seconds, hint = "") {
+export async function startForegroundRest(seconds, hint = "", draft = null) {
   const api = restTimerPlugin();
   if (!api || !nativeNotifyEnabled()) return false;
   try {
     const { available } = await api.available();
     if (!available) return false;
     // F89 ③：hint 是「動作名 · 第 N 組」，只給浮動視窗顯示；服務自己不解讀
-    await api.start({ seconds, overlay: restOverlayEnabled(), hint });
+    // F104 ①：draft 是「待記組」＝這輪休息結束後要記的那一組（重量／次數／是否自體重）。
+    // 服務同樣不解讀，只是搬給 overlay 顯示與增減。
+    await api.start({
+      seconds,
+      overlay: restOverlayEnabled(),
+      hint,
+      ...(draft
+        ? {
+            weight: draft.weight,
+            reps: draft.reps,
+            bodyweight: Boolean(draft.bodyweight),
+          }
+        : {}),
+    });
     foregroundActive = true;
     return true;
   } catch {
@@ -404,7 +433,15 @@ export function onNativeRestControl(handler) {
     // F103 ⑤：payload 要帶秒數。停止態的 ±15s 全發生在原生層，前端無從得知
     // 「再開始」該從幾秒重跑；只送動作名的話兩邊必然各說各話。
     api.addListener("restControl", (event) =>
-      handler(event?.action, typeof event?.seconds === "number" ? event.seconds : null),
+      handler(
+        event?.action,
+        typeof event?.seconds === "number" ? event.seconds : null,
+        // F104 ③：logset 帶的是視窗上調整後的重量與次數，不是秒數。
+        // 兩者分開帶——硬擠進同一個欄位會讓每個接收端都要先猜這次是哪一種。
+        typeof event?.weight === "number" && typeof event?.reps === "number"
+          ? { weight: event.weight, reps: event.reps }
+          : null,
+      ),
     );
   } catch {
     /* 舊版 APK 沒有這個事件：退回只有 app 內控制得動，不致命 */
