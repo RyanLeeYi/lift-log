@@ -2010,6 +2010,23 @@
         "F84",
         "F102"
       ]
+    },
+    {
+      "id": "F110",
+      "name": "「回 app 記下一組」要跳到那輪休息所屬動作的計時頁",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-07-31 Ryan 提出，**acceptance 未簽核**——收工前先進 list 保住需求，未動工。）\n\nRyan 原話：「如果是在 app 裡面，那回 app 記錄應該是要跳回那組動作的訓練頁面。」\n\n現況：浮動視窗的「回 app 記下一組」只做 `getLaunchIntentForPackage` ＋ SINGLE_TOP\n把 app 拉到前景，**不指定要停在哪一頁**——WebView 停在哪就是哪。F108 之後這個落差\n更明顯：休息可能屬於動作 A，但你人在動作 B 的計時頁（或菜單、日曆），\n按了「回 app 記下一組」還是留在原地，而那顆鈕的字面意思是「回去記 A 的下一組」。\n\n① 按「回 app 記下一組」→ app 到前景**並且**停在**這輪休息所屬動作**的計時頁。\n② app 已經開著（在別的動作、菜單、或其他畫面）時同樣要跳過去——這正是 Ryan 指出的情境。\n③ 到了之後那一頁就是所屬動作的正常休息態（休息卡在、倒數連續、視窗消失——F108 ⑦ 的行為）。\n④ 那輪休息已經不存在（結束訓練、被清掉）時**不要亂跳**，維持現況把 app 拉到前景就好。\n⑤ 不回歸：F89 ④（這顆鈕的位置與樣式）、F103 ①（按它**不結束**這輪休息）、F108 全部。\n\n**實作方向（收工前查到的，供接手參考）**：\n- 原生只要多送一個事件（例如 `emit(\"focus\", …)`），導頁由前端做——前端已經有\n  `state.restExerciseId`（F108 ①），而導頁邏輯（`pickExercise`）也在前端。\n  原生自己算不出「哪一頁」，也不該算。\n- `pickExercise(exercise)` 吃的是**完整的 exercise 物件**（來自 picker 的 `pickerExercises`），\n  不是 id。所以前端收到事件後要先從 picker 的清單找出那個物件；\n  找不到（臨時加的動作、清單還沒載入）要走 ④ 的退路，不要丟例外。\n- ⑤ 的「不結束休息」要有反面斷言：導頁若不小心走到 `finish`／`stopRestTimer` 就會把\n  這輪收掉，而那正是 F103 ① 花力氣保住的。",
+      "touches": [
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java",
+        "app/static/js/app.js",
+        "tests/e2e/verify_f110.py"
+      ],
+      "requires": [
+        "F89",
+        "F103",
+        "F108"
+      ]
     }
   ]
 }
