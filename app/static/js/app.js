@@ -1086,6 +1086,7 @@ async function pickExercise(exercise) {
   state.exercise = exercise;
   state.rpe = 6; // F40：進動作預設累度「輕鬆」
   state.doneSets = [];
+  state.lastSetsOpen = false; // F101：換動作要關掉上次紀錄視窗，否則它會帶著舊動作的內容留在畫面上
   state.setNumber = nextSetNumber(exercise.id); // 回頭選同動作時接續編號（取最大組號，不是組數）
 
   // F32：同一次訓練已做過這個動作 → 還原本次的組，不重抓「上次」
@@ -1130,6 +1131,9 @@ async function pickExercise(exercise) {
     state.lastRef = ref
       ? { date: ref.workout_date ?? null, weight: ref.weight_kg, reps: ref.reps }
       : null;
+    // F101：視窗列的是「上次那次訓練」的全部組。本次的組已經在 done-list 上了，
+    // 拿本次的組去填「上次」視窗只會讓人看到同一份資料兩次。
+    state.lastSets = prev;
     state.screen = "logger";
     render();
     return;
@@ -1154,6 +1158,7 @@ async function pickExercise(exercise) {
       weight: last[0].weight_kg,
       reps: last[0].reps,
     };
+    state.lastSets = last; // F101：視窗要列全部組
   } else if (offline) {
     // 離線：沿用本次已排隊的同動作組數當預設，沒有就用通用預設；不假裝是「第一次做」
     const queued = (await listQueued()).filter(
@@ -1174,12 +1179,14 @@ async function pickExercise(exercise) {
       state.reps = 8;
       state.lastHint = "離線中——載不到上次紀錄";
       state.lastRef = null;
+      state.lastSets = [];
     }
   } else {
     state.weightKg = exercise.is_bodyweight ? 0 : 20;
     state.reps = 8;
     state.lastHint = null;
     state.lastRef = null; // 換動作沒清＝上一個動作的參考值殘留在卡片上
+    state.lastSets = [];
   }
   if (state.exercise !== exercise) return; // await（lastSets/listQueued）期間已離開/換動作：丟棄過期結果
   state.screen = "logger";
@@ -1949,49 +1956,93 @@ function restCard() {
   ]);
 }
 
-// 就緒態的「上次提示卡 ＋ 快調列」。快調只填值不送出——省掉戳步進器那幾秒。
+// 就緒態的「上次提示卡」。
+//
+// F101：原本卡片下面掛著「同上／+2.5kg／減量」三顆快調鈕，Ryan 判定多餘——±2.5 跟下方
+// KG 步進器的 ±2.5 重複，「減量」語意也含糊；而卡片只顯示代表值那一組，看不到上次到底做了幾組。
+// 現在卡片自己可點，點開列出上次那次訓練的**全部組**，點任一組就把值填進步進器。
+// 這同時吃掉了「同上」——同上只能套代表值，這個能套任何一組。
 function lastRefCard() {
   const ref = state.lastRef;
-  const same = () => {
-    if (!ref) return;
-    state.weightKg = ref.weight;
-    state.reps = ref.reps;
-    render();
-  };
-  const bump = (delta) => {
-    state.weightKg = Math.max(0, Math.round((state.weightKg + delta) * 10) / 10);
-    render();
-  };
+  const hasSets = state.lastSets.length > 0;
   const headline = ref
     ? `上次 ${refDateText(ref)}${ref.weight} kg × ${ref.reps}`
     : (state.lastHint ?? "第一次做這個動作");
   const delta = ref ? Math.round((state.weightKg - ref.weight) * 10) / 10 : 0;
-  return el("section", { class: "card last-ref" }, [
-    el("div", { class: "last-ref-head" }, [
-      el("span", { class: "last-ref-text" }, [headline]),
-      ...(ref && delta !== 0
-        ? [
-            el("span", { class: `last-ref-delta${delta > 0 ? " up" : ""}` }, [
-              `${delta > 0 ? "＋" : "−"}${Math.abs(delta)}`,
-            ]),
-          ]
-        : []),
-    ]),
-    el("div", { class: "quick-row" }, [
-      el(
-        "button",
-        {
-          class: `btn chip quick-same${ref && state.weightKg === ref.weight
-            && state.reps === ref.reps ? " on" : ""}`,
-          ...(ref ? {} : { disabled: "" }),
-          onclick: same,
-        },
-        ["同上"],
-      ),
-      el("button", { class: "btn chip quick-up", onclick: () => bump(2.5) }, ["+2.5kg"]),
-      el("button", { class: "btn chip quick-down", onclick: () => bump(-2.5) }, ["減量"]),
-    ]),
+  const head = el("div", { class: "last-ref-head" }, [
+    el("span", { class: "last-ref-text" }, [headline]),
+    ...(ref && delta !== 0
+      ? [
+          el("span", { class: `last-ref-delta${delta > 0 ? " up" : ""}` }, [
+            `${delta > 0 ? "＋" : "−"}${Math.abs(delta)}`,
+          ]),
+        ]
+      : []),
+    // ⑤ 可點的線索。沒有上次紀錄時整個不畫——不要暗示一個打不開的東西
+    ...(hasSets ? [el("span", { class: "last-ref-more" }, [`${state.lastSets.length} 組 ›`])] : []),
   ]);
+
+  // ④ 第一次做這個動作＝沒得看，卡片維持純文字不可點，不要開一個空視窗
+  if (!hasSets) return el("section", { class: "card last-ref" }, [head]);
+
+  return el(
+    "section",
+    {
+      class: "card last-ref tappable",
+      role: "button",
+      tabindex: "0",
+      "aria-label": "看上次這個動作的全部紀錄",
+      onclick: () => { state.lastSetsOpen = true; render(); },
+      onkeydown: (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          state.lastSetsOpen = true;
+          render();
+        }
+      },
+    },
+    [head],
+  );
+}
+
+// F101 ②：上次那次訓練這個動作的全部組。資料用既有的 lastSets 回傳陣列，不新增 API。
+function lastSetsModal() {
+  const close = () => { state.lastSetsOpen = false; render(); };
+  // ③ 點任一組＝把該組的重量與次數填進步進器並關窗。**只填值不送出**——
+  // 沿用原本快調列的分寸；直接送出會讓「我只是想看看」變成一筆真的紀錄
+  const applySet = (s) => {
+    state.weightKg = s.weight_kg;
+    state.reps = s.reps;
+    state.lastSetsOpen = false;
+    render();
+  };
+  const dateText = state.lastRef?.date ? refDateText(state.lastRef).replace(" · ", "") : "";
+  return el(
+    "div",
+    { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) close(); } },
+    [
+      el("div", { class: "modal last-sets-modal" }, [
+        el("div", { class: "modal-head" }, [
+          `上次 ${dateText}${dateText ? " · " : ""}${exerciseName(state.exercise)}`,
+        ]),
+        el("p", { class: "confirm-text" }, ["點任一組把數值帶進來（不會直接記錄）"]),
+        el(
+          "div",
+          { class: "last-sets-list" },
+          state.lastSets.map((s, i) =>
+            el("button", { class: "btn last-set-row", onclick: () => applySet(s) }, [
+              el("span", { class: "set-no" }, [`#${i + 1}`]),
+              el("span", { class: "n" }, [`${s.weight_kg} kg × ${s.reps}`]),
+              ...(s.rpe != null ? [el("span", { class: "rpe" }, [RPE_WORDS[s.rpe] ?? ""])] : []),
+            ]),
+          ),
+        ),
+        el("div", { class: "modal-actions" }, [
+          el("button", { class: "btn btn-ghost", onclick: close }, ["關閉"]),
+        ]),
+      ]),
+    ],
+  );
 }
 
 function refDateText(ref) {
@@ -2242,6 +2293,8 @@ function renderLogger() {
       ),
     ]),
     // F42：底部『換動作』『收工』已移除——換動作改左上←，結束訓練走 picker 的『結束訓練』
+    // F101：上次全部紀錄的視窗（點上次提示卡開啟）
+    ...(state.lastSetsOpen && state.lastSets.length > 0 ? [lastSetsModal()] : []),
   ]);
 }
 

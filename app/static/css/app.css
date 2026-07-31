@@ -1386,10 +1386,24 @@ body {
 /* 與上次的差：加重量用苔綠（進步），減量用中性色——減量常常是刻意的，不該標成壞事 */
 .last-ref-delta { flex: none; font-family: var(--mono); font-size: 12px; color: var(--text-mute); }
 .last-ref-delta.up { color: var(--good); }
-.quick-row { display: flex; gap: 8px; }
-.quick-row .chip { flex: 1; min-width: 0; padding: 12px 0; font-size: 14px; font-weight: 600; }
-.quick-row .chip.on { background: var(--accent); color: var(--on-accent); }
-.quick-row .chip:disabled { opacity: .4; cursor: default; }
+/* F101：快調列（同上／+2.5kg／減量）已移除——±2.5 跟步進器重複，「減量」語意含糊。
+   卡片改成可點，點開列出上次的全部組。 */
+.last-ref.tappable { cursor: pointer; }
+.last-ref.tappable:active { background: var(--card-hi); }
+.last-ref.tappable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* ⑤ 可點的線索：右側的「N 組 ›」 */
+.last-ref-more { color: var(--accent); font-size: 13px; white-space: nowrap; }
+/* 上次全部紀錄的視窗 */
+.last-sets-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.last-set-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card-hi); border-radius: var(--r-card);
+  padding: 12px 14px; min-height: 44px; /* ⑤ 觸控目標 */
+  font-family: var(--mono); font-size: 15px; text-align: left;
+}
+.last-set-row .set-no { color: var(--text-faint); }
+.last-set-row .n { color: var(--text); flex: 1; }
+.last-set-row .rpe { color: var(--text-mute); font-family: var(--sans); font-size: 13px; }
 
 /* 已完成組列表收進卡片 */
 .done-list.card { gap: 0; padding: 10px 16px; }
