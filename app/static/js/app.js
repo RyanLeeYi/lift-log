@@ -1730,6 +1730,10 @@ function startRestTimer() {
   state.restTargetSeconds = state.exercise
     ? restHintFor(state.exercise.id)
     : DEFAULT_REST_HINT_SECONDS;
+  state.restExerciseId = state.exercise?.id ?? null; // F108 ①：這輪休息屬於誰
+  state.restExerciseNames = state.exercise
+    ? { zh: state.exercise.name_zh, en: state.exercise.name_en }
+    : null;
   // F31/F62：排定「休息結束」提醒（切到別的 app 也收得到）；未開通知＝no-op
   // F89 ③：把「動作名 · 第 N 組」一起送下去給浮動視窗顯示——人在別的 app 裡時，
   // 光有秒數看不出這是哪一組（同時開兩個訓練頁的情況雖然沒有，回頭看一眼仍然要對得上）。
@@ -1738,7 +1742,7 @@ function startRestTimer() {
     // ⚠ 原生會在這一刻重建 overlay，所以可見性要**強制**重送一次、不吃去重。
     // 少了這一行就得倚賴原生記得上一輪的值——而那正是 2026-07-31 那個回歸的成因
     // （原生在每輪結束時把它清掉，前端因為值沒變而不再送）。兩層都修，誰忘記都不會出事。
-    syncRestCardVisible(state.screen === "logger", true);
+    syncRestCardVisible(restBelongsToCurrentScreen(), true);
   }
   saveActiveWorkout(); // F66 ①：倒數一開始就要進持久化，否則下一秒被回收就沒了
   startRestTicker();
@@ -1843,6 +1847,14 @@ function stopRestTimer({ keepForegroundService = false } = {}) {
   state.restAccumulatedMs = 0; // F71
   state.restResumedAt = null;
   state.restTargetSeconds = null; // F70：目標秒數的快照跟著這輪休息一起結束
+  // F108 ①＋F103 ③：所屬動作在**這輪真的結束**時才清。浮動視窗按下的「停止」
+  // （keepForegroundService）不是結束——那輪還在，只是不倒數了，之後可以「再開始」。
+  // 清掉的話會有兩個後果：① 再開始時算不出這輪屬於誰，卡片回不來
+  // ② 停止後回到所屬動作的計時頁，視窗不會消失（F103 ② 要的正是它要消失）。
+  if (!keepForegroundService) {
+    state.restExerciseId = null;
+    state.restExerciseNames = null;
+  }
   // F31/F62：休息被使用者結束（繼續下一組／收工／登出）→ 取消未觸發的提醒。
   // F70 起「換動作」不再走這裡——換個地方看不算休息結束。
   if (keepForegroundService) cancelRestNotifyScheduleOnly();
@@ -2137,6 +2149,7 @@ function renderLogger() {
     // F66 ④（review MEDIUM-3）：「倒數沒還原」的提示看過一次就夠。離開 logger 就消掉，
     // 否則它會黏著整個 session——每次回到 logger 都再說一次同一件已經知道的事。
     state.restRestoreDropped = false;
+    state.crossRestConfirm = false; // F108 ⑤：沒回答的確認不跨動作殘留
     editDraft = null; // 離開 logger 清編輯草稿，否則殘留會讓下個動作的 scrollable 失效（F20/Codex P2）
     state.exercise = null;
     state.screen = "picker";
@@ -2241,7 +2254,12 @@ function renderLogger() {
     ]);
   };
 
-  const resting = state.restStartedAt !== null;
+  // F108 ③④：休息卡與它的控制鈕只出現在**所屬動作**的計時頁。
+  // 舊條件只問「有沒有在休息」，於是切到別的動作也會長出一張完整的控制卡——
+  // 在那裡按 ±15s 會把 override 寫進錯的動作、把視窗與通知的提示重貼成錯的動作。
+  const resting = state.restStartedAt !== null && state.restExerciseId === exercise.id;
+  // 別的動作正在休息中（這一頁維持就緒態，但記組前要擋——見 ⑤）
+  const otherResting = state.restStartedAt !== null && state.restExerciseId !== exercise.id;
   const overtime = resting && (restRemainingSeconds() ?? 1) <= 0;
 
   return el("section", { class: "screen logger" }, [
@@ -2306,7 +2324,15 @@ function renderLogger() {
             overtime ? " over" : ""
           }`,
           ...(state.submitting ? { disabled: "" } : {}),
-          onclick: () => guard(resting ? continueNext : logSet),
+          // F108 ⑤：別的動作還在休息 → 先跳確認，不直接記
+          onclick: () =>
+            guard(
+              resting
+                ? continueNext
+                : otherResting
+                  ? async () => { state.crossRestConfirm = true; render(); }
+                  : logSet,
+            ),
         },
         [resting ? el("span", {}, ["繼續下一組"]) : iconLabel("check", "完成這組")],
       ),
@@ -2314,6 +2340,8 @@ function renderLogger() {
     // F42：底部『換動作』『收工』已移除——換動作改左上←，結束訓練走 picker 的『結束訓練』
     // F101：上次全部紀錄的視窗（點上次提示卡開啟）
     ...(state.lastSetsOpen && state.lastSets.length > 0 ? [lastSetsModal()] : []),
+    // F108 ⑤：別的動作還在休息時的確認視窗
+    ...(state.crossRestConfirm && otherResting ? [crossRestModal(logSet)] : []),
   ]);
 }
 
@@ -2379,7 +2407,67 @@ function render() {
   // F103 ②：判斷依據是「人在計時頁面」，不是「REST 卡片可見」。
   // 舊條件在停止之後不成立（前端那份倒數已收掉、畫面上沒有卡片），視窗於是賴在 app 上面
   // ——而那正是使用者按「回 app 記下一組」之後看到的畫面。
-  syncRestCardVisible(state.screen === "logger");
+  // F108 ②：條件收緊成「人在**這輪休息所屬動作**的計時頁」。只看「人在計時頁」的話，
+  // 切到別的動作時視窗會消失，而那一頁根本沒有這輪休息的卡片——倒數就整個看不見了。
+  syncRestCardVisible(restBelongsToCurrentScreen());
+}
+
+/**
+ * F108 ⑤：這輪休息屬於哪個動作——拿名字給確認視窗的文案用。
+ *
+ * <p>名字在休息開始時就跟著快照下來（見 startRestTimer）。**不是**臨時去課表查：
+ * 臨時加的動作（F26）根本不在課表裡，查不到就只能講「另一個動作」，
+ * 而這個視窗的重點正是講清楚是**誰**還在休息。
+ */
+function restExerciseLabel() {
+  const names = state.restExerciseNames;
+  if (!names) return "另一個動作"; // 舊快照還原回來的：名字不在，退化文案好過講錯名字
+  return getLang() === "zh" ? names.zh : names.en;
+}
+
+/**
+ * F108 ⑤：別的動作還在休息時的確認視窗。
+ *
+ * <p>不能靜默記下去——那會無聲地結束（丟掉）另一個動作那輪休息，而使用者以為兩邊都還在。
+ * 文案要同時講出「誰還在休息、剩多久」與「按下去會發生什麼」。
+ */
+function crossRestModal(onConfirm) {
+  const close = () => { state.crossRestConfirm = false; render(); };
+  const remaining = restRemainingSeconds();
+  const timeText = remaining === null ? "" : `（${fmtRest(remaining)}）`;
+  return el(
+    "div",
+    { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) close(); } },
+    [
+      el("div", { class: "modal" }, [
+        el("div", { class: "modal-head" }, [`${restExerciseLabel()}還在休息${timeText}`]),
+        el("p", { class: "confirm-text" }, ["記這組會結束那輪休息。"]),
+        el("div", { class: "modal-actions" }, [
+          el("button", { class: "btn btn-ghost", onclick: close }, ["取消"]),
+          el("button", {
+            class: "btn btn-primary",
+            onclick: () => {
+              state.crossRestConfirm = false;
+              // ⑤ 確認＝結束那輪休息，再照常記這組（logSet 自己會開這個動作的新一輪）。
+              // ⑥ 秒數不跨動作帶：pendingRestSeconds 在換動作時已經清掉了，這裡不補。
+              stopRestTimer();
+              guard(onConfirm);
+            },
+          }, ["記這組"]),
+        ]),
+      ]),
+    ],
+  );
+}
+
+/** F108 ②：現在這個畫面是不是「這輪休息所屬動作的計時頁」。 */
+function restBelongsToCurrentScreen() {
+  if (state.screen !== "logger" || state.restExerciseId === null) return false;
+  // ⚠ 這裡刻意**不**要求 restStartedAt 非 null：浮動視窗按「停止」之後前端這份倒數收掉了
+  // （restStartedAt 變 null），但那輪休息還在原生那邊撐著、視窗也還在。
+  // F103 ② 要求「回到計時頁面時視窗一律消失，不管是在倒數還是已停止」，
+  // 判準因此是「這輪屬於誰」，不是「前端還有沒有在跑倒數」。
+  return state.restExerciseId === (state.exercise?.id ?? null);
 }
 
 // F67：查有沒有新版。失敗一律當作沒有更新（checkForUpdate 內部吞掉），
@@ -2602,6 +2690,8 @@ subscribeRestControl((action, seconds) => {
   // 其餘動作沒有進行中的休息就無事可做。這個判斷要放在 restStartedAt 檢查之前。
   if (action === "restart") {
     if (seconds === null) return; // 舊版 APK 不帶秒數：寧可不動，也不要憑空猜一個起點
+    // F108：所屬動作在停止時刻意沒清（見 stopRestTimer），所以這裡不必重建——
+    // 但要確認它還在，否則卡片回不到正確的那一頁。
     restartRestFromNative(seconds, haltedRestElapsed);
     haltedRestElapsed = 0;
     startRestTicker();

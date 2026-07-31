@@ -5,7 +5,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v116";
+export const APP_VERSION = "v117";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -34,6 +34,15 @@ export const state = {
   restAccumulatedMs: 0, // 先前各段「計時中」的總和
   restResumedAt: null, // 這一段計時開始的時間戳；null = 目前暫停中
   restTargetSeconds: null, // F70：這輪休息的目標秒數（休息開始時快照；改秒數時同步）——換動作後倒數基準不跳
+  // F108 ①：這輪休息屬於哪個動作。休息本來就是「剛做完那組」的休息，不是全域狀態——
+  // 少了它，切到別的動作的計時頁就會看到一張不屬於那一頁的休息卡（Ryan 2026-07-31 回報）。
+  restExerciseId: null,
+  // F108 ⑤：連名字一起快照（雙語都存，語言切換後文案仍然對）。
+  // 為什麼不臨時查課表：臨時加的動作（F26）根本不在課表裡，查不到就只能講「另一個動作」，
+  // 而確認視窗的重點就是講清楚**是誰**還在休息。
+  restExerciseNames: null,
+  // F108 ⑤：「別的動作還在休息，確定要記這組嗎」的確認視窗。transient，不持久化。
+  crossRestConfirm: false,
   // F66 ④：存過休息但還原不了（過舊或壞資料）。畫面要講出來，不得靜默沒有倒數。
   // 生命週期：還原時設起 → logger 顯示 → 離開 logger／開新一輪休息／換一場訓練時清掉。
   // 不持久化——它描述的是「這次還原」發生了什麼，不是訓練的狀態。
@@ -105,6 +114,8 @@ function restSnapshot() {
     accumulatedMs: state.restAccumulatedMs,
     resumedAt: state.restResumedAt, // null＝暫停中（⑤ 還原後仍要是暫停態）
     targetSeconds: state.restTargetSeconds,
+    exerciseId: state.restExerciseId, // F108 ①：還原後仍要知道這輪是誰的
+    exerciseNames: state.restExerciseNames,
   };
 }
 
@@ -137,6 +148,11 @@ function restoreRestSnapshot(rest) {
   state.restAccumulatedMs = rest.accumulatedMs;
   state.restResumedAt = rest.resumedAt;
   state.restTargetSeconds = rest.targetSeconds;
+  // F108 ①：舊快照沒有這個欄位 → null。null 代表「不知道是誰的」，
+  // 由呼叫端決定怎麼處理（見 app.js 的還原路徑），這裡不猜。
+  state.restExerciseId = typeof rest.exerciseId === "number" ? rest.exerciseId : null;
+  state.restExerciseNames =
+    rest.exerciseNames && typeof rest.exerciseNames === "object" ? rest.exerciseNames : null;
   return true;
 }
 

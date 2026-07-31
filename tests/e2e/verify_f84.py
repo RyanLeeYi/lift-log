@@ -105,26 +105,20 @@ def main() -> int:
                   f"① 副標帶組號（{head.locator('.alias').inner_text()}）")
             check(head.locator(".logger-detail").count() == 1, "① 右上有動作表現入口")
 
-            # ② 就緒態：上次提示卡＋快調列
+            # ② 就緒態：上次提示卡
             check(page.locator(".last-ref").count() == 1, "② 就緒態有上次提示卡")
-            quick = page.locator(".quick-row .chip")
-            check(quick.count() == 3, f"② 快調列三顆（{quick.count()}）")
-            labels = [quick.nth(i).inner_text().strip() for i in range(3)]
-            check(labels == ["同上", "+2.5kg", "減量"], f"② 快調列文案（{labels}）")
+            # ⚠ 快調列三顆鈕已由 **F101 ①** 拿掉（與下方 KG 步進器的 ±2.5 重複、「減量」語意含糊），
+            # 卡片本身改成可點、開視窗看上次的全部組。這條斷言翻面成「不得殘留」——
+            # 原本那條從 F101 上線起就一直是紅的，直到 2026-07-31 才被發現
+            #（F84 當時沒標 superseded_by）。
+            check(
+                page.locator(".quick-row").count() == 0,
+                f"② F101 ① 取代：快調列已移除（殘留 {page.locator('.quick-row').count()} 個）",
+            )
             check(page.locator(".rest-card").count() == 0, "② 就緒態不顯示休息卡")
-
-            # ② 快調只填值、不送出
-            before_weight = page.locator(".stepper output").first.inner_text()
-            page.locator(".quick-up").click()
-            page.wait_for_timeout(300)
-            after_weight = page.locator(".stepper output").first.inner_text()
-            check(float(after_weight) == float(before_weight) + 2.5,
-                  f"② +2.5kg 填入重量（{before_weight} → {after_weight}）")
-            check(page.locator(".done-list").count() == 0, "② 快調不會送出組（清單仍空）")
-            page.locator(".quick-down").click()
-            page.wait_for_timeout(300)
-            check(page.locator(".stepper output").first.inner_text() == before_weight,
-                  "② 減量把重量調回來")
+            # 「只填值不送出」那組斷言隨快調列一起搬到 **verify_f101**——
+            # F101 ③ 把同一個分寸接了過去（點視窗裡的任一組＝填進步進器、不送出）。
+            # 不在這裡重寫一份：同一個行為由兩支腳本各驗一次，改版時只會有一支被記得更新。
 
             # ⑥ 舊的休息秒數循環 chip 不該還在
             check(page.locator(".rest-hint").count() == 0, "⑥ 60/90/120/180 循環 chip 已移除")
