@@ -370,7 +370,17 @@ final class RestOverlay {
             dismissed = false;
             active = false;
             paused = false;
-            restCardVisible = false;
+            // ⚠ restCardVisible **不在這裡清**（2026-07-31 Ryan 真機回報的回歸）。
+            // 它描述的是「人在哪個畫面」——那是前端擁有的狀態，跟「這輪休息結束了」無關。
+            // 清掉它等於原生自己捏造了一個前端沒說過的事實：下一輪 setActive 時
+            // shouldShow() 看到 restCardVisible=false 就把視窗畫出來，即使人正看著計時頁。
+            //
+            // 這個 bug 在 F103 之前被前端的值「每輪 true↔false 來回跳」掩護著（重送蓋回來了）；
+            // F103 ② 把條件改成單純的「人在計時頁面」之後值不再變動，
+            // 前端的去重（native-notify 的 lastCardVisible）就讓它送不出第二次。
+            //
+            // 殘留的 true 不會反過來害事：app 不在前景時 shouldShow() 根本不看這個旗標，
+            // 而 app 在前景就代表前端活著、下一次 render 會把真實值送上來。
             detach(context);
         });
     }

@@ -272,6 +272,29 @@ def run_checks(base: str) -> None:
         )
         ctx.close()
 
+        # ── ② 回歸：第二輪休息開始時要**重新宣告**可見性 ──────────
+        # 2026-07-31 Ryan 真機回報：人沒離開計時頁，第二組休息一開始視窗就冒出來。
+        # 成因是兩層各記一份而且都以為對方會記得——原生在每輪結束的 hide() 裡把
+        # restCardVisible 清成 false，前端因為值沒變（人一直在 logger）被去重擋下不再送。
+        # F103 之前的條件含 restStartedAt，每輪 true↔false 來回跳，才碰巧把它蓋回來。
+        ctx, page = open_app(browser, base)
+        into_rest(page)
+        trues = sum(1 for v in native(page)["visible"] if v)
+        check(trues >= 1, f"前提：第一輪已宣告過可見（{trues} 次）")
+        # 繼續下一組 → 再記一組 ＝ 開第二輪休息
+        page.get_by_role("button", name="繼續下一組").first.click()
+        page.wait_for_timeout(700)
+        page.locator(".log-btn").first.click()
+        page.wait_for_selector(".rest-card", timeout=8000)
+        page.wait_for_timeout(900)
+        after = sum(1 for v in native(page)["visible"] if v)
+        check(
+            after > trues,
+            f"② 回歸：第二輪休息開始時強制重送可見性（{trues} → {after} 次）——"
+            f"少了這一次就要倚賴原生記得上一輪的值，而它在每輪結束時清掉了",
+        )
+        ctx.close()
+
         browser.close()
 
 

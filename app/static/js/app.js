@@ -1735,6 +1735,10 @@ function startRestTimer() {
   // 光有秒數看不出這是哪一組（同時開兩個訓練頁的情況雖然沒有，回頭看一眼仍然要對得上）。
   if (state.exercise) {
     scheduleRestNotify(restHintFor(state.exercise.id), restHintText());
+    // ⚠ 原生會在這一刻重建 overlay，所以可見性要**強制**重送一次、不吃去重。
+    // 少了這一行就得倚賴原生記得上一輪的值——而那正是 2026-07-31 那個回歸的成因
+    // （原生在每輪結束時把它清掉，前端因為值沒變而不再送）。兩層都修，誰忘記都不會出事。
+    syncRestCardVisible(state.screen === "logger", true);
   }
   saveActiveWorkout(); // F66 ①：倒數一開始就要進持久化，否則下一秒被回收就沒了
   startRestTicker();

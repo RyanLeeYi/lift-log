@@ -112,8 +112,8 @@ export function subscribeRestControl(handler) {
 }
 
 // F69：畫面切換時回報 REST 卡片是否可見。web 版沒有浮動視窗＝no-op。
-export function syncRestCardVisible(visible) {
-  if (native()) syncNativeRestCardVisible(visible);
+export function syncRestCardVisible(visible, force = false) {
+  if (native()) syncNativeRestCardVisible(visible, force);
 }
 
 export async function disableRestNotify() {

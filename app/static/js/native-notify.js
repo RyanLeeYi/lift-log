@@ -334,10 +334,19 @@ export async function disableRestOverlay() {
 // 這裡只管「卡片可見性」這一個位元；app 前不前景由原生的 ActivityLifecycleCallbacks 判定。
 let lastCardVisible = null;
 
-export function syncRestCardVisible(visible) {
+/**
+ * F69 ③：回報前端這一側的可見性。
+ *
+ * @param {boolean} visible
+ * @param {boolean} [force] 略過去重，強制重送一次。開新一輪休息時要用——
+ *   原生會在那一刻重建 overlay，兩層對這個旗標的記憶必須在同一刻對齊。
+ *   去重本身是為了不要每次 render 都打一次 bridge，不是為了省掉這種同步點。
+ */
+export function syncRestCardVisible(visible, force = false) {
   const api = restTimerPlugin();
   const value = Boolean(visible);
-  if (!api?.setRestCardVisible || value === lastCardVisible) return;
+  if (!api?.setRestCardVisible) return;
+  if (!force && value === lastCardVisible) return;
   lastCardVisible = value;
   try {
     api.setRestCardVisible({ visible: value })?.catch?.(() => {});
