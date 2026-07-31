@@ -12,6 +12,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.TypedValue;
@@ -69,6 +71,20 @@ final class RestOverlay {
     private static TextView stopButton; // F73：鬧鐘響著時要轉警示色
     /** F103 ③：停止態才出現，取代暫停與停止的位置——停了之後唯一有意義的操作。 */
     private static TextView restartButton;
+    /** F104 ①：待記組——這輪休息結束後要記的那一組。weight < 0 ＝ 前端沒送，整塊不顯示。 */
+    private static double draftWeight = -1;
+    private static int draftReps = -1;
+    private static boolean draftBodyweight;
+    private static TextView draftLabel;
+    private static TextView repsLabel;
+    /** F104 ⑤：就地記錄的三種狀態。等待前端回報時鎖住按鈕，避免連按記成兩組。 */
+    private static boolean logPending;
+    private static boolean logFailed;
+    private static TextView logButton;
+    private static TextView logStatus;
+    /** ⑤ 的 3 秒門檻：逾時沒等到回報就當作沒記到（app 被回收、WebView 無回應）。 */
+    private static final long LOG_TIMEOUT_MS = 3000L;
+    private static Runnable logTimeout;
     private static TextView mainButton; // F89 ④：回 app 記下一組（超時轉 --over）
     /** F71：暫停狀態。兩邊（app 內卡片與這裡）必須顯示一致，否則使用者不知道該信誰。 */
     private static boolean paused;
@@ -238,6 +254,58 @@ final class RestOverlay {
         });
     }
 
+    /** F104 ①：這輪的待記組。weight < 0 或 reps < 0 ＝ 沒帶，整塊不顯示。 */
+    static void setDraft(Context context, double weight, int reps, boolean bodyweight) {
+        onMain(() -> {
+            draftWeight = weight;
+            draftReps = reps;
+            draftBodyweight = bodyweight;
+            // 新的一輪＝上一輪的記錄狀態不再適用（失敗態不該跨輪殘留）
+            clearLogPending();
+            logFailed = false;
+            apply(context);
+        });
+    }
+
+    /**
+     * F104 ⑤：前端回報了就地記錄的結果。
+     *
+     * <p>成功不必在這裡做什麼——前端會接著開新的一輪休息，走 setActive／setDraft 把整個
+     * 視窗重畫成下一組。這裡只負責**失敗**那條路：明確講出「沒記到」並把主按鈕退回
+     * 「回 app 記下一組」，讓使用者走原本那條路。
+     */
+    static void onLogResult(Context context, boolean ok) {
+        onMain(() -> {
+            clearLogPending();
+            if (ok) {
+                logFailed = false;
+                vibrateOnce(context); // ③ 成功回饋：短單擊，與鬧鈴的重複震動分得開
+            } else {
+                logFailed = true;
+            }
+            apply(context);
+        });
+    }
+
+    private static void clearLogPending() {
+        logPending = false;
+        if (logTimeout != null) {
+            MAIN.removeCallbacks(logTimeout);
+            logTimeout = null;
+        }
+    }
+
+    /** ③ 成功回饋的震動：**短單擊**。鬧鈴是重複震動，兩者在同一個視窗上不能混淆。 */
+    private static void vibrateOnce(Context context) {
+        try {
+            Vibrator vib = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+            if (vib == null || !vib.hasVibrator()) return;
+            vib.vibrate(VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (Exception ignored) {
+            // 震動不是必要條件（文字回饋已經在畫面上），失敗就算了
+        }
+    }
+
     static void setPaused(Context context, boolean value) {
         onMain(() -> {
             paused = value;
@@ -277,8 +345,19 @@ final class RestOverlay {
             ring.setOver(over);
         }
         if (mainButton != null) {
+            // F104 ⑥：有「記下這組」時，回 app 退居次要——描邊而不是實心琥珀，
+            // 兩顆同等份量的主按鈕會讓人每次都要選一次。超時仍轉 --over（F89 ④ 不回歸），
+            // 但次要態只染框與字，不整顆塗滿。
             GradientDrawable bg = new GradientDrawable();
-            bg.setColor(over ? OVER : ACCENT);
+            int accent = over ? OVER : ACCENT;
+            if (hasDraft()) {
+                bg.setColor(Color.TRANSPARENT);
+                bg.setStroke(dp(mainButton.getContext(), 1), over ? OVER : LINE);
+                mainButton.setTextColor(over ? OVER : TEXT_DIM);
+            } else {
+                bg.setColor(accent);
+                mainButton.setTextColor(ON_ACCENT);
+            }
             bg.setCornerRadius(dp(mainButton.getContext(), 22));
             mainButton.setBackground(bg);
         }
@@ -498,8 +577,16 @@ final class RestOverlay {
         hlp.bottomMargin = dp(context, 10);
         root.addView(hintLabel, hlp);
 
+        root.addView(buildDraftRow(context));
         root.addView(buildControls(context));
+        root.addView(buildLogButton(context));
         root.addView(buildMainButton(context));
+
+        // F100／F103 的教訓：收合⇄展開會**重建**整棵 view，任何「按下當時設一次」的狀態
+        // 重建後都會被打回預設。所有依狀態而變的東西都在這裡重新套一次。
+        paintDraft();
+        paintLogButton();
+        paintLogStatus();
 
         // 卡片本體也可拖；點擊要收合。兩者由 DragListener 依位移量分辨
         root.setOnTouchListener(new DragListener(context));
@@ -650,6 +737,22 @@ final class RestOverlay {
         return lp;
     }
 
+    /** F104 ②：待記組的 ± 小圓鈕。48dp／間距 8dp 照 F74／F89 ⑦，不放寬。 */
+    private static TextView stepButton(Context context, String text, View.OnClickListener click) {
+        TextView button = new TextView(context);
+        button.setText(text);
+        button.setGravity(Gravity.CENTER);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        button.setTextColor(TEXT_DIM);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(CARD_HI);
+        bg.setCornerRadius(dp(context, TOUCH_TARGET_DP) / 2f);
+        button.setBackground(bg);
+        button.setOnClickListener(click);
+        pressFeedback(button);
+        return button;
+    }
+
     private static TextView pillButton(Context context, String text, View.OnClickListener click) {
         TextView button = new TextView(context);
         button.setText(text);
@@ -665,14 +768,185 @@ final class RestOverlay {
         return button;
     }
 
+    /**
+     * F104 ①②：待記組那一行——`{重量} kg × {次數}`，兩側各一顆 ±。
+     *
+     * <p>② 可調而不是唯讀：唯讀只在「下一組跟上一組完全一樣」時有用，真實訓練裡加重、
+     * 掉次數都很常見，唯讀等於每次都要先判斷「這次能不能在視窗做」——規則不確定比功能少更糟。
+     *
+     * <p>調整**只在視窗內**，不立即寫入任何地方（② 明訂）：它只是還沒送出的草稿，
+     * 與 app 內步進器同一個分寸。
+     */
+    private static View buildDraftRow(Context context) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, BUTTON_GAP_DP));
+        row.setLayoutParams(rlp);
+
+        row.addView(stepButton(context, "−", v -> adjustDraft(context, -2.5, 0)),
+            new LinearLayout.LayoutParams(dp(context, TOUCH_TARGET_DP), dp(context, TOUCH_TARGET_DP)));
+
+        draftLabel = new TextView(context);
+        draftLabel.setGravity(Gravity.CENTER);
+        draftLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        draftLabel.setTypeface(Typeface.MONOSPACE); // ① Mono：數字對齊，調整時不會左右跳
+        draftLabel.setTextColor(TEXT_DIM);
+        draftLabel.setSingleLine(true);
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        llp.setMargins(dp(context, 4), 0, dp(context, 4), 0);
+        row.addView(draftLabel, llp);
+
+        row.addView(stepButton(context, "+", v -> adjustDraft(context, 2.5, 0)),
+            new LinearLayout.LayoutParams(dp(context, TOUCH_TARGET_DP), dp(context, TOUCH_TARGET_DP)));
+
+        LinearLayout wrap = new LinearLayout(context);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.addView(row);
+
+        LinearLayout repsRow = new LinearLayout(context);
+        repsRow.setOrientation(LinearLayout.HORIZONTAL);
+        repsRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rr = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rr.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, BUTTON_GAP_DP));
+        repsRow.setLayoutParams(rr);
+        repsRow.addView(stepButton(context, "−", v -> adjustDraft(context, 0, -1)),
+            new LinearLayout.LayoutParams(dp(context, TOUCH_TARGET_DP), dp(context, TOUCH_TARGET_DP)));
+        repsLabel = new TextView(context);
+        repsLabel.setGravity(Gravity.CENTER);
+        repsLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        repsLabel.setTypeface(Typeface.MONOSPACE); // 與重量那列對齊，調整時不左右跳
+        repsLabel.setTextColor(TEXT_DIM);
+        LinearLayout.LayoutParams rlp2 = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        repsRow.addView(repsLabel, rlp2);
+        repsRow.addView(stepButton(context, "+", v -> adjustDraft(context, 0, 1)),
+            new LinearLayout.LayoutParams(dp(context, TOUCH_TARGET_DP), dp(context, TOUCH_TARGET_DP)));
+        wrap.addView(repsRow);
+
+        // ⑤ 的狀態字：成功／失敗都要看得見，不能靜默切換
+        logStatus = new TextView(context);
+        logStatus.setGravity(Gravity.CENTER);
+        logStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        logStatus.setTextColor(OVER);
+        logStatus.setVisibility(View.GONE);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        slp.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, 6));
+        wrap.addView(logStatus, slp);
+
+        wrap.setVisibility(hasDraft() ? View.VISIBLE : View.GONE);
+        draftRow = wrap;
+        return wrap;
+    }
+
+    private static View draftRow;
+
+    private static boolean hasDraft() {
+        return draftWeight >= 0 && draftReps > 0;
+    }
+
+    /** ② 重量 ±2.5 下限 0、次數 ±1 下限 1。只動視窗上的草稿，不寫進任何地方。 */
+    private static void adjustDraft(Context context, double dw, int dr) {
+        if (!hasDraft()) return;
+        draftWeight = Math.max(0, Math.round((draftWeight + dw) * 10) / 10.0);
+        draftReps = Math.max(1, draftReps + dr);
+        paintDraft();
+    }
+
+    private static void paintDraft() {
+        // 一列一個量：上面重量、下面次數。擠在同一行的話兩組 ± 會分不出各自管哪一個。
+        if (draftLabel != null) {
+            draftLabel.setText(draftBodyweight
+                ? (draftWeight > 0 ? "+" + trimNumber(draftWeight) + " kg" : "自體重")
+                : trimNumber(draftWeight) + " kg");
+        }
+        if (repsLabel != null) repsLabel.setText(draftReps + " 次");
+    }
+
+    private static String trimNumber(double value) {
+        return value == Math.rint(value)
+            ? String.valueOf((long) value)
+            : String.valueOf(Math.round(value * 10) / 10.0);
+    }
+
+    /**
+     * F104 ③⑤：「記下這組」。
+     *
+     * <p>按下去只做一件事——把視窗上的數值送給前端（④：實際寫入一律由 JS 執行）。
+     * 送出後鎖住按鈕並起一個 3 秒門檻：等不到回報就當作沒記到。
+     */
+    private static View buildLogButton(Context context) {
+        logButton = new TextView(context);
+        logButton.setGravity(Gravity.CENTER);
+        logButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        logButton.setTypeface(null, Typeface.BOLD);
+        logButton.setTextColor(ON_ACCENT);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(ACCENT);
+        bg.setCornerRadius(dp(context, 22));
+        logButton.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(context, TOUCH_TARGET_DP));
+        lp.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, BUTTON_GAP_DP));
+        logButton.setLayoutParams(lp);
+        logButton.setOnClickListener(v -> requestLog(context));
+        pressFeedback(logButton);
+        paintLogButton();
+        logButton.setVisibility(hasDraft() ? View.VISIBLE : View.GONE);
+        return logButton;
+    }
+
+    private static void requestLog(Context context) {
+        if (!hasDraft() || logPending) return; // 連按不得記成兩組
+        logPending = true;
+        logFailed = false;
+        paintLogButton();
+        paintLogStatus();
+        RestTimerPlugin.emitLog(draftWeight, draftReps);
+        logTimeout = () -> {
+            // ⑤ 等不到回報＝沒記到。**不得**表現得像成功，也不得開新的一輪休息
+            //（新的一輪由前端在記錄成功之後才發起，這裡什麼都不做就是「不開」）。
+            logPending = false;
+            logTimeout = null;
+            logFailed = true;
+            paintLogButton();
+            paintLogStatus();
+        };
+        MAIN.postDelayed(logTimeout, LOG_TIMEOUT_MS);
+    }
+
+    private static void paintLogButton() {
+        if (logButton == null) return;
+        logButton.setText(logPending ? "記錄中…" : "記下這組");
+        logButton.setAlpha(logPending ? 0.6f : 1f);
+    }
+
+    private static void paintLogStatus() {
+        if (logStatus == null) return;
+        if (logFailed) {
+            logStatus.setText("沒記到——回 app 記下一組");
+            logStatus.setVisibility(View.VISIBLE);
+        } else {
+            logStatus.setVisibility(View.GONE);
+        }
+    }
+
     /** F89 ④：主按鈕——把 app 拉回前景（超時時轉 --over，與圓環同步）。 */
     private static View buildMainButton(Context context) {
         mainButton = new TextView(context);
         mainButton.setText("回 app 記下一組");
         mainButton.setGravity(Gravity.CENTER);
         mainButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        mainButton.setTextColor(ON_ACCENT);
-        mainButton.setTypeface(null, Typeface.BOLD);
+        // F104 ⑥：有「記下這組」在的時候，回 app 退居次要——兩顆同等大小的主按鈕
+        // 會讓人每次都要選一次。沒有待記組時（舊版前端）它仍是唯一的主按鈕，維持琥珀。
+        boolean secondary = hasDraft();
+        mainButton.setTextColor(secondary ? TEXT_DIM : ON_ACCENT);
+        mainButton.setTypeface(null, secondary ? Typeface.NORMAL : Typeface.BOLD);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(context, TOUCH_TARGET_DP));
         lp.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, 12));

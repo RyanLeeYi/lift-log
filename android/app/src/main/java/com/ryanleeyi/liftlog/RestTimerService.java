@@ -57,6 +57,10 @@ public class RestTimerService extends Service {
     public static final String ACTION_HALT = "com.ryanleeyi.liftlog.REST_HALT";
     /** F103 ③：停止之後的「再開始」——從目前顯示的秒數重新倒數（±15s 調過就是調完的值）。 */
     public static final String ACTION_RESTART = "com.ryanleeyi.liftlog.REST_RESTART";
+    /** F104 ①：待記組——這輪休息結束後要記的那一組。服務不解讀，只是搬給 overlay。 */
+    public static final String EXTRA_WEIGHT = "weight";
+    public static final String EXTRA_REPS = "reps";
+    public static final String EXTRA_BODYWEIGHT = "bodyweight";
     /**
      * F72 ⑤：通知列上的「停止」動作鈕。
      *
@@ -193,6 +197,12 @@ public class RestTimerService extends Service {
             // F69：這裡只宣告「這輪休息要顯示 overlay」，真的畫不畫由 RestOverlay 的
             // shouldShow() 決定（app 在前景又看得到 REST 卡片時就先藏著）
             RestOverlay.setActive(this, true, seconds, intent.getStringExtra(EXTRA_HINT));
+            // F104 ①：待記組跟著這輪一起帶下去（沒帶就是 -1，overlay 那邊整塊不顯示）
+            RestOverlay.setDraft(
+                this,
+                intent.getDoubleExtra(EXTRA_WEIGHT, -1),
+                intent.getIntExtra(EXTRA_REPS, -1),
+                intent.getBooleanExtra(EXTRA_BODYWEIGHT, false));
         }
         startTimer(seconds);
         // 不用 START_STICKY：休息被系統中斷後自己復活沒有意義（剩餘秒數已經不對了），
@@ -411,12 +421,18 @@ public class RestTimerService extends Service {
     // F72 之後歸零**不再結束服務**（要繼續計時與持續提醒），那個方法沒有呼叫點了，故移除——
     // 留著會讓下一個人以為還有這條路徑。
 
-    static void start(Context context, int seconds, boolean overlay, String hint) {
+    static void start(
+        Context context, int seconds, boolean overlay, String hint,
+        double weight, int reps, boolean bodyweight
+    ) {
         Intent intent = new Intent(context, RestTimerService.class)
             .setAction(ACTION_START)
             .putExtra(EXTRA_SECONDS, seconds)
             .putExtra(EXTRA_OVERLAY, overlay)
-            .putExtra(EXTRA_HINT, hint == null ? "" : hint);
+            .putExtra(EXTRA_HINT, hint == null ? "" : hint)
+            .putExtra(EXTRA_WEIGHT, weight)
+            .putExtra(EXTRA_REPS, reps)
+            .putExtra(EXTRA_BODYWEIGHT, bodyweight);
         context.startForegroundService(intent);
     }
 

@@ -53,6 +53,33 @@ public class RestTimerPlugin extends Plugin {
         plugin.notifyListeners("restControl", data);
     }
 
+    /**
+     * F104 ③：浮動視窗按了「記下這組」——把視窗上的數值送給前端。
+     *
+     * <p>秒數與待記組分開帶：硬擠進同一個欄位會讓每個接收端都要先猜這次是哪一種。
+     */
+    static void emitLog(double weight, int reps) {
+        RestTimerPlugin plugin = instance;
+        if (plugin == null) return;
+        JSObject data = new JSObject();
+        data.put("action", "logset");
+        data.put("weight", weight);
+        data.put("reps", reps);
+        plugin.notifyListeners("restControl", data);
+    }
+
+    /**
+     * F104 ⑤：前端回報就地記錄的結果。
+     *
+     * <p>沒有這個回報，視窗只能猜——而 ⑤ 明訂「不得表現得像成功、不得靜默吞掉」。
+     * 逾時（3 秒）沒等到就當作沒記到，由 RestOverlay 那邊的門檻處理。
+     */
+    @PluginMethod
+    public void logResult(PluginCall call) {
+        RestOverlay.onLogResult(getContext(), Boolean.TRUE.equals(call.getBoolean("ok", false)));
+        call.resolve();
+    }
+
     @Override
     public void load() {
         instance = this;
@@ -137,7 +164,11 @@ public class RestTimerPlugin extends Plugin {
         }
         boolean overlay = Boolean.TRUE.equals(call.getBoolean("overlay", false));
         try {
-            RestTimerService.start(getContext(), seconds, overlay, call.getString("hint"));
+            // F104 ①：待記組沒帶就用 -1／-1，overlay 那邊據此整塊不顯示（舊版前端仍能用）
+            RestTimerService.start(
+                getContext(), seconds, overlay, call.getString("hint"),
+                call.getDouble("weight", -1.0), call.getInt("reps", -1),
+                Boolean.TRUE.equals(call.getBoolean("bodyweight", false)));
             call.resolve();
         } catch (Exception e) {
             // Android 12+ 對背景啟動前景服務有限制；啟不起來要讓前端知道好退回 F62
