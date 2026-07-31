@@ -1,7 +1,7 @@
 ---
 updated: 2026-07-31
 feature: F104（浮動視窗直接記錄下一組；驗收依據以 feature_list.json 的 acceptance 為準，本 PRD 為設計來源）
-status: 草稿，待 Ryan 簽核
+status: **已簽核（2026-07-31 Ryan）**
 ---
 
 # 浮動視窗直接記錄下一組 — PRD
