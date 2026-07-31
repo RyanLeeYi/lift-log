@@ -153,8 +153,12 @@ Ryan 2026-07-31 決定。健身房吵、手機可能在口袋或看不到，純�
 
 ## R4 門檻的依據（2026-07-31 真機實測）
 
-app 切到背景 3 分鐘後量 ：
+app 切到背景 3 分鐘後量 `dumpsys activity processes`：
 
+```
+Proc # 2: prcp  F/S/FGS  16298:com.ryanleeyi.liftlog.dev/u0a918 (fg-service)
+    oom: max=1001 curRaw=200 setRaw=200 cur=200 set=200
+```
 
 
 **oom_adj 200 ＝ PERCEPTIBLE，而且被標記為持有前景服務**（一般背景 app 是 900+，
