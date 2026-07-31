@@ -2460,6 +2460,25 @@ function crossRestModal(onConfirm) {
   );
 }
 
+/**
+ * F110：導到這輪休息所屬動作的計時頁。
+ *
+ * <p>⚠ 這條路**不得**碰休息本身。導頁若走到 finish()／stopRestTimer() 就會把這輪收掉，
+ * 而 F103 ① 明訂「回 app 記下一組」不是結束這輪的入口。這裡只呼叫 pickExercise()。
+ *
+ * <p>④ 的退路（**不要亂跳**，維持現況把 app 拉到前景就好）：沒有進行中的訓練、
+ * 不知道這輪屬於誰、或動作清單裡找不到那個物件（臨時動作、清單還沒載入）。
+ * 跳到錯的一頁比不跳更糟——使用者會以為自己在記 A，其實在記 B。
+ */
+function focusRestExercise() {
+  const id = state.restExerciseId;
+  if (id === null || state.workoutId === null) return;
+  if (state.screen === "logger" && state.exercise?.id === id) return; // 已經在那一頁
+  const target = pickerExercises.find((e) => e.id === id);
+  if (!target) return;
+  guard(() => pickExercise(target)); // 它自己會切到 logger 並重繪
+}
+
 /** F108 ②：現在這個畫面是不是「這輪休息所屬動作的計時頁」。 */
 function restBelongsToCurrentScreen() {
   if (state.screen !== "logger" || state.restExerciseId === null) return false;
@@ -2696,6 +2715,13 @@ subscribeRestControl((action, seconds) => {
     haltedRestElapsed = 0;
     startRestTicker();
     render();
+    return;
+  }
+  // F110：「回 app 記下一組」＝拉起 app **並且**停在這輪休息所屬動作的計時頁。
+  // 放在 restStartedAt 檢查之前：浮動視窗按過停止之後前端這份倒數已經收掉（restStartedAt 為
+  // null），但那輪還在原生那邊撐著，這顆鈕當然還要能把人帶回去記下一組。
+  if (action === "focus") {
+    focusRestExercise();
     return;
   }
   if (state.restStartedAt === null) return;

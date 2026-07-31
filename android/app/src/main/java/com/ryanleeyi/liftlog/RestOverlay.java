@@ -684,6 +684,14 @@ final class RestOverlay {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 context.startActivity(intent);
             }
+            // F110：把 app 拉到前景**不等於**停在對的那一頁——SINGLE_TOP 只是把既有的
+            // Activity 叫回來，WebView 停在哪就是哪。這顆鈕的字面意思是「回去記 A 的下一組」，
+            // 所以還要請前端導到那輪休息所屬動作的計時頁。
+            //
+            // 導頁交前端做：哪一頁、動作物件在哪、離線時怎麼退，全都是前端才知道的事
+            // （原生只有一個 id）。與 F103 ⑤ 同一個分寸——原生回報「使用者按了什麼」，
+            // 實際的狀態變更在 JS。
+            RestTimerPlugin.emit("focus");
         });
         pressFeedback(mainButton);
         return mainButton;
