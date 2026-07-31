@@ -6,6 +6,9 @@
 
 const REST_ID = 1001; // 固定 id：同一次休息只會有一則，取消時不必記錄 id
 const FLAG = "liftlog.nativeNotifyEnabled";
+// F107：前景服務接不了手的紀錄。持久化是刻意的——它描述的是「這台裝置的狀況」，
+// 不是這次 session 的狀況，重開 app 之後那個風險還在。
+const FALLBACK_FLAG = "liftlog.fgFallbackSeen";
 
 let cache = { granted: false, exact: false, channelOff: false };
 
@@ -114,9 +117,36 @@ export function nativeNotifyEnabled() {
   return localStorage.getItem(FLAG) === "1" && cache.granted;
 }
 
-// 通知本身允許、但「精確鬧鐘」被關 → 倒數會被系統延後。UI 用它提示，不擋功能。
+/**
+ * F107：這次休息是不是交給前景服務了——把結果記下來，當作「要不要警告可能延遲」的依據。
+ *
+ * <p>接手成功就把紀錄清掉：裝置狀況會變（使用者把 app 加進電池白名單、換了 OEM 韌體），
+ * 一次失敗不該永久掛著警告。
+ */
+export function noteForegroundTakeover(taken) {
+  if (taken) localStorage.removeItem(FALLBACK_FLAG);
+  else localStorage.setItem(FALLBACK_FLAG, "1");
+}
+
+function foregroundFallbackSeen() {
+  return localStorage.getItem(FALLBACK_FLAG) === "1";
+}
+
+/**
+ * 通知本身允許、但「精確鬧鐘」被關 → 倒數**可能**會被系統延後。UI 用它提示，不擋功能。
+ *
+ * <p>F107：光看權限會誤報。自 F63 起休息倒數的主要路徑是原生前景服務（自己跑
+ * CountDownTimer），**完全不碰鬧鐘排程**；精確鬧鐘只在前景服務啟不動時的退路
+ * （scheduleNativeRest）才用得到。所以要兩個條件都成立才警告。
+ *
+ * <p>為什麼用「觀測到的失敗」而不是預判：Android 沒有「我等一下起不起得來前景服務」
+ * 的查詢 API，OEM 省電策略也查不到。硬猜的條件會變成另一個方向的誤報。
+ *
+ * <p>代價（Ryan 2026-07-31 接受）：**第一次**遇到前景服務起不來時沒有預先警告。
+ * 換掉的是「多數人一直看到假警告」——假警告看久了就沒人看，真的那次也會被忽略。
+ */
 export function nativeExactAlarmOff() {
-  return cache.granted && !cache.exact;
+  return cache.granted && !cache.exact && foregroundFallbackSeen();
 }
 
 // 啟動時與每次切換後呼叫。查不到就當作沒授權（保守），不讓 UI 顯示假的「開」。

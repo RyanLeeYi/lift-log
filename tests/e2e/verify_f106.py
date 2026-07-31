@@ -115,6 +115,10 @@ def open_app(
     page.wait_for_selector("input", timeout=10_000)
     setup_and_home(page)
     page.evaluate(f"() => localStorage.setItem('{NOTIFY_FLAG}', '1')")
+    # F107：「可能延遲」要**兩個**條件——精確鬧鐘被關，且前景服務實際接不了手過。
+    # 這支要驗的是副標這個載體，所以把紀錄直接種進去，不去跑一輪休息。
+    if not exact:
+        page.evaluate("() => localStorage.setItem('liftlog.fgFallbackSeen', '1')")
     if overlay_on:
         page.evaluate(f"() => localStorage.setItem('{OVERLAY_FLAG}', '1')")
     page.reload(wait_until="domcontentloaded")

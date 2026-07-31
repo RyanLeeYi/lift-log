@@ -15,6 +15,7 @@ import {
   nativeExactAlarmOff,
   nativeNotifyAvailable,
   nativeNotifyEnabled,
+  noteForegroundTakeover,
   onNativeRestControl,
   pauseForegroundRest,
   refreshNativeNotifyState,
@@ -127,6 +128,9 @@ export function scheduleRestNotify(seconds, hint = "") {
   // F63 ⑥：優先交給前景服務（通知列看得到剩幾秒）；它接手就不排 F62 的本機通知，
   // 一次休息只有一則通知行為。啟不動（權限被關、Android 12+ 背景限制）才退回 F62。
   startForegroundRest(seconds, hint).then((taken) => {
+    // F107：這裡是**唯一**知道「前景服務接不接得了手」的地方，記下來給設定頁的
+    // 「可能延遲」判斷用——精確鬧鐘只在退回 F62 這條路上才影響準時度。
+    noteForegroundTakeover(taken);
     if (!taken) scheduleNativeRest(seconds);
   });
 }

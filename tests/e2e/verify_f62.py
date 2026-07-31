@@ -163,14 +163,27 @@ def verify_web(page, base: str) -> None:
           "⑦ web 版沒有 Capacitor bridge（分流判定的前提成立）")
 
 
-def verify_native(page, base: str, perm: str, exact: str, sys_on: bool = True) -> dict:
+def verify_native(
+    page, base: str, perm: str, exact: str, sys_on: bool = True, fallback: bool = False
+) -> dict:
+    """`fallback`：這台裝置上前景服務曾經接不了手（F107 的紀錄）。
+
+    F107 起「可能延遲」要**兩個**條件都成立才警告——精確鬧鐘被關，而且前景服務
+    實際發生過接不了手。只有權限被關時倒數仍走前景服務，根本不碰鬧鐘排程。
+    """
     args = f"({perm!r}, {exact!r}, {str(sys_on).lower()})"
+    seed = (
+        "localStorage.setItem('liftlog.fgFallbackSeen', '1');"
+        if fallback
+        else "localStorage.removeItem('liftlog.fgFallbackSeen');"
+    )
     page.add_init_script(FAKE_PLUGIN.strip().join(["(", f"){args}"]))
     page.goto(base, wait_until="domcontentloaded")
     page.wait_for_selector("input", timeout=10_000)
     return page.evaluate(
         "async () => {"
         "  const rn = await import('/js/rest-notify.js');"
+        f" {seed}"
         "  localStorage.removeItem('liftlog.nativeNotifyEnabled');"
         "  await rn.refreshRestNotifyState();"
         "  const supported = rn.restNotifySupported();"
@@ -236,10 +249,20 @@ def main() -> int:
                   "⑤ 未啟用時不排程（no-op，與 F31 一致）")
 
             # 情境 C：通知允許但精確鬧鐘被關 → 要提示會延遲
+            # ⚠ F107 起還要加一個條件：前景服務**實際**接不了手過。自 F63 起主要路徑是
+            # 前景服務（自己跑 CountDownTimer、不碰鬧鐘排程），只看權限會誤報。
             ctx = browser.new_context(viewport=PHONE)
-            c = verify_native(ctx.new_page(), base, "granted", "denied")
+            c = verify_native(ctx.new_page(), base, "granted", "denied", fallback=True)
             ctx.close()
-            check(c["delayed"] is True, "③ 精確鬧鐘被關時 restNotifyDelayed 為 true（UI 會標示）")
+            check(c["delayed"] is True,
+                  "③ 精確鬧鐘被關＋前景服務出過事 → restNotifyDelayed 為 true")
+
+            # F107 的反面：同樣被關，但前景服務一直接得了手 → **不警告**
+            ctx = browser.new_context(viewport=PHONE)
+            c_ok = verify_native(ctx.new_page(), base, "granted", "denied", fallback=False)
+            ctx.close()
+            check(c_ok["delayed"] is False,
+                  "③ F107：沒有接手失敗的紀錄就不警告（消滅誤報；本條取代原本只看權限的判定）")
 
             # 情境 D（2026-07-28 真機抓到的回歸）：checkPermissions 說 granted，
             # 但使用者在系統設定關掉了通知。舊版會顯示「開」然後靜默失敗。
