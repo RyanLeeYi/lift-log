@@ -1806,8 +1806,8 @@
     {
       "id": "F97",
       "name": "編輯課表：拖曳排序（取代 ↑↓）",
-      "status": "failing",
-      "evidence": "（2026-07-31 v108。實作完成、自動化與真機都綠；等 Ryan 用手指確認一次即可改 passing。）\n實作：新檔 app/static/js/drag-sort.js（Pointer Events；300ms 長按閘門 + 8px slop；內容座標；單一可重入 cleanup）、templates.js 移除上下箭頭與 swap()、app.css 的 .tpl-item.dragging、sw.js SHELL。\n**真機回報的 bug 與修法（2026-07-31 Ryan：「他沒辦法拖曳」）**：手指與滑鼠在瀏覽器裡是兩套機制。捲動容器上的觸控預設由 compositor 接管，它一判定是捲動就送 pointercancel 把拖曳抽走——長按明明已進入拖曳態，手指一動就被抽掉。pointermove 的 preventDefault() 對觸控無效（規格如此），要擋只能擋 non-passive 的 touchmove；另加 user-select:none 擋長按文字選取（同樣會收走觸控）。滑鼠 pipeline 完全碰不到這一段，所以 31/31 全綠卻真機掛掉。\n自動化：verify_f97.py **36/36**，新增觸控節（CDP Input.dispatchTouchEvent，has_touch 情境）——含「手指移動後仍在拖曳態」（真機掛掉的那一點）與反面「清單真的捲得動」（把捲動擋死也會讓拖曳那條變綠）。修之前這一節會 fail，是先重現再修的。\nverify_f88 31/31；ruff All checks passed；pytest 274 passed。\n真機（SM-N9750，dev v108）：`adb shell input draganddrop` 拖曳成功，順序由「槓鈴臥推／肩推」變成「肩推／槓鈴臥推」（截圖 dev-25）。⚠ 這是觸控注入不是真手指，走的是同一條 touch pipeline 但按壓力道與手指抖動測不到——請 Ryan 實際拖一次再改 passing。\n⑦ F88 ③ 的「右 上下箭頭 刪除」一句已標 superseded_by 本條。\n**更正**：上一輪 evidence 寫「adb 注入模擬不了長按後拖曳，是注入限制不是實作問題」——**這個推論是錯的**。當時拖不動就是這個 bug，注入沒問題。教訓：工具測不出來時，先假設是自己的東西壞了，不要先怪工具。",
+      "status": "passing",
+      "evidence": "（2026-07-31 v108，passing。）\n⑨ 的真機那半：Ryan 2026-07-31 在真機上實測回報「卡片太大一個拖拉不好拉」——**拖得動**，長按門檻沒有跟清單捲動打架。手感問題另開 F98 處理，不影響本條成立。\n實作：新檔 app/static/js/drag-sort.js（Pointer Events；300ms 長按閘門 + 8px slop；內容座標；單一可重入 cleanup）、templates.js 移除上下箭頭與 swap()、app.css 的 .tpl-item.dragging、sw.js SHELL。\n**真機回報的 bug 與修法（2026-07-31 Ryan：「他沒辦法拖曳」）**：手指與滑鼠在瀏覽器裡是兩套機制。捲動容器上的觸控預設由 compositor 接管，它一判定是捲動就送 pointercancel 把拖曳抽走——長按明明已進入拖曳態，手指一動就被抽掉。pointermove 的 preventDefault() 對觸控無效（規格如此），要擋只能擋 non-passive 的 touchmove；另加 user-select:none 擋長按文字選取（同樣會收走觸控）。滑鼠 pipeline 完全碰不到這一段，所以 31/31 全綠卻真機掛掉。\n自動化：verify_f97.py **36/36**，新增觸控節（CDP Input.dispatchTouchEvent，has_touch 情境）——含「手指移動後仍在拖曳態」（真機掛掉的那一點）與反面「清單真的捲得動」（把捲動擋死也會讓拖曳那條變綠）。修之前這一節會 fail，是先重現再修的。\nverify_f88 31/31；ruff All checks passed；pytest 274 passed。\n真機（SM-N9750，dev v108）：`adb shell input draganddrop` 拖曳成功，順序由「槓鈴臥推／肩推」變成「肩推／槓鈴臥推」（截圖 dev-25）。⚠ 這是觸控注入不是真手指，走的是同一條 touch pipeline 但按壓力道與手指抖動測不到——請 Ryan 實際拖一次再改 passing。\n⑦ F88 ③ 的「右 上下箭頭 刪除」一句已標 superseded_by 本條。\n**更正**：上一輪 evidence 寫「adb 注入模擬不了長按後拖曳，是注入限制不是實作問題」——**這個推論是錯的**。當時拖不動就是這個 bug，注入沒問題。教訓：工具測不出來時，先假設是自己的東西壞了，不要先怪工具。",
       "touches": [
         "app/static/js/drag-sort.js",
         "app/static/js/templates.js",
@@ -1817,6 +1817,22 @@
         "tests/e2e/verify_f88.py"
       ],
       "acceptance": "（2026-07-30 Ryan 提案並定案兩項取捨；同日以「1.拿掉 2.照做」簽核凍結——①拿掉上下箭頭不留備援、②F96 先行）\n① 編輯課表的動作卡改為**拖曳排序**，取代 ↑↓ 兩顆鈕。Ryan 2026-07-30 決定**拿掉 ↑↓**（不保留備援）——理由：編輯課表不是高頻操作，版面乾淨優先。代價已知並接受：排序只剩拖曳這一條路，手滑成本較高。\n② 長按進入拖曳（300ms 門檻），避免與清單捲動搶手勢——`.tpl-items` 超過 2 個動作就是可捲容器，按下去要能分辨「捲清單」與「拖卡片」。長按不好按與 F74「濕手好按」的拉扯已知；拖曳是次要操作，可接受。\n③ 拖曳中的那張卡：`--card-hi` 底 ＋ 較高的陰影，其餘卡片讓位。**這就是 F96 拿掉的高亮回來的方式——它現在對應一個真實狀態。**\n④ 拖到清單上下邊緣時自動捲動，否則長清單根本拖不到目的地。\n⑤ 放開後把新順序寫回 `tpl.editing.items` 並存草稿；F30 的「未儲存變更」判斷要涵蓋順序變更（拖完沒存就離開要跳確認）。\n⑥ 取消路徑：拖到一半放回原位＝不變更；拖曳中被中斷（來電、切背景、view 被移除）要回到穩定狀態，不得留下半拖曳的卡片或錯位的清單。\n⑦ ✕ 保留。移除 ↑↓ 後控制列剩「− N 組 ＋」與 ✕，觸控目標與間距仍照 F74（≥44px、鈕間 ≥8px）；F88 ③ 的「右「↑ ↓ ✕」」一句標 superseded_by 本條。\n⑧ F21 的清單捲動門檻與捲動位置保留、F51 的按鈕貼底、F52 的加動作視窗高度穩定，全部不回歸。\n⑨ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f97.py（Playwright 用 mouse.down/move/up 模擬拖曳，斷言順序真的改變且草稿有更新）＋ **真機用真手指測一次**（滑鼠模擬測不到長按與捲動搶手勢的衝突）。\n⑩ 無障礙備援的取捨已記錄：拿掉 ↑↓ 之後，沒有非拖曳的排序方式。單人自用 app 且 Ryan 明確選擇，接受；若日後對外分享，這條要重新評估。"
+    },
+    {
+      "id": "F98",
+      "name": "編輯課表動作卡收合／展開（拖曳時全部收起）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-07-31 Ryan 提案，待簽核）\n（起因：F97 上線後 Ryan 真機實測「卡片太大一個拖拉不好拉」。拖得動，但一張卡佔掉大半個螢幕，\n拖三個動作要跨兩個螢幕高度。這條處理的是手感，不是功能缺陷。）\n\n① 動作卡改為**收合／展開兩態**。收合態一行帶過：動作名＋英文別名、「N 組 · 休息 Xs」摘要、\n   刪除鈕；展開態＝現在的完整內容（組數 stepper、參考休息快選與自訂輸入、刪除鈕）。\n② **預設全部收合**（Ryan 決定）。進編輯課表看到的是一份精簡清單，六個動作一眼看完也好拖。\n   代價已知並接受：要改組數或休息得多點一次。\n③ **點卡片切換收放**，且**互斥——同時只展開一張**（Ryan 決定）。清單長度因此可預期，\n   不會又變回一整頁長。點刪除鈕不算點卡片（不得順手把卡片收放掉）。\n④ **長按進入拖曳時，所有卡片一律收起**（Ryan 決定）——包含正在拖的那張與原本展開的那張。\n   整份清單變短，看得到要拖去哪、拖曳距離也短。放開後恢復拖曳前的展開狀態。\n   只收被拖的那張不算數：其餘卡片還是很高，一樣要拖很遠。\n⑤ 三種手勢**不得互搶**，這條是本 feature 的核心風險：\n   - 點一下（不移動、未過長按門檻）＝收放\n   - 長按 300ms ＝進入拖曳（F97 的門檻不變）\n   - 按下就滑 ＝捲清單（F97 的 8px slop 不變）\n   拖曳結束後那一下的 click **不得**觸發收放（拖完卡片自己收起來是 bug）。\n⑥ 收合態的觸控目標仍照 F74：卡片本體與刪除鈕 ≥44px，鈕間距 ≥8px。\n   收合讓卡片變矮，這條是防它矮過頭。\n⑦ 收放與拖曳的過場沿用既有節奏（160ms ease-out），並尊重 prefers-reduced-motion。\n⑧ 不回歸：F21（清單捲動門檻與捲動位置保留）、F51（按鈕貼底）、F52（加動作視窗高度穩定）、\n   F96（每張卡底色一致，沒有假高亮）、F97（拖曳排序、✕ 保留、上下箭頭不回來）。\n⑨ 收放狀態**不進草稿也不進 API**——它是純檢視狀態，不是課表內容。\n   F30 的「未儲存變更」判斷不得因為收放而誤判成有變更。\n⑩ 驗收：ruff ＋ pytest ＋ tests/e2e/verify_f98.py（**必須含觸控節**——F97 的教訓：\n   碰觸控手勢的東西用滑鼠測會假綠）＋ verify_f97／verify_f88 回歸 ＋ 真機拖一次確認手感真的改善。",
+      "touches": [
+        "app/static/js/templates.js",
+        "app/static/js/drag-sort.js",
+        "app/static/css/app.css",
+        "tests/e2e/verify_f98.py"
+      ],
+      "requires": [
+        "F97"
+      ]
     }
   ]
 }
