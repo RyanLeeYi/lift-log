@@ -393,9 +393,24 @@ body {
 }
 .done-row.pending { opacity: .75; }
 
-.done-list { display: flex; flex-direction: column; gap: 6px; }
-/* F20：組數 > 2 時固定約 2 列高度、內部上下捲動——下方 steppers/主按鈕位置不被推走 */
-.done-list.scrollable { max-height: 88px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.done-list {
+  display: flex; flex-direction: column; gap: 6px;
+  /* F99：一列的實際高度＝圖示鈕的觸控高 44（F77 ③ 訂的）＋ 上下內距 6+6 ＋ 分隔線 1。
+     F20 當初寫死 88px，但一列從來就不是 44px——88 剛好切在第二列中間，
+     矮螢幕那條 48px 甚至裝不下一列。高度一律由這個變數推導，不再出現生數字。 */
+  --done-row-h: 57px;
+  --done-list-pad: 20px; /* .done-list.card 的上下內距 10+10（box-sizing: border-box） */
+  --done-rows-visible: 2; /* F20 訂的「約兩列」意圖保留 */
+}
+/* F20：組數 > 2 時固定高度、內部上下捲動——下方 steppers/主按鈕位置不被推走。
+   F99：可視區＝整數列，不切半列。 */
+.done-list.scrollable {
+  max-height: calc(var(--done-row-h) * var(--done-rows-visible) + var(--done-list-pad));
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  /* ④ 下緣淡出＝「下面還有」的線索。手機沒有可見捲軸，不給線索就看不出被截斷了 */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+}
 .done-row {
   /* F77 ③：兩顆圖示鈕之間至少 8px——擴大觸控區之後相鄰邊界更近，間距不能省 */
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
@@ -1377,7 +1392,9 @@ body {
   /* 累度軸的 slider 在矮螢幕收起——五顆停點本來就是它的第二條路，兩者擇一不損功能 */
   .rpe-axis .rpe-slider { display: none; }
   .done-list.card { padding: 6px 14px; }
-  .done-list.scrollable { max-height: 48px; }
+  /* F99：矮螢幕只給一列，但**必須是完整一列**——原本的 48px 連一列都放不下。
+     內距也跟著變（6+6），所以一起覆寫。 */
+  .done-list { --done-rows-visible: 1; --done-list-pad: 12px; }
   .rpe-axis { gap: 4px; }
   .log-btn { padding: 14px; font-size: 18px; }
 }
