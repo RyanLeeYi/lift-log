@@ -2082,58 +2082,72 @@ function refDateText(ref) {
   return `${Number(month)}/${Number(day)} · `;
 }
 
+/**
+ * 記下當前這一組。
+ *
+ * <p>F104 ④ 從 renderLogger() 的閉包裡抽出來：浮動視窗的「記下這組」必須走**同一份**實作。
+ * 記一組不是「打一個 API」那麼單純——離線佇列、組號遞增（F32）、樂觀更新、client_uuid 去重
+ * 全在這裡；再實作一次遲早會走鐘，而走鐘的是訓練資料本身。
+ *
+ * <p>讀的是 state 上的當前值（動作、組號、重量、次數、累度），呼叫端要先把它們設好。
+ */
+async function logCurrentSet() {
+  const exercise = state.exercise;
+  // F104 ④：浮動視窗也會呼叫這支，而那時 app 可能在背景、畫面狀態不見得完整。
+  // 沒有當前動作就什麼都不做——寧可讓呼叫端收到「沒記到」，也不要記到 undefined 上。
+  if (!exercise || state.workoutId === null) return false;
+  if (state.submitting) return false; // 防手機雙擊重複送出
+  state.submitting = true;
+  try {
+    const payload = {
+      client_uuid: crypto.randomUUID(),
+      exercise_id: exercise.id,
+      set_number: state.setNumber,
+      weight_kg: state.weightKg,
+      reps: state.reps,
+      rpe: state.rpe, // F40：累度軸一律有值（6–10），新組必帶 rpe
+      // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）。
+      // F70 ③ 不必在這裡加第二條來源：休息中按鈕一律是「繼續下一組」，
+      // 所以「休息還在跑就直接記組」在 UI 上不存在——跨畫面回來記組仍會先經過凍結那一步。
+      ...(state.pendingRestSeconds != null ? { rest_seconds: state.pendingRestSeconds } : {}),
+    };
+    let saved;
+    try {
+      saved = await api.logSet(state.workoutId, payload);
+    } catch (err) {
+      if (!isOffline(err)) throw err;
+      await enqueueSet(state.workoutId, payload); // 離線：入列緩衝，恢復連線自動補傳
+      saved = payload; // 標示由 state.queueStatus 推導，不另存旗標
+      await refreshQueueCounts();
+    }
+    // 到這裡才代表這組已保住（線上成功 or 離線入列成功）——此時才清凍結休息值；
+    // 若上面丟錯（非離線錯誤或入列失敗），pendingRestSeconds 保留，重試的 payload 仍帶 rest_seconds
+    state.pendingRestSeconds = null;
+    state.doneSets.push(saved);
+    // setCounts＝**完成組數**（menuCounts 的課表進度靠它），不是組號。
+    // 刪掉中間某組後兩者會分岔，下一組的編號改由 nextSetNumber() 從最大組號推。
+    // 取 max 而非直接指派：doneSets 可能不完整——舊狀態（沒有 doneByExercise 鏡射）
+    // 遇上離線時，pickExercise 的伺服器回填會失敗、doneSets 留空，
+    // 這時直接用長度會把先前存下的 N 組進度覆寫成 1 並持久化（Codex P2）。
+    // 刪組要讓數字降下來是走 reconcile 那條路，不受這裡的 max 影響。
+    state.setCounts[exercise.id] = Math.max(
+      state.doneSets.length,
+      state.setCounts[exercise.id] || 0,
+    );
+    state.setNumber += 1;
+    state.rpe = 6; // F40：記完重置回預設「輕鬆」（下一組不碰即帶 6）
+    rememberDoneSets(); // F32：換動作後回到此動作可還原本次組
+    saveActiveWorkout(); // setCounts/doneByExercise 持久化：重新整理後編號續接、組不丟
+    startRestTimer(); // 招牌時刻：LED 亮起＝已記錄
+  } finally {
+    state.submitting = false;
+  }
+  render();
+  return true; // F104 ⑤：呼叫端要據此回報成功／失敗，不能靜默
+}
+
 function renderLogger() {
   const exercise = state.exercise;
-
-  const logSet = async () => {
-    if (state.submitting) return; // 防手機雙擊重複送出
-    state.submitting = true;
-    try {
-      const payload = {
-        client_uuid: crypto.randomUUID(),
-        exercise_id: exercise.id,
-        set_number: state.setNumber,
-        weight_kg: state.weightKg,
-        reps: state.reps,
-        rpe: state.rpe, // F40：累度軸一律有值（6–10），新組必帶 rpe
-        // F15：rest_seconds 來自按「繼續下一組」凍結的值（第一組無、故不帶）。
-        // F70 ③ 不必在這裡加第二條來源：休息中按鈕一律是「繼續下一組」，
-        // 所以「休息還在跑就直接記組」在 UI 上不存在——跨畫面回來記組仍會先經過凍結那一步。
-        ...(state.pendingRestSeconds != null ? { rest_seconds: state.pendingRestSeconds } : {}),
-      };
-      let saved;
-      try {
-        saved = await api.logSet(state.workoutId, payload);
-      } catch (err) {
-        if (!isOffline(err)) throw err;
-        await enqueueSet(state.workoutId, payload); // 離線：入列緩衝，恢復連線自動補傳
-        saved = payload; // 標示由 state.queueStatus 推導，不另存旗標
-        await refreshQueueCounts();
-      }
-      // 到這裡才代表這組已保住（線上成功 or 離線入列成功）——此時才清凍結休息值；
-      // 若上面丟錯（非離線錯誤或入列失敗），pendingRestSeconds 保留，重試的 payload 仍帶 rest_seconds
-      state.pendingRestSeconds = null;
-      state.doneSets.push(saved);
-      // setCounts＝**完成組數**（menuCounts 的課表進度靠它），不是組號。
-      // 刪掉中間某組後兩者會分岔，下一組的編號改由 nextSetNumber() 從最大組號推。
-      // 取 max 而非直接指派：doneSets 可能不完整——舊狀態（沒有 doneByExercise 鏡射）
-      // 遇上離線時，pickExercise 的伺服器回填會失敗、doneSets 留空，
-      // 這時直接用長度會把先前存下的 N 組進度覆寫成 1 並持久化（Codex P2）。
-      // 刪組要讓數字降下來是走 reconcile 那條路，不受這裡的 max 影響。
-      state.setCounts[exercise.id] = Math.max(
-        state.doneSets.length,
-        state.setCounts[exercise.id] || 0,
-      );
-      state.setNumber += 1;
-      state.rpe = 6; // F40：記完重置回預設「輕鬆」（下一組不碰即帶 6）
-      rememberDoneSets(); // F32：換動作後回到此動作可還原本次組
-      saveActiveWorkout(); // setCounts/doneByExercise 持久化：重新整理後編號續接、組不丟
-      startRestTimer(); // 招牌時刻：LED 亮起＝已記錄
-    } finally {
-      state.submitting = false;
-    }
-    render();
-  };
 
   // F15：休息態按「繼續下一組」——凍結本次休息（含超時的絕對值）給下一組、停倒數、回就緒態
   const continueNext = () => {
@@ -2331,7 +2345,7 @@ function renderLogger() {
                 ? continueNext
                 : otherResting
                   ? async () => { state.crossRestConfirm = true; render(); }
-                  : logSet,
+                  : logCurrentSet,
             ),
         },
         [resting ? el("span", {}, ["繼續下一組"]) : iconLabel("check", "完成這組")],
@@ -2341,7 +2355,7 @@ function renderLogger() {
     // F101：上次全部紀錄的視窗（點上次提示卡開啟）
     ...(state.lastSetsOpen && state.lastSets.length > 0 ? [lastSetsModal()] : []),
     // F108 ⑤：別的動作還在休息時的確認視窗
-    ...(state.crossRestConfirm && otherResting ? [crossRestModal(logSet)] : []),
+    ...(state.crossRestConfirm && otherResting ? [crossRestModal(logCurrentSet)] : []),
   ]);
 }
 
@@ -2448,7 +2462,7 @@ function crossRestModal(onConfirm) {
             class: "btn btn-primary",
             onclick: () => {
               state.crossRestConfirm = false;
-              // ⑤ 確認＝結束那輪休息，再照常記這組（logSet 自己會開這個動作的新一輪）。
+              // ⑤ 確認＝結束那輪休息，再照常記這組（logCurrentSet 自己會開這個動作的新一輪）。
               // ⑥ 秒數不跨動作帶：pendingRestSeconds 在換動作時已經清掉了，這裡不補。
               stopRestTimer();
               guard(onConfirm);
