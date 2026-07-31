@@ -67,6 +67,8 @@ final class RestOverlay {
     private static TextView status;
     private static ImageView pauseButton; // F71 ①：暫停／繼續兩態共用同一顆
     private static TextView stopButton; // F73：鬧鐘響著時要轉警示色
+    /** F103 ③：停止態才出現，取代暫停與停止的位置——停了之後唯一有意義的操作。 */
+    private static TextView restartButton;
     private static TextView mainButton; // F89 ④：回 app 記下一組（超時轉 --over）
     /** F71：暫停狀態。兩邊（app 內卡片與這裡）必須顯示一致，否則使用者不知道該信誰。 */
     private static boolean paused;
@@ -227,6 +229,10 @@ final class RestOverlay {
             target = resetSeconds > 0 ? resetSeconds : target;
             if (pauseButton != null) pauseButton.setVisibility(value ? View.GONE : View.VISIBLE);
             if (stopButton != null) stopButton.setVisibility(value ? View.GONE : View.VISIBLE);
+            // F103 ④：再開始之後要回到正常倒數態——這一顆跟著消失，暫停與停止回來
+            if (restartButton != null) {
+                restartButton.setVisibility(value ? View.VISIBLE : View.GONE);
+            }
             applyAlarmTint(false);
             paintTime();
         });
@@ -596,6 +602,13 @@ final class RestOverlay {
         // 真正讓它消失的是右上角的 ✕（③）。emit 由服務端統一送，這裡不重複送。
         stopButton = pillButton(context, "停止", v -> RestTimerService.halt(context));
         row1.addView(stopButton, pillParams(context, false));
+
+        // F103 ③：停止之後唯一有意義的操作。停止態下暫停與停止都收起來（F100 ②），
+        // 若不補這一顆，使用者就只剩「純加減秒數」或「回 app」兩條路——Ryan 2026-07-31 回報的缺口。
+        restartButton = pillButton(context, "再開始", v -> RestTimerService.restart(context));
+        // first=true（不加起始間距）：停止態下暫停與停止是 GONE，它是這一列**唯一**可見的鈕，
+        // 帶著間距會整顆偏右看起來沒對齊。
+        row1.addView(restartButton, pillParams(context, true));
         wrap.addView(row1);
 
         LinearLayout row2 = new LinearLayout(context);
@@ -612,10 +625,10 @@ final class RestOverlay {
         // F100 ②：收合⇄展開會**重建**整棵 view，重建出來的兩顆是預設的 VISIBLE——
         // 已停止的狀態下它們必須維持收起來，否則收合再展開一次，暫停與停止就自己跑回來了
         //（2026-07-31 真機實測抓到；setHalted 只在按下停止的當下跑過一次，蓋不到之後的重建）。
-        if (halted) {
-            pauseButton.setVisibility(View.GONE);
-            stopButton.setVisibility(View.GONE);
-        }
+        // 停止態與一般態的按鈕組是互斥的，兩邊都要在重建後重新套用（見上方註解）。
+        pauseButton.setVisibility(halted ? View.GONE : View.VISIBLE);
+        stopButton.setVisibility(halted ? View.GONE : View.VISIBLE);
+        restartButton.setVisibility(halted ? View.VISIBLE : View.GONE);
         return wrap;
     }
 

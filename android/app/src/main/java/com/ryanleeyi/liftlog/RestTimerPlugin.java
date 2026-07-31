@@ -35,10 +35,21 @@ public class RestTimerPlugin extends Plugin {
     private static RestTimerPlugin instance;
 
     static void emit(String action) {
+        emit(action, -1);
+    }
+
+    /**
+     * F103 ⑤：帶秒數的版本。
+     *
+     * <p>停止態的 ±15s 全發生在原生層，前端無從得知「再開始」該從幾秒重跑；
+     * 只送動作名的話兩邊必然各說各話（⑤ 點名的實作風險）。負數＝這個動作沒有秒數語意。
+     */
+    static void emit(String action, int seconds) {
         RestTimerPlugin plugin = instance;
         if (plugin == null) return;
         JSObject data = new JSObject();
         data.put("action", action);
+        if (seconds >= 0) data.put("seconds", seconds);
         plugin.notifyListeners("restControl", data);
     }
 

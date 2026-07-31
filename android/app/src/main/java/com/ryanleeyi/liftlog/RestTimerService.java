@@ -55,6 +55,8 @@ public class RestTimerService extends Service {
      * （浮動視窗的 ✕、記下一組開新的休息、結束訓練）。
      */
     public static final String ACTION_HALT = "com.ryanleeyi.liftlog.REST_HALT";
+    /** F103 ③：停止之後的「再開始」——從目前顯示的秒數重新倒數（±15s 調過就是調完的值）。 */
+    public static final String ACTION_RESTART = "com.ryanleeyi.liftlog.REST_RESTART";
     /**
      * F72 ⑤：通知列上的「停止」動作鈕。
      *
@@ -119,7 +121,23 @@ public class RestTimerService extends Service {
             // stopForegroundRest() → ACTION_STOP，把服務與視窗一起關掉，
             // 剛好抵銷掉本條要的「視窗留著」（2026-07-31 真機第一版實測就是這樣消失的）。
             // 另開一個事件，前端只停自己那份倒數、不回送任何原生指令。
-            RestTimerPlugin.emit("halt");
+            RestTimerPlugin.emit("halt", targetSeconds);
+            return START_NOT_STICKY;
+        }
+
+        if (ACTION_RESTART.equals(action)) {
+            // ③ 從**目前顯示的秒數**重新倒數。停止態的 ±15s 調的就是這個值，
+            // 所以「調完再開始」才有意義（F100 ② 把 ±15s 留在停止態，就是為了這個）。
+            if (!halted) return START_NOT_STICKY; // 沒停止就沒有「再開始」可言
+            halted = false;
+            paused = false;
+            overtime = false;
+            startTimer(remainingSeconds);
+            notifyUpdate(buildNotification(remainingSeconds, false));
+            RestOverlay.setHalted(this, false, remainingSeconds);
+            // ⑤ 秒數一起送——前端要據此把自己那份倒數對上來，而且**不得**回送任何原生指令
+            // （回送會再啟動一次服務，同一輪被啟動兩次、秒數互相覆蓋）
+            RestTimerPlugin.emit("restart", remainingSeconds);
             return START_NOT_STICKY;
         }
 
@@ -149,7 +167,9 @@ public class RestTimerService extends Service {
             if (!paused && !halted) startTimer(remainingSeconds);
             notifyUpdate(buildNotification(remainingSeconds, false));
             RestOverlay.update(this, remainingSeconds);
-            RestTimerPlugin.emit(delta > 0 ? "plus15" : "minus15");
+            // F103 ⑥：帶上調完的剩餘秒數。前端在此之前**根本沒有處理**這兩個事件，
+            // 所以在視窗調完秒數回到 app，卡片的倒數與通知列是對不上的。
+            RestTimerPlugin.emit(delta > 0 ? "plus15" : "minus15", remainingSeconds);
             return START_NOT_STICKY;
         }
 
@@ -410,6 +430,11 @@ public class RestTimerService extends Service {
     /** F100：停止鈴聲並歸位，視窗與服務都留著。浮動視窗的停止鈕走這條，不走 stop()。 */
     static void halt(Context context) {
         context.startService(new Intent(context, RestTimerService.class).setAction(ACTION_HALT));
+    }
+
+    /** F103 ③：停止之後的再開始。浮動視窗的「再開始」鈕走這條。 */
+    static void restart(Context context) {
+        context.startService(new Intent(context, RestTimerService.class).setAction(ACTION_RESTART));
     }
 
     static void pause(Context context) {

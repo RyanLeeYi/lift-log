@@ -74,10 +74,12 @@ import {
   pauseRest,
   restElapsedSeconds,
   restHintFor,
+  restartRestFromNative,
   restPaused,
   restRemainingSeconds,
   restoreActiveWorkout,
   resumeRest,
+  syncRestTargetFromNative,
   saveActiveWorkout,
   state,
   todayIso,
@@ -88,7 +90,10 @@ const root = document.getElementById("app");
 let restTicker = null;
 let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
 let wakeLockPending = false; // request 進行中——完成時要重驗畫面狀態，避免離開後鎖洩漏
-let restAlerted = false; // 本段休息是否已提醒過；調長目標後重新武裝
+let restAlerted = false;
+// F103 ③：浮動視窗按停止時凍結的「這輪已休息秒數」。按「再開始」時接回去——
+// 停止再開始仍是同一輪休息，rest_seconds 要涵蓋整段而不是從停止那一刻重算。
+let haltedRestElapsed = 0; // 本段休息是否已提醒過；調長目標後重新武裝
 // F16/F19 done-list 行內編輯/單擊刪除（key＝已同步組的 id，未同步組退回 client_uuid）
 let editDraft = null; // {key, weight, reps, rpe} 正在行內編輯的草稿
 // F67：可用的更新（null＝沒有或還沒查完）與下載進度（0–1，null＝未在下載）。
@@ -2367,7 +2372,10 @@ function render() {
   syncWakeLock(); // fire-and-forget：logger 畫面取得、其他畫面釋放
   // F69 ①③：浮動視窗只在看不到 app 內倒數時出現。判準跟畫面本身綁在一起——
   // REST 卡片就是在 logger 且休息中才畫，這裡照抄同一個條件，不另立一套（另立就會走鐘）
-  syncRestCardVisible(state.screen === "logger" && state.restStartedAt !== null);
+  // F103 ②：判斷依據是「人在計時頁面」，不是「REST 卡片可見」。
+  // 舊條件在停止之後不成立（前端那份倒數已收掉、畫面上沒有卡片），視窗於是賴在 app 上面
+  // ——而那正是使用者按「回 app 記下一組」之後看到的畫面。
+  syncRestCardVisible(state.screen === "logger");
 }
 
 // F67：查有沒有新版。失敗一律當作沒有更新（checkForUpdate 內部吞掉），
@@ -2585,7 +2593,17 @@ refreshRestNotifyState().then(() => {
 });
 // F71 ⑥：原生端（浮動視窗）的暫停／繼續／停止回傳。只訂閱一次，事件驅動不輪詢。
 // 前端仍是狀態的事實來源——原生只回報「使用者按了什麼」，實際的計時狀態在這裡改。
-subscribeRestControl((action) => {
+subscribeRestControl((action, seconds) => {
+  // F103 ③：「再開始」是唯一在「前端這份倒數已經停掉」時仍要處理的動作——
+  // 其餘動作沒有進行中的休息就無事可做。這個判斷要放在 restStartedAt 檢查之前。
+  if (action === "restart") {
+    if (seconds === null) return; // 舊版 APK 不帶秒數：寧可不動，也不要憑空猜一個起點
+    restartRestFromNative(seconds, haltedRestElapsed);
+    haltedRestElapsed = 0;
+    startRestTicker();
+    render();
+    return;
+  }
   if (state.restStartedAt === null) return;
   if (action === "pause" && !restPaused()) pauseRest();
   else if (action === "resume" && restPaused()) resumeRest();
@@ -2595,8 +2613,14 @@ subscribeRestControl((action) => {
   } else if (action === "halt") {
     // F100：浮動視窗的停止＝停鈴並歸位，服務與視窗都留著。前端只收掉自己那份倒數，
     // **不得**回送停止指令——那會把剛剛要留下的視窗一起關掉。
-    state.pendingRestSeconds = restElapsedSeconds();
+    // F103 ③：記下這輪已經休息掉多少，「再開始」時接回去（同一輪休息不該從零重算）。
+    haltedRestElapsed = restElapsedSeconds() ?? 0;
+    state.pendingRestSeconds = haltedRestElapsed;
     stopRestTimer({ keepForegroundService: true });
+  } else if (action === "plus15" || action === "minus15") {
+    // F103 ⑥：原生早就在送這兩個事件，但前端一直沒接——在視窗調完秒數回到 app，
+    // 卡片與通知列的倒數是對不上的。
+    if (seconds === null || !syncRestTargetFromNative(seconds)) return;
   } else return;
   render();
 });

@@ -392,7 +392,11 @@ export function onNativeRestControl(handler) {
   const api = restTimerPlugin();
   if (!api?.addListener) return;
   try {
-    api.addListener("restControl", (event) => handler(event?.action));
+    // F103 ⑤：payload 要帶秒數。停止態的 ±15s 全發生在原生層，前端無從得知
+    // 「再開始」該從幾秒重跑；只送動作名的話兩邊必然各說各話。
+    api.addListener("restControl", (event) =>
+      handler(event?.action, typeof event?.seconds === "number" ? event.seconds : null),
+    );
   } catch {
     /* 舊版 APK 沒有這個事件：退回只有 app 內控制得動，不致命 */
   }

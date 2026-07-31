@@ -5,7 +5,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v114";
+export const APP_VERSION = "v115";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -218,6 +218,40 @@ export function pauseRest() {
 }
 
 /** F71 ②：繼續——開新的一段，從剩餘秒數接續（不重頭算）。 */
+/**
+ * F103 ③⑤：浮動視窗按了「再開始」——從原生給的剩餘秒數接續這一輪。
+ *
+ * <p>⚠ 這條路**不得**呼叫 scheduleRestNotify()。那會再叫一次原生服務，同一輪被啟動兩次、
+ * 秒數互相覆蓋（與 F100 第一版 halt→stop 互相抵銷是同一族的 bug）。原生那邊已經在跑了，
+ * 前端只要把自己的狀態對上去。
+ *
+ * @param {number} seconds 原生端當下的剩餘秒數（±15s 調過的話就是調完的值）
+ * @param {number} carriedElapsed 停止之前已經休息掉的秒數。接回去而不是歸零——
+ *   停止再開始仍是「同一輪休息」，寫進下一組的 rest_seconds 要涵蓋整段。
+ */
+export function restartRestFromNative(seconds, carriedElapsed = 0) {
+  const now = Date.now();
+  state.restStartedAt = now;
+  state.restAccumulatedMs = Math.max(0, carriedElapsed) * 1000;
+  state.restResumedAt = now;
+  state.restTargetSeconds = Math.max(0, carriedElapsed) + seconds;
+  state.pendingRestSeconds = null; // 這輪還沒結束，別讓它被下一組當成凍結值取用
+}
+
+/**
+ * F103 ⑥：浮動視窗按了 ±15s——把 app 內倒數的基準對到原生給的剩餘秒數。
+ *
+ * <p>在此之前原生會送 plus15／minus15，但前端**根本沒有處理**，所以在視窗調完秒數
+ * 回到 app，卡片的倒數與通知列是對不上的。改基準而不是改已經過去的時間：
+ * 目標 = 已經過的 + 原生說的剩餘。
+ */
+export function syncRestTargetFromNative(seconds) {
+  const elapsed = restElapsedSeconds();
+  if (elapsed === null) return false;
+  state.restTargetSeconds = elapsed + seconds;
+  return true;
+}
+
 export function resumeRest() {
   if (state.restStartedAt === null || state.restResumedAt !== null) return;
   state.restResumedAt = Date.now();
