@@ -330,7 +330,9 @@ body {
   border: none;
   border-radius: var(--r-card);
   padding: 10px;
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  /* F102 ⑥：數字變成可點的觸控目標之後，F74 的「鈕間距 ≥8px」就適用於它與 ± 之間了
+     （以前數字只是靜態文字，這條規則碰不到它）。6px 因此不夠。 */
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .stepper .name { color: var(--text-dim); font-size: 12px; letter-spacing: .15em; }
 .stepper output {
@@ -340,6 +342,34 @@ body {
   font-weight: 600;
   line-height: 1.1;
 }
+/* F102：數字可點擊直接輸入。⑥ 觸控區 ≥44px——字級本來就 44，靠內距把可點區撐開，
+   視覺不變（不加框不變色，加了會讓它看起來像輸入框而不是數字）。 */
+.stepper output.editable {
+  cursor: pointer;
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+  min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.stepper output.editable:active { background: var(--card-hi); }
+.stepper output.editable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 輸入態沿用同一個字級與字體，換的只是底色——換掉字級會讓數字在切換瞬間跳動 */
+.stepper .value-input {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.1;
+  width: 100%;
+  min-height: 44px;
+  text-align: center;
+  background: var(--card-hi);
+  border: none;
+  border-radius: var(--r-pill);
+  color: var(--text);
+  padding: 2px 10px;
+}
+.stepper .value-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .stepper .pair { display: flex; gap: 8px; width: 100%; }
 .stepper .pair .btn { flex: 1; font-size: 22px; padding: 10px; font-family: var(--mono); }
 
@@ -1386,8 +1416,9 @@ body {
   .rest-controls .chip { padding: 10px 0; font-size: 12px; }
   .last-ref { gap: 8px; padding: 12px 16px; }
   .logger-foot { gap: 8px; }
-  .stepper { padding: 8px; gap: 4px; }
-  .stepper output { font-size: 32px; }
+  /* 矮螢幕靠內距省高度，間距仍照 F74 的 8px（見上方 .stepper 的說明） */
+  .stepper { padding: 6px; gap: 8px; }
+  .stepper output, .stepper .value-input { font-size: 32px; }
   .stepper .pair .btn { padding: 8px; font-size: 18px; }
   /* 累度軸的 slider 在矮螢幕收起——五顆停點本來就是它的第二條路，兩者擇一不損功能 */
   .rpe-axis .rpe-slider { display: none; }

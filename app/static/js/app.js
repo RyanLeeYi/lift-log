@@ -11,7 +11,7 @@ import {
   downloadAndInstall,
   isDismissed,
 } from "./app-update.js";
-import { el, RPE_WORDS, rpePicker, stepper } from "./dom.js";
+import { el, parseReps, parseWeight, RPE_WORDS, rpePicker, stepper } from "./dom.js";
 // F76：結構性圖示一律走這裡（emoji 是彩色字形，跨平台不一致且吃不到 CSS 顏色）
 import { icon, iconLabel } from "./icons.js";
 import { apiBase, isNativeApp } from "./env.js";
@@ -2128,11 +2128,13 @@ function renderLogger() {
           stepper(exercise.is_bodyweight ? "負重 KG" : "KG", editDraft.weight, [
             ["−2.5", -2.5],
             ["+2.5", +2.5],
-          ], (d) => { editDraft.weight = Math.max(0, Math.round((editDraft.weight + d) * 10) / 10); }, render),
+          ], (d) => { editDraft.weight = Math.max(0, Math.round((editDraft.weight + d) * 10) / 10); }, render,
+          { set: (v) => { editDraft.weight = v; }, parse: parseWeight }),
           stepper("REPS", editDraft.reps, [
             ["−1", -1],
             ["+1", +1],
-          ], (d) => { editDraft.reps = Math.max(1, editDraft.reps + d); }, render),
+          ], (d) => { editDraft.reps = Math.max(1, editDraft.reps + d); }, render,
+          { set: (v) => { editDraft.reps = v; }, parse: parseReps }),
         ]),
         rpePicker(editDraft.rpe, (v) => { editDraft.rpe = v; }, render),
         el("div", { class: "edit-actions" }, [
@@ -2216,11 +2218,13 @@ function renderLogger() {
         stepper(exercise.is_bodyweight ? "負重 KG" : "KG", state.weightKg, [
           ["−2.5", -2.5],
           ["+2.5", +2.5],
-        ], (d) => { state.weightKg = Math.max(0, Math.round((state.weightKg + d) * 10) / 10); }, render),
+        ], (d) => { state.weightKg = Math.max(0, Math.round((state.weightKg + d) * 10) / 10); }, render,
+        { set: (v) => { state.weightKg = v; }, parse: parseWeight }),
         stepper("REPS", state.reps, [
           ["−1", -1],
           ["+1", +1],
-        ], (d) => { state.reps = Math.max(1, state.reps + d); }, render),
+        ], (d) => { state.reps = Math.max(1, state.reps + d); }, render,
+        { set: (v) => { state.reps = v; }, parse: parseReps }),
       ]),
       rpePicker(state.rpe, (v) => { state.rpe = v; }, render),
       el(
