@@ -132,6 +132,7 @@ def run_checks(base: str) -> None:
         m = metrics(page)
         check(m["rows"] == 2, f"前提：兩筆（{m['rows']}）")
         check(not m["scrollable"], "反面：2 筆不限高（F20 訂的門檻是 >2）")
+        h2 = m["clientH"]  # F111：第三筆之後不得比這個還矮
 
         # 3 筆：開始限高，這裡是本條的重點
         log_sets(page, 1)
@@ -145,6 +146,14 @@ def run_checks(base: str) -> None:
         )
         check(n >= 1, f"③ 至少裝得下一整列（{n:.2f}）")
         check(round(n) == 2, f"① 維持 F20 的「約兩列」意圖（實測 {round(n)} 列）")
+        # F111（Ryan 2026-08-01：「超過兩組的時候，最少要能顯示兩組的大小」）：
+        # ⚠ 這條是本支最容易被漏掉的——原本只驗「高度是列高的整數倍」，而 69px（1 列）
+        # 完全符合那個條件，所以「記到第三組時清單在眼前縮掉一半」是**全綠**通過的。
+        # 驗的是「不得比上一個狀態更矮」，不是「符合某個公式」。
+        check(
+            m["clientH"] >= h2 - 1,
+            f"F111：記到第三筆**不得**讓清單變矮（2 筆 {h2:.0f} → 3 筆 {m['clientH']:.0f}）",
+        )
         check(m["scrollH"] > m["clientH"] + 1, "3 筆時真的捲得動（有東西被截斷）")
         check(m["masked"], "④ 有下緣淡出當「下面還有」的線索")
 
@@ -160,17 +169,21 @@ def run_checks(base: str) -> None:
         n = whole_rows(m)
         check(abs(n - round(n)) <= 0.06, f"① 六筆時仍是整數列（{n:.2f}）")
 
-        # ③ 矮螢幕：只給一列，但必須是完整一列——原本的 48px 連一列都放不下
-        page.set_viewport_size({"width": 390, "height": 640})
-        page.wait_for_timeout(400)
-        m = metrics(page)
-        n = whole_rows(m)
-        check(
-            n >= 1,
-            f"③ 矮螢幕至少一整列（實測 {n:.2f} 列；clientH={m['clientH']:.0f} "
-            f"rowH={m['rowH']:.0f}）——舊的 48px 會在這裡掛掉",
-        )
-        check(abs(n - round(n)) <= 0.06, f"③ 矮螢幕也是整數列（{n:.2f}）")
+        # F111：矮螢幕不再降成一列。原本降一列的後果是「記到第三組時清單縮掉一半」，
+        # 比 F99 要修的那個 bug 更難看；而 2 筆時清單本來就是兩列高且不溢出，
+        # 可見「矮螢幕放不下兩列」這個假設本身是錯的（384×727 實測）。
+        for size in ({"width": 384, "height": 727}, {"width": 390, "height": 640}):
+            page.set_viewport_size(size)
+            page.wait_for_timeout(400)
+            m = metrics(page)
+            n = whole_rows(m)
+            label = f"{size['width']}×{size['height']}"
+            check(
+                round(n) >= 2,
+                f"F111 {label}：超過兩組時至少顯示兩列（實測 {n:.2f} 列；"
+                f"clientH={m['clientH']:.0f} rowH={m['rowH']:.0f}）",
+            )
+            check(abs(n - round(n)) <= 0.06, f"③ {label} 仍是整數列（{n:.2f}）")
 
         # ⑤ F16 不回歸：進入行內編輯時不限高（編輯表單要完整可見）
         page.set_viewport_size(PHONE)

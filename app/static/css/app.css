@@ -1466,7 +1466,12 @@ body {
   .done-list.card { padding: 6px 14px; }
   /* F99：矮螢幕只給一列，但**必須是完整一列**——原本的 48px 連一列都放不下。
      內距也跟著變（6+6），所以一起覆寫。 */
-  .done-list { --done-rows-visible: 1; --done-list-pad: 12px; }
+  /* F111：矮螢幕**不再**降成一列。Ryan 2026-08-01：「超過兩組的時候，最少要能顯示兩組的大小」。
+     原本降一列的後果是——記到第三組的那一刻，清單從 125px 縮成 69px 在眼前少掉一半，
+     比 F99 要修的那個 bug 更難看。而 2 組時清單本來就是 125px 且不溢出（384×727 實測），
+     可見「矮螢幕放不下兩列」這個假設本身是錯的。
+     內距仍跟著小螢幕收，但列數不動。 */
+  .done-list { --done-list-pad: 12px; }
   .rpe-axis { gap: 4px; }
   .log-btn { padding: 14px; font-size: 18px; }
 }
