@@ -121,13 +121,27 @@ def seed(base: str, today: date) -> dict:
         "date": today.isoformat(), "energy": 3, "sleep_quality": 4, "note": "腰有點緊",
     })
 
-    # 熱力分級要靠「同月不同噸位」才驗得出來——只有一天有練的話永遠只看得到 lv4。
-    # 當月最大噸位是今天的 3370，以下三天各取約 20% / 45% / 70%，落在 lv1 / lv2 / lv3。
+    # F115：**這些日子全部放進上個月，不是「今天往前推幾天」。**
+    # 原本用 today-7/-8/-9 與 today-3，月初跑就會滑到上個月——2026-08-01 那天
+    # 「① 副標 5 天」「① 上個月 0 天」「① 下個月鈕切得回來」三條同時變紅，
+    # 而產品完全沒有問題。測試自己造資料就該自己決定月份，不能假設今天離月初夠遠、
+    # 也不能假設上個月是空的。
+    #
+    # 上個月是**整個都在過去**的一個月，且必定有 ≥28 天，所以 5/10/15/20/25 號永遠存在、
+    # 永遠可點。熱力分級要「同一個月內比噸位」，四階因此要湊在同一個月裡——
+    # 上個月放四天（含當月最大的那天），今天所在的月份只有今天一天（自己就是最大 → lv4）。
+    last_day_prev = today.replace(day=1) - timedelta(days=1)
+    prev_month = last_day_prev.replace(day=1)
+
+    def prev_day(dom: int) -> date:
+        return prev_month.replace(day=dom)
+
+    # 上個月的最大噸位＝335×10＝3350（20 號）；其餘取約 20% / 45% / 70% 落在 lv1 / lv2 / lv3
     graded: dict[str, int] = {}
-    for offset, (kg, reps, want) in enumerate(
-        [(67.0, 10, 1), (150.0, 10, 2), (235.0, 10, 3)], start=1
-    ):
-        day = today - timedelta(days=offset + 6)  # 往前挪一週，避開今天與未來日
+    for dom, (kg, reps, want) in {
+        5: (67.0, 10, 1), 10: (150.0, 10, 2), 15: (235.0, 10, 3), 20: (335.0, 10, 4),
+    }.items():
+        day = prev_day(dom)
         wk = api(base, "/api/workouts", "POST", {"date": day.isoformat()})
         api(base, f"/api/workouts/{wk['id']}/sets", "POST", {
             "client_uuid": f"f85-lv{want}-0001", "exercise_id": ids[0],
@@ -136,7 +150,7 @@ def seed(base: str, today: date) -> dict:
         graded[day.isoformat()] = want
 
     # 「有訓練、但沒有課表」的一天：標題只該有日期，不該多出「· 課表名」
-    plain_day = today - timedelta(days=3)
+    plain_day = prev_day(25)
     plain = api(base, "/api/workouts", "POST", {"date": plain_day.isoformat()})
     # 兩組同重量不同次數 → 驗「平手取次數多者」為最佳組
     for n, (kg, reps) in enumerate([(90.0, 5), (90.0, 7)], start=1):
@@ -145,8 +159,8 @@ def seed(base: str, today: date) -> dict:
             "set_number": n, "weight_kg": kg, "reps": reps,
         })
     return {
-        "exercises": exercises, "workout": w,
-        "graded": graded, "plain_day": plain_day, "plain": plain,
+        "exercises": exercises, "workout": w, "graded": graded,
+        "plain_day": plain_day, "plain": plain, "prev_month": prev_month,
     }
 
 
@@ -182,7 +196,8 @@ def main() -> int:  # noqa: C901, PLR0915
             check(head.locator("h1").inner_text() == "訓練日曆",
                   f"① 標題「訓練日曆」（{head.locator('h1').inner_text()}）")
             sub = head.locator(".st").inner_text()
-            expect_sub = f"{today.year}年{today.month}月 · 5 天"
+            # F115：本月只有今天一天有訓練（其餘測資刻意放在上個月，見 seed 的註解）
+            expect_sub = f"{today.year}年{today.month}月 · 1 天"
             check(sub == expect_sub, f"① 副標「年月 · N 天」（{sub}）")
             check(head.locator(".back-btn").count() == 1, "① 左上返回鈕在標頭內")
             check(head.locator(".back-btn .icon").count() == 1, "① 返回鈕用 icons.js 圖示")
@@ -194,7 +209,10 @@ def main() -> int:  # noqa: C901, PLR0915
             sub_prev = head.locator(".st").inner_text()
             check(sub_prev.startswith(f"{prev_month.year}年{prev_month.month}月"),
                   f"① 上個月鈕切得動（{sub_prev}）")
-            check(" · 0 天" in sub_prev, f"① 上個月沒有訓練日 → 0 天（{sub_prev}）")
+            # 上個月有 5 天（4 個熱力階 ＋ 1 天無課表的訓練），數字由 seed 決定而不是碰運氣
+            expect_prev_days = len(graded) + 1
+            check(f" · {expect_prev_days} 天" in sub_prev,
+                  f"① 切月後訓練日數＝該月實際天數（期望 {expect_prev_days}，得到 {sub_prev}）")
             days_prev = page.locator(".cal-day").count()
             expected_prev = (today.replace(day=1) - timedelta(days=1)).day
             check(days_prev == expected_prev,
@@ -253,15 +271,24 @@ def main() -> int:  # noqa: C901, PLR0915
             # ---------- ④ 熱力階與未來日 ----------
             check(page.locator(f'.cal-day[aria-label="{today.isoformat()}"].lv4').count() == 1,
                   "④ 當月噸位最大的一天 → lv4")
+            # F115：四個熱力階都在上個月（熱力是「同月內比噸位」，四階必須湊在同一個月）。
+            # 切過去驗完再切回來——後面的未來日／明細檢查都以當月為前提。
+            page.locator(".cal-prev").click()
+            page.wait_for_timeout(700)
             for iso, want in graded.items():
                 cls = page.locator(f'.cal-day[aria-label="{iso}"]').get_attribute("class")
                 check(f"lv{want}" in cls, f"④ {iso} 依噸位落在 lv{want}（{cls}）")
             # 五階要真的看得出來：四個底色兩兩不同，否則「分 5 階」只是 class 名稱
             heats = [
                 css(page, f'.cal-day[aria-label="{iso}"]', "background-color")
-                for iso in [*graded, today.isoformat()]
+                for iso in graded
             ]
             check(len(set(heats)) == 4, f"④ lv1–lv4 底色互不相同（{heats}）")
+            page.locator(".cal-next").click()
+            page.wait_for_timeout(700)
+            # 切月會清掉選取（明細卡跟著消失），⑤ 以「今天被選中」為前提 → 重新點一次
+            page.locator(f'.cal-day[aria-label="{today.isoformat()}"]').click()
+            page.wait_for_timeout(700)
             future = today + timedelta(days=1)
             if future.month != today.month:
                 check(True, "④ 本月最後一天：未來日測試改在下個月（跳過本頁）")
@@ -296,6 +323,9 @@ def main() -> int:  # noqa: C901, PLR0915
             # 80×8 + 85×6 + 70×8 + (41+42)×10 ×2 動作 = 3370 kg
             check(re.fullmatch(r"[\d,]+ kg", tonnage) and "3,370" in tonnage,
                   f"⑤ 右側總噸位（{tonnage}）")
+            # F115：無課表那天也在上個月（見 seed）——切過去點它，驗完切回來
+            page.locator(".cal-prev").click()
+            page.wait_for_timeout(700)
             page.locator(f'.cal-day[aria-label="{plain_day.isoformat()}"]').click()
             page.wait_for_timeout(900)
             plain_title = page.locator(".cal-detail-head .d").inner_text()
@@ -305,6 +335,8 @@ def main() -> int:  # noqa: C901, PLR0915
             tie = page.locator(".cal-ex-block").first
             best_tie = tie.locator(".set-chip.best").inner_text()
             check(best_tie == "90×7 ★", f"⑦ 最重相同時取次數多者（{best_tie}）")
+            page.locator(".cal-next").click()
+            page.wait_for_timeout(700)
             page.locator(f'.cal-day[aria-label="{today.isoformat()}"]').click()
             page.wait_for_timeout(900)
 
