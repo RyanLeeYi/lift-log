@@ -252,9 +252,10 @@ def main():
             c_scrolls = page.locator(
                 ".menu-list.scrollable"
             ).count() == 1 and page.eval_on_selector(".menu-list.scrollable", SCROLLS)
-            head_out = page.eval_on_selector(
-                '.menu-head:has-text("今日菜單 ·")', OUTSIDE, ".menu-list"
-            )
+            # F83／F85 起菜單標頭改用全站的 .screen-head（返回 ＋ 課表名 ＋「已練 N 分」），
+            # 原本的 .menu-head 已不存在。F48 ③ 的本意＝**捲動不得把標頭推出畫面**，
+            # 對象換了、要求不變。
+            head_out = page.eval_on_selector(".screen-head", OUTSIDE, ".menu-list")
             # F49 起有課表時「臨時加動作」是一顆入口鈕（搜尋/清單收進懸浮視窗），此處驗那顆鈕；
             # F48 ③ 的本意＝菜單捲動不得把下方元素推出畫面，對象換了、要求不變。
             add_out = page.eval_on_selector(".add-exercise-open", OUTSIDE, ".menu-list")
@@ -265,13 +266,16 @@ def main():
             )
 
             # ④-B 滾輪捲菜單 → 記一組 → 回 picker（重繪）→ 位置保留
+            # F83 起菜單項目是 .menu-card（名稱在 .menu-card-name），不再是 .exercise-item；
+            # F76 起主按鈕的無障礙名稱不含圖示字元，所以用 .log-btn 而不是文字比對。
             menu_before = wheel_scroll(page, ".menu-list.scrollable", 40)
             last_name = (
-                page.locator(".menu-list .exercise-item").last.locator("span").first.inner_text()
+                page.locator(".menu-list .menu-card").last
+                .locator(".menu-card-name").first.inner_text()
             )
-            dispatch_click(page.locator(".menu-list .exercise-item").last)
+            dispatch_click(page.locator(".menu-list .menu-card").last)
             page.wait_for_selector(".screen.logger", timeout=8000)
-            page.locator(".btn", has_text="✓ 完成這組").click()
+            page.locator(".log-btn").first.click()
             page.wait_for_timeout(800)
             page.locator(".logger-back").click()
             page.wait_for_selector(".screen.picker", timeout=8000)
@@ -283,14 +287,16 @@ def main():
                 f"before={menu_before} after={menu_after}",
             )
 
-            # ⑥ F4 既有行為
-            row = page.locator(".menu-list .exercise-item", has_text=last_name).first
-            sub = row.locator(".sub").inner_text().strip()
+            # ⑥ F4 既有行為。F83 把「1/3」那行文字換成 setBars() 的分段指示條
+            # （.menu-bar，每組一段、已做的加 .done），語意不變＝「這個動作做了幾組」。
+            # 驗渲染出來的段數，不再比對文字。
+            row = page.locator(".menu-list .menu-card", has_text=last_name).first
+            done_bars = row.locator(".menu-bar.done").count()
+            total_bars = row.locator(".menu-bar").count()
             check(
-                "⑥ F4 既有行為不變：記錄後今日菜單進度顯示 1/3 且點亮",
-                sub.startswith("1/3")
-                and page.locator(".menu-list .exercise-item .sub.lit").count() >= 1,
-                f"sub={sub!r}",
+                "⑥ F4 既有行為不變：記錄後今日菜單顯示已做 1 段／共 3 段",
+                done_bars == 1 and total_bars == 3,
+                f"done={done_bars} total={total_bars}",
             )
 
             # ④（Codex P2）換一次訓練 → 新菜單從頂端
