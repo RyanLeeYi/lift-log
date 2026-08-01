@@ -185,15 +185,18 @@ def run_checks(base: str) -> None:
             )
             check(abs(n - round(n)) <= 0.06, f"③ {label} 仍是整數列（{n:.2f}）")
 
-        # ⑤ F16 不回歸：進入行內編輯時不限高（編輯表單要完整可見）
+        # ⑤ 原本是「F16：行內編輯時不限高（表單要完整可見）」。
+        # **F113 取代了它**：編輯改成懸浮視窗之後，那個理由消失，
+        # 清單高度反而不該再跟著編輯跳動（F113 ⑤）。斷言因此翻面。
         page.set_viewport_size(PHONE)
         page.wait_for_timeout(300)
-        page.locator(".done-row .icon-btn").first.click()
+        before = metrics(page)["clientH"]
+        page.locator(".done-row .edit-set").first.click()
         page.wait_for_timeout(600)
         m = metrics(page)
         check(
-            not m["scrollable"],
-            "⑤ F16 不回歸：行內編輯時不限高（編輯表單要完整可見）",
+            m["scrollable"] and abs(m["clientH"] - before) <= 1,
+            f"⑤ F113 取代：開編輯視窗時清單高度不變（{before:.0f} → {m['clientH']:.0f}）",
         )
 
         browser.close()

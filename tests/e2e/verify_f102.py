@@ -198,6 +198,20 @@ def run_checks(base: str) -> None:  # noqa: C901
             f"⑦ 輸入的值真的送出並出現在組列（實際「{row.strip()[:40]}」）",
         )
 
+        # ⚠ 2026-08-01 做 F113 時發現的**既有違規**：`@media (max-height: 840px)` 把步進器的
+        # 內距與字級收小之後，± 在 384×727（Ryan 的實機）量到 39px 高——低於 F74／F77
+        # 訂的 44px。390×844 量到 49px，所以這個違規一直沒被抓到。
+        # 那是每一組都要按、常常還是濕手在按的按鈕，所以把這個尺寸永久釘進來。
+        page.set_viewport_size({"width": 384, "height": 727})
+        page.wait_for_timeout(400)
+        small = page.evaluate(
+            """() => [...document.querySelectorAll('.logger-foot .steppers .pair .btn')]
+                 .map(b => b.getBoundingClientRect())
+                 .filter(r => r.width < 44 || r.height < 44)
+                 .map(r => Math.round(r.width) + 'x' + Math.round(r.height))"""
+        )
+        check(not small, f"F74／F77 不回歸：384×727 的 ± 仍 ≥44px（不足：{small}）")
+
         browser.close()
 
 

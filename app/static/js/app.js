@@ -2262,30 +2262,50 @@ function renderLogger() {
     render();
   };
 
+  /**
+   * F113 ①：編輯這一組的懸浮視窗（取代 F16 的行內展開）。
+   *
+   * <p>行內展開逼得 `.done-list` 在編輯時取消限高（表單要完整可見），清單高度因此
+   * 在開／關編輯時跳動——而 F99／F111 剛把「清單高度不要亂跳」整理好。
+   * 改成視窗之後那個理由消失，⑤ 也就順勢要求清單高度**不隨編輯改變**。
+   */
+  const editSetModal = (s) => {
+    const close = () => { editDraft = null; render(); };
+    return el(
+      "div",
+      { class: "modal-overlay", onclick: (e) => { if (e.target === e.currentTarget) close(); } },
+      [
+        el("div", { class: "modal edit-set-modal" }, [
+          el("div", { class: "modal-head" }, [`編輯 #${s.set_number}`]),
+          el("div", { class: "steppers" }, [
+            stepper(exercise.is_bodyweight ? "負重 KG" : "KG", editDraft.weight, [
+              ["−2.5", -2.5],
+              ["+2.5", +2.5],
+            ], (d) => {
+              editDraft.weight = Math.max(0, Math.round((editDraft.weight + d) * 10) / 10);
+            }, render,
+            { set: (v) => { editDraft.weight = v; }, parse: parseWeight }),
+            stepper("REPS", editDraft.reps, [
+              ["−1", -1],
+              ["+1", +1],
+            ], (d) => { editDraft.reps = Math.max(1, editDraft.reps + d); }, render,
+            { set: (v) => { editDraft.reps = v; }, parse: parseReps }),
+          ]),
+          rpePicker(editDraft.rpe, (v) => { editDraft.rpe = v; }, render),
+          el("div", { class: "modal-actions" }, [
+            el("button", { class: "btn btn-ghost", onclick: close }, ["取消"]),
+            el("button", {
+              class: "btn btn-primary save-edit",
+              onclick: () => guard(() => saveEditDoneSet(s)),
+            }, ["儲存"]),
+          ]),
+        ]),
+      ],
+    );
+  };
+
   const doneRow = (s) => {
     const key = setRowKey(s);
-    if (editDraft && editDraft.key === key) {
-      return el("div", { class: "done-row editing" }, [
-        el("div", { class: "edit-head" }, [`編輯 #${s.set_number}`]),
-        el("div", { class: "steppers" }, [
-          stepper(exercise.is_bodyweight ? "負重 KG" : "KG", editDraft.weight, [
-            ["−2.5", -2.5],
-            ["+2.5", +2.5],
-          ], (d) => { editDraft.weight = Math.max(0, Math.round((editDraft.weight + d) * 10) / 10); }, render,
-          { set: (v) => { editDraft.weight = v; }, parse: parseWeight }),
-          stepper("REPS", editDraft.reps, [
-            ["−1", -1],
-            ["+1", +1],
-          ], (d) => { editDraft.reps = Math.max(1, editDraft.reps + d); }, render,
-          { set: (v) => { editDraft.reps = v; }, parse: parseReps }),
-        ]),
-        rpePicker(editDraft.rpe, (v) => { editDraft.rpe = v; }, render),
-        el("div", { class: "edit-actions" }, [
-          el("button", { class: "btn btn-primary sm save-edit", onclick: () => guard(() => saveEditDoneSet(s)) }, ["儲存"]),
-          el("button", { class: "btn btn-ghost sm", onclick: () => { editDraft = null; render(); } }, ["取消"]),
-        ]),
-      ]);
-    }
     const queued = state.queueStatus[s.client_uuid]; // pending | failed | undefined（已同步）
     // F76：同步狀態標示改向量圖示——emoji 在不同 Android 版本長相不一，而這裡要一眼分辨
     // 「還在傳」與「傳失敗」，兩者的後果差很多
@@ -2365,7 +2385,9 @@ function renderLogger() {
       ? [
           el("section", {
             class: `card done-list${
-              state.doneSets.length > 2 && !editDraft ? " scrollable" : ""
+              // F113 ⑤：不再因為編輯而取消限高——那是行內表單時代的權宜，
+              // 現在表單在視窗裡，清單沒有理由跟著改高度（F99／F111 的規則優先）。
+              state.doneSets.length > 2 ? " scrollable" : ""
             }`,
           }, [...state.doneSets].reverse().map(doneRow)),
         ]
@@ -2430,6 +2452,13 @@ function renderLogger() {
     ...(state.lastSetsOpen && state.lastSets.length > 0 ? [lastSetsModal()] : []),
     // F108 ⑤：別的動作還在休息時的確認視窗
     ...(state.crossRestConfirm && otherResting ? [crossRestModal(logCurrentSet)] : []),
+    // F113 ①⑥：編輯這一組的視窗。editDraft 一次只會有一份，所以天然「只開一個」。
+    ...(editDraft
+      ? (() => {
+          const target = state.doneSets.find((x) => setRowKey(x) === editDraft.key);
+          return target ? [editSetModal(target)] : [];
+        })()
+      : []),
   ]);
 }
 

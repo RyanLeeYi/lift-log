@@ -473,10 +473,9 @@ body {
   background: var(--card-hi); border: none; border-radius: var(--r-pill);
 }
 /* 編輯態：展開成 steppers 迷你表單（與記錄新組同款控制項，觸控友善） */
-.done-row.editing { flex-direction: column; align-items: stretch; gap: 10px; }
-.done-row.editing .edit-head { color: var(--text-dim); font-family: var(--mono); font-size: 13px; }
-.done-row.editing .edit-actions { display: flex; gap: 10px; }
-.done-row.editing .edit-actions .btn { flex: 1; }
+/* F113：編輯改在視窗裡（.edit-set-modal），行內展開的樣式整組移除。
+   視窗沿用 .modal 的既有排版，只補一條——步進器在視窗裡不要被 margin-top: auto 推到底。 */
+.edit-set-modal .steppers { margin-top: 0; }
 .done-row .btn.sm { padding: 6px 10px; min-height: 44px; font-size: 14px; }
 
 /* F29：picker 底部（回首頁＋結束訓練）並排 */
@@ -1474,7 +1473,11 @@ body {
   /* 矮螢幕靠內距省高度，間距仍照 F74 的 8px（見上方 .stepper 的說明） */
   .stepper { padding: 6px; gap: 8px; }
   .stepper output, .stepper .value-input { font-size: 32px; }
-  .stepper .pair .btn { padding: 8px; font-size: 18px; }
+  /* ⚠ min-height 是必要的，不是保險。這條 media query 把內距與字級收小之後，
+     ± 在 384x727（Ryan 的實機）量到 **39px 高**——低於 F74／F77 訂的 44px，
+     而那是每一組都要按、常常還是濕手在按的按鈕。
+     390x844 量到 49px，所以這個違規一直沒被抓到（2026-08-01 做 F113 時才發現）。 */
+  .stepper .pair .btn { padding: 8px; font-size: 18px; min-height: 44px; }
   /* 累度軸的 slider 在矮螢幕收起——五顆停點本來就是它的第二條路，兩者擇一不損功能 */
   .rpe-axis .rpe-slider { display: none; }
   .done-list.card { padding: 6px 14px; }
