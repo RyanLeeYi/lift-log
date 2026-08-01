@@ -17,6 +17,15 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f58-own-token"
 
@@ -129,9 +138,9 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            ver = read_version(page)  # F81 把版號搬進設定畫面
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑧ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v59）",
@@ -176,7 +185,7 @@ def main():
             # ④ 切體脂（最早 20 天前）→ 3M 不可用 → 自動退到最長可用檔位（1M）並說明
             page.locator('.body-range button:has-text("6M")').click()
             page.wait_for_timeout(700)
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(900)
             st_fat = chip_state(page)
             fat_on = [k for k, v in st_fat.items() if v["on"]]
@@ -195,7 +204,7 @@ def main():
             # 且說明文字不得留著上一個 metric 的內容。測「當前檔位對兩個 metric 都可用」的情形——
             # 那條路徑不走自動退檔，原本只呼叫 paint()（不碰 chips 與 note）
             page.locator(
-                ".body-metric-toggle .chip", has_text="體重"
+                ".metric-toggle .metric-pill", has_text="體重"
             ).click()  # 前一段留在體脂，先還原
             page.wait_for_timeout(700)
             page.locator('.body-range button:has-text("1M")').click()  # 1M 對體重與體脂都可用
@@ -208,7 +217,7 @@ def main():
                 else ""
             )
             st_w = chip_state(page)
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(800)
             st_f = chip_state(page)
             note_after = page.locator(".range-note").count()
@@ -223,7 +232,7 @@ def main():
                 f"體重時 3M/6M={not st_w['3M']['off']}/{not st_w['6M']['off']} → "
                 f"體脂時 off={st_f['3M']['off']}/{st_f['6M']['off']} note_殘留={note_after}",
             )
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(700)
 
             # review P2-2 回歸：記錄成功後說明要消失（不與 flash 打架）
@@ -243,7 +252,7 @@ def main():
                 f"had_note={had_note} note_after={page.locator('.range-note').count()}",
             )
             # 還原到體脂頁籤——下一段 ⑤ 的前提是「選一段在體脂資料之前的區間會空」
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(800)
 
             # ⑤ 自訂不受限制：可選一段完全在體脂資料之前的區間（顯示空狀態而非被擋）
@@ -263,7 +272,7 @@ def main():
             )
 
             # ⑦ 既有行為：切回體重 + 1M，圖表照畫、清單有資料
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(500)
             page.locator('.body-range button:has-text("3M")').click()
             page.wait_for_timeout(800)
@@ -307,7 +316,7 @@ def main():
                     page.goto(base2 + "/")
                     page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
                     page.reload()
-                    page.wait_for_selector(".home-start", timeout=8000)
+                    wait_home(page)
                     page.locator(".bottom-nav .nav-item", has_text="體重").click()
                     page.wait_for_selector(".screen.body", timeout=8000)
                     page.wait_for_timeout(600)

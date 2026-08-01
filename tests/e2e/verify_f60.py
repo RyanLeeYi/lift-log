@@ -17,6 +17,15 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f60-own-token"
 
@@ -175,9 +184,9 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            ver = read_version(page)  # F81 把版號搬進設定畫面
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑦ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v61）",

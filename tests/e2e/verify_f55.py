@@ -14,6 +14,15 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f55-own-token"
 
@@ -127,9 +136,9 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            ver = read_version(page)  # F81 把版號搬進設定畫面
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑤ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v56）",
@@ -210,7 +219,7 @@ def main():
             # ③④ 成功（F11 補記過去日期）→ 關窗、資料落在該日、toggle 狀態保留
             page.locator('.body-log-modal button:has-text("取消")').click()
             page.wait_for_timeout(250)
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(250)
             page.locator(".body-log-open").click()
             page.wait_for_selector(".body-log-modal", timeout=5000)
@@ -224,7 +233,7 @@ def main():
             page.wait_for_timeout(1000)
             closed = page.locator(".body-log-modal").count() == 0
             saved = [m for m in api(base, "GET", "/api/body-metrics") if m["date"] == past]
-            metric_kept = page.locator(".body-metric-toggle .chip.on").inner_text().strip()
+            metric_kept = page.locator(".metric-toggle .metric-pill.on").inner_text().strip()
             flash = page.locator(".body-saved").count()
             check(
                 "③④ 成功記錄（含 F11 補記過去日期）→ 自動關窗、資料落該日、toggle 狀態保留、flash 出現",
@@ -253,7 +262,7 @@ def main():
             page.wait_for_timeout(300)
 
             # ⑤ 667 高也能填滿；門檻上下皆不破圖
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(250)
             fill_h, geo = {}, {}
             T = body_threshold(base)  # 門檻的唯一來源在 app.css
@@ -351,9 +360,9 @@ def main():
             page.mouse.wheel(0, 60)
             page.wait_for_timeout(350)
             st_b = page.eval_on_selector(".bm-rows", "e => e.scrollTop")
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(250)
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(350)
             st_a = page.eval_on_selector(".bm-rows", "e => e.scrollTop")
             check(

@@ -17,6 +17,15 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f57-own-token"
 
@@ -125,9 +134,9 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            ver = read_version(page)  # F81 把版號搬進設定畫面
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑦ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v58）",
@@ -153,7 +162,7 @@ def main():
             )
 
             # ① domain＝區間：3M 下最舊點（85 天前）不在最左緣、最新點（15 天前）不在最右緣
-            foot = page.locator(".body-card-foot").inner_text().split("\n")
+            foot = page.locator(".body-main-delta").inner_text().split("\n")
             check(
                 "①⑤ x 軸 domain＝選取區間：首點不貼左緣、末點不貼右緣；卡片底部顯示區間邊界",
                 xs[0] > 7 and xs[-1] < 313 and poly["cx"] == xs[-1],
@@ -162,7 +171,7 @@ def main():
 
             # ⑤ 底部起訖＝區間邊界（3M 前 → 今天）
             three_m_ago = (today - datetime.timedelta(days=92)).strftime("%Y-%m")
-            foot_text = page.locator(".body-card-foot").inner_text()
+            foot_text = page.locator(".body-main-delta").inner_text()
             check(
                 "⑤ 卡片底部起訖顯示區間邊界（非資料首末點）",
                 today.strftime("%Y-%m-%d") in foot_text
@@ -225,11 +234,11 @@ def main():
             # ⑥ 既有行為：切 metric（體脂）仍畫得出時間軸；區間不變
             page.locator('.body-range button:has-text("3M")').click()
             page.wait_for_timeout(800)
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(400)
             poly_fat = page.evaluate(POLY)
             range_kept = page.locator(".body-range button.on").inner_text().strip()
-            unit_ok = "%" in page.locator(".body-card-foot").inner_text()
+            unit_ok = "%" in page.locator(".body-main-delta").inner_text()
             check(
                 "⑥ 切體脂後仍是時間軸（同樣的空缺間距）、區間不變、單位 %",
                 poly_fat is not None
@@ -247,7 +256,7 @@ def main():
             # review P2-1 回歸：點數少時每點都有小圓（短跨度塌成豎線時仍看得出有幾筆、在哪）
             page.locator('.body-range button:has-text("3M")').click()
             page.wait_for_timeout(800)
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(400)
             dots = page.evaluate(
                 "() => document.querySelectorAll('.body-chart svg circle[r=\"2\"]').length"
@@ -259,8 +268,8 @@ def main():
             )
 
             # review P3-5 回歸：最新值旁標出量測日期（與底部的區間邊界語意分開）
-            latest_txt = " ".join(page.locator(".body-card-latest").inner_text().split())
-            foot_txt = " ".join(page.locator(".body-card-foot").inner_text().split())
+            latest_txt = " ".join(page.locator(".body-main-value").inner_text().split())
+            foot_txt = " ".join(page.locator(".body-main-delta").inner_text().split())
             last_date = api(base, "GET", "/api/body-metrics")[-1]["date"]
             want = last_date[5:].replace("-", "/")
             check(

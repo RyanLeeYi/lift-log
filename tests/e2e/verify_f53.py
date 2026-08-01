@@ -14,6 +14,15 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f53-own-token"
 
@@ -99,9 +108,11 @@ def main():
         # 10 天體重，其中只有 4 天有體脂（驗「有記的點才連線」與清單只列有體脂的日子）
         today = datetime.date.today()
         fat_days = set()
+        all_days = set()
         for i in range(10, 0, -1):
             d = (today - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
             payload = {"date": d, "weight_kg": 100.0 + i * 0.3}
+            all_days.add(d)
             if i % 3 == 0:
                 payload["body_fat_pct"] = 24.0 + i * 0.1
                 fat_days.add(d)
@@ -115,10 +126,10 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
             # ⑩ 版本
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            ver = read_version(page)  # F81 把版號搬進設定畫面
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑩ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v54）",
@@ -131,19 +142,19 @@ def main():
 
             # ①⑤ 單卡＋toggle、預設體重
             cards = page.locator(".screen.body .body-card").count()
-            on_label = page.locator(".body-metric-toggle .chip.on").inner_text().strip()
+            on_label = page.locator(".metric-toggle .metric-pill.on").inner_text().strip()
             check(
                 "①⑤ 圖表合成單卡＋toggle（體重／體脂），預設『體重』",
-                page.locator(".body-metric-toggle .chip").count() == 2
+                page.locator(".metric-toggle .metric-pill").count() == 2
                 and on_label == "體重"
                 and cards == 2,  # 圖表卡＋紀錄卡
-                f"tabs={page.locator('.body-metric-toggle .chip').count()} on={on_label!r} cards={cards}",
+                f"tabs={page.locator('.metric-toggle .metric-pill').count()} on={on_label!r} cards={cards}",
             )
 
             # 記錄清單此時應列出全部 10 筆、單位 kg
             rows_w = page.locator(".bm-rows .bm-row").count()
             val_w = page.locator(".bm-rows .bm-row .bm-val").first.inner_text()
-            latest_w = page.locator(".body-card-latest").inner_text()
+            latest_w = page.locator(".body-main-value").inner_text()
             check(
                 "① 體重頁籤：清單列全部紀錄且顯示 kg、卡片最新值為 kg",
                 rows_w == 10 and "kg" in val_w and "kg" in latest_w,
@@ -154,24 +165,32 @@ def main():
             # F54 把輸入表單移進懸浮視窗（切 toggle 時表單不在畫面上），F58 又為了讓 chips 依當前 metric
             # 重畫而改走 rerender()——所以「節點不被替換」這個**手段**已不再適用（feature_list 有附註）。
             # 這裡改驗目的：切換後畫面該有的東西都在、且清單捲動位置由分頁籤記憶負責（見下方 P2-2 那條）。
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(500)
             intact = (
                 page.locator(".body-log-open").count() == 1
                 and page.locator(".screen.body > .body-card").count() >= 1
-                and page.locator(".body-metric-toggle .chip.on").inner_text().strip() == "體脂"
+                and page.locator(".metric-toggle .metric-pill.on").inner_text().strip() == "體脂"
             )
             check("⑥ 切換後畫面完整（入口鈕、圖表卡、選中的頁籤都在）", intact, f"intact={intact}")
 
-            # ②④ 體脂頁籤：圖表換體脂、清單只列有體脂的 3 筆（i=3,6,9）、單位 %
+            # ②④ 體脂頁籤：圖表換體脂、單位 %。
+            # ⚠ **F87 ⑧ 取代了「只列有體脂的日子」**：改成「全部日子都列、沒體脂顯示 —」，
+            # 因為原本的做法讓沒量體脂的日子在該頁籤看不到也改不到（F53 ② 本來就沒明說要濾）。
+            # 這裡因此驗「全部都列 ＋ 有體脂的那幾筆是 %」，不再驗筆數等於有體脂的天數。
             rows_f = page.locator(".bm-rows .bm-row").count()
-            val_f = page.locator(".bm-rows .bm-row .bm-val").first.inner_text()
-            latest_f = page.locator(".body-card-latest").inner_text()
-            foot_f = page.locator(".body-card-foot").inner_text()
+            vals_f = page.locator(".bm-rows .bm-row .bm-val").all_inner_texts()
+            pct_rows = [v for v in vals_f if "%" in v]
+            latest_f = page.locator(".body-main-value").inner_text()
+            foot_f = page.locator(".body-main-delta").inner_text()
             check(
-                "②④ 體脂頁籤：清單只列有體脂的日子、單位 %，卡片最新值與範圍也是 %",
-                rows_f == len(fat_days) and "%" in val_f and "%" in latest_f and "%" in foot_f,
-                f"rows={rows_f}（期望 {len(fat_days)}）val={val_f!r} latest={latest_f!r}",
+                "②④ 體脂頁籤：全部日子都列（沒體脂顯示 —）、有值的顯示 %，卡片最新值與範圍也是 %",
+                rows_f == len(all_days)
+                and len(pct_rows) == len(fat_days)
+                and "%" in latest_f
+                and "%" in foot_f,
+                f"rows={rows_f}（期望 {len(all_days)}）有%的={len(pct_rows)}"
+                f"（期望 {len(fat_days)}）latest={latest_f!r}",
             )
 
             # ③ 體脂頁籤下編輯仍是整筆（編輯列有體重與體脂兩個輸入）
@@ -190,7 +209,7 @@ def main():
             )
 
             # ⑧ 清單填滿剩餘空間：三種高度下 .bm-rows 高度不同，「← 回首頁」完整可見
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(300)
             heights, btn_ok = {}, {}
             for h in (1000, 900, 844):  # ≥700 的高視窗：清單填滿剩餘空間
@@ -274,7 +293,7 @@ def main():
             page.wait_for_timeout(320)
 
             # review P2-2 回歸：切過去再切回來，清單捲動位置要回到原處
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(300)
             rows_box = page.locator(".bm-rows").bounding_box()
             page.mouse.move(
@@ -283,9 +302,9 @@ def main():
             page.mouse.wheel(0, 80)
             page.wait_for_timeout(350)
             st_before = page.eval_on_selector(".bm-rows", "e => e.scrollTop")
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(300)
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(350)
             st_after = page.eval_on_selector(".bm-rows", "e => e.scrollTop")
             check(
@@ -317,14 +336,14 @@ def main():
             )
             page.wait_for_timeout(300)
             was_editing = page.locator(".bm-row.editing").count() == 1
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(350)
             check(
                 "review P3-1：切換頁籤時退出行內編輯態（不留看不見的編輯中狀態）",
                 was_editing and page.locator(".bm-row.editing").count() == 0,
                 f"was_editing={was_editing} still={page.locator('.bm-row.editing').count()}",
             )
-            page.locator(".body-metric-toggle .chip", has_text="體重").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(300)
 
             # ⑧ 門檻：≤2 筆不加 scrollable（刪到剩 2 筆）
@@ -370,10 +389,10 @@ def main():
                         {"date": m["date"], "weight_kg": m["weight_kg"]},
                     )  # 覆蓋成無體脂
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
             page.locator(".bottom-nav .nav-item", has_text="體重").click()
             page.wait_for_selector(".screen.body", timeout=8000)
-            page.locator(".body-metric-toggle .chip", has_text="體脂").click()
+            page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(400)
             empty_txt = page.locator(".screen.body .body-empty").first.inner_text()
             check(
