@@ -27,7 +27,9 @@ const body = {
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
   editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
   metric: "weight", // F53：圖表與紀錄清單顯示哪一項（weight|fat）；不持久化，進畫面一律回體重
-  // F56：查詢區間。{kind:"preset",months}；F87 起沒有自訂區間（五顆藥丸取代）。不持久化，進畫面回 3M
+  // F56：查詢區間。{kind:"preset",months}。不持久化，進畫面回 3M。
+  // 自選區間已移除：F87 ③ 改成五顆藥丸，2026-08-01 Ryan 裁決（F119 選 B）確認不補回
+  // ——F87 ③ 原本寫著「F56 的自選區間不回歸」，是那次改版沒照做，經裁決才解除。
   range: { kind: "preset", months: 3 },
   // F58：資料起訖 {weight_first, fat_first, last}——判斷哪些區間檔位有意義（分體重／體脂各自判定）
   bounds: { weight_first: null, fat_first: null, last: null },
@@ -414,7 +416,8 @@ export function renderBody(rerender, goHome, guard) {
   };
 
   // 兩序列各自先篩選再取最後 N 點——體脂記得稀疏時，先切再篩會丟掉仍屬最近的體脂點
-  // slice(-CHART_POINTS) 會靜默丟掉最舊的點（3Y preset 約 1096 天碰不到 1200，只有「自訂 > 1200 天」觸發）。
+  // slice(-CHART_POINTS) 會靜默丟掉最舊的點。原本只有「自訂 > 1200 天」會觸發；F87 ③ 把自訂換成
+  // 「全部」之後，觸發條件變成**紀錄總量超過 1200 筆**（每天量一次約 3.3 年）。
   // F57 起 foot 顯示的是 domain 邊界，所以被丟掉的點在 x 軸左側呈現為空白——看不出是「沒資料」還是
   // 「被丟棄」，這是已知降級（F56 P3-4 已接受）
   const weightPoints = body.metrics
@@ -451,7 +454,10 @@ export function renderBody(rerender, goHome, guard) {
               await loadRange({ kind: "preset", months });
               // review P3-5：訊息在切換成功後才設——失敗時 metric 已切但區間沒切，
               // 若先設就會出現「說改了其實沒改」
-              body.rangeNote = `${what}紀錄從 ${firstDateFor(key)} 開始，已改為顯示最近 ${months} 個月`;
+              // F120：months === null 是「全部」檔位（F87 ③ 新增），直接串進文案會寫出
+              // 「最近 null 個月」。退檔目標是「全部」（2026-08-01 Ryan 裁決），文案要跟著講人話。
+              const target = months === null ? "全部紀錄" : `最近 ${months} 個月`;
+              body.rangeNote = `${what}紀錄從 ${firstDateFor(key)} 開始，已改為顯示${target}`;
               rerender();
             });
             return;
@@ -498,7 +504,8 @@ export function renderBody(rerender, goHome, guard) {
     rowsHost.scrollTop = body.rowsScroll[body.metric];
   });
 
-  // F56：區間 chips＋自訂面板。切換一律走 loadRange（成功才提交），失敗由 guard 接住、狀態不動
+  // F56：區間 chips。切換一律走 loadRange（成功才提交），失敗由 guard 接住、狀態不動。
+  // （自訂面板已無：見 body state 的 range 註解）
   const presetBtn = ([label, months]) => {
     // F58：超出資料範圍的檔位灰掉但**仍可點**——點了顯示說明（用 disabled 就點不到、給不了說明）
     const available = presetUsable(months, firstDateFor(body.metric));

@@ -70,10 +70,6 @@ def chip_state(page):
     }""")
 
 
-class _Blocked(Exception):
-    """F119 未裁決前，自訂區間相關的段落跳過但仍算失敗。"""
-
-
 def main():
     port = free_port()
     tmpdb = Path(tempfile.gettempdir()) / f"liftlog_f58_{port}.db"
@@ -184,7 +180,10 @@ def main():
                 f"note={note_txt!r} on {before_on}→{after_on}",
             )
 
-            # ④ 切體脂（最早 20 天前）→ 3M 不可用 → 自動退到最長可用檔位（1M）並說明
+            # ④ 切體脂（最早 20 天前）→ 3M 不可用 → 自動退到最長可用檔位並說明。
+            # F87 ③ 加了「全部」檔位，它永遠可用，所以 longestAvailable() 的答案從 1M 變成「全部」。
+            # 2026-08-01 Ryan 裁決：**退到「全部」就是要的行為**（最完整、不漏資料），期望值跟著改。
+            # 同時驗 F120 的文案 bug：months === null 不得被直接串成「最近 null 個月」。
             page.locator('.body-range button:has-text("6M")').click()
             page.wait_for_timeout(700)
             page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
@@ -197,9 +196,14 @@ def main():
                 else ""
             )
             check(
-                "④ 切體脂後當前檔位不可用 → 自動退到最長可用檔位（1M）並顯示說明",
-                fat_on == ["1M"] and st_fat["3M"]["off"] and f_first in fat_note,
+                "④ 切體脂後當前檔位不可用 → 自動退到最長可用檔位（「全部」）並顯示說明",
+                fat_on == ["全部"] and st_fat["3M"]["off"] and f_first in fat_note,
                 f"on={fat_on} 3M_off={st_fat['3M']['off']} note={fat_note!r}",
+            )
+            check(
+                "④（F120）退檔說明不得出現 null——「全部」要講成「全部紀錄」",
+                "null" not in fat_note and "全部紀錄" in fat_note,
+                f"note={fat_note!r}",
             )
 
             # review P1-1 回歸（我的 E2E 原本漏掉的分支）：切 metric 後 chips 的灰／亮要**跟著重畫**，
@@ -257,31 +261,10 @@ def main():
             page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(800)
 
-            # ⑤ 自訂不受限制：可選一段完全在體脂資料之前的區間（顯示空狀態而非被擋）
-            # ⚠ **這一條卡在 F119**：F87 ③ 的凍結條文寫「F56 的自選區間不回歸」（＝必須還在），
-            # 但實作把自訂區間整個拿掉了。在 Ryan 裁決之前這條註定失敗——
-            # **刻意不刪、不改寫**，讓它繼續指出那個衝突。
-            if page.locator('.body-range button:has-text("自訂")').count() == 0:
-                check(
-                    "⑤ 自訂不受限制（**卡在 F119：自訂區間已被 F87 拿掉，與 F87 ③ 條文衝突**）",
-                    False,
-                    "畫面上沒有「自訂」按鈕；等 Ryan 裁決 F119 之後再回來處理這一條",
-                )
-            else:
-                page.locator('.body-range button:has-text("自訂")').click()
-                page.wait_for_timeout(300)
-                dts = page.locator(".ex-custom .ex-date")
-                dts.nth(0).fill((today - datetime.timedelta(days=95)).strftime("%Y-%m-%d"))
-                dts.nth(1).fill((today - datetime.timedelta(days=85)).strftime("%Y-%m-%d"))
-                page.locator(".ex-custom-apply").click()
-                page.wait_for_timeout(900)
-                custom_on = page.locator(".body-range button.on").inner_text().strip()
-                empty_shown = page.locator(".body-empty").count() >= 1
-                check(
-                    "⑤ 自訂不受限制：可選體脂資料之前的區間，顯示空狀態而非被擋",
-                    custom_on == "自訂" and empty_shown,
-                    f"on={custom_on!r} empty={empty_shown}",
-                )
+            # ⑤（自訂區間不受停用檔位限制）**已移除**：自訂區間隨 F87 ③ 消失，
+            # 2026-08-01 Ryan 裁決（F119 選 B）確認不補回。這不是放寬斷言——被驗的 UI 不存在了。
+            # ⑤ 想守住的「不該把使用者擋在資料之外」由 ③（點停用檔位只給說明、不擋畫面）與
+            # 永遠可用的「全部」檔位共同承接，兩者都在本腳本裡驗著。
 
             # ⑦ 既有行為：切回體重 + 1M，圖表照畫、清單有資料
             page.locator(".metric-toggle .metric-pill", has_text="體重").click()

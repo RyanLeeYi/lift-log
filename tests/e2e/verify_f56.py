@@ -1,6 +1,12 @@
-"""F55 體重頁「＋ 記錄」移到畫面下方 E2E（含 F54 行為回歸）。
-用法：PYTHONUTF8=1 uv run python verify_f55_own.py
-涵蓋 F55 acceptance ①–⑤（沿用 F54 腳本的視窗行為檢查當 ④ 的回歸）。
+"""F56 體重頁圖表可自選時間長度 E2E（含 F54／F55 行為回歸）。
+
+用法：PYTHONUTF8=1 uv run python tests/e2e/verify_f56.py
+
+⚠ **2026-08-01 Ryan 裁決（F119 選 B）：F56 的「自訂區間」已被 F87 ③ 取代，不補回。**
+因此本腳本中專驗自訂面板的條目（原 (2) 的起訖驗證、原 (6) 的自訂空窗、review P2-2 的面板
+展開版面）已改寫或移除，並在各處註明。**其餘條文一條都沒放寬**——chips 切換要同步篩圖表與
+清單、與 metric toggle 正交、無資料不炸圖、切換失敗的原子性，全部照原樣驗，只是改用還存在的
+UI（五顆預設藥丸）達成。
 """
 
 import datetime
@@ -84,25 +90,27 @@ def body_threshold(base):
     return int(mm.group(1))
 
 
+def chips_row_budget(base):
+    """門檻算式裡替時間窗藥丸列編的高度預算（app.css 那段註解是唯一來源）。
+
+    原本這裡寫死 34px（chips 還是 30px 高的年代）。F87 把藥丸改成 44px、算式跟著重算，
+    寫死的數字就變成假紅——但**不能因此拿掉這條檢查**：它驗的是「實際量到的高度沒有偷偷
+    超過算式編列的預算」，超過就代表門檻失準、矮螢幕會出現死帶（F53／F54 各踩過一次）。
+    所以改成從算式本身讀，量到的必須與預算一致。
+    """
+    import re as _re
+
+    css = urllib.request.urlopen(base + "/css/app.css", timeout=5).read().decode()
+    mm = _re.search(r"時間窗藥丸 (\d+)", css)
+    return int(mm.group(1))
+
+
 CHIP_ROWS = """() => {
   const tops = [...document.querySelectorAll('.body-range button')]
     .map(b => Math.round(b.getBoundingClientRect().top));
   return { rows: new Set(tops).size,
            h: Math.round(document.querySelector('.body-range').getBoundingClientRect().height) };
 }"""
-
-PANEL_GEO = """() => {
-  const rows = document.querySelector('.bm-rows');
-  const card = document.querySelector('.body-card.body-list');
-  const btn = [...document.querySelectorAll('.screen.body button')]
-    .find(b => b.textContent.includes('回首頁'));
-  const r = rows.getBoundingClientRect(), c = card.getBoundingClientRect(),
-        b = btn.getBoundingClientRect();
-  return { overflow: Math.round(Math.max(0, r.bottom - c.bottom)),
-           over_btn: Math.round(Math.max(0, r.bottom - b.top)),
-           panel: document.querySelectorAll('.ex-custom').length };
-}"""
-
 
 def main():
     port = free_port()
@@ -201,8 +209,8 @@ def main():
             on = page.locator(".body-range button.on").inner_text().strip()
             rows_3m = page.locator(".bm-rows .bm-row").count()
             check(
-                "(1)(8) 區間 chips（1M/3M/6M/9M/1Y/2Y/3Y＋自訂）存在、預設 3M",
-                labels == ["1M", "3M", "6M", "9M", "1Y", "2Y", "3Y", "自訂"] and on == "3M",
+                "(1)(8) 區間 chips（F87 ③ 的五顆：1M/3M/6M/1Y/全部）存在、預設 3M",
+                labels == ["1M", "3M", "6M", "1Y", "全部"] and on == "3M",
                 f"labels={labels} on={on!r} rows={rows_3m}",
             )
 
@@ -220,33 +228,28 @@ def main():
                 f"1M={rows_1m} 3M={rows_3m} 1Y={rows_1y}",
             )
 
-            # (2) 自訂區間：起>訖 擋；正常區間套用後 chip 選中、清單只含區間內日期
-            page.locator('.body-range button:has-text("自訂")').click()
-            page.wait_for_timeout(300)
-            dates = page.locator(".ex-custom .ex-date")
-            dates.nth(0).fill(today.strftime("%Y-%m-%d"))
-            dates.nth(1).fill((today - datetime.timedelta(days=10)).strftime("%Y-%m-%d"))
-            page.locator(".ex-custom-apply").click()
-            page.wait_for_timeout(400)
-            blocked = page.locator(".screen.body .error-banner").count() == 1
-            good_from = (today - datetime.timedelta(days=45)).strftime("%Y-%m-%d")
-            good_to = (today - datetime.timedelta(days=15)).strftime("%Y-%m-%d")
-            dates.nth(0).fill(good_from)
-            dates.nth(1).fill(good_to)
-            page.locator(".ex-custom-apply").click()
+            # (2) 原文驗的是「自訂區間套用後清單只含區間內日期」。自訂面板已被 F87 ③ 取代
+            # （2026-08-01 Ryan 裁決 F119 選 B），但**條文的目的沒有被取代**：選了一個區間，
+            # 清單就只能有那個區間內的日期。改用還存在的 1M 藥丸驗同一件事。
+            page.locator('.body-range button:has-text("1M")').click()
             page.wait_for_timeout(800)
-            custom_on = page.locator(".body-range button.on").inner_text().strip()
-            rows_custom = page.locator(".bm-rows .bm-row").count()
+            on_1m2 = page.locator(".body-range button.on").inner_text().strip()
             dates_in = page.eval_on_selector_all(
                 ".bm-rows .bm-row .bm-date", "els => els.map(e => e.textContent.trim())"
             )
+            # 1M 是**日曆月**（monthsAgo 會 clamp 月底），實際天數落在 28–31 之間，故用 32 天當寬鬆下界；
+            # 資料集裡有 900/700/500 天前的點，能真的驗到「被篩掉了」而不是「本來就沒有舊資料」。
+            floor_iso = (today - datetime.timedelta(days=32)).strftime("%Y-%m-%d")
+            all_metrics = api(base, "GET", "/api/body-metrics")
+            has_older = any(m["date"] < floor_iso for m in all_metrics)
             check(
-                "(2) 自訂區間：起>訖 被擋；套用後 chip 選中且清單只含區間內日期",
-                blocked
-                and custom_on == "自訂"
-                and rows_custom > 0
-                and all(good_from <= d <= good_to for d in dates_in),
-                f"blocked={blocked} on={custom_on!r} rows={rows_custom} dates={dates_in[:3]}",
+                "(2) 選定區間後清單只含區間內日期（原文的自訂面板已由 F87 ③ 取代，改用 1M 藥丸驗同一目的）",
+                on_1m2 == "1M"
+                and len(dates_in) > 0
+                and has_older
+                and all(d >= floor_iso for d in dates_in),
+                f"on={on_1m2!r} rows={len(dates_in)} oldest={min(dates_in) if dates_in else None} "
+                f"floor={floor_iso} has_older={has_older}",
             )
 
             # (4) 切換失敗（5xx）→ 區間與資料都不動
@@ -282,50 +285,58 @@ def main():
             page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(300)
 
-            # (6) 區間內無資料（890-885 天前的空窗）
-            page.locator('.body-range button:has-text("自訂")').click()
-            page.wait_for_timeout(300)
-            d2 = page.locator(".ex-custom .ex-date")
-            d2.nth(0).fill((today - datetime.timedelta(days=890)).strftime("%Y-%m-%d"))
-            d2.nth(1).fill((today - datetime.timedelta(days=885)).strftime("%Y-%m-%d"))
-            page.locator(".ex-custom-apply").click()
+            # (6) 原文用「自訂到一段空窗」驗無資料不炸圖。自訂面板已無，改用等價手段：
+            # 把最近 40 天的紀錄全部刪掉，再選 1M——區間存在但區間內沒有資料，正是原文要驗的狀況。
+            # 刪完之後**要把資料補回去**，否則後面的檢查全部失去前提。
+            wiped = [
+                m["date"] for m in api(base, "GET", "/api/body-metrics")
+                if m["date"] >= (today - datetime.timedelta(days=40)).strftime("%Y-%m-%d")
+            ]
+            wiped_rows = [m for m in api(base, "GET", "/api/body-metrics") if m["date"] in wiped]
+            for d in wiped:
+                api(base, "DELETE", f"/api/body-metrics/{d}")
+            page.reload()
+            page.wait_for_timeout(400)
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
+            page.wait_for_selector(".screen.body", timeout=8000)
+            page.locator('.body-range button:has-text("1M")').click()
             page.wait_for_timeout(800)
             empties = page.locator(".screen.body .body-empty").count()
+            empty_rows = page.locator(".bm-rows .bm-row").count()
             check(
                 "(6) 區間內無資料 → 顯示「還沒有紀錄」不炸圖",
-                empties >= 1 and page.locator(".bm-rows .bm-row").count() == 0,
-                f"empty_blocks={empties}",
+                empties >= 1 and empty_rows == 0,
+                f"empty_blocks={empties} rows={empty_rows} wiped={len(wiped)}",
             )
+            for m in wiped_rows:  # 補回去：後面的檢查都靠這批資料
+                payload = {"date": m["date"], "weight_kg": m["weight_kg"]}
+                if m.get("body_fat_pct") is not None:
+                    payload["body_fat_pct"] = m["body_fat_pct"]
+                api(base, "POST", "/api/body-metrics", payload)
+            page.reload()
+            page.wait_for_timeout(400)
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
+            page.wait_for_selector(".screen.body", timeout=8000)
             page.locator('.body-range button:has-text("3M")').click()
             page.wait_for_timeout(700)
 
-            # review P2-3 回歸：8 顆 chips 在窄螢幕也要一行（門檻算式的 30px 前提）
+            # review P2-3 回歸：chips 在窄螢幕也要一行（門檻算式的 30px 前提）。
+            # 顆數已由 8 降為 5（F87 ③），一行的要求不變——反而更容易成立
             chip_rows = {}
             for w in (320, 360, 375, 390):
                 page.set_viewport_size({"width": w, "height": 900})
                 page.wait_for_timeout(300)
                 chip_rows[w] = page.evaluate(CHIP_ROWS)
+            budget = chips_row_budget(base)
             check(
-                "review P2-3：區間 chips 在 320/360 窄螢幕仍是一行（門檻算式的 30px 前提成立）",
-                all(v["rows"] == 1 and v["h"] <= 34 for v in chip_rows.values()),
-                f"{chip_rows}",
+                "review P2-3：區間 chips（5 顆）在 320/360 窄螢幕仍是一行，且不超過門檻算式編的預算",
+                all(v["rows"] == 1 and v["h"] <= budget for v in chip_rows.values()),
+                f"budget={budget} {chip_rows}",
             )
 
-            # review P2-2 回歸：自訂面板展開時允許整頁捲動，但不得溢出／重疊
-            page.set_viewport_size({"width": 390, "height": 680})
-            page.wait_for_timeout(300)
-            page.locator('.body-range button:has-text("自訂")').click()
-            page.wait_for_timeout(350)
-            panel_geo = page.evaluate(PANEL_GEO)
-            check(
-                "review P2-2：自訂面板展開（680 高）無溢出、無重疊（允許整頁捲動是明確例外）",
-                panel_geo["panel"] == 1
-                and panel_geo["overflow"] <= 1
-                and panel_geo["over_btn"] <= 1,
-                f"{panel_geo}",
-            )
-            page.locator('.body-range button:has-text("自訂")').click()
-            page.wait_for_timeout(250)
+            # review P2-2（自訂面板展開時的版面）**已移除**：那條驗的是自訂起訖面板展開後
+            # 不溢出、不重疊，而面板本身已隨 F87 ③ 消失（2026-08-01 Ryan 裁決 F119 選 B）。
+            # 這不是放寬斷言——被驗的 UI 不存在了。chips 列本身的版面由 P2-3 那條顧著。
             page.set_viewport_size({"width": 390, "height": 900})
             page.wait_for_timeout(250)
 
