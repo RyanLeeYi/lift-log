@@ -16,6 +16,15 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f49-own-token"
 
@@ -113,10 +122,14 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            # F81 重建首頁之後 .home-start 不存在了（按鈕文字隨當天狀態變）。
+            # 統一走 verify_f67 的 wait_home／start_from_home，下次改版才不會又全滅。
+            wait_home(page)
 
             # ⑨ 版本
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            # F81 把版號搬進設定畫面（首頁不再有 .version-tag）。
+            # read_version() 自己會開設定再回首頁，這裡不要再包一層。
+            ver = read_version(page)
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑨ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v50）",
@@ -125,13 +138,14 @@ def main():
             )
 
             def start_with_template():
-                page.locator(".home-start").click()
+                start_from_home(page)
                 page.wait_for_selector(".tpl-choice-list", timeout=8000)
-                page.locator(".tpl-choice-list .exercise-item", has_text="F49 課表").click()
+                # F82 起挑課表那一頁的項目是 .tpl-choice（卡片），不再是 .exercise-item
+                page.locator(".tpl-choice", has_text="F49 課表").click()
                 page.wait_for_selector(".screen.picker", timeout=8000)
 
             def start_free():
-                page.locator(".home-start").click()
+                start_from_home(page)
                 page.wait_for_selector(".tpl-choice-list", timeout=8000)
                 page.locator(".free-choice").click()
                 page.wait_for_selector(".screen.picker", timeout=8000)
@@ -145,8 +159,10 @@ def main():
                 and page.locator(".screen.picker > .pick-list").count() == 0
                 and page.locator(".screen.picker > .chips").count() == 0
                 and page.locator(".screen.picker > .add-custom-ex").count() == 0
-                and page.locator('.picker-foot button:has-text("← 回首頁")').count() == 1
-                and page.locator('.picker-foot button:has-text("結束訓練")').count() == 1,
+                # F83 起有課表時 .picker-foot 不存在了：結束訓練搬進菜單（.end-workout）、
+                # 回首頁變成標頭的返回鍵（.back-btn）。① 的本意是「走得掉」，不是某個容器。
+                and page.locator(".screen.picker .back-btn").count() == 1
+                and page.locator(".end-workout").count() == 1,
                 f"open_btn={page.locator('.add-exercise-open').count()} "
                 f"inline_list={page.locator('.screen.picker > .pick-list').count()}",
             )
@@ -261,7 +277,8 @@ def main():
             target.click()
             page.wait_for_selector(".screen.logger", timeout=8000)
             gone = page.locator(".pick-modal").count() == 0
-            page.locator(".btn", has_text="✓ 完成這組").click()
+            # F76：圖示改向量之後按鈕名稱不含「✓」，用 class 定位比對文字穩
+            page.locator(".log-btn").first.click()
             page.wait_for_timeout(900)
             page.locator(".logger-back").click()
             page.wait_for_selector(".screen.picker", timeout=8000)
@@ -294,7 +311,8 @@ def main():
             page.wait_for_selector(".pick-modal", timeout=5000)
             page.locator(".pick-modal .pick-list .detail-link").first.click()
             page.wait_for_selector(".screen.exercise-detail", timeout=8000)
-            page.locator('.screen.exercise-detail button:has-text("←")').first.click()
+            # F76 把 ← 換成向量圖示，按鈕上沒有那個字了；F81 起返回鍵一律是 .back-btn
+            page.locator(".screen.exercise-detail .back-btn").first.click()
             page.wait_for_selector(".screen.picker", timeout=8000)
             page.wait_for_timeout(300)
             check(
@@ -369,8 +387,8 @@ def main():
             page.unroute("**/api/exercises*")
             page.locator(".screen.setup input").fill(TOKEN)
             page.locator('.screen.setup button:has-text("連線")').click()
-            page.wait_for_selector(".home-start", timeout=8000)
-            page.locator(".home-start").click()  # 訓練仍在 → 回 picker
+            wait_home(page)
+            start_from_home(page)  # 訓練仍在 → 回 picker
             page.wait_for_selector(".screen.picker", timeout=8000)
             page.wait_for_timeout(300)
             check(
@@ -382,8 +400,10 @@ def main():
             )
 
             # ② 自由訓練：維持攤開，且沒有入口鈕
-            page.locator(".picker-foot button", has_text="結束訓練").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            # 這裡是「有課表」的狀態（上一段從 start_with_template 進來），
+            # F83 後結束訓練在菜單的 .end-workout。用共用 helper，兩種版面都試。
+            end_workout(page)
+            wait_home(page)
             start_free()
             check(
                 "② 自由訓練 → 搜尋框／chips／清單／＋自訂動作直接攤開，且無「＋ 臨時加動作」入口鈕",
