@@ -82,8 +82,13 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
   // ⇒ 資料全落在最近一個月內 ⇒ 可用集合恆為 {1M} ⇒ 1M 的資料是剛拿到的 3M 的嚴格子集。
   // 而那次請求若失敗會讓使用者「明明資料在手上卻進不去頁面」。所以就地過濾。
   if (!presetUsable(3, detail.data.first_session_date)) {
-    const months = longestAvailable(detail.data.first_session_date); // 依上述推導必為 1M
-    const from = iso(monthsAgo(new Date(), months));
+    const months = longestAvailable(detail.data.first_session_date);
+    // F121：起始日走本模組的 datesFor（同一份規則），**不要自己再算一次 monthsAgo**——
+    // F86 ③ 加了「全部」檔位（months === null）之後 longestAvailable 的答案就是它，而
+    // `getMonth() - null` 是 `getMonth() - 0`，算出來是**今天**：於是「唯一一次訓練在 10 天前」
+    // 的動作退檔後被濾成空清單（退檔本來是為了「別給一張空圖」，結果自己造了一張）。
+    // datesFor 早就處理了 null 這個情形——重複的第二份算式才是 bug 的來源。
+    const { from } = datesFor({ kind: "preset", months });
     detail.range = { kind: "preset", months };
     detail.data = {
       ...detail.data,

@@ -205,7 +205,12 @@ def main():
                   const r = e.getBoundingClientRect();
                   const btn = e.querySelector('.modal-actions .btn');
                   const br = btn.getBoundingClientRect();
+                  // need/have/kids 是刻意留下的診斷欄位：F117 就是靠它一眼看出「差 10px、
+                  // 而且是哪幾個子節點吃掉的」，否則只知道「有捲動」得再猜一輪
                   return { self_scrolls: e.scrollHeight > e.clientHeight + 2,
+                           need: e.scrollHeight, have: e.clientHeight,
+                           kids: [...e.children].map(c => c.className + ':' +
+                                 Math.round(c.getBoundingClientRect().height)),
                            btn_inside: br.bottom <= r.bottom + 1 };
                 }""",
                 )

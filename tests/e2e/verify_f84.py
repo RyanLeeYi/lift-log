@@ -241,6 +241,14 @@ def main() -> int:
                 page.wait_for_selector("input", timeout=10_000)
                 setup_and_home(page)
                 open_logger(page, base)
+                # F109 ④：⑨ 原本只量休息態。就緒態（還沒按下「完成這組」）也要量——
+                # 兩者的版面組成不同，休息態沒事不代表就緒態沒事，反之亦然。
+                ready_over = page.evaluate(
+                    "() => document.documentElement.scrollHeight - window.innerHeight"
+                )
+                check(ready_over <= 1,
+                      f"⑨ {size['width']}×{size['height']}：**就緒態**不產生垂直溢出"
+                      f"（{ready_over}px）")
                 page.get_by_role("button", name="完成這組").click()
                 page.wait_for_timeout(1200)
                 # 不可以先 scroll_into_view：那會讓這條永遠通過（Codex 2026-07-29 P2）
@@ -252,8 +260,16 @@ def main() -> int:
                 overflow = page.evaluate(
                     "() => document.documentElement.scrollHeight - window.innerHeight"
                 )
+                # F109：溢出時要看得出**是誰吃掉的**，否則只知道「差幾 px」還得再猜一輪
+                # （F117 就是靠同樣的診斷欄位一次修對）
+                kids = page.evaluate(
+                    """() => [...document.querySelectorAll('.screen.logger > *')]
+                         .map(c => (c.className || c.tagName) + ':' +
+                              Math.round(c.getBoundingClientRect().height))"""
+                )
                 check(overflow <= 1,
-                      f"⑨ {size['width']}×{size['height']}：休息態不產生垂直溢出（{overflow}px）")
+                      f"⑨ {size['width']}×{size['height']}：休息態不產生垂直溢出"
+                      f"（{overflow}px；{kids}）")
                 check(page.evaluate(no_hscroll),
                       f"⑨ {size['width']}×{size['height']} 無水平捲動")
                 check(page.locator(".rest-ring").count() == 1,

@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Log;
 
 import androidx.core.app.NotificationManagerCompat;
 
@@ -34,6 +35,9 @@ public class RestTimerPlugin extends Plugin {
      */
     private static RestTimerPlugin instance;
 
+    /** F104-A 的量測標籤（`adb logcat -s F104probe`）。留在正式碼裡不輸出使用者資料，只有時間戳。 */
+    private static final String PROBE = "F104probe";
+
     static void emit(String action) {
         emit(action, -1);
     }
@@ -60,6 +64,9 @@ public class RestTimerPlugin extends Plugin {
      */
     static void emitLog(double weight, int reps) {
         RestTimerPlugin plugin = instance;
+        // F104-A 量測：要分辨「事件送不出去」與「事件送出去了但 JS 沒跑」。
+        // 前者 instance 為 null（WebView 已被回收），後者 instance 在但 logResult 遲遲不回來。
+        Log.i(PROBE, "emitLog t=" + System.currentTimeMillis() + " pluginNull=" + (plugin == null));
         if (plugin == null) return;
         JSObject data = new JSObject();
         data.put("action", "logset");
@@ -76,6 +83,8 @@ public class RestTimerPlugin extends Plugin {
      */
     @PluginMethod
     public void logResult(PluginCall call) {
+        Log.i(PROBE, "logResult t=" + System.currentTimeMillis()
+            + " ok=" + Boolean.TRUE.equals(call.getBoolean("ok", false)));
         RestOverlay.onLogResult(getContext(), Boolean.TRUE.equals(call.getBoolean("ok", false)));
         call.resolve();
     }

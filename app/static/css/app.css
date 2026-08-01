@@ -729,6 +729,12 @@ body {
   .modal.pick-modal { height: auto; }
   .tpl-add-modal .exercise-list,
   .pick-modal .pick-list { min-height: 0; flex-basis: auto; }
+  /* F117：清單壓到 0 之後 320×420 仍差 10px（實測 need 346 / have 336），視窗自己接手捲動
+     ＝雙層捲動。差額從**非觸控的間距**擠出來：內距 14→10（省 8）、列間距 10→6（省 20）。
+     ⚠ 不動觸控目標——「確定加入」與「＋ 自訂動作」實測 53px，壓到 44 也還合法，
+     但 F117 ③ 明文禁止走這條路（F74／F77／F52 review P2-2 都不放寬）。
+     部位 chips 在 320 寬會排成 3 列（96px），那是寬度造成的，不是這裡能解決的。 */
+  .modal { padding: 10px; gap: 6px; }
 }
 .pick-modal .chips { flex: none; }
 
@@ -1508,6 +1514,19 @@ body {
   .done-list { --done-list-pad: 12px; }
   .rpe-axis { gap: 4px; }
   .log-btn { padding: 14px; font-size: 18px; }
+}
+/* F109：360×640 的休息態仍溢出 14px（384×727 是 0px，所以 Ryan 的實機看不到；
+   用 git stash 對照確認過是 v112 那批就在的，F102 把 .stepper gap 6→8 是最可能的來源）。
+   實測的組成（.screen.logger 的直接子節點）：
+       exercise-head 55 ＋ rest-card 210 ＋ done-list 68 ＋ logger-foot 269 = 602
+     ＋ 三道 gap 8 = 24 ＋ .app 上下內距 12+16 = 28  →  654，比 640 多 14。
+   ⚠ **不從觸控目標擠**（F117 ③／F74／F77／F102 的 8px 間距都不放寬，那正是當初把 gap 調大的原因）。
+   改從非觸控的間距：畫面列距 8→6（省 6）、.app 上下內距 12/16→8/10（省 10）。共 16px，餘裕 2px。
+   門檻取 660 而不是 640：640 是「剛好等於」，F84 最貴的教訓就是釘在剛好過的那一格
+   （Ryan 的 Note10+ 是 727，不受影響）。 */
+@media (max-height: 660px) {
+  .app { --app-pad-top: max(8px, env(safe-area-inset-top)); --app-pad-bot: max(10px, env(safe-area-inset-bottom)); }
+  .logger { gap: 6px; }
 }
 /* F84 ③：組列右側的累度詞（記錄時選的是詞，回看時就該看到詞） */
 .done-rpe { flex: none; color: var(--text-mute); font-size: 11px; }

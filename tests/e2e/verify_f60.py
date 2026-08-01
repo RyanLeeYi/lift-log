@@ -30,7 +30,13 @@ TOKEN = "f60-own-token"
 ROWS = """() => [...document.querySelectorAll('.cal-batch-row')].map(r => ({
   name: r.querySelector('.ex-name').textContent.trim(),
   summary: r.querySelector('.batch-summary').textContent.trim(),
+  // F76 把幾何字元（▸ / ▾）換成向量圖示，textContent 從此是空字串。
+  // 條文要的是「指示符會反映展開狀態」，不是某個字元——改記 svg 的 path，
+  // 收合態與展開態**不同**即可，不寫死任何座標。
   caret: r.querySelector('.batch-caret').textContent.trim(),
+  caret_svg: r.querySelectorAll('.batch-caret svg').length,
+  caret_d: (r.querySelector('.batch-caret path') || {}).getAttribute
+    ? r.querySelector('.batch-caret path').getAttribute('d') : null,
   open: r.classList.contains('open'),
   off: r.classList.contains('off'),
   checked: r.querySelector('input[type=checkbox]').checked,
@@ -107,7 +113,10 @@ def tap(page, selector, nth=0):
 
 
 def open_batch(page, base, tpl_name):
-    past = (datetime.date.today() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+    # F115 同型：原本用 today-3，月初跑就滑到上個月、那格根本沒被畫出來（日曆一次只畫一個月）。
+    # 改用**本月 1 號**——它必定存在、必定不是未來日，且與今天是幾號無關。
+    today_ = datetime.date.today()
+    past = today_.replace(day=1).strftime("%Y-%m-%d")
     page.locator(".bottom-nav .nav-item", has_text="日曆").click()
     page.wait_for_selector(".calendar", timeout=8000)
     page.locator(f'.cal-day[aria-label="{past}"]').click()
@@ -199,11 +208,12 @@ def main():
             want = [f"負重 0kg × 8 × {SETS[0]} 組"] + [
                 f"20kg × 8 × {SETS[i]} 組" for i in (1, 2, 3)
             ]
+            collapsed_caret = rows[0]["caret_d"]  # ② 要拿它比對展開態的指示符有沒有變
             check(
                 "①⑥ 每列預設收合成一行摘要（自體重顯示「負重」）、摘要＝F47 預設值×各自 default_sets、無 stepper",
                 [r["summary"] for r in rows] == want
                 and all(r["steppers"] == 0 and r["sets_ctl"] == 0 for r in rows)
-                and all(not r["open"] and r["caret"] == "▸" for r in rows)
+                and all(not r["open"] and r["caret_svg"] == 1 and r["caret_d"] for r in rows)
                 and [r["name"] for r in rows] == names,
                 f"summaries={[r['summary'] for r in rows]} 期望={want}",
             )
@@ -246,7 +256,7 @@ def main():
                 after_one[1]["open"]
                 and after_one[1]["steppers"] == 2
                 and after_one[1]["sets_ctl"] == 1
-                and after_one[1]["caret"] == "▾"
+                and after_one[1]["caret_d"] != collapsed_caret  # 指示符跟著翻向（F76 起是向量圖示）
                 and not after_one[3]["open"]
                 and after_two[1]["open"]
                 and after_two[3]["open"]
