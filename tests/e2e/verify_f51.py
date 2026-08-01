@@ -246,7 +246,9 @@ def main():
 
             pos = [save_bottom()]
             for _ in range(2):  # 刪到剩 2 個動作，跨過門檻
-                page.locator(".tpl-item").last.locator("button", has_text="✕").evaluate(
+                # F76 把✕ 改成向量圖示（按鈕上沒有那個字）；
+                # F98 把刪除鈕搬到卡片標題列，類別是 .tpl-item-del。
+                page.locator(".tpl-item").last.locator(".tpl-item-del").evaluate(
                     "e => e.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
                 )
                 page.wait_for_timeout(400)
