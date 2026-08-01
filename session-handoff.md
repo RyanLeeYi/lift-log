@@ -15,10 +15,11 @@
 | F112 | 就緒態可先設定這組之後的休息秒數 | verify_f112 20/20 ＋ 真機 |
 | F113 | 組列編輯改懸浮視窗 ＋ 修 384×727 的 39px 觸控違規 | verify_f113 15/15 ＋ 真機 |
 
-**已部署（2026-08-01）**：正式站 = v122（快照 commit af01142，env=prod、健康檢查 200）。
-正式版 APK `lift-log-v122.apk` 已進 `release/`（F67 自我更新的來源）與 Google Drive，
-`/api/app/latest` 回 version_code 122——Ryan 的正式版 app（v106）會看到「有新版 v122」。
-部署後查正式站 workouts = 7 筆，真實資料完好。手機上另有 dev v122。
+**已部署（2026-08-01，最新 v124）**：正式站 = v124（快照 commit facf4eb，env=prod、健康檢查 200）。
+正式版 APK `lift-log-v124.apk` 已進 `release/`（F67 自我更新的來源）與 Google Drive，
+`/api/app/latest` 回 version_code 124——Ryan 的正式版 app 會看到「有新版 v124」。
+部署後查正式站 workouts = 7 筆，真實資料完好。手機上另有 dev v124。
+（v122 也曾部署過，同一天稍早。）
 
 ## ⚠ F104 卡住了，要 Ryan 決定方向（下一場的第一件事）
 
