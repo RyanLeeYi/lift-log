@@ -70,6 +70,10 @@ def chip_state(page):
     }""")
 
 
+class _Blocked(Exception):
+    """F119 未裁決前，自訂區間相關的段落跳過但仍算失敗。"""
+
+
 def main():
     port = free_port()
     tmpdb = Path(tempfile.gettempdir()) / f"liftlog_f58_{port}.db"
@@ -150,17 +154,17 @@ def main():
             page.wait_for_selector(".screen.body", timeout=8000)
             page.wait_for_timeout(600)
 
-            # ② 體重（最早 100 天前）→ 1M/3M/6M 可用；9M 以上灰掉
+            # ② 體重（最早 100 天前）→ 1M/3M/6M 可用；再上去的檔位灰掉。
+            # ⚠ F87 ③ 把檔位改成五顆（1M／3M／6M／1Y／全部），9M 與 3Y 不存在了、
+            # 自訂區間也被拿掉（見 F119）。**F58 的規則本身沒變**——
+            # 「涵蓋得住資料的第一個檔位可用、再上去的灰掉」——只是檔位清單換了。
             st = chip_state(page)
             check(
-                "② 體重頁籤：涵蓋範圍內＋第一個涵蓋得住全部資料的檔位可用（100 天 → 1M/3M/6M），9M 以上灰",
+                "② 體重頁籤：涵蓋範圍內＋第一個涵蓋得住全部資料的檔位可用（100 天 → 1M/3M/6M），再上去灰",
                 not st["1M"]["off"]
                 and not st["3M"]["off"]
                 and not st["6M"]["off"]
-                and st["9M"]["off"]
-                and st["1Y"]["off"]
-                and st["3Y"]["off"]
-                and not st["自訂"]["off"],
+                and st["1Y"]["off"],
                 f"{ {k: ('off' if v['off'] else 'on-able') for k, v in st.items()} }",
             )
 
@@ -207,7 +211,7 @@ def main():
             page.wait_for_timeout(700)
             page.locator('.body-range button:has-text("1M")').click()  # 1M 對體重與體脂都可用
             page.wait_for_timeout(800)
-            page.locator('.body-range button:has-text("3Y")').click()  # 點灰的 → 留下體重版說明
+            page.locator('.body-range button:has-text("1Y")').click()  # F87 ③ 後 3Y 不存在，1Y 在此情境同樣是停用的  # 點灰的 → 留下體重版說明
             page.wait_for_timeout(400)
             note_before = (
                 page.locator(".range-note").inner_text()
@@ -234,7 +238,7 @@ def main():
             page.wait_for_timeout(700)
 
             # review P2-2 回歸：記錄成功後說明要消失（不與 flash 打架）
-            page.locator('.body-range button:has-text("3Y")').click()
+            page.locator('.body-range button:has-text("1Y")').click()  # F87 ③ 後 3Y 不存在，1Y 在此情境同樣是停用的
             page.wait_for_timeout(400)
             had_note = page.locator(".range-note").count() == 1
             page.locator(".body-log-open").click()
@@ -254,32 +258,44 @@ def main():
             page.wait_for_timeout(800)
 
             # ⑤ 自訂不受限制：可選一段完全在體脂資料之前的區間（顯示空狀態而非被擋）
-            page.locator('.body-range button:has-text("自訂")').click()
-            page.wait_for_timeout(300)
-            dts = page.locator(".ex-custom .ex-date")
-            dts.nth(0).fill((today - datetime.timedelta(days=95)).strftime("%Y-%m-%d"))
-            dts.nth(1).fill((today - datetime.timedelta(days=85)).strftime("%Y-%m-%d"))
-            page.locator(".ex-custom-apply").click()
-            page.wait_for_timeout(900)
-            custom_on = page.locator(".body-range button.on").inner_text().strip()
-            empty_shown = page.locator(".body-empty").count() >= 1
-            check(
-                "⑤ 自訂不受限制：可選體脂資料之前的區間，顯示空狀態而非被擋",
-                custom_on == "自訂" and empty_shown,
-                f"on={custom_on!r} empty={empty_shown}",
-            )
+            # ⚠ **這一條卡在 F119**：F87 ③ 的凍結條文寫「F56 的自選區間不回歸」（＝必須還在），
+            # 但實作把自訂區間整個拿掉了。在 Ryan 裁決之前這條註定失敗——
+            # **刻意不刪、不改寫**，讓它繼續指出那個衝突。
+            if page.locator('.body-range button:has-text("自訂")').count() == 0:
+                check(
+                    "⑤ 自訂不受限制（**卡在 F119：自訂區間已被 F87 拿掉，與 F87 ③ 條文衝突**）",
+                    False,
+                    "畫面上沒有「自訂」按鈕；等 Ryan 裁決 F119 之後再回來處理這一條",
+                )
+            else:
+                page.locator('.body-range button:has-text("自訂")').click()
+                page.wait_for_timeout(300)
+                dts = page.locator(".ex-custom .ex-date")
+                dts.nth(0).fill((today - datetime.timedelta(days=95)).strftime("%Y-%m-%d"))
+                dts.nth(1).fill((today - datetime.timedelta(days=85)).strftime("%Y-%m-%d"))
+                page.locator(".ex-custom-apply").click()
+                page.wait_for_timeout(900)
+                custom_on = page.locator(".body-range button.on").inner_text().strip()
+                empty_shown = page.locator(".body-empty").count() >= 1
+                check(
+                    "⑤ 自訂不受限制：可選體脂資料之前的區間，顯示空狀態而非被擋",
+                    custom_on == "自訂" and empty_shown,
+                    f"on={custom_on!r} empty={empty_shown}",
+                )
 
             # ⑦ 既有行為：切回體重 + 1M，圖表照畫、清單有資料
             page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(500)
             page.locator('.body-range button:has-text("3M")').click()
             page.wait_for_timeout(800)
-            poly = page.evaluate("() => !!document.querySelector('.body-chart svg polyline')")
+            # F87 ⑤ 把折線圖換成 24 根長條圖，`svg polyline` 不存在了。
+            # ⑦ 要的是「圖表照畫」這個行為，不是某種圖表型別——改驗長條有畫出來。
+            bars = page.locator(".body-bars .body-bar").count()
             rows = page.locator(".bm-rows .bm-row").count()
             check(
                 "⑦ 既有行為：切回體重 3M 仍正常出圖、清單有資料",
-                poly and rows > 0,
-                f"svg={poly} rows={rows}",
+                bars > 0 and rows > 0,
+                f"bars={bars} rows={rows}",
             )
 
             browser.close()
