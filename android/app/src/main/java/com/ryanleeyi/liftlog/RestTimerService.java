@@ -89,6 +89,18 @@ public class RestTimerService extends Service {
     private int targetSeconds;
     /** F100：已停止但視窗還在（不倒數、不響、暫停不可按）。 */
     private boolean halted;
+    /**
+     * F104-A：這輪休息還在不在（給 MainActivity 判斷要不要讓 WebView 保持可執行）。
+     *
+     * <p>static 是刻意的：判斷點在 Activity 的生命週期回呼裡，那時拿不到服務實例。
+     * 只在 onCreate／onDestroy 兩處寫，語意單純。
+     */
+    private static volatile boolean sessionActive;
+
+    /** F104-A：休息輪是否進行中。Activity 用它決定要不要保持 WebView 可執行。 */
+    static boolean isSessionActive() {
+        return sessionActive;
+    }
     private final Handler overtimeTicker = new Handler(Looper.getMainLooper());
     private MediaPlayer alarmPlayer;
 
@@ -113,6 +125,7 @@ public class RestTimerService extends Service {
             // 所以我自己只測了那一條沒發現）。
             cancelNotification();
             RestOverlay.hide(this); // F64 ④：overlay 不留在螢幕上
+            sessionActive = false; // F104-A：這輪結束了
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -191,6 +204,7 @@ public class RestTimerService extends Service {
         }
 
         ensureChannel();
+        sessionActive = true; // F104-A：這輪開始了
         paused = false;
         halted = false; // F100：新的一輪；上一輪停在哪裡跟這輪無關
         remainingSeconds = seconds;
@@ -219,6 +233,7 @@ public class RestTimerService extends Service {
 
     @Override
     public void onDestroy() {
+        sessionActive = false; // F104-A：服務沒了就不再撐著 WebView
         stopAlarm(); // ⑦：服務被系統回收時聲音與震動一起收乾淨
         stopTimer();
         // F64 ④ 的第二條路徑：系統回收服務時也要收掉 overlay。
