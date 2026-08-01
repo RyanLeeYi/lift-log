@@ -777,7 +777,21 @@ body {
 .cal-day.lv4 { background: var(--heat-4); color: var(--on-accent); font-weight: 700; }
 /* F85：當日明細本身就是一張卡（設計：--card, r22, padding 20）；
    熱度圖例拿掉——五階的意義靠格子本身的漸層就讀得出來，圖例只是佔一列。 */
+/* F114 ①：明細卡吃掉日曆格子以下的剩餘空間，讓頁面本身不必捲動。 */
 .cal-detail { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+/* F114 ①：只有有動作時才吃剩餘空間；休息日貼合內容（F85 不回歸）。 */
+.cal-detail.has-sets { flex: 1; min-height: 0; }
+/* F114 ①：flex 子項的預設 min-height: auto 會讓 .screen 被內容撐回去，
+   .fills 給的確定高度等於被忽略（實測：應該 699px 卻量到 716px，差的 17px 就是溢出）。
+   只收日曆這一個畫面，不動其他 .fills 畫面的現有行為。 */
+.screen.calendar {
+  /* flex: none 是關鍵——.screen 的 flex: 1 帶的 flex-basis: 0% 會蓋掉 .fills 給的 height，
+     項目改由內容決定大小（實測：應該 699px 卻量到 716px，差的 17px 就是溢出）。 */
+  flex: none;
+  height: calc(100dvh - var(--app-pad-y));
+  min-height: 0;
+}
+.screen.calendar .cal-card { flex: none; } /* 格子高度固定，剩下的空間全給明細卡 */
 .cal-hint { color: var(--text-mute); font-size: 14px; text-align: center; padding: 24px 4px; }
 .cal-detail-head {
   display: flex; justify-content: space-between;
@@ -845,8 +859,11 @@ body {
 
 /* F43：動作區塊 > 3 個時，動作列表段固定高度（約 3 個收合區塊）＋垂直捲軸——
    第 4 個起需捲動，避免當日動作多時把明細推得過長（噸位/狀態/補記入口不被捲入）。 */
+/* F114 ②③：吃剩餘空間、內部捲動。`min-height: 0` 是必要的——flex 子項的預設
+   `min-height: auto` 會讓它被內容撐大而不是被容器夾住，那正是「限高看起來沒生效」的成因。
+   捲的只有動作區塊；補記入口與批次刪除條是 .cal-detail 的兄弟節點，因此永遠留在卡片底部。 */
 .cal-ex-scroll {
-  max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
   display: flex; flex-direction: column; gap: 8px;
 }
 

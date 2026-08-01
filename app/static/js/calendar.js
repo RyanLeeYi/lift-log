@@ -863,18 +863,18 @@ function detailRows(guard, rerender) {
     );
   }
   // F43：動作區塊 > 3 個 → 收進固定高度捲軸容器（只捲動作段，噸位/狀態/補記入口不被捲入）
-  if (blocks.length > 3) {
-    const scroller = el("div", {
-      class: "cal-ex-scroll",
-      // Codex P2：全畫面重繪會重建此容器、scrollTop 歸零——記錄捲動位置，重繪後用 rAF 還原，
-      // 否則捲到下面的區塊一互動（展開/編輯/選取）就跳回頂端
-      onscroll: (e) => { cal.exScrollTop = e.target.scrollTop; },
-    }, blocks);
-    requestAnimationFrame(() => { scroller.scrollTop = cal.exScrollTop; });
-    rows.push(scroller);
-  } else {
-    rows.push(...blocks);
-  }
+  // F114 ②：**永遠**放進捲動容器，不再是「>3 個才捲」。
+  // 舊條件下 1–3 個動作完全不限高，明細卡直接把版面撐開——384×727 上只有一個動作
+  // 就已經溢出 30px，標題與「補記這一天」沒辦法同時看到（Ryan 2026-08-01 回報）。
+  // 高度由 CSS 吃剩餘空間決定（flex: 1 + min-height: 0），不寫死 px。
+  const scroller = el("div", {
+    class: "cal-ex-scroll",
+    // Codex P2：全畫面重繪會重建此容器、scrollTop 歸零——記錄捲動位置，重繪後用 rAF 還原，
+    // 否則捲到下面的區塊一互動（展開/編輯/選取）就跳回頂端
+    onscroll: (e) => { cal.exScrollTop = e.target.scrollTop; },
+  }, blocks);
+  requestAnimationFrame(() => { scroller.scrollTop = cal.exScrollTop; });
+  rows.push(scroller);
   if (cal.selectMode) {
     rows.push(
       el("div", { class: "cal-batch-bar" }, [
@@ -937,7 +937,9 @@ export function renderCalendar(rerender, goHome, guard) {
       rerender();
     });
 
-  return el("section", { class: "screen calendar" }, [
+  // F114 ①：掛 fills（F50／F52 既有的 marker class）——畫面沒有確定高度時，
+  // 明細卡的 flex: 1 拿不到可分配的剩餘空間，限高等於沒生效，頁面照樣被撐出捲軸。
+  return el("section", { class: "screen calendar fills" }, [
     // F85：改用全站 .screen-head（返回 ＋ 標題 ＋ 副標）；月份切換留在右側，
     // 沒有它就只看得到當月，切月是日曆的基本能力
     el("header", { class: "screen-head" }, [
@@ -968,7 +970,12 @@ export function renderCalendar(rerender, goHome, guard) {
     // 沒選日就不要建這張卡——明細現在有 --card 底色，空的時候會是一個佔滿下半屏的空褐色方塊
     // （實機截圖才看出來：改版前它沒有底色，空著也看不見）
     ...(cal.selected
-      ? [el("div", { class: "card cal-detail" }, detailRows(guard, rerender))]
+      ? [el("div", {
+          // F114 ①＋F85 不回歸：只有**有動作**時才撐開吃剩餘空間。
+          // 休息日照舊貼合內容——F85 花力氣修掉的就是「空的時候變成佔滿下半屏的
+          // 褐色方塊」，讓它以另一個形式回來等於白修。
+          class: `card cal-detail${cal.detail.length > 0 ? " has-sets" : ""}`,
+        }, detailRows(guard, rerender))]
       : [el("p", { class: "cal-hint" }, ["點一天看當天練了什麼"])]),
     // F43：補記懸浮 modal（position:fixed，蓋在整個日曆畫面上；未開啟時回 []）
     ...addModal(guard, rerender),
