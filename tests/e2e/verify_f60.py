@@ -101,7 +101,7 @@ def tap(page, selector, nth=0):
 
 def open_batch(page, base, tpl_name):
     past = (datetime.date.today() - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
-    page.locator(".btn", has_text="📅 日曆").click()
+    page.locator(".bottom-nav .nav-item", has_text="日曆").click()
     page.wait_for_selector(".calendar", timeout=8000)
     page.locator(f'.cal-day[aria-label="{past}"]').click()
     page.wait_for_timeout(400)

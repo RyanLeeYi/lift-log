@@ -135,7 +135,7 @@ def main():
                 f"tag={ver!r}",
             )
 
-            page.locator('.btn:has-text("⚖️ 體重")').click()
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
             page.wait_for_selector(".screen.body", timeout=8000)
             page.wait_for_timeout(400)
 

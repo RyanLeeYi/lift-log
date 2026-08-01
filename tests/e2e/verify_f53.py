@@ -126,7 +126,7 @@ def main():
                 f"tag={ver!r}",
             )
 
-            page.locator('.btn:has-text("⚖️ 體重")').click()
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
             page.wait_for_selector(".screen.body", timeout=8000)
 
             # ①⑤ 單卡＋toggle、預設體重
@@ -197,7 +197,7 @@ def main():
                 page.set_viewport_size({"width": 390, "height": h})
                 page.wait_for_timeout(300)
                 heights[h] = box_h(page, ".bm-rows.scrollable")
-                btn_ok[h] = fully_visible(page, '.screen.body button:has-text("← 回首頁")')
+                btn_ok[h] = fully_visible(page, '.screen.body .back-btn')
             check(
                 "⑧ 高視窗：紀錄清單填滿剩餘空間（高度隨螢幕變化）、「← 回首頁」完整可見",
                 heights[1000] > heights[900] > heights[844] and all(btn_ok.values()),
@@ -212,12 +212,12 @@ def main():
                 page.set_viewport_size({"width": 390, "height": h})
                 page.wait_for_timeout(300)
                 page.locator(
-                    '.screen.body button:has-text("← 回首頁")'
+                    '.screen.body .back-btn'
                 ).scroll_into_view_if_needed()
                 page.wait_for_timeout(250)
                 rows_h = box_h(page, ".bm-rows")
                 short_ok[h] = {
-                    "btn_visible": fully_visible(page, '.screen.body button:has-text("← 回首頁")'),
+                    "btn_visible": fully_visible(page, '.screen.body .back-btn'),
                     "rows_h": rows_h,
                     # 修正後矮螢幕的正確行為＝收在 40dvh 內（不吃剩餘空間、不被拉成滿高）
                     "not_stretched": rows_h is not None and rows_h <= h * 0.42,
@@ -348,10 +348,10 @@ def main():
                 page.set_viewport_size({"width": w, "height": h})
                 page.wait_for_timeout(300)
                 page.locator(
-                    '.screen.body button:has-text("← 回首頁")'
+                    '.screen.body .back-btn'
                 ).scroll_into_view_if_needed()
                 page.wait_for_timeout(200)
-                short[f"{w}x{h}"] = fully_visible(page, '.screen.body button:has-text("← 回首頁")')
+                short[f"{w}x{h}"] = fully_visible(page, '.screen.body .back-btn')
             check(
                 "⑨ 極矮／橫向視窗回退成整頁可捲，「← 回首頁」捲動後完整可見",
                 all(short.values()),
@@ -371,7 +371,7 @@ def main():
                     )  # 覆蓋成無體脂
             page.reload()
             page.wait_for_selector(".home-start", timeout=8000)
-            page.locator('.btn:has-text("⚖️ 體重")').click()
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
             page.wait_for_selector(".screen.body", timeout=8000)
             page.locator(".body-metric-toggle .chip", has_text="體脂").click()
             page.wait_for_timeout(400)

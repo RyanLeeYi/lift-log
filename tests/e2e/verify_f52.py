@@ -13,6 +13,14 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f52-own-token"
 
@@ -106,10 +114,11 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
             # ⑤ 版本
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            # F81 把版號搬進設定畫面；read_version() 自己會開設定再回首頁。
+            ver = read_version(page)
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑤ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v53）",
@@ -119,7 +128,7 @@ def main():
 
             # ③ marker class：四個畫面都掛 .fills，CSS 只認它
             fills = {}
-            page.locator(".btn", has_text="📋 課表").click()
+            page.locator(".bottom-nav .nav-item", has_text="課表").click()
             page.wait_for_selector(".screen.templates", timeout=8000)
             fills["templates"] = page.locator(".screen.templates.fills").count() == 1
             page.locator(".tpl-row", has_text="F52 課表").locator("button", has_text="編輯").click()
@@ -242,11 +251,11 @@ def main():
                 page.wait_for_timeout(300)
             page.wait_for_selector(".screen.templates", timeout=8000)
             page.locator(".screen.templates button", has_text="← 回首頁").click()
-            page.wait_for_selector(".home-start", timeout=8000)
-            page.locator(".home-start").click()
+            wait_home(page)
+            start_from_home(page)
             page.wait_for_selector(".tpl-choice-list", timeout=8000)
             fills["templateSelect"] = page.locator(".screen.template-select.fills").count() == 1
-            page.locator(".tpl-choice-list .exercise-item", has_text="F52 課表").click()
+            page.locator(".tpl-choice", has_text="F52 課表").click()
             page.wait_for_selector(".screen.picker", timeout=8000)
             fills["picker"] = page.locator(".screen.picker.fills").count() == 1
             # 判定方式：釘視窗高時 computed height 應等於 viewport − .app 上下 padding（28px）；

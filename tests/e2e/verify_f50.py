@@ -16,6 +16,15 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    end_workout,
+    read_version,
+    start_from_home,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f50-own-token"
 
@@ -146,10 +155,11 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
             # ⑩ 版本
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            # F81 把版號搬進設定畫面；read_version() 自己會開設定再回首頁。
+            ver = read_version(page)
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             # 不釘死版號（每個 feature 都會 bump）——只驗兩處一致，那才是維護鐵則的內容
             check(
@@ -159,39 +169,46 @@ def main():
             )
 
             # ⑦（門檻下，兩處直接實測）：只有 2 份課表時不加 scrollable、也不被拉長成滿高
-            page.locator(".btn", has_text="📋 課表").click()
+            page.locator(".bottom-nav .nav-item", has_text="課表").click()
             page.wait_for_selector(".screen.templates", timeout=8000)
             rows_h = box_h(page, ".tpl-rows")
             not_scrollable_rows = page.locator(".tpl-rows.scrollable").count() == 0
             page.locator(".screen.templates button", has_text="← 回首頁").click()
-            page.wait_for_selector(".home-start", timeout=8000)
-            page.locator(".home-start").click()
+            wait_home(page)
+            start_from_home(page)
             page.wait_for_selector(".tpl-choice-list", timeout=8000)
             choice_h = box_h(page, ".tpl-choice-list")
             not_scrollable_choice = page.locator(".tpl-choice-list.scrollable").count() == 0
             check(
                 "⑦ 課表列表頁與開練挑課表：2 份時不加 scrollable，也不被拉長成滿高",
-                not_scrollable_rows and not_scrollable_choice and rows_h < 400 and choice_h < 200,
+                # 門檳改成「不超過畫面一半」而不是寫死的 px：
+                # F82 把挑課表改成卡片（多了動作 chips 與上次紀錄），卡本身就變高了。
+                # ⑦ 要的是「**不被拉長成滿高**」，不是某個特定數字。
+                not_scrollable_rows
+                and not_scrollable_choice
+                and rows_h < 844 * 0.55
+                and choice_h < 844 * 0.5,
                 f"rows_h={rows_h} choice_h={choice_h} scrollable=({not_scrollable_rows},{not_scrollable_choice})",
             )
-            page.locator('.screen.template-select button:has-text("← 回首頁")').click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            page.locator(".screen.template-select .back-btn").click()
+            wait_home(page)
             for name, ex in LATER:  # 補齊資料量，後續各條才有溢出情境
                 make_tpl(name, ex)
 
             def goto_templates():
-                if page.locator(".home-start").count() == 0:
+                if page.locator("button:has-text('繼續訓練'), button:has-text('開始訓練'), "
+                                "button:has-text('挑一份課表')").count() == 0:
                     page.goto(base + "/")
-                    page.wait_for_selector(".home-start", timeout=8000)
-                page.locator(".btn", has_text="📋 課表").click()
+                    wait_home(page)
+                page.locator(".bottom-nav .nav-item", has_text="課表").click()
                 page.wait_for_selector(".screen.templates", timeout=8000)
 
             def goto_template_select():
-                page.locator(".home-start").click()
+                start_from_home(page)
                 page.wait_for_selector(".tpl-choice-list", timeout=8000)
 
             def goto_picker(tpl_name):
-                page.locator(".tpl-choice-list .exercise-item", has_text=tpl_name).click()
+                page.locator(".tpl-choice", has_text=tpl_name).click()
                 page.wait_for_selector(".screen.picker", timeout=8000)
 
             # ---------- ② 課表列表頁：三種高度下高度不同、按鈕都看得見 ----------
@@ -219,7 +236,7 @@ def main():
             page.set_viewport_size({"width": 390, "height": 844})
             page.wait_for_timeout(200)
             page.locator(".screen.templates button", has_text="← 回首頁").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
             # ---------- ③ 開練挑課表 ----------
             goto_template_select()
@@ -229,7 +246,7 @@ def main():
                 page.wait_for_timeout(250)
                 sel_h[h] = box_h(page, ".tpl-choice-list.scrollable")
                 sel_btn[h] = fully_visible(page, ".free-choice") and fully_visible(
-                    page, '.screen.template-select button:has-text("← 回首頁")'
+                    page, ".screen.template-select .back-btn"
                 )
             check(
                 "③ 開練挑課表：清單高度隨螢幕變化，「自由訓練」「←回首頁」各高度都完整可見",
@@ -249,7 +266,7 @@ def main():
                 menu_h[h] = box_h(page, ".menu-list.scrollable")
                 menu_vis[h] = visible_items(page, ".menu-list.scrollable", ".exercise-row")
                 menu_btn[h] = fully_visible(page, ".add-exercise-open") and fully_visible(
-                    page, '.picker-foot button:has-text("結束訓練")'
+                    page, '.end-workout, .picker-foot .btn-danger'
                 )
             check(
                 "① 今日菜單：高度隨螢幕變化，「＋臨時加動作」與底部兩鍵各高度都完整可見",
@@ -277,7 +294,7 @@ def main():
             page.wait_for_timeout(250)
             after_h = box_h(page, ".menu-list.scrollable")
             still_ok = fully_visible(page, ".add-exercise-open") and fully_visible(
-                page, '.picker-foot button:has-text("結束訓練")'
+                page, '.end-workout, .picker-foot .btn-danger'
             )
             check(
                 "⑥ 錯誤橫幅出現 → 清單自動縮短讓位，底部按鈕仍完整可見",
@@ -340,11 +357,11 @@ def main():
                 page.wait_for_timeout(300)
                 auto_h = page.eval_on_selector(".screen.picker", "e => getComputedStyle(e).height")
                 page.locator(
-                    '.picker-foot button:has-text("結束訓練")'
+                    '.end-workout, .picker-foot .btn-danger'
                 ).scroll_into_view_if_needed()
                 page.wait_for_timeout(200)
                 short_ok[f"{w}x{h}"] = (
-                    fully_visible(page, '.picker-foot button:has-text("結束訓練")'),
+                    fully_visible(page, '.end-workout, .picker-foot .btn-danger'),
                     auto_h,
                 )
             check(
@@ -356,8 +373,8 @@ def main():
             page.wait_for_timeout(250)
 
             # ---------- ⑦ 門檻下不加捲軸也不被拉長 ----------
-            page.locator(".picker-foot button", has_text="結束訓練").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            end_workout(page)  # F83 後有課表時在菜單的 .end-workout，共用 helper 兩種版面都試
+            wait_home(page)
             goto_template_select()
             goto_picker("F50 小課表")
             small_h = box_h(page, ".menu-list")
@@ -370,8 +387,8 @@ def main():
             )
 
             # ---------- ④ 自由訓練攤開清單也填滿 ----------
-            page.locator(".picker-foot button", has_text="結束訓練").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            end_workout(page)  # F83 後有課表時在菜單的 .end-workout，共用 helper 兩種版面都試
+            wait_home(page)
             goto_template_select()
             page.locator(".free-choice").click()
             page.wait_for_selector(".screen.picker", timeout=8000)
@@ -380,7 +397,7 @@ def main():
                 page.set_viewport_size({"width": 390, "height": h})
                 page.wait_for_timeout(250)
                 free_h[h] = box_h(page, ".screen.picker > .pick-list")
-            free_btn = fully_visible(page, '.picker-foot button:has-text("結束訓練")')
+            free_btn = fully_visible(page, '.end-workout, .picker-foot .btn-danger')
             check(
                 "④ 自由訓練攤開的動作清單同樣填滿剩餘空間，底部按鈕完整可見",
                 free_h[844] > free_h[667] and free_btn,
@@ -390,8 +407,8 @@ def main():
             page.wait_for_timeout(200)
 
             # ---------- ⑨/⑧ 既有行為：F48 捲動位置保留仍成立（滾輪＋dispatchEvent） ----------
-            page.locator(".picker-foot button", has_text="結束訓練").click()
-            page.wait_for_selector(".home-start", timeout=8000)
+            end_workout(page)  # F83 後有課表時在菜單的 .end-workout，共用 helper 兩種版面都試
+            wait_home(page)
             goto_templates()
             tbox = page.locator(".tpl-rows.scrollable").bounding_box()
             page.mouse.move(tbox["x"] + tbox["width"] / 2, tbox["y"] + tbox["height"] / 2)

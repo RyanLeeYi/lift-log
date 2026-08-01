@@ -13,6 +13,13 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_f67 import (  # noqa: E402
+    read_version,
+    wait_home,
+)
+
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f51-own-token"
 
@@ -144,10 +151,11 @@ def main():
             page.goto(base + "/")
             page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
             page.reload()
-            page.wait_for_selector(".home-start", timeout=8000)
+            wait_home(page)
 
             # ⑤ 版本
-            ver = page.locator(".version-tag").first.inner_text().strip()
+            # F81 把版號搬進設定畫面；read_version() 自己會開設定再回首頁。
+            ver = read_version(page)
             sw_src = urllib.request.urlopen(base + "/sw.js", timeout=5).read().decode()
             check(
                 "⑤ APP_VERSION 與 sw.js CACHE_NAME 同步遞增（兩處一致，≥v52）",
@@ -157,7 +165,7 @@ def main():
 
             def open_editor(name):
                 if page.locator(".screen.templates").count() == 0:
-                    page.locator(".btn", has_text="📋 課表").click()
+                    page.locator(".bottom-nav .nav-item", has_text="課表").click()
                     page.wait_for_selector(".screen.templates", timeout=8000)
                 page.locator(".tpl-row", has_text=name).locator("button", has_text="編輯").click()
                 page.wait_for_selector(".screen.template-edit", timeout=8000)

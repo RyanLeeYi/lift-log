@@ -139,7 +139,7 @@ def main():
                 f"tag={ver!r}",
             )
 
-            page.locator('.btn:has-text("⚖️ 體重")').click()
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
             page.wait_for_selector(".screen.body", timeout=8000)
             page.wait_for_timeout(600)
 
@@ -308,7 +308,7 @@ def main():
                     page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
                     page.reload()
                     page.wait_for_selector(".home-start", timeout=8000)
-                    page.locator('.btn:has-text("⚖️ 體重")').click()
+                    page.locator(".bottom-nav .nav-item", has_text="體重").click()
                     page.wait_for_selector(".screen.body", timeout=8000)
                     page.wait_for_timeout(600)
                     st0 = chip_state(page)
