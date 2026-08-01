@@ -21,9 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from verify_f67 import (  # noqa: E402
-    end_workout,
     read_version,
-    start_from_home,
     wait_home,
 )
 
