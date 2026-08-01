@@ -69,8 +69,8 @@ final class RestOverlay {
     private static TextView status;
     private static ImageView pauseButton; // F71 ①：暫停／繼續兩態共用同一顆
     private static TextView stopButton; // F73：鬧鐘響著時要轉警示色
-    /** F103 ③：停止態才出現，取代暫停與停止的位置——停了之後唯一有意義的操作。 */
-    private static TextView restartButton;
+    /** F116 ②：±15s 那一列——休息態才出現（就緒態沒有在倒數，加減秒數沒有意義）。 */
+    private static View adjustRow;
     /** F104 ①：待記組——這輪休息結束後要記的那一組。weight < 0 ＝ 前端沒送，整塊不顯示。 */
     private static double draftWeight = -1;
     private static int draftReps = -1;
@@ -243,12 +243,7 @@ final class RestOverlay {
             paused = false;
             remaining = resetSeconds;
             target = resetSeconds > 0 ? resetSeconds : target;
-            if (pauseButton != null) pauseButton.setVisibility(value ? View.GONE : View.VISIBLE);
-            if (stopButton != null) stopButton.setVisibility(value ? View.GONE : View.VISIBLE);
-            // F103 ④：再開始之後要回到正常倒數態——這一顆跟著消失，暫停與停止回來
-            if (restartButton != null) {
-                restartButton.setVisibility(value ? View.VISIBLE : View.GONE);
-            }
+            applyStateVisibility();
             applyAlarmTint(false);
             paintTime();
         });
@@ -285,6 +280,28 @@ final class RestOverlay {
             }
             apply(context);
         });
+    }
+
+    /**
+     * F116 ②⑥：兩態的按鈕組互斥。
+     *
+     * <p>就緒態（halted）＝沒有在倒數：待記組 ＋「完成這組」；暫停／停止／±15s 全收起來——
+     * 沒有在跑的倒數可暫停、可加減秒數，留著只會讓人按了沒反應。
+     * 休息態＝倒數中：暫停／停止／±15s；「完成這組」收起來（要記下一組先按停止，
+     * 與 app 內「繼續下一組 → 完成這組」是同一組動作）。
+     *
+     * <p>⚠ 一定要在 buildExpanded 結尾也呼叫一次：收合⇄展開會**重建**整棵 view，
+     * 重建出來的都是預設 VISIBLE（F100／F103 都踩過這個坑）。
+     */
+    private static void applyStateVisibility() {
+        boolean resting = !halted;
+        if (pauseButton != null) pauseButton.setVisibility(resting ? View.VISIBLE : View.GONE);
+        if (stopButton != null) stopButton.setVisibility(resting ? View.VISIBLE : View.GONE);
+        if (adjustRow != null) adjustRow.setVisibility(resting ? View.VISIBLE : View.GONE);
+        if (logButton != null) {
+            logButton.setVisibility(!resting && hasDraft() ? View.VISIBLE : View.GONE);
+        }
+        if (draftRow != null) draftRow.setVisibility(hasDraft() ? View.VISIBLE : View.GONE);
     }
 
     private static void clearLogPending() {
@@ -587,6 +604,7 @@ final class RestOverlay {
         paintDraft();
         paintLogButton();
         paintLogStatus();
+        applyStateVisibility(); // 所有子 view 都建好之後才套，順序不能反（見 buildControls 的註解）
 
         // 卡片本體也可拖；點擊要收合。兩者由 DragListener 依位移量分辨
         root.setOnTouchListener(new DragListener(context));
@@ -700,12 +718,8 @@ final class RestOverlay {
         stopButton = pillButton(context, "停止", v -> RestTimerService.halt(context));
         row1.addView(stopButton, pillParams(context, false));
 
-        // F103 ③：停止之後唯一有意義的操作。停止態下暫停與停止都收起來（F100 ②），
-        // 若不補這一顆，使用者就只剩「純加減秒數」或「回 app」兩條路——Ryan 2026-07-31 回報的缺口。
-        restartButton = pillButton(context, "再開始", v -> RestTimerService.restart(context));
-        // first=true（不加起始間距）：停止態下暫停與停止是 GONE，它是這一列**唯一**可見的鈕，
-        // 帶著間距會整顆偏右看起來沒對齊。
-        row1.addView(restartButton, pillParams(context, true));
+        // F116 ⑤：「再開始」拿掉。視窗改成與計時頁同構的兩態之後，「停止」直接回就緒態、
+        // 「完成這組」跟著回來，這顆沒有位置了（Ryan 2026-08-01 拍板）。
         wrap.addView(row1);
 
         LinearLayout row2 = new LinearLayout(context);
@@ -718,14 +732,14 @@ final class RestOverlay {
             pillParams(context, true));
         row2.addView(pillButton(context, "+15s", v -> RestTimerService.adjust(context, 15)),
             pillParams(context, false));
+        adjustRow = row2;
         wrap.addView(row2);
         // F100 ②：收合⇄展開會**重建**整棵 view，重建出來的兩顆是預設的 VISIBLE——
         // 已停止的狀態下它們必須維持收起來，否則收合再展開一次，暫停與停止就自己跑回來了
         //（2026-07-31 真機實測抓到；setHalted 只在按下停止的當下跑過一次，蓋不到之後的重建）。
-        // 停止態與一般態的按鈕組是互斥的，兩邊都要在重建後重新套用（見上方註解）。
-        pauseButton.setVisibility(halted ? View.GONE : View.VISIBLE);
-        stopButton.setVisibility(halted ? View.GONE : View.VISIBLE);
-        restartButton.setVisibility(halted ? View.VISIBLE : View.GONE);
+        // ⚠ 這裡**不能**叫 applyStateVisibility()：本方法比 buildLogButton() 先執行，
+        // 那時 logButton 還指著舊實例（或 null），新建的那顆會維持預設 VISIBLE。
+        // 統一在 buildExpanded 結尾套一次（還有 setHalted 與 setDraft）。
         return wrap;
     }
 
@@ -839,7 +853,6 @@ final class RestOverlay {
         slp.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, 6));
         wrap.addView(logStatus, slp);
 
-        wrap.setVisibility(hasDraft() ? View.VISIBLE : View.GONE);
         draftRow = wrap;
         return wrap;
     }
@@ -897,7 +910,7 @@ final class RestOverlay {
         logButton.setOnClickListener(v -> requestLog(context));
         pressFeedback(logButton);
         paintLogButton();
-        logButton.setVisibility(hasDraft() ? View.VISIBLE : View.GONE);
+        // 可見性由 applyStateVisibility() 統一決定（就緒態才出現），這裡不各自判斷
         return logButton;
     }
 
@@ -922,7 +935,8 @@ final class RestOverlay {
 
     private static void paintLogButton() {
         if (logButton == null) return;
-        logButton.setText(logPending ? "記錄中…" : "記下這組");
+        // F116 ①：與 app 內計時頁一致的文案
+        logButton.setText(logPending ? "記錄中…" : "完成這組");
         logButton.setAlpha(logPending ? 0.6f : 1f);
     }
 

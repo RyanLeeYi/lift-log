@@ -55,7 +55,14 @@ public class RestTimerService extends Service {
      * （浮動視窗的 ✕、記下一組開新的休息、結束訓練）。
      */
     public static final String ACTION_HALT = "com.ryanleeyi.liftlog.REST_HALT";
-    /** F103 ③：停止之後的「再開始」——從目前顯示的秒數重新倒數（±15s 調過就是調完的值）。 */
+    /**
+     * F103 ③：停止之後的「再開始」——從目前顯示的秒數重新倒數。
+     *
+     * <p>⚠ **F116 之後這條路已經沒有 UI 入口**：浮動視窗改成兩態，
+     * 「停止」直接回就緒態、「完成這組」跟著回來，那顆鈕已拿掉。
+     * 服務端與前端的處理都留著（verify_f103 仍在驗），但現在只有測試叫得到。
+     * 下一個碰到這裡的人：要麼給它新的入口，要麼連同測試一起刪。
+     */
     public static final String ACTION_RESTART = "com.ryanleeyi.liftlog.REST_RESTART";
     /** F104 ①：待記組——這輪休息結束後要記的那一組。服務不解讀，只是搬給 overlay。 */
     public static final String EXTRA_WEIGHT = "weight";

@@ -2736,7 +2736,18 @@ async function resumeRestAfterRestore() {
   // 暫停中也不排——F71 的暫停語意是「時間不走」，排了就會在不該響的時候響。
   // 秒數在等待期間會往前走，所以重算一次而不是沿用上面那個。
   const now = restRemainingSeconds();
-  if (!restPaused() && now !== null && now > 0) scheduleRestNotify(now, restHintText());
+  // F104 ①：還原路徑也要把待記組送下去。漏了的話，app 被回收重開之後那一輪
+  // 的浮動視窗就沒有待記組，連帶「完成這組」也不會出現（F116 ② 的就緒態等於残廃）。
+  // 2026-08-01 驗 F116 時在真機上發現。
+  if (!restPaused() && now !== null && now > 0) {
+    scheduleRestNotify(now, restHintText(), state.exercise
+      ? {
+          weight: state.weightKg,
+          reps: state.reps,
+          bodyweight: Boolean(state.exercise.is_bodyweight),
+        }
+      : null);
+  }
 }
 
 /**
