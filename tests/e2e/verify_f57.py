@@ -1,9 +1,20 @@
-"""F57 體重頁圖表 x 軸改為時間軸 E2E。
-用法：PYTHONUTF8=1 uv run python verify_f57_own.py
-涵蓋 acceptance ①–⑦。
+"""F57 體重頁圖表 x 軸改為時間軸 E2E ——**大部分條文已退役**。
 
-核心手法：直接讀 SVG polyline 的 points，驗「x 座標與日期成比例」而不是「等距」。
-測資刻意留一段兩個月的空缺——等距索引軸下該段與其他段的水平間距相同，時間軸下會明顯變寬。
+用法：PYTHONUTF8=1 uv run python tests/e2e/verify_f57.py
+
+F87 ⑤ 把折線圖整個換成 24 根長條圖，F57 賴以驗證的 `svg polyline` 不存在了。
+原本的核心手法（讀 polyline 的 x 座標，驗「水平間距與日期成比例」）**沒有對應物可驗**：
+長條圖是等寬等距的，日期差多遠都長一樣。
+
+⚠ **這代表 F57 的存在理由消失了**：它要守的是「兩點之間的時間差看得出來」——
+中間停量兩個月，圖上要看得出那是一段空白。長條圖看不出來。
+**2026-08-01 Ryan 裁決：接受這個語意消失，不在長條圖上補回。**
+記在這裡是為了讓後人知道它是被知情地放棄的，不是被漏掉的。
+
+留下來的是**與圖表型別無關、至今仍然有效**的那幾條：⑦ 版號同步、③ 的邊界不炸圖
+（0 點 / 1 點 / 全部同一天）、⑥ 切體脂後區間不變且單位正確。
+折線圖專屬的條目（①②⑤ 的 x 軸比例與 domain、review P2-1 的每點小圓）已移除——
+被驗的東西不存在了，不是把斷言放寬。長條圖自己的契約由 verify_f87 顧著（38 條）。
 """
 
 import datetime
@@ -26,16 +37,6 @@ from verify_f67 import (  # noqa: E402
 
 REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
 TOKEN = "f57-own-token"
-
-POLY = """() => {
-  const pl = document.querySelector('.body-chart svg polyline');
-  if (!pl) return null;
-  const xs = pl.getAttribute('points').trim().split(' ')
-    .map(p => parseFloat(p.split(',')[0]));
-  // 末點圓是 r=3；P2-1 起每個點還會多畫 r=2 的小圓，所以要指定 r=3 才抓得到末點
-  const c = document.querySelector('.body-chart svg circle[r="3"]');
-  return { xs, cx: c ? parseFloat(c.getAttribute('cx')) : null };
-}"""
 
 
 def ensure_custom(page):
@@ -146,134 +147,79 @@ def main():
             page.wait_for_selector(".screen.body", timeout=8000)
             page.wait_for_timeout(400)
 
-            # ①② 空缺要有水平間距：85→80 天那段每步 ≈ 1 天，80→20 那段一次跨 60 天
-            poly = page.evaluate(POLY)
-            xs = poly["xs"]
-            steps = [round(xs[i + 1] - xs[i], 2) for i in range(len(xs) - 1)]
-            gap_step = max(steps)
-            normal_steps = [s for s in steps if s != gap_step]
-            avg_normal = sum(normal_steps) / len(normal_steps)
+            # ③ 邊界不炸圖（0 點 / 1 點 / 全部同一天）——與圖表型別無關，仍然有效。
+            # F87 ⑤ 之後畫的是 .body-bars .body-bar，不再是 svg polyline。
+            bars = page.locator(".body-bars .body-bar").count()
+            rows = page.locator(".bm-rows .bm-row").count()
             check(
-                "①② x 軸依時間：兩個月空缺的水平間距遠大於相鄰日的間距（等距索引下會相同）",
-                len(xs) == 12 and gap_step > avg_normal * 20,
-                f"gap_step={gap_step} avg_normal={round(avg_normal, 2)} 倍率={round(gap_step / avg_normal, 1)}",
+                "（承接自 ①②）12 筆資料畫得出長條圖、清單同步（原文驗的 x 軸比例已隨折線圖退役）",
+                bars > 0 and rows == 12,
+                f"bars={bars} rows={rows}",
             )
 
-            # ① domain＝區間：3M 下最舊點（85 天前）不在最左緣、最新點（15 天前）不在最右緣
-            foot = page.locator(".body-main-delta").inner_text().split("\n")
-            check(
-                "①⑤ x 軸 domain＝選取區間：首點不貼左緣、末點不貼右緣；卡片底部顯示區間邊界",
-                xs[0] > 7 and xs[-1] < 313 and poly["cx"] == xs[-1],
-                f"first_x={xs[0]} last_x={xs[-1]} circle_cx={poly['cx']} foot={foot}",
-            )
-
-            # ⑤ 底部起訖＝區間邊界（3M 前 → 今天）
-            three_m_ago = (today - datetime.timedelta(days=92)).strftime("%Y-%m")
-            foot_text = page.locator(".body-main-delta").inner_text()
-            check(
-                "⑤ 卡片底部起訖顯示區間邊界（非資料首末點）",
-                today.strftime("%Y-%m-%d") in foot_text
-                and (
-                    three_m_ago in foot_text
-                    or (today - datetime.timedelta(days=90)).strftime("%Y-%m") in foot_text
-                ),
-                f"foot={foot_text!r}",
-            )
-
-            # ② 換更長的區間：同一批資料被壓縮到右側一小段（domain 變寬 → 資料占比變小）。
-            # 用「自訂」而非長 preset——F58 起超出資料範圍的 preset 會被停用（本測資 85 天，
-            # 連 3M 都是「第一個涵蓋得住」的檔位，沒有更長的可用 preset），而自訂不受限制
-            span_3m = xs[-1] - xs[0]
-            ensure_custom(page)
-            wide = page.locator(".ex-custom .ex-date")
-            wide.nth(0).fill((today - datetime.timedelta(days=300)).strftime("%Y-%m-%d"))
-            wide.nth(1).fill(today.strftime("%Y-%m-%d"))
-            page.locator(".ex-custom-apply").click()
-            page.wait_for_timeout(900)
-            poly_long = page.evaluate(POLY)
-            span_long = poly_long["xs"][-1] - poly_long["xs"][0]
-            check(
-                "② 換長區間（自訂 300 天）後同一批資料的水平跨度變窄（x 軸真的依區間縮放）",
-                span_long < span_3m * 0.6,
-                f"span_3M={round(span_3m, 1)} span_custom300={round(span_long, 1)}",
-            )
-
-            # ③ 單點：自訂區間只框住一天
-            one_day = (today - datetime.timedelta(days=18)).strftime("%Y-%m-%d")
-            ensure_custom(page)
-            dts = page.locator(".ex-custom .ex-date")
-            dts.nth(0).fill(one_day)
-            dts.nth(1).fill(one_day)
-            page.locator(".ex-custom-apply").click()
-            page.wait_for_timeout(800)
-            poly_one = page.evaluate(POLY)
-            rows_one = page.locator(".bm-rows .bm-row").count()
-            check(
-                "③ from=to 的單日區間：不炸圖、點畫在中央、清單 1 筆",
-                poly_one is not None
-                and len(poly_one["xs"]) == 1
-                and abs(poly_one["xs"][0] - 160) < 1
-                and rows_one == 1,
-                f"xs={poly_one['xs'] if poly_one else None} rows={rows_one}",
-            )
-
-            # ③ 0 點：空區間（測資之外）
-            dts = page.locator(".ex-custom .ex-date")
-            dts.nth(0).fill((today - datetime.timedelta(days=400)).strftime("%Y-%m-%d"))
-            dts.nth(1).fill((today - datetime.timedelta(days=390)).strftime("%Y-%m-%d"))
-            page.locator(".ex-custom-apply").click()
-            page.wait_for_timeout(800)
-            check(
-                "③ 區間內 0 點：顯示「還沒有紀錄」、無 svg、不炸圖",
-                page.locator(".body-empty").count() >= 1 and page.evaluate(POLY) is None,
-                f"empty={page.locator('.body-empty').count()}",
-            )
-
-            # ⑥ 既有行為：切 metric（體脂）仍畫得出時間軸；區間不變
-            page.locator('.body-range button:has-text("3M")').click()
-            page.wait_for_timeout(800)
+            # ⑥ 切體脂：區間不變、單位跟著換（與圖表型別無關）
+            range_before = page.locator(".body-range button.on").inner_text().strip()
             page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
-            page.wait_for_timeout(400)
-            poly_fat = page.evaluate(POLY)
-            range_kept = page.locator(".body-range button.on").inner_text().strip()
-            unit_ok = "%" in page.locator(".body-main-delta").inner_text()
+            page.wait_for_timeout(600)
+            range_after = page.locator(".body-range button.on").inner_text().strip()
+            fat_bars = page.locator(".body-bars .body-bar").count()
+            unit_pct = "%" in page.locator(".body-card").first.inner_text()
             check(
-                "⑥ 切體脂後仍是時間軸（同樣的空缺間距）、區間不變、單位 %",
-                poly_fat is not None
-                and len(poly_fat["xs"]) == 12
-                and max(
-                    round(poly_fat["xs"][i + 1] - poly_fat["xs"][i], 2)
-                    for i in range(len(poly_fat["xs"]) - 1)
-                )
-                > 100
-                and range_kept == "3M"
-                and unit_ok,
-                f"points={len(poly_fat['xs']) if poly_fat else 0} range={range_kept!r} unit_ok={unit_ok}",
+                "⑥ 切體脂後區間不變、圖照畫、單位是 %",
+                range_before == range_after and fat_bars > 0 and unit_pct,
+                f"range {range_before}→{range_after} bars={fat_bars} unit_pct={unit_pct}",
             )
-
-            # review P2-1 回歸：點數少時每點都有小圓（短跨度塌成豎線時仍看得出有幾筆、在哪）
-            page.locator('.body-range button:has-text("3M")').click()
-            page.wait_for_timeout(800)
             page.locator(".metric-toggle .metric-pill", has_text="體重").click()
+            page.wait_for_timeout(500)
+
+            # ③ 區間內 0 點：顯示空狀態、不炸圖。用「刪光資料」達成——
+            # F87 ③ 拿掉自訂區間後，沒有別的辦法選到一段空窗（同 verify_f56 (6) 的處置）。
+            for m in api(base, "GET", "/api/body-metrics"):
+                api(base, "DELETE", f"/api/body-metrics/{m['date']}")
+            page.reload()
             page.wait_for_timeout(400)
-            dots = page.evaluate(
-                "() => document.querySelectorAll('.body-chart svg circle[r=\"2\"]').length"
-            )
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
+            page.wait_for_selector(".screen.body", timeout=8000)
+            page.wait_for_timeout(400)
             check(
-                "review P2-1：12 個點時每點都畫小圓（含末點的大圓另計）",
-                dots == 12,
-                f"small_dots={dots}（期望 12）",
+                "③ 0 點：顯示「還沒有紀錄」、沒有長條、不炸圖",
+                page.locator(".screen.body .body-empty").count() >= 1
+                and page.locator(".body-bars .body-bar").count() == 0
+                and page.locator(".bm-rows .bm-row").count() == 0,
+                f"empty={page.locator('.screen.body .body-empty').count()}",
             )
 
-            # review P3-5 回歸：最新值旁標出量測日期（與底部的區間邊界語意分開）
-            latest_txt = " ".join(page.locator(".body-main-value").inner_text().split())
-            foot_txt = " ".join(page.locator(".body-main-delta").inner_text().split())
-            last_date = api(base, "GET", "/api/body-metrics")[-1]["date"]
-            want = last_date[5:].replace("-", "/")
+            # ③ 1 點：畫得出來、不炸圖（正規化的分母是 0，最容易在這裡除零）
+            one_day = (today - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+            api(base, "POST", "/api/body-metrics", {"date": one_day, "weight_kg": 80.0})
+            page.reload()
+            page.wait_for_timeout(400)
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
+            page.wait_for_selector(".screen.body", timeout=8000)
+            page.wait_for_timeout(400)
+            one_bars = page.locator(".body-bars .body-bar").count()
+            one_h = page.evaluate(
+                "() => { const b = document.querySelector('.body-bars .body-bar');"
+                " return b ? Math.round(b.getBoundingClientRect().height) : 0; }"
+            )
             check(
-                "review P3-5：最新值旁顯示其量測日期（非區間邊界）",
-                want in latest_txt and want not in foot_txt.split()[0],
-                f"latest={latest_txt!r} 期望日期={want} foot={foot_txt!r}",
+                "③ 1 點：畫得出一根長條且高度 > 0（正規化分母為 0 的邊界不除零）",
+                one_bars == 1 and one_h > 0 and page.locator(".bm-rows .bm-row").count() == 1,
+                f"bars={one_bars} h={one_h}",
+            )
+
+            # ③ 全部同一天（值不同）：仍不炸圖
+            api(base, "POST", "/api/body-metrics", {"date": one_day, "weight_kg": 81.5})
+            page.reload()
+            page.wait_for_timeout(400)
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
+            page.wait_for_selector(".screen.body", timeout=8000)
+            page.wait_for_timeout(400)
+            check(
+                "③ 同一天重複記錄（upsert）：仍是一筆一根、不炸圖",
+                page.locator(".body-bars .body-bar").count() == 1
+                and page.locator(".bm-rows .bm-row").count() == 1,
+                f"bars={page.locator('.body-bars .body-bar').count()}",
             )
 
             browser.close()

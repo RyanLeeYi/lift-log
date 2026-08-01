@@ -265,8 +265,13 @@ export function renderBody(rerender, goHome, guard) {
   fatInput.oninput = () => syncDraft({ fat: fatInput.value });
   // 換日期時把該日既有紀錄帶進表單——讓「同日覆蓋」看得見，避免把今天的值誤存到過去日。
   // 該日無紀錄：體重維持最近值當起點、體脂清空（不把舊體脂寫到沒量的日子，同 F8 原則）。明示選日→存 date。
-  dateInput.onchange = () => {
-    const existing = body.metrics.find((m) => m.date === dateInput.value);
+  //
+  // F118：**來源必須是「該日的紀錄」，不是「當下畫面上的清單」。** 原本查 `body.metrics`，
+  // 而那份清單被當前時間窗篩過（F56）——選到窗外的日子就找不到既有紀錄，表單於是帶入
+  // 「最近一筆」的體重。使用者以為在補記那天，按下記錄就把別天的體重覆蓋上去（同日 upsert）。
+  // 這是資料面的錯，不是顯示問題，所以改成直接跟後端要那一天。
+  let dayReqSeq = 0; // 連續改日期時只採用最後一次的回應（同 loadRange 的 reqSeq 政策）
+  const fillFromDay = (existing) => {
     if (existing) {
       weightInput.value = String(existing.weight_kg);
       fatInput.value = existing.body_fat_pct != null ? String(existing.body_fat_pct) : "";
@@ -275,6 +280,24 @@ export function renderBody(rerender, goHome, guard) {
       fatInput.value = "";
     }
     body.form = { date: dateInput.value, weight: weightInput.value, fat: fatInput.value };
+  };
+  dateInput.onchange = () => {
+    const day = dateInput.value;
+    if (!day) return;
+    const seq = ++dayReqSeq;
+    // 先用清單裡有的（若剛好在窗內）立刻回應，避免游標離開後表單空著等網路；
+    // 查回來再以後端為準覆寫。兩者一致時使用者看不到任何跳動。
+    fillFromDay(body.metrics.find((m) => m.date === day));
+    api
+      .listBodyMetrics({ from: day, to: day })
+      .then((rows) => {
+        if (seq !== dayReqSeq || dateInput.value !== day) return; // 過期回應丟棄
+        fillFromDay(rows[0]);
+      })
+      .catch(() => {
+        // 查不到就維持上面那份樂觀值。**不擋使用者輸入**（離線也要能補記，F49 的原則），
+        // 但也不謊稱查過——真正的防線在後端 upsert，而不是這裡的預填。
+      });
   };
 
   // F54 review P2-2／P3-4：三條關窗路徑（遮罩／取消／成功）收斂成一支——原本只有「取消」清 state.error，

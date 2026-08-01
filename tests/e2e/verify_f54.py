@@ -244,6 +244,42 @@ def main():
             page.locator('.body-log-modal button:has-text("取消")').click()
             page.wait_for_timeout(300)
 
+            # F118 回歸：**該日落在當前時間窗之外**時也要帶入。
+            # 上面那條的 past 是 20 天前，剛好在預設 3M 窗內，所以就算實作只查畫面上的清單
+            # 也會綠——那是這個 bug 逃了這麼久的原因。這裡把窗縮到 1M、選一個 200 天前的日子，
+            # 讓「查清單」與「查那一天」的答案不同，才驗得出來源對不對。
+            far = (today - datetime.timedelta(days=200)).strftime("%Y-%m-%d")
+            api(base, "POST", "/api/body-metrics",
+                {"date": far, "weight_kg": 88.8, "body_fat_pct": 18.8})
+            page.reload()
+            page.wait_for_timeout(400)
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
+            page.wait_for_selector(".screen.body", timeout=8000)
+            page.locator('.body-range button:has-text("1M")').click()
+            page.wait_for_timeout(800)
+            in_window = page.eval_on_selector_all(
+                ".bm-rows .bm-row .bm-date", "els => els.map(e => e.textContent.trim())"
+            )
+            page.locator(".body-log-open").click()
+            page.wait_for_selector(".body-log-modal", timeout=5000)
+            page.locator(".body-log-modal .bm-date-picker").fill(far)
+            page.locator(".body-log-modal .bm-date-picker").dispatch_event("change")
+            page.wait_for_timeout(700)  # 這條路徑要打一次 API，等久一點
+            w_far = page.locator('.body-log-modal input[placeholder^="體重"]').input_value()
+            f_far = page.locator('.body-log-modal input[placeholder^="體脂"]').input_value()
+            check(
+                "F118：換到**時間窗之外**的有紀錄日期，仍帶入該日的體重與體脂",
+                far not in in_window and w_far == "88.8" and f_far == "18.8",
+                f"far={far} 在窗內={far in in_window} weight={w_far!r} fat={f_far!r}",
+            )
+            page.locator('.body-log-modal button:has-text("取消")').click()
+            page.wait_for_timeout(250)
+            api(base, "DELETE", f"/api/body-metrics/{far}")  # 不留給後面的版面檢查當雜訊
+            page.reload()
+            page.wait_for_timeout(400)
+            page.locator(".bottom-nav .nav-item", has_text="體重").click()
+            page.wait_for_selector(".screen.body", timeout=8000)
+
             # ⑤ 667 高也能填滿；門檻上下皆不破圖
             page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(250)
