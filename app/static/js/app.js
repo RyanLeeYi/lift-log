@@ -1762,6 +1762,10 @@ function startRestTimer() {
       weight: state.weightKg,
       reps: state.reps,
       bodyweight: Boolean(state.exercise.is_bodyweight),
+      // F125 ③：跨行程補送要能驗證「這一組是記在誰身上、第幾組」。
+      // 光靠還原後的 state 不夠——中間可能換過動作，那時補送會記到錯的地方。
+      exerciseId: state.exercise.id,
+      setNumber: state.setNumber,
     });
     // ⚠ 原生會在這一刻重建 overlay，所以可見性要**強制**重送一次、不吃去重。
     // 少了這一行就得倚賴原生記得上一輪的值——而那正是 2026-07-31 那個回歸的成因

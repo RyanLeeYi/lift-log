@@ -75,6 +75,11 @@ final class RestOverlay {
     private static double draftWeight = -1;
     private static int draftReps = -1;
     private static boolean draftBodyweight;
+    /** F125 ③：補送時驗證歸屬用——這一組屬於哪個動作、第幾組。-1 ＝ 沒帶（舊版前端）。 */
+    private static int draftExerciseId = -1;
+    private static int draftSetNumber = -1;
+    /** F125 ①：已排入但還沒寫進去（app 在背景按下）。與 logPending 互斥，兩者文案不同。 */
+    private static boolean logQueued;
     private static TextView draftLabel;
     private static TextView repsLabel;
     /** F104 ⑤：就地記錄的三種狀態。等待前端回報時鎖住按鈕，避免連按記成兩組。 */
@@ -287,11 +292,17 @@ final class RestOverlay {
     }
 
     /** F104 ①：這輪的待記組。weight < 0 或 reps < 0 ＝ 沒帶，整塊不顯示。 */
-    static void setDraft(Context context, double weight, int reps, boolean bodyweight) {
+    static void setDraft(
+        Context context, double weight, int reps, boolean bodyweight,
+        int exerciseId, int setNumber
+    ) {
         onMain(() -> {
             draftWeight = weight;
             draftReps = reps;
             draftBodyweight = bodyweight;
+            draftExerciseId = exerciseId;
+            draftSetNumber = setNumber;
+            logQueued = false;
             // 新的一輪＝上一輪的記錄狀態不再適用（失敗態不該跨輪殘留）
             clearLogPending();
             logFailed = false;
@@ -309,6 +320,10 @@ final class RestOverlay {
     static void onLogResult(Context context, boolean ok) {
         onMain(() -> {
             clearLogPending();
+            logQueued = false;
+            // F125 ⑤：寫進去了就清，否則下次開 app 會幽靈重播（伺服器雖然會去重，
+            // 但留著等於讓「補送」這條路永遠有東西可送）
+            if (ok) PendingLog.clear(context);
             if (ok) {
                 logFailed = false;
                 vibrateOnce(context); // ③ 成功回饋：短單擊，與鬧鈴的重複震動分得開
@@ -952,12 +967,27 @@ final class RestOverlay {
     }
 
     private static void requestLog(Context context) {
-        if (!hasDraft() || logPending) return; // 連按不得記成兩組
-        logPending = true;
+        if (!hasDraft() || logPending || logQueued) return; // 連按不得記成兩組
         logFailed = false;
+        // F125 ③④：uuid 在**排入的那一刻**生成並落地。bridge 事件與開機補送帶同一個值，
+        // 伺服器的 client_uuid 冪等去重才會生效（前端原本是寫入當下才生，補送會變成新的一筆）。
+        String uuid = PendingLog.enqueue(
+            context, draftWeight, draftReps, draftBodyweight, draftExerciseId, draftSetNumber);
+        RestTimerPlugin.emitLog(draftWeight, draftReps, uuid);
+
+        // F125 ①：app 在背景時 JS 整條鏈是凍住的（方向 A 已由實機量測判死），
+        // 等 3 秒再說「沒記到」是**謊報**——那組其實會在回前景那一刻寫進去。
+        // 所以背景不設逾時，改成誠實顯示「已排入」。
+        if (!appForeground) {
+            logQueued = true;
+            paintLogButton();
+            paintLogStatus();
+            return;
+        }
+
+        logPending = true;
         paintLogButton();
         paintLogStatus();
-        RestTimerPlugin.emitLog(draftWeight, draftReps);
         logTimeout = () -> {
             // ⑤ 等不到回報＝沒記到。**不得**表現得像成功，也不得開新的一輪休息
             //（新的一輪由前端在記錄成功之後才發起，這裡什麼都不做就是「不開」）。
@@ -973,13 +1003,18 @@ final class RestOverlay {
     private static void paintLogButton() {
         if (logButton == null) return;
         // F116 ①：與 app 內計時頁一致的文案
-        logButton.setText(logPending ? "記錄中…" : "完成這組");
-        logButton.setAlpha(logPending ? 0.6f : 1f);
+        // F125 ①：三態。「已排入」不是暫時狀態——它會一直留到回前景寫入為止。
+        logButton.setText(logQueued ? "已排入" : logPending ? "記錄中…" : "完成這組");
+        logButton.setAlpha(logQueued || logPending ? 0.6f : 1f);
     }
 
     private static void paintLogStatus() {
         if (logStatus == null) return;
-        if (logFailed) {
+        if (logQueued) {
+            // F125 ①：誠實講出實際會發生的事，不假裝已經寫進資料庫
+            logStatus.setText("已排入，回 app 後記錄");
+            logStatus.setVisibility(View.VISIBLE);
+        } else if (logFailed) {
             logStatus.setText("沒記到——回 app 記下一組");
             logStatus.setVisibility(View.VISIBLE);
         } else {

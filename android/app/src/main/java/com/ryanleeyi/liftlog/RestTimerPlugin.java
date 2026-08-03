@@ -62,7 +62,7 @@ public class RestTimerPlugin extends Plugin {
      *
      * <p>秒數與待記組分開帶：硬擠進同一個欄位會讓每個接收端都要先猜這次是哪一種。
      */
-    static void emitLog(double weight, int reps) {
+    static void emitLog(double weight, int reps, String uuid) {
         RestTimerPlugin plugin = instance;
         // F104-A 量測：要分辨「事件送不出去」與「事件送出去了但 JS 沒跑」。
         // 前者 instance 為 null（WebView 已被回收），後者 instance 在但 logResult 遲遲不回來。
@@ -72,7 +72,44 @@ public class RestTimerPlugin extends Plugin {
         data.put("action", "logset");
         data.put("weight", weight);
         data.put("reps", reps);
+        // F125 ④：uuid 由原生在**排入的那一刻**生成，這條 bridge 事件與開機補送帶同一個值。
+        // 少了它，兩條路會各自產生一筆，伺服器的冪等去重形同虛設。
+        if (uuid != null) data.put("uuid", uuid);
         plugin.notifyListeners("restControl", data);
+    }
+
+    /**
+     * F125 ③：開機時前端主動**取件**（而不是原生推送）。
+     *
+     * <p>推送在這個時機一定會掉：`notifyListeners` 不暫存，而 app 剛起來時前端的
+     * `subscribeRestControl()` 還沒跑。所以補送的方向必須反過來——由前端在啟動流程裡問一次。
+     * （同一個坑的一般化版本記在 F124。）
+     *
+     * <p>取件**不清除**。清除要等前端回報寫入成功（⑤），否則補送失敗就再也沒有第二次機會。
+     */
+    @PluginMethod
+    public void getPendingLog(PluginCall call) {
+        JSObject result = new JSObject();
+        if (!PendingLog.has(getContext())) {
+            result.put("pending", false);
+            call.resolve(result);
+            return;
+        }
+        result.put("pending", true);
+        result.put("uuid", PendingLog.uuid(getContext()));
+        result.put("weight", PendingLog.weight(getContext()));
+        result.put("reps", PendingLog.reps(getContext()));
+        result.put("bodyweight", PendingLog.bodyweight(getContext()));
+        result.put("exerciseId", PendingLog.exerciseId(getContext()));
+        result.put("setNumber", PendingLog.setNumber(getContext()));
+        call.resolve(result);
+    }
+
+    /** F125 ⑤：前端確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
+    @PluginMethod
+    public void clearPendingLog(PluginCall call) {
+        PendingLog.clear(getContext());
+        call.resolve();
     }
 
     /**
@@ -177,7 +214,9 @@ public class RestTimerPlugin extends Plugin {
             RestTimerService.start(
                 getContext(), seconds, overlay, call.getString("hint"),
                 call.getDouble("weight", -1.0), call.getInt("reps", -1),
-                Boolean.TRUE.equals(call.getBoolean("bodyweight", false)));
+                Boolean.TRUE.equals(call.getBoolean("bodyweight", false)),
+                // F125 ③：補送時驗證歸屬用；沒帶就是 -1，補送那條路會據此判定不可信而放棄
+                call.getInt("exerciseId", -1), call.getInt("setNumber", -1));
             call.resolve();
         } catch (Exception e) {
             // Android 12+ 對背景啟動前景服務有限制；啟不起來要讓前端知道好退回 F62

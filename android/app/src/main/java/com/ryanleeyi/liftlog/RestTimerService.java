@@ -68,6 +68,9 @@ public class RestTimerService extends Service {
     public static final String EXTRA_WEIGHT = "weight";
     public static final String EXTRA_REPS = "reps";
     public static final String EXTRA_BODYWEIGHT = "bodyweight";
+    /** F125 ③：補送時驗證歸屬用——這一組要記在哪個動作、第幾組。服務不解讀，只搬給 overlay。 */
+    public static final String EXTRA_EXERCISE_ID = "exerciseId";
+    public static final String EXTRA_SET_NUMBER = "setNumber";
     /**
      * F72 ⑤：通知列上的「停止」動作鈕。
      *
@@ -254,7 +257,9 @@ public class RestTimerService extends Service {
                 this,
                 intent.getDoubleExtra(EXTRA_WEIGHT, -1),
                 intent.getIntExtra(EXTRA_REPS, -1),
-                intent.getBooleanExtra(EXTRA_BODYWEIGHT, false));
+                intent.getBooleanExtra(EXTRA_BODYWEIGHT, false),
+                intent.getIntExtra(EXTRA_EXERCISE_ID, -1),
+                intent.getIntExtra(EXTRA_SET_NUMBER, -1));
         }
         startTimer(seconds);
         // 不用 START_STICKY：休息被系統中斷後自己復活沒有意義（剩餘秒數已經不對了），
@@ -563,7 +568,7 @@ public class RestTimerService extends Service {
 
     static void start(
         Context context, int seconds, boolean overlay, String hint,
-        double weight, int reps, boolean bodyweight
+        double weight, int reps, boolean bodyweight, int exerciseId, int setNumber
     ) {
         Intent intent = new Intent(context, RestTimerService.class)
             .setAction(ACTION_START)
@@ -572,7 +577,9 @@ public class RestTimerService extends Service {
             .putExtra(EXTRA_HINT, hint == null ? "" : hint)
             .putExtra(EXTRA_WEIGHT, weight)
             .putExtra(EXTRA_REPS, reps)
-            .putExtra(EXTRA_BODYWEIGHT, bodyweight);
+            .putExtra(EXTRA_BODYWEIGHT, bodyweight)
+            .putExtra(EXTRA_EXERCISE_ID, exerciseId)
+            .putExtra(EXTRA_SET_NUMBER, setNumber);
         context.startForegroundService(intent);
     }
 

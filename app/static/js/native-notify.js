@@ -390,6 +390,9 @@ export async function startForegroundRest(seconds, hint = "", draft = null) {
             weight: draft.weight,
             reps: draft.reps,
             bodyweight: Boolean(draft.bodyweight),
+            // F125 ③：補送時要驗證歸屬用的，服務同樣不解讀，只是搬給 overlay 存進 PendingLog
+            exerciseId: draft.exerciseId ?? -1,
+            setNumber: draft.setNumber ?? -1,
           }
         : {}),
     });

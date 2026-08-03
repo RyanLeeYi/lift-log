@@ -1,6 +1,54 @@
 # session handoff
 
-最後更新：2026-08-03（**116/123 passing，v134**；線上 v124）
+最後更新：2026-08-03 收工（**116/124 passing，v134**；線上 v124）
+⚠ **F125 做到一半**（原生側完成、前端側未動、未驗收）——續作步驟見下一節。
+
+## ⚠ 下一場的第一件事：F125 只做了一半（原生側完成，前端側未動）
+
+**因額度撞線收工，不是卡關。編譯是過的（`gradlew compileDevReleaseJavaWithJavac` BUILD SUCCESSFUL），
+但功能還不能用，也還沒出過 APK、沒有驗收過。**
+
+F125 已簽核凍結：背景按「完成這組」改成「排入 → 回 app 寫入」，並跨行程重建保全（C-完整版）。
+
+### 已完成（原生側）
+
+- **新檔 `PendingLog.java`**：SharedPreferences 存待記組（uuid／重量／次數／自體重／動作 id／組號）。
+  同時只保留一組，舊的沒清掉就**不覆蓋**（回傳舊 uuid），避免弄丟還沒補送成功的那筆。
+- **`RestTimerPlugin`**：`emitLog(weight, reps, uuid)` 多帶 uuid；
+  新增 `getPendingLog()` / `clearPendingLog()` 兩個 `@PluginMethod`。
+  ⚠ **補送方向刻意是「前端取件」而不是「原生推送」**——app 剛起來時 `notifyListeners` 一定會掉
+  （前端還沒訂閱，就是 F124 那個坑）。
+- **`RestOverlay`**：`requestLog()` 依 `appForeground` 分流。背景 → `logQueued = true`、
+  顯示「已排入，回 app 後記錄」、**不設 3 秒逾時**；前景 → 完全維持現行行為。
+  按鈕三態（完成這組／記錄中…／已排入）。`onLogResult(ok=true)` 會 `PendingLog.clear()`。
+- **`RestTimerService`**：`EXTRA_EXERCISE_ID` / `EXTRA_SET_NUMBER` 兩個 extra 一路搬到 `setDraft()`。
+- **`app.js` / `native-notify.js`**：`scheduleRestNotify` 的 draft 多帶 `exerciseId` / `setNumber`。
+
+### 還沒做（照這個順序做）
+
+1. **`logCurrentSet()` 接受外部 uuid**（`app.js:2141` 現在是寫入當下才 `crypto.randomUUID()`）。
+   簽名改成 `logCurrentSet({ rpe, clientUuid })`，payload 用 `clientUuid ?? crypto.randomUUID()`。
+   **這是 F125 ④ 的核心**——沒有它，補送會變成新的一筆，伺服器的冪等去重完全不生效。
+2. **`logFromOverlay(draft)` 把 `draft.uuid` 透傳下去**；`native-notify.js` 的
+   `onNativeRestControl` 要把 `event.uuid` 一起帶進 handler 的 draft 物件。
+3. **啟動時取件補送**：新增 `getPendingLog()` / `clearPendingLog()` 的 JS wrapper
+   （`native-notify.js` → `rest-notify.js`），在 app.js 啟動流程（`restoreActiveWorkout` 之後）
+   呼叫一次。補送前**要驗歸屬**：`workoutId` 非 null、`exerciseId` 在 `pickerExercises` 找得到、
+   與 `state.restExerciseId` 一致；對不上就 `clearPendingLog()` 放棄，不要硬記。
+   補送時要暫時設好 `state.exercise` / `setNumber` / `weightKg` / `reps`，記完還原。
+4. **F125 ⑤ 的第三個清除時機**：`RestTimerService` 的 `ACTION_STOP` /
+   `ACTION_STOP_FROM_NOTIFICATION` 分支加 `PendingLog.clear(this)`。
+   ⚠ **不要放進 `onDestroy()` 或 `RestOverlay.hide()`**——系統低記憶體回收服務時也會走那裡，
+   那正是最需要保住待記組的時刻。只掛在使用者明確結束的路徑上。
+5. 版號 v134 → **v135**（`state.js` 的 `APP_VERSION` ＋ `sw.js` 的 `CACHE_NAME`，兩處要同步）。
+6. 出 dev APK（**一定要用 `.\scripts\build-apk.ps1 -Site dev`**，不要裸跑 gradle）、真機驗收
+   F125 ⑦ 的四條路徑（含 `am force-stop` 殺行程那兩條）、`/codex-review`、出正式 APK。
+
+### 驗收探針（沿用這一場的）
+
+- 浮動視窗：`dumpsys window windows` 裡 liftlog.dev **沒有 `/MainActivity`** 的那個 window
+- heads-up：`dumpsys notification --noredact` 裡 `channel=rest-alarm`
+- **重複寫入**：驗收重點是「只有一筆」——查那個動作的組列表，不要只看畫面有沒有出現。
 
 ## 這一場（8/3）之二：F123 —— app 內改用通知列，浮動視窗只在 app 外
 
