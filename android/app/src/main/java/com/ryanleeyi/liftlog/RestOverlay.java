@@ -187,10 +187,19 @@ final class RestOverlay {
      *
      * <p>「app 在前景」**且**「畫面上有 REST 卡片」＝使用者已經看得到倒數 → 藏。其餘都顯示。
      * 手動關閉（④）優先於一切自動顯示。
+     *
+     * <p>F122 ①②：規則是「情境 × 狀態」，不是單一條件——
+     * **視窗在 app 內只負責「你看不到的倒數」，在 app 外負責整輪休息。**
+     * 所以前景時的隱藏條件多了 `halted`：已停止＝沒有倒數要看，在 app 內顯示它純粹是雜訊
+     * （Ryan 2026-08-03 真機回報：app 外按停止 → 回 app → 切到別頁，視窗又冒出來）。
+     * app 外不受影響，就緒態照樣顯示，「完成這組」照樣可按。
+     *
+     * <p>⚠ 這裡**藏的不是結束**：active／待記組／±15s 調過的秒數全部留著（F122 ③），
+     * F100 ③「只有 ✕、開新一輪、結束訓練會結束這輪」原封不動。
      */
     private static boolean shouldShow() {
         if (!active || dismissed) return false;
-        return !(appForeground && restCardVisible);
+        return !(appForeground && (restCardVisible || halted));
     }
 
     /** 服務啟動／停止這輪休息。 */
@@ -246,6 +255,11 @@ final class RestOverlay {
             applyStateVisibility();
             applyAlarmTint(false);
             paintTime();
+            // F122 ②：halted 現在是 shouldShow() 的輸入之一，所以換態時必須重跑顯示判斷。
+            // 少了這一行，人已經在 app 內（例如日曆頁）按停止時視窗不會當場收掉，
+            // 要等下一次切頁才生效。放在三個 paint 之後：view 還在時先畫成就緒態再決定去留，
+            // 被 detach 的話那幾個呼叫本來就是 null-safe 的 no-op。
+            apply(context);
         });
     }
 
