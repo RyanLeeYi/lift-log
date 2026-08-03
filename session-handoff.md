@@ -5,7 +5,33 @@
 
 ## ⚠ 下一場的第一件事：F126 實作完成但**完全沒驗到**（裝置被我弄壞了）
 
-**先做這件事：請 Ryan 在手機上重新輸入 dev 站的 token。**
+**token 已解決**（Ryan 自己輸入了；`.env.dev` 的 token 可讀，那個檔的註解本來就寫明
+「測試站 token 會出現在腳本與對話記錄裡，所以與正式站分開」——**正式站的絕不可讀**）。
+
+### ⚠ 先修這個：F126 只做出了一顆鈕，不是兩顆
+
+收工前最後一查抓到的：
+
+    adb shell dumpsys activity services com.ryanleeyi.liftlog.dev
+
+    isForeground=true foregroundId=2001
+    foregroundNoti=Notification(channel=rest-timer ... actions=1 ...)
+
+**`actions=1`，預期是 2**（停止 ＋ 回到 app）。通知本身是存在的、頻道也對（`rest-timer`，
+F123 ⑤ 沒被破壞）。所以 F126 的第二顆 action 沒被加上去——先讀
+`RestTimerService.buildNotification()` 那段 `else if (!halted)` 找原因，
+最可能的嫌疑是 `getLaunchIntentForPackage()` 的第二次呼叫或 `launch != null` 那層守衛。
+
+### 這一場最有用的產出：**通知的探針不必看通知欄**
+
+我為了「看不到通知」耗掉一整輪去戳系統設定（見下方），
+其實 `dumpsys activity services` 的 `foregroundNoti=...actions=N` 就直接答了三件事：
+通知在不在、掛哪個頻道、有幾顆 action。**下次驗通知先用它，不要先開通知欄。**
+
+通知欄看不看得到會被三件事影響，全都與程式無關：
+「請勿打擾」（會藏 LOW 頻道）、`allowNoti`、Samsung 把前景服務通知收在另一區。
+
+（原本這裡寫的「請 Ryan 重新輸入 token」已完成。）
 我在排查通知問題時把 dev app 整個 uninstall／install 了一次，token 跟著沒了，
 現在那支 app 停在 setup 畫面，**沒有 token 就什麼都測不了**。
 （不要試圖從 .env 讀出來用 `adb shell input text` 打進去——那會把密鑰寫進指令歷史。）
