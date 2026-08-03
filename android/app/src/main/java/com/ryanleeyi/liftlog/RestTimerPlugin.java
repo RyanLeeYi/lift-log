@@ -102,6 +102,7 @@ public class RestTimerPlugin extends Plugin {
         result.put("bodyweight", PendingLog.bodyweight(getContext()));
         result.put("exerciseId", PendingLog.exerciseId(getContext()));
         result.put("setNumber", PendingLog.setNumber(getContext()));
+        result.put("workoutId", PendingLog.workoutId(getContext()));
         call.resolve(result);
     }
 
@@ -216,7 +217,8 @@ public class RestTimerPlugin extends Plugin {
                 call.getDouble("weight", -1.0), call.getInt("reps", -1),
                 Boolean.TRUE.equals(call.getBoolean("bodyweight", false)),
                 // F125 ③：補送時驗證歸屬用；沒帶就是 -1，補送那條路會據此判定不可信而放棄
-                call.getInt("exerciseId", -1), call.getInt("setNumber", -1));
+                call.getInt("exerciseId", -1), call.getInt("setNumber", -1),
+                call.getInt("workoutId", -1));
             call.resolve();
         } catch (Exception e) {
             // Android 12+ 對背景啟動前景服務有限制；啟不起來要讓前端知道好退回 F62

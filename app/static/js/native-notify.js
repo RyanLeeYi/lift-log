@@ -358,6 +358,37 @@ let lastCardVisible = null;
  *   原生會在那一刻重建 overlay，兩層對這個旗標的記憶必須在同一刻對齊。
  *   去重本身是為了不要每次 render 都打一次 bridge，不是為了省掉這種同步點。
  */
+/**
+ * F125 ③：開機時把原生存著的待記組**取回來**（原生不推送）。
+ *
+ * <p>方向刻意是「前端取件」：app 剛起來時 `notifyListeners` 一定會掉——前端的
+ * `subscribeRestControl()` 還沒跑（同一個坑的一般化版本記在 F124）。
+ *
+ * @returns {Promise<null | {uuid: string, weight: number, reps: number,
+ *   bodyweight: boolean, exerciseId: number, setNumber: number}>}
+ */
+export async function getPendingLog() {
+  const api = restTimerPlugin();
+  if (!api?.getPendingLog) return null; // 舊版 APK：沒有這條路，當作沒有待補送的
+  try {
+    const res = await api.getPendingLog();
+    return res?.pending ? res : null;
+  } catch {
+    return null; // 取不到就當作沒有——寧可少記一組，也不要在啟動流程拋錯擋住整個 app
+  }
+}
+
+/** F125 ⑤：確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
+export async function clearPendingLog() {
+  const api = restTimerPlugin();
+  if (!api?.clearPendingLog) return;
+  try {
+    await api.clearPendingLog();
+  } catch {
+    /* 清不掉：下次開 app 會再補送一次，靠 client_uuid 去重，不會變成兩筆 */
+  }
+}
+
 export function syncRestCardVisible(visible, force = false) {
   const api = restTimerPlugin();
   const value = Boolean(visible);
@@ -393,6 +424,7 @@ export async function startForegroundRest(seconds, hint = "", draft = null) {
             // F125 ③：補送時要驗證歸屬用的，服務同樣不解讀，只是搬給 overlay 存進 PendingLog
             exerciseId: draft.exerciseId ?? -1,
             setNumber: draft.setNumber ?? -1,
+            workoutId: draft.workoutId ?? -1,
           }
         : {}),
     });
@@ -442,7 +474,9 @@ export function onNativeRestControl(handler) {
         // F104 ③：logset 帶的是視窗上調整後的重量與次數，不是秒數。
         // 兩者分開帶——硬擠進同一個欄位會讓每個接收端都要先猜這次是哪一種。
         typeof event?.weight === "number" && typeof event?.reps === "number"
-          ? { weight: event.weight, reps: event.reps }
+          ? // F125 ④：uuid 一起帶上來。它是原生在「排入」那一刻生成的，
+            // 補送與這條 bridge 事件必須用同一個值，否則伺服器去重不到。
+            { weight: event.weight, reps: event.reps, uuid: event.uuid ?? null }
           : null,
       ),
     );

@@ -30,6 +30,7 @@ final class PendingLog {
     private static final String KEY_BODYWEIGHT = "bodyweight";
     private static final String KEY_EXERCISE_ID = "exercise_id";
     private static final String KEY_SET_NUMBER = "set_number";
+    private static final String KEY_WORKOUT_ID = "workout_id";
 
     private PendingLog() {}
 
@@ -46,7 +47,7 @@ final class PendingLog {
      */
     static String enqueue(
         Context context, double weight, int reps, boolean bodyweight,
-        int exerciseId, int setNumber
+        int exerciseId, int setNumber, int workoutId
     ) {
         SharedPreferences p = prefs(context);
         String existing = p.getString(KEY_UUID, null);
@@ -59,6 +60,7 @@ final class PendingLog {
             .putBoolean(KEY_BODYWEIGHT, bodyweight)
             .putInt(KEY_EXERCISE_ID, exerciseId)
             .putInt(KEY_SET_NUMBER, setNumber)
+            .putInt(KEY_WORKOUT_ID, workoutId)
             .apply();
         return uuid;
     }
@@ -90,6 +92,10 @@ final class PendingLog {
 
     static int setNumber(Context context) {
         return prefs(context).getInt(KEY_SET_NUMBER, -1);
+    }
+
+    static int workoutId(Context context) {
+        return prefs(context).getInt(KEY_WORKOUT_ID, -1);
     }
 
     /** F125 ⑤：三個清除時機共用這一支——寫入成功、補送成功、這輪被收掉。 */

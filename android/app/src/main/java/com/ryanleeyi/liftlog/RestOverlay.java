@@ -78,6 +78,8 @@ final class RestOverlay {
     /** F125 ③：補送時驗證歸屬用——這一組屬於哪個動作、第幾組。-1 ＝ 沒帶（舊版前端）。 */
     private static int draftExerciseId = -1;
     private static int draftSetNumber = -1;
+    /** F125 ③：這一組屬於哪一場訓練。跨場寫入是補送唯一真正糟的失敗模式。 */
+    private static int draftWorkoutId = -1;
     /** F125 ①：已排入但還沒寫進去（app 在背景按下）。與 logPending 互斥，兩者文案不同。 */
     private static boolean logQueued;
     private static TextView draftLabel;
@@ -228,6 +230,10 @@ final class RestOverlay {
     static void setActive(Context context, boolean value, int seconds, String hintText) {
         // F100：新的一輪＝不再是「已停止」狀態（旗標留著會讓暫停鈕永遠消失）
         halted = false;
+        // F125 ①：新的一輪開始＝上一輪那個「已排入」已經落地了（新一輪正是寫入成功之後才開的）。
+        // 不清的話視窗會停在「已排入」，而圓環早就在跑下一輪——2026-08-03 真機抓到。
+        // ⚠ 這裡是**必要**的清除點，不能只靠 setDraft()：兩者由不同路徑呼叫，順序不保證。
+        logQueued = false;
         onMain(() -> {
             active = value;
             if (value) {
@@ -294,7 +300,7 @@ final class RestOverlay {
     /** F104 ①：這輪的待記組。weight < 0 或 reps < 0 ＝ 沒帶，整塊不顯示。 */
     static void setDraft(
         Context context, double weight, int reps, boolean bodyweight,
-        int exerciseId, int setNumber
+        int exerciseId, int setNumber, int workoutId
     ) {
         onMain(() -> {
             draftWeight = weight;
@@ -302,6 +308,7 @@ final class RestOverlay {
             draftBodyweight = bodyweight;
             draftExerciseId = exerciseId;
             draftSetNumber = setNumber;
+            draftWorkoutId = workoutId;
             logQueued = false;
             // 新的一輪＝上一輪的記錄狀態不再適用（失敗態不該跨輪殘留）
             clearLogPending();
@@ -972,7 +979,8 @@ final class RestOverlay {
         // F125 ③④：uuid 在**排入的那一刻**生成並落地。bridge 事件與開機補送帶同一個值，
         // 伺服器的 client_uuid 冪等去重才會生效（前端原本是寫入當下才生，補送會變成新的一筆）。
         String uuid = PendingLog.enqueue(
-            context, draftWeight, draftReps, draftBodyweight, draftExerciseId, draftSetNumber);
+            context, draftWeight, draftReps, draftBodyweight,
+            draftExerciseId, draftSetNumber, draftWorkoutId);
         RestTimerPlugin.emitLog(draftWeight, draftReps, uuid);
 
         // F125 ①：app 在背景時 JS 整條鏈是凍住的（方向 A 已由實機量測判死），

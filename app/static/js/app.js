@@ -49,6 +49,8 @@ import {
   restOverlayPermitted,
   restOverlaySupported,
   restTimerRunning,
+  clearPendingRestLog,
+  getPendingRestLog,
   scheduleRestNotify,
   subscribeRestControl,
   syncRestCardVisible,
@@ -1766,6 +1768,7 @@ function startRestTimer() {
       // 光靠還原後的 state 不夠——中間可能換過動作，那時補送會記到錯的地方。
       exerciseId: state.exercise.id,
       setNumber: state.setNumber,
+      workoutId: state.workoutId,
     });
     // ⚠ 原生會在這一刻重建 overlay，所以可見性要**強制**重送一次、不吃去重。
     // 少了這一行就得倚賴原生記得上一輪的值——而那正是 2026-07-31 那個回歸的成因
@@ -2133,7 +2136,7 @@ function refDateText(ref) {
  *
  * <p>讀的是 state 上的當前值（動作、組號、重量、次數、累度），呼叫端要先把它們設好。
  */
-async function logCurrentSet({ rpe = undefined } = {}) {
+async function logCurrentSet({ rpe = undefined, clientUuid = null } = {}) {
   const exercise = state.exercise;
   // F104 ④：浮動視窗也會呼叫這支，而那時 app 可能在背景、畫面狀態不見得完整。
   // 沒有當前動作就什麼都不做——寧可讓呼叫端收到「沒記到」，也不要記到 undefined 上。
@@ -2142,7 +2145,11 @@ async function logCurrentSet({ rpe = undefined } = {}) {
   state.submitting = true;
   try {
     const payload = {
-      client_uuid: crypto.randomUUID(),
+      // F125 ④：uuid 可以由呼叫端帶進來。浮動視窗排入的那一組，uuid 在**排入的那一刻**
+      // 由原生生成並落地（PendingLog），bridge 事件與開機補送帶同一個值——這樣同一組
+      // 就算送兩次，伺服器的 client_uuid 冪等去重也只會留一筆。
+      // 這裡自己生的那條路仍然是常態（app 內記組）。
+      client_uuid: clientUuid ?? crypto.randomUUID(),
       exercise_id: exercise.id,
       set_number: state.setNumber,
       weight_kg: state.weightKg,
@@ -2602,10 +2609,78 @@ async function logFromOverlay(draft) {
     state.weightKg = draft.weight;
     state.reps = draft.reps;
     // ⑦ 就地記的組不填累度——回 app 進 logger 時再提示補
-    return await logCurrentSet({ rpe: null });
+    // F125 ④：uuid 由原生帶來（沒帶＝舊版 APK，退回自己生一個，行為與 F125 之前相同）
+    return await logCurrentSet({ rpe: null, clientUuid: draft.uuid ?? null });
   })().catch(() => false);
   await reportLogResult(ok);
   return ok;
+}
+
+/**
+ * F125 ③：開機補送那一組「在 app 外按了完成這組、但行程在寫入前被殺掉」的組。
+ *
+ * <p>正常情況根本走不到這裡：排隊在 bridge 裡的事件會在回前景時自己跑完（那是實測過的路徑）。
+ * 這條只服務「行程中途被殺」——那時 bridge 事件跟著沒了，而視窗已經說過「已排入」。
+ *
+ * <p><b>去重</b>（④）：uuid 是原生在排入那一刻生成的，兩條路帶同一個值，
+ * 所以就算兩條都送到，伺服器也只會留一筆。
+ *
+ * <p><b>驗歸屬再記</b>：只靠還原後的 state 不夠——中間可能換過動作、換過訓練，
+ * 那時補送會記到錯的地方。三個條件缺一就放棄並清掉：有進行中的訓練、
+ * 動作清單裡找得到那個 id、而且**那一輪休息確實屬於它**。
+ * 記錯一組比少記一組糟得多——少記使用者看得出來，記錯他不會發現。
+ */
+async function replayPendingLog() {
+  const pending = await getPendingRestLog();
+  if (!pending) return;
+
+  const target = pickerExercises.find((e) => e.id === pending.exerciseId);
+  // ⚠ 歸屬的判準是 **workout 身分**，不是 restExerciseId（2026-08-03 Codex review P2 ＋ 真機修正）。
+  //
+  // Codex 指出的真正風險是「寫進**別場**訓練」——那就直接比 workoutId，精準命中。
+  // 第一版改成比 restExerciseId 反而擋掉了主要情境：使用者在視窗按過「停止」之後那輪已經
+  // halt，重開 app 時 restExerciseId 是 null，補送整個不會發生（真機驗到 #17 沒寫入）。
+  // 所以 restExerciseId 降為**附加**條件：非 null 時必須相符，null 就不當作反證。
+  const sameWorkout = pending.workoutId > 0 && state.workoutId === pending.workoutId;
+  const restAgrees = state.restExerciseId === null
+    || state.restExerciseId === pending.exerciseId;
+  if (state.workoutId === null || !target || !sameWorkout || !restAgrees) {
+    await clearPendingRestLog(); // 對不上就不要硬記，也不要一直留著每次開 app 重試
+    return;
+  }
+
+  // logCurrentSet() 讀的是 state 上的當前值，所以要先擺好再還原（同 logFromOverlay 的做法）。
+  const snapshot = {
+    exercise: state.exercise,
+    setNumber: state.setNumber,
+    weightKg: state.weightKg,
+    reps: state.reps,
+    doneSets: state.doneSets,
+  };
+  state.exercise = target;
+  state.setNumber = pending.setNumber;
+  state.weightKg = pending.weight;
+  state.reps = pending.reps;
+  // ⚠ 先把該動作既有的完成組拿回來（2026-08-03 Codex review P1）。
+  // logCurrentSet() 會 push 進 state.doneSets，然後 rememberDoneSets() 用它**整個覆寫**
+  // doneByExercise[動作 id]。開機時 doneSets 是空陣列，不先補的話那個動作先前的組
+  // 會從本機鏡射（連帶課表進度與 logger 清單）整批消失。
+  state.doneSets = [...(state.doneByExercise?.[target.id] ?? [])];
+  // F104 ⑦：就地記的組留 null 累度，回 app 進 logger 時再提示補（與另一條路一致）
+  const ok = await logCurrentSet({ rpe: null, clientUuid: pending.uuid }).catch(() => false);
+  state.exercise = snapshot.exercise;
+  state.setNumber = snapshot.setNumber;
+  state.weightKg = snapshot.weightKg;
+  state.reps = snapshot.reps;
+  // doneSets 還原成原本那份；**doneByExercise 不還原**——那份已經被 rememberDoneSets()
+  // 併入補送的這一組，正是我們要留下的結果。
+  state.doneSets = snapshot.doneSets;
+
+  // ⑤：寫進去了才清。沒成功就留著，下次開 app 再試一次（uuid 不變，不會變成兩筆）。
+  if (ok) {
+    await clearPendingRestLog();
+    render();
+  }
 }
 
 /**
@@ -2749,6 +2824,10 @@ async function resumeRestAfterRestore() {
           weight: state.weightKg,
           reps: state.reps,
           bodyweight: Boolean(state.exercise.is_bodyweight),
+          // F125 ③：還原路徑同樣要帶歸屬，否則被回收重開後那一輪排入的組沒有驗證依據
+          exerciseId: state.exercise.id,
+          setNumber: state.setNumber,
+          workoutId: state.workoutId,
         }
       : null);
   }
@@ -2923,6 +3002,11 @@ if (!getToken()) {
     await loadHome();
     if (state.screen === "home") render();
   });
-  guard(loadExercises); // 預載動作庫，token 失效會導回 setup
+  // 預載動作庫，token 失效會導回 setup。
+  // F125 ③：補送**必須**排在它後面——補送要靠 pickerExercises 驗證那一組屬於哪個動作。
+  guard(async () => {
+    await loadExercises();
+    await replayPendingLog();
+  });
   guard(syncQueue); // 開站補傳上次離線留下的佇列
 }

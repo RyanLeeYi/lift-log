@@ -8,10 +8,12 @@
 import { isNativeApp } from "./env.js";
 import {
   cancelNativeRest,
+  clearPendingLog as nativeClearPendingLog,
   disableNativeNotify,
   disableRestOverlay as disableNativeOverlay,
   enableNativeNotify,
   enableRestOverlay as enableNativeOverlay,
+  getPendingLog as nativeGetPendingLog,
   nativeExactAlarmOff,
   nativeNotifyAvailable,
   nativeNotifyEnabled,
@@ -115,6 +117,15 @@ export function subscribeRestControl(handler) {
 // F69：畫面切換時回報 REST 卡片是否可見。web 版沒有浮動視窗＝no-op。
 export function syncRestCardVisible(visible, force = false) {
   if (native()) syncNativeRestCardVisible(visible, force);
+}
+
+// F125 ③：開機取件補送。web 版沒有原生儲存＝永遠沒有待補送的。
+export async function getPendingRestLog() {
+  return native() ? nativeGetPendingLog() : null;
+}
+
+export async function clearPendingRestLog() {
+  if (native()) await nativeClearPendingLog();
 }
 
 // F104 ⑤：就地記錄的結果回報給浮動視窗。web 版沒有視窗＝no-op。

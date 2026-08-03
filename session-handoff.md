@@ -1,67 +1,43 @@
 # session handoff
 
-最後更新：2026-08-03 收工（**116/124 passing，v134**；線上 v124）
-⚠ **F125 做到一半**（原生側完成、前端側未動、未驗收）——續作步驟見下一節。
-⚠ **v135 只出了 dev APK（`lift-log-dev-v135-F125wip.apk`），正式版刻意沒出**——
-半成品不進正式資料。Ryan 手上的正式版仍是 v134。
+最後更新：2026-08-03（**117/125 passing，v135**；線上 v124）
 
-### v135 dev 煙霧測試的結果（2026-08-03）
+## 這一場（8/3）之三：F125 —— 背景記組改為「排入 → 回 app 寫入」，跨行程保全
 
-**核心行為對了**：app 外按「完成這組」→ 顯示「已排入，回 app 後記錄」、按鈕鎖成「已排入」、
-**不再等 3 秒謊報「沒記到」**。
+方向 A 判死之後 Ryan 選了 **C-完整版**。做法與逐條驗收見 F125 的 evidence，這裡只留教訓。
 
-**但發現一個沒查完的顯示不一致**（下一場第一件事，先於續作清單）：
-排入之後圓環仍顯示「0:14 **休息中**」，而那時應該是停止後的就緒態（「已停止」）。
-截圖在 `<scratchpad>/k3.png`。可能是 `requestLog()` 背景分支提早 return，
-沒有走到會重畫圓環／狀態字的路徑（`paintTime()`／`applyStateVisibility()` 都沒被呼叫），
-也可能是我的 adb 點擊序列本身就沒真的按到「停止」。**先重現再修，不要直接改。**
+### 三條可重複使用的教訓
 
-## ⚠ 下一場的第一件事：F125 只做了一半（原生側完成，前端側未動）
+1. **「app 切到背景」不等於「JS 被凍住」。**
+   Chromium 的 page freezing 有延遲，剛切出去那幾十秒 JS 還活著、bridge 事件當場就寫入了。
+   第一次驗「殺行程」時看起來全綠，其實**根本沒走到補送**——測資躲開了要測的路徑。
+   真正驗到的做法：**臨時把背景分支的 `emitLog` 拿掉**出一顆一次性 dev APK，
+   讓「JS 真的沒收到」成立，驗完再還原。與 F118／F121 同一類錯誤。
 
-**因額度撞線收工，不是卡關。編譯是過的（`gradlew compileDevReleaseJavaWithJavac` BUILD SUCCESSFUL），
-但功能還不能用，也還沒出過 APK、沒有驗收過。**
+2. **照 review 的字面改，可能修掉假想風險卻打死真實主路徑。**
+   Codex P2 要求「補送必須等於 `restExerciseId`」，照做之後真機驗到補送整個不發生
+   （halt 過的那輪重開時 `restExerciseId` 是 null，而那正是主要情境）。
+   風險是真的，判準不對——最後改成比 **workoutId**，才同時擋住跨場寫入又不打死主路徑。
 
-F125 已簽核凍結：背景按「完成這組」改成「排入 → 回 app 寫入」，並跨行程重建保全（C-完整版）。
+3. **原生→前端的補送要「前端取件」，不能「原生推送」。**
+   app 剛起來時 `notifyListeners` 一定會掉（前端還沒訂閱）。同一個坑的一般化版本記在 F124。
 
-### 已完成（原生側）
+### 兩個必須記住的實作約束
 
-- **新檔 `PendingLog.java`**：SharedPreferences 存待記組（uuid／重量／次數／自體重／動作 id／組號）。
-  同時只保留一組，舊的沒清掉就**不覆蓋**（回傳舊 uuid），避免弄丟還沒補送成功的那筆。
-- **`RestTimerPlugin`**：`emitLog(weight, reps, uuid)` 多帶 uuid；
-  新增 `getPendingLog()` / `clearPendingLog()` 兩個 `@PluginMethod`。
-  ⚠ **補送方向刻意是「前端取件」而不是「原生推送」**——app 剛起來時 `notifyListeners` 一定會掉
-  （前端還沒訂閱，就是 F124 那個坑）。
-- **`RestOverlay`**：`requestLog()` 依 `appForeground` 分流。背景 → `logQueued = true`、
-  顯示「已排入，回 app 後記錄」、**不設 3 秒逾時**；前景 → 完全維持現行行為。
-  按鈕三態（完成這組／記錄中…／已排入）。`onLogResult(ok=true)` 會 `PendingLog.clear()`。
-- **`RestTimerService`**：`EXTRA_EXERCISE_ID` / `EXTRA_SET_NUMBER` 兩個 extra 一路搬到 `setDraft()`。
-- **`app.js` / `native-notify.js`**：`scheduleRestNotify` 的 draft 多帶 `exerciseId` / `setNumber`。
+- **清除只掛在使用者明確結束的路徑**（`ACTION_STOP` 分支），**不放 `onDestroy()`**——
+  系統低記憶體回收服務時也會走那裡，而那正是最需要保住待記組的時刻。
+- **uuid 必須在「排入」那一刻由原生生成**。前端原本是寫入當下才 `crypto.randomUUID()`，
+  那樣補送會變成新的一筆，伺服器的冪等去重完全不生效。
 
-### 還沒做（照這個順序做）
+### 順帶修掉的
 
-1. **`logCurrentSet()` 接受外部 uuid**（`app.js:2141` 現在是寫入當下才 `crypto.randomUUID()`）。
-   簽名改成 `logCurrentSet({ rpe, clientUuid })`，payload 用 `clientUuid ?? crypto.randomUUID()`。
-   **這是 F125 ④ 的核心**——沒有它，補送會變成新的一筆，伺服器的冪等去重完全不生效。
-2. **`logFromOverlay(draft)` 把 `draft.uuid` 透傳下去**；`native-notify.js` 的
-   `onNativeRestControl` 要把 `event.uuid` 一起帶進 handler 的 draft 物件。
-3. **啟動時取件補送**：新增 `getPendingLog()` / `clearPendingLog()` 的 JS wrapper
-   （`native-notify.js` → `rest-notify.js`），在 app.js 啟動流程（`restoreActiveWorkout` 之後）
-   呼叫一次。補送前**要驗歸屬**：`workoutId` 非 null、`exerciseId` 在 `pickerExercises` 找得到、
-   與 `state.restExerciseId` 一致；對不上就 `clearPendingLog()` 放棄，不要硬記。
-   補送時要暫時設好 `state.exercise` / `setNumber` / `weightKg` / `reps`，記完還原。
-4. **F125 ⑤ 的第三個清除時機**：`RestTimerService` 的 `ACTION_STOP` /
-   `ACTION_STOP_FROM_NOTIFICATION` 分支加 `PendingLog.clear(this)`。
-   ⚠ **不要放進 `onDestroy()` 或 `RestOverlay.hide()`**——系統低記憶體回收服務時也會走那裡，
-   那正是最需要保住待記組的時刻。只掛在使用者明確結束的路徑上。
-5. 版號 v134 → **v135**（`state.js` 的 `APP_VERSION` ＋ `sw.js` 的 `CACHE_NAME`，兩處要同步）。
-6. 出 dev APK（**一定要用 `.\scripts\build-apk.ps1 -Site dev`**，不要裸跑 gradle）、真機驗收
-   F125 ⑦ 的四條路徑（含 `am force-stop` 殺行程那兩條）、`/codex-review`、出正式 APK。
+`logQueued` 只在 `setDraft()` 清、`setActive()` 沒清 → 新一輪已經開始，視窗卻停在「已排入」。
+**這也解釋了 8/3 稍早那筆「已排入後圓環仍寫休息中」**——不是狀態字沒更新，是新一輪真的開始了。
 
-### 驗收探針（沿用這一場的）
+## 待辦：F126（條文已擬，等簽核）
 
-- 浮動視窗：`dumpsys window windows` 裡 liftlog.dev **沒有 `/MainActivity`** 的那個 window
-- heads-up：`dumpsys notification --noredact` 裡 `channel=rest-alarm`
-- **重複寫入**：驗收重點是「只有一筆」——查那個動作的組列表，不要只看畫面有沒有出現。
+倒數中的通知也要有「停止」與「回到 app」，且**倒數中的「回到 app」不停倒數**
+（與時間到的 heads-up 相反）。條文草稿在對話裡，尚未寫進 feature_list.json。
 
 ## 這一場（8/3）之二：F123 —— app 內改用通知列，浮動視窗只在 app 外
 

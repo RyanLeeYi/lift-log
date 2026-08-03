@@ -71,6 +71,8 @@ public class RestTimerService extends Service {
     /** F125 ③：補送時驗證歸屬用——這一組要記在哪個動作、第幾組。服務不解讀，只搬給 overlay。 */
     public static final String EXTRA_EXERCISE_ID = "exerciseId";
     public static final String EXTRA_SET_NUMBER = "setNumber";
+    /** F125 ③：補送最關鍵的驗證——這一組屬於哪一場訓練。跨場寫入是唯一真正糟的失敗。 */
+    public static final String EXTRA_WORKOUT_ID = "workoutId";
     /**
      * F72 ⑤：通知列上的「停止」動作鈕。
      *
@@ -156,6 +158,10 @@ public class RestTimerService extends Service {
             // 所以我自己只測了那一條沒發現）。
             cancelNotification();
             RestOverlay.hide(this); // F64 ④：overlay 不留在螢幕上
+            // F125 ⑤：這輪被**使用者明確結束**（✕、停止、結束訓練）→ 待記組作廢。
+            // ⚠ 刻意只掛在這條路，**不放 onDestroy()**：系統低記憶體回收服務時也會走那裡，
+            // 而那正是最需要保住待記組的時刻，清掉等於把這條 feature 的存在理由刪掉。
+            PendingLog.clear(this);
             sessionActive = false; // F104-A：這輪結束了
             stopSelf();
             return START_NOT_STICKY;
@@ -259,7 +265,8 @@ public class RestTimerService extends Service {
                 intent.getIntExtra(EXTRA_REPS, -1),
                 intent.getBooleanExtra(EXTRA_BODYWEIGHT, false),
                 intent.getIntExtra(EXTRA_EXERCISE_ID, -1),
-                intent.getIntExtra(EXTRA_SET_NUMBER, -1));
+                intent.getIntExtra(EXTRA_SET_NUMBER, -1),
+                intent.getIntExtra(EXTRA_WORKOUT_ID, -1));
         }
         startTimer(seconds);
         // 不用 START_STICKY：休息被系統中斷後自己復活沒有意義（剩餘秒數已經不對了），
@@ -568,7 +575,8 @@ public class RestTimerService extends Service {
 
     static void start(
         Context context, int seconds, boolean overlay, String hint,
-        double weight, int reps, boolean bodyweight, int exerciseId, int setNumber
+        double weight, int reps, boolean bodyweight, int exerciseId, int setNumber,
+        int workoutId
     ) {
         Intent intent = new Intent(context, RestTimerService.class)
             .setAction(ACTION_START)
@@ -579,7 +587,8 @@ public class RestTimerService extends Service {
             .putExtra(EXTRA_REPS, reps)
             .putExtra(EXTRA_BODYWEIGHT, bodyweight)
             .putExtra(EXTRA_EXERCISE_ID, exerciseId)
-            .putExtra(EXTRA_SET_NUMBER, setNumber);
+            .putExtra(EXTRA_SET_NUMBER, setNumber)
+            .putExtra(EXTRA_WORKOUT_ID, workoutId);
         context.startForegroundService(intent);
     }
 
