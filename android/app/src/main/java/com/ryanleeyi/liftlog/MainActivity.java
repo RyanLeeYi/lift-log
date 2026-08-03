@@ -58,11 +58,30 @@ public class MainActivity extends BridgeActivity {
         RestTimerPlugin.emit("stop"); // 再結束這輪（會把 restExerciseId 清掉）
     }
 
+    /**
+     * F126 ①②③：**倒數中**那則通知的「回到 app」——只導頁，**這輪繼續跑**。
+     *
+     * <p>與 {@link #handleBackToApp} 是相反的語意，所以是兩條路徑、兩個 extra。
+     * 這裡**只**送 focus：不碰服務、不送 stop。F103 ① 明訂導頁不是結束這輪的入口。
+     *
+     * <p>同樣只掛 onNewIntent（理由見 onCreate 的 F124 註解）。差別是這條**掉了也無害**：
+     * 它不碰任何狀態，最壞情況只是 app 被拉到前景卻沒導到計時頁——沒有半套狀態。
+     * 那會發生在「Activity 已被銷毀、服務還活著」時從通知冷啟動。
+     */
+    private void handleFocusRest(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(RestTimerService.EXTRA_FOCUS_REST, false)) {
+            return;
+        }
+        intent.removeExtra(RestTimerService.EXTRA_FOCUS_REST);
+        RestTimerPlugin.emit("focus");
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
         handleBackToApp(intent);
+        handleFocusRest(intent);
     }
 
     /**

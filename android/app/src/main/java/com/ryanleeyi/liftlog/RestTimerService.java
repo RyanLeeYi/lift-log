@@ -91,6 +91,15 @@ public class RestTimerService extends Service {
      */
     public static final String EXTRA_BACK_TO_APP = "com.ryanleeyi.liftlog.BACK_TO_APP";
 
+    /**
+     * F126 ②：**倒數中**那則通知的「回到 app」＝**只導頁，不停倒數**。
+     *
+     * <p>⚠ 與 {@link #EXTRA_BACK_TO_APP} 同名不同義——那顆（時間到的 heads-up）會停這輪。
+     * 兩者刻意分成兩個 extra：共用一條路徑的話，改其中一邊的行為必然波及另一邊，
+     * 而它們正好是相反的語意。
+     */
+    public static final String EXTRA_FOCUS_REST = "com.ryanleeyi.liftlog.FOCUS_REST";
+
     private static final String CHANNEL_ID = "rest-timer";
     /**
      * F123 ⑤：「時間到」專用的高重要度頻道。
@@ -446,6 +455,30 @@ public class RestTimerService extends Service {
                 this, 1, stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             builder.addAction(android.R.drawable.ic_lock_idle_alarm, "停止", stopPending);
+        } else if (!halted) {
+            // F126 ①：**倒數中**（含暫停，⑤）也要能停、能回計時頁。
+            // F123 之後 app 內看不到浮動視窗，這則通知是那時唯一的操作介面。
+            // 已停止（halted）不加：那個狀態沒有倒數可停，而回 app 的入口在 contentIntent 上。
+            Intent stopIntent = new Intent(this, RestTimerService.class)
+                .setAction(ACTION_STOP_FROM_NOTIFICATION);
+            PendingIntent stopPending = PendingIntent.getService(
+                this, 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(android.R.drawable.ic_lock_idle_alarm, "停止", stopPending);
+
+            // F126 ②③：這顆**只導頁，不停倒數**——與時間到那顆同名但相反。
+            // 所以走的是另一個 extra（EXTRA_FOCUS_REST），不得與 EXTRA_BACK_TO_APP 共用。
+            if (launch != null) {
+                Intent focusIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                if (focusIntent != null) {
+                    focusIntent.putExtra(EXTRA_FOCUS_REST, true);
+                    focusIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    PendingIntent focusPending = PendingIntent.getActivity(
+                        this, 4, focusIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                    builder.addAction(android.R.drawable.ic_menu_revert, "回到 app", focusPending);
+                }
+            }
         }
         return builder.build();
     }

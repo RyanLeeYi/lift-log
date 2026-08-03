@@ -1,6 +1,50 @@
 # session handoff
 
-最後更新：2026-08-03（**117/125 passing，v135**；線上 v124）
+最後更新：2026-08-03（**117/126 passing，v136**；線上 v124）
+⚠ **F126 已實作、編譯過、dev APK 出了，但一條都沒驗到**——被裝置環境擋住，見下一節。
+
+## ⚠ 下一場的第一件事：F126 實作完成但**完全沒驗到**（裝置被我弄壞了）
+
+**先做這件事：請 Ryan 在手機上重新輸入 dev 站的 token。**
+我在排查通知問題時把 dev app 整個 uninstall／install 了一次，token 跟著沒了，
+現在那支 app 停在 setup 畫面，**沒有 token 就什麼都測不了**。
+（不要試圖從 .env 讀出來用 `adb shell input text` 打進去——那會把密鑰寫進指令歷史。）
+
+### F126 的狀態
+
+條文已簽核凍結（見 feature_list.json）。實作完成、`compileDevReleaseJavaWithJavac` 過、
+`lift-log-dev-v136-F126.apk` 已出。**status 仍是 failing**——⑦ 的四條路徑一條都沒驗。
+
+實作內容：
+- `RestTimerService.buildNotification()`：`!finished && !halted` 時加兩顆 action
+  （停止 → 既有的 `ACTION_STOP_FROM_NOTIFICATION`；回到 app → 新的 `EXTRA_FOCUS_REST`）
+- `MainActivity.handleFocusRest()`：**只送 `focus`**，不碰服務、不送 `stop`
+  （與 `handleBackToApp` 相反的語意，刻意是兩條路徑兩個 extra）
+
+### 我是怎麼把裝置弄壞的（別重蹈）
+
+症狀：前景服務明明在跑（`dumpsys activity services` 有 3 行 RestTimerService），
+但通知列**看不到那則倒數通知**，因此兩顆鈕無從按起。
+`dumpsys notification` 顯示 `AppSettings: com.ryanleeyi.liftlog.dev allowNoti=false`，
+而系統設定 UI 上「顯示通知」與三個通知類別**全都是開的**——兩邊對不上。
+
+過程中我做了這些**不該做**的事，任一個都可能是元凶：
+`adb shell appops set ... POST_NOTIFICATION allow`、
+`adb shell pm grant ... POST_NOTIFICATIONS`、
+`adb shell cmd notification set_bubbles`、`set_dnd off`。
+**教訓：驗收時不要用 adb 去改系統層的權限與通知狀態。**
+測不出來要先確認「待測的東西是不是真的在跑」，而不是去戳裝置設定。
+
+同一段路上還踩到兩個純粹的操作錯誤，浪費了好幾輪：
+1. 「請勿打擾」開著會把 LOW 頻道的倒數通知整個藏掉（**這是 F123 ⑦ 早就寫明的限制**，
+   我卻當成新問題查）。DND 已還原成原本的開啟狀態。
+2. 前端有一輪殘留的休息（超時 45 分、原生服務早就沒了），
+   計時頁的主按鈕因此是「繼續下一組」而不是「完成這組」——我的座標點擊一直打在錯的鈕上，
+   以為「休息沒開始」。**每一步都要截圖確認畫面狀態，不能只看座標。**
+
+### 驗完 F126 之後
+
+出正式 APK（v136）、跑 `/codex-review`、把 status 改 passing 並補 evidence。
 
 ## 這一場（8/3）之三：F125 —— 背景記組改為「排入 → 回 app 寫入」，跨行程保全
 
