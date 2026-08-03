@@ -77,8 +77,26 @@ public class RestTimerService extends Service {
     public static final String ACTION_STOP_FROM_NOTIFICATION =
         "com.ryanleeyi.liftlog.REST_STOP_FROM_NOTIFICATION";
 
+    /**
+     * F123 ④：heads-up 的「回到 app」＝**停止 ＋ 跳回所屬動作的計時頁**。
+     *
+     * <p>⚠ 語意與浮動視窗上的「回 app 記下一組」**相反**（那顆按 F103 ① 明訂不結束這輪）。
+     * 兩顆鈕各自只出現在自己的介面上，路徑刻意不共用：這條走 Activity intent
+     * （順便收起通知欄、把 app 帶到最前），由 MainActivity 收下後才停這輪。
+     */
+    public static final String EXTRA_BACK_TO_APP = "com.ryanleeyi.liftlog.BACK_TO_APP";
+
     private static final String CHANNEL_ID = "rest-timer";
+    /**
+     * F123 ⑤：「時間到」專用的高重要度頻道。
+     *
+     * <p>倒數那則**必須**留在 LOW 頻道——同一個頻道就等於每秒更新秒數都從上方彈一次。
+     * 頻道重要度建立後就由使用者掌控（系統不允許程式調高），所以只能另開一個，不能改舊的。
+     */
+    private static final String ALARM_CHANNEL_ID = "rest-alarm";
     private static final int NOTIFICATION_ID = 2001; // 與 F62 的 1001 分開，兩者不會互相取代
+    /** F123 ③：heads-up 是**另一則**通知，不是把 2001 改頻道——已貼出的通知換不了頻道。 */
+    private static final int ALARM_NOTIFICATION_ID = 2003;
 
     private CountDownTimer timer;
     private int remainingSeconds; // 目前剩餘秒數——暫停時要記住，繼續時從這裡接續
@@ -96,6 +114,16 @@ public class RestTimerService extends Service {
      * 只在 onCreate／onDestroy 兩處寫，語意單純。
      */
     private static volatile boolean sessionActive;
+
+    /**
+     * F123 ③：這一輪正在響鈴（歸零之後）。
+     *
+     * <p>static 的理由與 sessionActive 相同：換手的觸發點在 RestOverlay 的旗標變動處，
+     * 那裡拿不到服務實例。只在 onFinish／停止路徑寫。
+     */
+    private static volatile boolean alarming;
+    /** F123 ③：heads-up 上要顯示「動作名 · 第 N 組」，來源與浮動視窗同一個 EXTRA_HINT。 */
+    private static volatile String alarmHint = "";
 
     /** F104-A：休息輪是否進行中。Activity 用它決定要不要保持 WebView 可執行。 */
     static boolean isSessionActive() {
@@ -205,6 +233,9 @@ public class RestTimerService extends Service {
 
         ensureChannel();
         sessionActive = true; // F104-A：這輪開始了
+        // F123 ③：heads-up 的文案來源與浮動視窗同一個 hint，這輪開始時就抓下來
+        alarmHint = intent.getStringExtra(EXTRA_HINT) == null
+            ? "" : intent.getStringExtra(EXTRA_HINT);
         paused = false;
         halted = false; // F100：新的一輪；上一輪停在哪裡跟這輪無關
         remainingSeconds = seconds;
@@ -263,6 +294,10 @@ public class RestTimerService extends Service {
                 remainingSeconds = 0;
                 overtime = true;
                 startAlarm();
+                // F123 ③：響鈴開始——警示介面依當下位置換手（app 內非計時頁才跳 heads-up）。
+                // 順序在 startAlarm() 之後：那裡會先把 alarming 清成 false。
+                alarming = true;
+                refreshAlarmSurface(RestTimerService.this);
                 startOvertimeTicker();
             }
         }.start();
@@ -330,6 +365,10 @@ public class RestTimerService extends Service {
 
     /** ④⑦：停聲音與震動。每一條離場路徑都要呼叫——沒有 app 卻一直響是最糟的失敗。 */
     private void stopAlarm() {
+        // F123 ③：heads-up 掛在這裡而不是各個呼叫點——「每一條離場路徑都要呼叫」這個既有紀律
+        // 已經涵蓋停止／暫停／服務被回收三條路，跟著它走就不會有哪一條漏掉而留下孤兒通知。
+        alarming = false;
+        cancelAlarmHeadsUp(this);
         releasePlayer();
         Vibrator vibrator = vibrator();
         if (vibrator != null) vibrator.cancel();
@@ -397,6 +436,85 @@ public class RestTimerService extends Service {
             builder.addAction(android.R.drawable.ic_lock_idle_alarm, "停止", stopPending);
         }
         return builder.build();
+    }
+
+    /**
+     * F123 ③：把「時間到」的警示介面換到該在的那一個。
+     *
+     * <p>三個介面（app 內卡片、通知列 heads-up、浮動視窗）任何時刻只有一個在講「時間到」。
+     * 這裡只決定 heads-up 的去留，另外兩個各自由 F73 與 RestOverlay.shouldShow() 管。
+     * 重複呼叫安全——切前景／切頁時會被呼叫多次。
+     *
+     * <p>static 且吃 Context：呼叫端是 RestOverlay 的旗標變動處，那裡沒有服務實例。
+     */
+    static void refreshAlarmSurface(Context context) {
+        if (context == null) return;
+        if (alarming && RestOverlay.headsUpWanted()) {
+            postAlarmHeadsUp(context);
+        } else {
+            cancelAlarmHeadsUp(context);
+        }
+    }
+
+    private static void postAlarmHeadsUp(Context context) {
+        ensureAlarmChannel(context);
+        // 關閉＝這輪結束（④）。沿用既有的 STOP_FROM_NOTIFICATION：它已經負責停鈴、
+        // 收前景服務並回送事件給前端，不必再開一條會走偏的新路。
+        Intent closeIntent = new Intent(context, RestTimerService.class)
+            .setAction(ACTION_STOP_FROM_NOTIFICATION);
+        PendingIntent closePending = PendingIntent.getService(
+            context, 2, closeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        // 回到 app＝停止 ＋ 導頁（④）。走 Activity intent 而不是 service intent：
+        // 這樣系統會順手收起通知欄並把 app 帶到最前，停止與導頁則由 MainActivity 執行。
+        Intent backIntent = context.getPackageManager()
+            .getLaunchIntentForPackage(context.getPackageName());
+        PendingIntent backPending = null;
+        if (backIntent != null) {
+            backIntent.putExtra(EXTRA_BACK_TO_APP, true);
+            backIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            backPending = PendingIntent.getActivity(
+                context, 3, backIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        }
+
+        NotificationCompat.Builder builder =
+            new NotificationCompat.Builder(context, ALARM_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setContentTitle("休息時間到")
+                .setContentText(alarmHint.isEmpty() ? "回到 app 記下一組" : alarmHint)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setPriority(NotificationCompat.PRIORITY_HIGH) // Android 7 以下靠這個才會彈
+                // ⚠ 一定要 true：超時每秒都會重貼這則通知，false 會讓它每秒重新彈一次
+                .setOnlyAlertOnce(true)
+                .setOngoing(false) // 滑得掉；滑掉不停鈴（F72 ③「響到你理它為止」不變）
+                .setAutoCancel(false)
+                .addAction(android.R.drawable.ic_lock_idle_alarm, "關閉", closePending);
+        if (backPending != null) {
+            builder.addAction(android.R.drawable.ic_menu_revert, "回到 app", backPending);
+            builder.setContentIntent(backPending); // 點通知本體＝跟「回到 app」同一件事
+        }
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager != null) manager.notify(ALARM_NOTIFICATION_ID, builder.build());
+    }
+
+    private static void cancelAlarmHeadsUp(Context context) {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager != null) manager.cancel(ALARM_NOTIFICATION_ID);
+    }
+
+    private static void ensureAlarmChannel(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null || manager.getNotificationChannel(ALARM_CHANNEL_ID) != null) return;
+        NotificationChannel channel = new NotificationChannel(
+            ALARM_CHANNEL_ID, "休息時間到", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("休息倒數歸零時從畫面上方跳出提醒");
+        channel.setShowBadge(false);
+        // 聲音由 MediaPlayer 以 USAGE_ALARM 播（F72 ③），通知本身不再發一次音
+        channel.setSound(null, null);
+        manager.createNotificationChannel(channel);
     }
 
     private void ensureChannel() {

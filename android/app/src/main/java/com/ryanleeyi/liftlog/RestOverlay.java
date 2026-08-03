@@ -188,18 +188,35 @@ final class RestOverlay {
      * <p>「app 在前景」**且**「畫面上有 REST 卡片」＝使用者已經看得到倒數 → 藏。其餘都顯示。
      * 手動關閉（④）優先於一切自動顯示。
      *
-     * <p>F122 ①②：規則是「情境 × 狀態」，不是單一條件——
-     * **視窗在 app 內只負責「你看不到的倒數」，在 app 外負責整輪休息。**
-     * 所以前景時的隱藏條件多了 `halted`：已停止＝沒有倒數要看，在 app 內顯示它純粹是雜訊
-     * （Ryan 2026-08-03 真機回報：app 外按停止 → 回 app → 切到別頁，視窗又冒出來）。
-     * app 外不受影響，就緒態照樣顯示，「完成這組」照樣可按。
+     * <p>F123 ①（取代 F122 的情境 × 狀態表）：**app 在前景時一律不顯示**。
+     * app 內的倒數改由通知列橫條承擔，時間到改跳 heads-up（見 RestTimerService）。
+     * 條件因此塌成單一輸入 `appForeground`——`restCardVisible` 與 `halted`
+     * 不再參與這個判斷（前者仍是 heads-up 的條件、後者仍決定視窗畫成哪一態，都還有用）。
+     *
+     * <p>沿革：F122 曾把前景的隱藏條件擴成 `restCardVisible || halted`
+     * （Ryan 2026-08-03 回報「停止後回 app 切頁視窗又冒出來」）。F123 把整個 app 內都關掉，
+     * 那一版的兩個條件於是被這一條吸收——**但 F122 ③「藏不等於結束」仍然成立且更重要了**。
      *
      * <p>⚠ 這裡**藏的不是結束**：active／待記組／±15s 調過的秒數全部留著（F122 ③），
      * F100 ③「只有 ✕、開新一輪、結束訓練會結束這輪」原封不動。
      */
     private static boolean shouldShow() {
         if (!active || dismissed) return false;
-        return !(appForeground && (restCardVisible || halted));
+        return !appForeground;
+    }
+
+    /**
+     * F123 ③：現在該不該用 heads-up 通知當「時間到」的介面。
+     *
+     * <p>「app 在前景**且**不在所屬動作的計時頁」——正好是浮動視窗以前在 app 內會出現的那一格。
+     * 人在計時頁時畫面上已有倒數卡（不跳），app 不在前景時浮動視窗就是警示介面（也不跳），
+     * 三個介面任何時刻只有一個在講「時間到」。
+     *
+     * <p>兩個旗標**與 overlay 開關無關**：使用者把浮動視窗關掉時它們照樣在維護，
+     * 所以 heads-up 不受那個設定影響。
+     */
+    static boolean headsUpWanted() {
+        return appForeground && !restCardVisible;
     }
 
     /** 服務啟動／停止這輪休息。 */
@@ -223,6 +240,9 @@ final class RestOverlay {
             appForeground = value;
             if (value && restCardVisible) dismissed = false; // F71 ⑩：同下
             apply(context);
+            // F123 ③：這是 headsUpWanted() 的輸入之一——切前景／背景時警示介面要跟著換手，
+            // 不能等到下一秒的 tick 才發現（切出去時 heads-up 要收、浮動視窗接手）
+            RestTimerService.refreshAlarmSurface(context);
         });
     }
 
@@ -235,6 +255,9 @@ final class RestOverlay {
             // 因為此時 shouldShow() 本來就是 false（卡片可見）。
             if (value && appForeground) dismissed = false;
             apply(context);
+            // F123 ③：進／出所屬計時頁也要換手——走進計時頁時 heads-up 要收（卡片接手），
+            // 響鈴中走出去時要跳出來
+            RestTimerService.refreshAlarmSurface(context);
         });
     }
 

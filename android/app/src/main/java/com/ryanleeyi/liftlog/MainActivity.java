@@ -1,5 +1,6 @@
 package com.ryanleeyi.liftlog;
 
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebView;
@@ -21,6 +22,47 @@ public class MainActivity extends BridgeActivity {
         AppForegroundTracker.register(getApplication());
         super.onCreate(savedInstanceState);
         keepRendererWarm();
+        // ⚠ 這裡**刻意不**處理 EXTRA_BACK_TO_APP（2026-08-03 Codex review P2）。
+        // onCreate 跑在 WebView 載完、前端 subscribeRestControl() 之前，
+        // RestTimerPlugin.emit() 不暫存事件 → focus 與 stop 會被丟掉，
+        // 而原生這半已經停了 → 前端從 F66 的快照還原出一輪「原生已經不存在」的休息，
+        // 兩邊狀態對不上。**寧可什麼都不做，也不要做一半。**
+        //
+        // 這條路在 F123 的設計下自己會消失：heads-up 只在 app 前景時存在（③），
+        // Activity 一被銷毀就 setAppForeground(false) → refreshAlarmSurface() 把它收掉。
+        // 銷毀與收掉之間那一瞬按下去的話，這顆鈕不會有反應（鈴照響，再按一次即可）。
+        // 要補完整的延後派送見 F124。
+    }
+
+    /**
+     * F123 ④：heads-up 的「回到 app」＝**停止這輪 ＋ 跳回所屬動作的計時頁**。
+     *
+     * <p>launchMode 是 singleTask，而 heads-up 只在 app 前景時存在（F123 ③），
+     * 所以走到這裡時 Activity 一定活著——**只掛 onNewIntent，不掛 onCreate**（理由見 onCreate）。
+     *
+     * <p>⚠ 與浮動視窗上的「回 app 記下一組」**不是**同一件事——那顆不結束這輪（F103 ①）。
+     * 這裡刻意不呼叫那條路徑，而是組合兩個既有事件：**先 focus 導頁、再 stop**。
+     *
+     * <p>⚠ 順序反過來會靜默失效（2026-08-03 真機抓到）：`stopRestTimer()` 在**真的結束**這輪時
+     * 會把 `state.restExerciseId` 清成 null（只有浮動視窗那條 `keepForegroundService` 的停止才保留），
+     * 而 `focusRestExercise()` 正是靠它決定要去哪一頁——先 stop 的話 focus 直接 early-return，
+     * 結果是「停了但沒跳頁」。
+     */
+    private void handleBackToApp(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(RestTimerService.EXTRA_BACK_TO_APP, false)) {
+            return;
+        }
+        intent.removeExtra(RestTimerService.EXTRA_BACK_TO_APP); // 只作用一次，不要在重建時重播
+        RestTimerService.stop(this);
+        RestTimerPlugin.emit("focus"); // 先導頁——它要讀 restExerciseId
+        RestTimerPlugin.emit("stop"); // 再結束這輪（會把 restExerciseId 清掉）
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleBackToApp(intent);
     }
 
     /**
