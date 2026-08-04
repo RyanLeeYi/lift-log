@@ -1,6 +1,49 @@
 # session handoff
 
-最後更新：2026-08-04（**119/127 passing，v137**；線上 v124，正式版 APK v137 已出）
+最後更新：2026-08-04（**120/129 passing，v138**；線上仍 v124，正式版 APK v138 已出，commit `85ffa04`）
+
+## 這一場（8/4 之四）：F129 —— 原生停止時凍結 rest_seconds，補 codex review P1
+
+F127 丟棄殭屍倒數時沒先凍結 `pendingRestSeconds`，`resumeRestAfterRestore()` 直接
+`stopRestTimer()`，害「滑掉 app → 通知按停止 → 重開 app → 記下一組」那組漏休息秒數。
+已出貨 v137 有這個資料缺口（畫面上看不出來）。修法對照 app.js:2989 活著的 stop 路徑，
+用快照＋停止時刻回推：`accumulatedMs + (resumedAt ? stoppedAt - resumedAt : 0)`。
+
+**codex review 抓到 P1**：凍結的秒數沒綁動作，冷開機後若選了「別的」動作記組，
+會被誤貼上舊動作的休息秒數。修法：discard 分支多記 `pendingRestExerciseId`
+（`stopRestTimer()` 清 `restExerciseId` 前先存起來），`pickExercise()` 選到不同動作時
+丟棄該值，`finish()` 換動作同樣清。
+
+**真機驗證跑了四輪**（Note10+，每輪都精準到秒對帳，沒有一次是「大概對」）：
+- 同動作（P1 修前）：174.3s → DB 174
+- 同動作（P1 修後）：295.4s → DB 295
+- 跨動作（P1 的目標場景）：改選別動作記組 → DB `None`（正確丟棄，沒誤貼）
+- 暫停態：暫停在累計 23s，之後多耗 5 分鐘才點中停止 → DB 23（沒被那 5 分鐘拖長）
+- 停止→刻意等 162.75s→重開：657.218s → DB 657（重開延遲完全沒算進去）
+
+codex-verify 跑了四輪才過——不是實作有問題，是頭三輪逐一挑證據的形式缺口
+（acceptance 忘了拿掉「草案未簽核」標記、暫停態沒測、缺明確時間戳），
+每輪都是真缺口就補，不是硬凹。第四輪明確給結論：可以 passing，無實質缺口。
+
+### 這場的操作教訓
+
+1. **通知欄展開後的按鈕座標不要用截圖肉眼估**——列表因其他通知到達／展開狀態改變
+   而頻繁位移，連續 3 次點擊誤中鄰近的其他通知或系統設定卡片（甚至跳出 Google
+   Discover 文章）。改用 `adb shell uiautomator dump`（`MSYS_NO_PATHCONV=1` 前綴，
+   否則 Git Bash 會把 `/sdcard/...` 誤譯成 Windows 路徑）取得 `text="停止"` 節點的
+   精確 `bounds` 換算中心點，一次點中。倒數還在跑的通知（超時秒數持續變動）會讓
+   `uiautomator dump` 卡在「could not get idle state」，這種情況退回展開後截圖，
+   但只能用**同一張截圖內部的座標**，不能沿用前一張的位置。
+2. **evidence 裡不要塞反引號包住的中文到 `python -c` 的 bash 字串**——這是全域記憶
+   已經記過的坑，這場又踩了一次：`` `text="停止"` `` 被 shell 當成命令替換，
+   內容被吃掉還順便真的執行了 `uiautomator dump`。改用 Edit 工具直接修字串，不經 shell。
+3. **codex-verify 的第三輪一度整個崩潰**（Windows sandbox orchestrator 掛掉，
+   exit -1073741502），不是 F129 的問題，是 Codex 那次執行的環境故障。
+   照 skill 的退路規則重試一次（簡化 prompt）就正常了——不是每次失敗都要立刻退
+   acceptance-verifier，先判斷是不是真的訊息裡就是環境錯誤字樣。
+4. **Codex 驗收會針對「證據夠不夠格」而非「邏輯對不對」來回好幾輪**，屬於正常
+   現象不是卡關——前三輪都指出真缺口（簽核標記沒拿掉、少一個分支沒測、
+   少一個時間戳），照補就一輪輪過，不必因為輪數多就懷疑方向錯了。
 
 ## 下一場的入口：F128 草案等簽核
 
