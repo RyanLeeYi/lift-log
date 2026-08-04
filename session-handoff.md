@@ -1,76 +1,43 @@
 # session handoff
 
-最後更新：2026-08-03（**117/126 passing，v136**；線上 v124）
-⚠ **F126 已實作、編譯過、dev APK 出了，但一條都沒驗到**——被裝置環境擋住，見下一節。
+最後更新：2026-08-04（**118/126 passing，v136**；線上 v124，正式版 APK v136 已出）
 
-## ⚠ 下一場的第一件事：F126 實作完成但**完全沒驗到**（裝置被我弄壞了）
+## 這一場（8/4）：F126 驗收通過——而昨天的「bug」根本不存在
 
-**token 已解決**（Ryan 自己輸入了；`.env.dev` 的 token 可讀，那個檔的註解本來就寫明
-「測試站 token 會出現在腳本與對話記錄裡，所以與正式站分開」——**正式站的絕不可讀**）。
+### 兩個誤判，都不是程式的問題
 
-### ⚠ 先修這個：F126 只做出了一顆鈕，不是兩顆
+**誤判一：`actions=1`。** 昨天收工前量到的那則是**時間到**的通知（`finished` 分支本來就
+只有一顆「停止」）。倒數中那則一直都是 `actions=2`。教訓：探針拿到數字之前，
+先確認量的是哪一個狀態下的通知。
 
-收工前最後一查抓到的：
+**誤判二：`allowNoti=false`。** 我昨天把它當成「通知被系統擋住」的證據，戳了一輪權限，
+還把 dev app 整個重裝。實際上 `dumpsys notification | grep AppSettings` 顯示**幾乎每支 app
+都是 `allowNoti=false`**——那是 Samsung 的別的欄位，跟能不能發通知無關。
+教訓：把某個欄位當成因果證據之前，先看它在**對照組**上是什麼值。
 
-    adb shell dumpsys activity services com.ryanleeyi.liftlog.dev
+**真正的原因**：通知就在通知欄裡，只是 Samsung 把常駐通知排在**下方**，我從來沒往下捲。
+（「請勿打擾」開著時還會把 LOW 頻道整個藏掉——那是 F123 ⑦ 早就寫明的限制。）
 
-    isForeground=true foregroundId=2001
-    foregroundNoti=Notification(channel=rest-timer ... actions=1 ...)
+### 驗收怎麼做的（可重複）
 
-**`actions=1`，預期是 2**（停止 ＋ 回到 app）。通知本身是存在的、頻道也對（`rest-timer`，
-F123 ⑤ 沒被破壞）。所以 F126 的第二顆 action 沒被加上去——先讀
-`RestTimerService.buildNotification()` 那段 `else if (!halted)` 找原因，
-最可能的嫌疑是 `getLaunchIntentForPackage()` 的第二次呼叫或 `launch != null` 那層守衛。
+- 探針：`adb shell dumpsys activity services <pkg>` → `foregroundNoti=Notification(channel=… actions=N)`
+  一次答出通知在不在、掛哪個頻道、幾顆鈕。要看鈕的名字與去向：
+  `dumpsys notification --noredact` 裡的 `[0] "停止" -> …` / `[1] "回到 app" -> …`。
+- 通知欄要看得到：先 `cmd notification set_dnd off`（**驗完還原**，這場已還原 `zen_mode=1`），
+  展開後**往下捲**，再點 chevron 展開該則才會出現兩顆鈕。
+- ⑦ 四條路徑逐條實測，證據寫在 F126 的 evidence 欄。
 
-### 這一場最有用的產出：**通知的探針不必看通知欄**
+### 這場踩到的操作坑
 
-我為了「看不到通知」耗掉一整輪去戳系統設定（見下方），
-其實 `dumpsys activity services` 的 `foregroundNoti=...actions=N` 就直接答了三件事：
-通知在不在、掛哪個頻道、有幾顆 action。**下次驗通知先用它，不要先開通知欄。**
+座標點擊在**版面會變的頁面**上很容易打錯（有休息卡 vs 沒休息卡，主按鈕在不同 y）。
+我的 `+15s` 連點打到了 REPS，把一組記成 16 下。**每次點擊前先截圖確認版面**，
+不要沿用上一輪的座標。
 
-通知欄看不看得到會被三件事影響，全都與程式無關：
-「請勿打擾」（會藏 LOW 頻道）、`allowNoti`、Samsung 把前景服務通知收在另一區。
+### 狀態
 
-（原本這裡寫的「請 Ryan 重新輸入 token」已完成。）
-我在排查通知問題時把 dev app 整個 uninstall／install 了一次，token 跟著沒了，
-現在那支 app 停在 setup 畫面，**沒有 token 就什麼都測不了**。
-（不要試圖從 .env 讀出來用 `adb shell input text` 打進去——那會把密鑰寫進指令歷史。）
-
-### F126 的狀態
-
-條文已簽核凍結（見 feature_list.json）。實作完成、`compileDevReleaseJavaWithJavac` 過、
-`lift-log-dev-v136-F126.apk` 已出。**status 仍是 failing**——⑦ 的四條路徑一條都沒驗。
-
-實作內容：
-- `RestTimerService.buildNotification()`：`!finished && !halted` 時加兩顆 action
-  （停止 → 既有的 `ACTION_STOP_FROM_NOTIFICATION`；回到 app → 新的 `EXTRA_FOCUS_REST`）
-- `MainActivity.handleFocusRest()`：**只送 `focus`**，不碰服務、不送 `stop`
-  （與 `handleBackToApp` 相反的語意，刻意是兩條路徑兩個 extra）
-
-### 我是怎麼把裝置弄壞的（別重蹈）
-
-症狀：前景服務明明在跑（`dumpsys activity services` 有 3 行 RestTimerService），
-但通知列**看不到那則倒數通知**，因此兩顆鈕無從按起。
-`dumpsys notification` 顯示 `AppSettings: com.ryanleeyi.liftlog.dev allowNoti=false`，
-而系統設定 UI 上「顯示通知」與三個通知類別**全都是開的**——兩邊對不上。
-
-過程中我做了這些**不該做**的事，任一個都可能是元凶：
-`adb shell appops set ... POST_NOTIFICATION allow`、
-`adb shell pm grant ... POST_NOTIFICATIONS`、
-`adb shell cmd notification set_bubbles`、`set_dnd off`。
-**教訓：驗收時不要用 adb 去改系統層的權限與通知狀態。**
-測不出來要先確認「待測的東西是不是真的在跑」，而不是去戳裝置設定。
-
-同一段路上還踩到兩個純粹的操作錯誤，浪費了好幾輪：
-1. 「請勿打擾」開著會把 LOW 頻道的倒數通知整個藏掉（**這是 F123 ⑦ 早就寫明的限制**，
-   我卻當成新問題查）。DND 已還原成原本的開啟狀態。
-2. 前端有一輪殘留的休息（超時 45 分、原生服務早就沒了），
-   計時頁的主按鈕因此是「繼續下一組」而不是「完成這組」——我的座標點擊一直打在錯的鈕上，
-   以為「休息沒開始」。**每一步都要截圖確認畫面狀態，不能只看座標。**
-
-### 驗完 F126 之後
-
-出正式 APK（v136）、跑 `/codex-review`、把 status 改 passing 並補 evidence。
+F126 → **passing**（evidence 完整）。正式版 `lift-log-v136.apk` 已上 Google Drive。
+剩下 failing：F86 / F87 / F88 / F89 ⑨ / F95 ⑥ / F105 / F124。
+**線上站仍是 v124**，本機 v136——要不要部署由 Ryan 決定。
 
 ## 這一場（8/3）之三：F125 —— 背景記組改為「排入 → 回 app 寫入」，跨行程保全
 
