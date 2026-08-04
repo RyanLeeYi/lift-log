@@ -11,8 +11,11 @@ import {
   clearPendingLog as nativeClearPendingLog,
   disableNativeNotify,
   disableRestOverlay as disableNativeOverlay,
+  discardNativeFailed as nativeDiscardFailed,
   enableNativeNotify,
   enableRestOverlay as enableNativeOverlay,
+  flushNativeOutbox as nativeFlushOutbox,
+  getNativeOutbox as nativeGetOutbox,
   getPendingLog as nativeGetPendingLog,
   getRestStoppedAt as nativeGetRestStoppedAt,
   nativeExactAlarmOff,
@@ -21,6 +24,7 @@ import {
   noteForegroundTakeover,
   onNativeRestControl,
   pauseForegroundRest,
+  pushAuthToNative as nativePushAuth,
   refreshNativeNotifyState,
   reportLogResult as reportNativeLogResult,
   requestNativeExactAlarm,
@@ -132,6 +136,24 @@ export async function restStoppedAt() {
 
 export async function clearPendingRestLog() {
   if (native()) await nativeClearPendingLog();
+}
+
+// F131 ⑤：token 鏡射給原生。web 版沒有原生寫入路徑＝no-op。
+export async function pushRestAuth(token, baseUrl) {
+  if (native()) await nativePushAuth(token, baseUrl);
+}
+
+// F131 ⑥-1：原生 outbox 的狀態與內容（web 版永遠空的）。
+export async function nativeOutboxCounts() {
+  return native() ? nativeGetOutbox() : { pending: 0, failed: 0, entries: [] };
+}
+
+export async function flushRestOutbox() {
+  if (native()) await nativeFlushOutbox();
+}
+
+export async function discardRestOutboxFailed() {
+  if (native()) await nativeDiscardFailed();
 }
 
 // F104 ⑤：就地記錄的結果回報給浮動視窗。web 版沒有視窗＝no-op。

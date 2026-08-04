@@ -12,6 +12,8 @@ import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.CountDownTimer;
@@ -68,6 +70,8 @@ public class RestTimerService extends Service {
      * 下一個碰到這裡的人：要麼給它新的入口，要麼連同測試一起刪。
      */
     public static final String ACTION_RESTART = "com.ryanleeyi.liftlog.REST_RESTART";
+    /** F131 ①：背景記完一組後當場開新的一輪（秒數回到這輪原本的 targetSeconds）。 */
+    public static final String ACTION_NEXT_ROUND = "com.ryanleeyi.liftlog.REST_NEXT_ROUND";
     /** F104 ①：待記組——這輪休息結束後要記的那一組。服務不解讀，只是搬給 overlay。 */
     public static final String EXTRA_WEIGHT = "weight";
     public static final String EXTRA_REPS = "reps";
@@ -143,6 +147,27 @@ public class RestTimerService extends Service {
     /** F123 ③：heads-up 上要顯示「動作名 · 第 N 組」，來源與浮動視窗同一個 EXTRA_HINT。 */
     private static volatile String alarmHint = "";
 
+    /**
+     * F131：這一輪已經休息幾秒（給原生寫入路徑填 `rest_seconds`）。
+     *
+     * <p>過去這個值只存在於前端（`state.pendingRestSeconds`），因為寫入一律由 JS 執行。
+     * F131 讓原生自己寫，不在這裡補上就等於讓 F129 剛保住的欄位回歸成 null。
+     *
+     * <p><b>由 tick 累加，不從 targetSeconds - remaining 推算</b>（codex review P1）：
+     * ±15s 會同時改動 remainingSeconds 與 targetSeconds 的關係，推算法會把已休息秒數
+     * 重設或多算 15 秒，而那個值會被寫進 `rest_seconds`——訓練資料直接錯。
+     * 累加同時解決暫停：暫停時 timer 已取消、tick 不跑，秒數自然不動。
+     */
+    private static volatile int elapsedSeconds;
+
+    /** F131：這一輪開始的時刻（epoch ms）。前端回前景時據此接手同一輪，不從「現在」重數。 */
+    private static volatile long roundStartedAt;
+
+    /** F131：這一輪已休息的秒數；沒有進行中的輪次時回 -1（呼叫端據此不送 rest_seconds）。 */
+    static int elapsedSeconds() {
+        return sessionActive ? elapsedSeconds : -1;
+    }
+
     /** F104-A：休息輪是否進行中。Activity 用它決定要不要保持 WebView 可執行。 */
     static boolean isSessionActive() {
         return sessionActive;
@@ -150,9 +175,36 @@ public class RestTimerService extends Service {
     private final Handler overtimeTicker = new Handler(Looper.getMainLooper());
     private MediaPlayer alarmPlayer;
 
+    /**
+     * F131 ⑥-1 觸發點 1：網路恢復就重送 outbox。
+     *
+     * <p>掛在這個服務上是刻意的——休息期間它本來就活著，等於免費；休息結束服務停掉之後
+     * 就沒有觸發點了，那些組會等到下次開 app（⑥-1 明列並接受的缺口，不做 WorkManager）。
+     */
+    private ConnectivityManager.NetworkCallback networkCallback;
+
     @Override
     public IBinder onBind(Intent intent) {
         return null; // 不提供繫結：只用 startService/stopService 控制
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        if (cm == null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                SetUploader.flush(RestTimerService.this);
+            }
+        };
+        try {
+            cm.registerDefaultNetworkCallback(networkCallback);
+        } catch (RuntimeException e) {
+            // 註冊上限之類的例外：少一個觸發點而已，另外兩個（按下一組、回 app）照常
+            networkCallback = null;
+        }
     }
 
     @Override
@@ -174,7 +226,13 @@ public class RestTimerService extends Service {
             // F125 ⑤：這輪被**使用者明確結束**（✕、停止、結束訓練）→ 待記組作廢。
             // ⚠ 刻意只掛在這條路，**不放 onDestroy()**：系統低記憶體回收服務時也會走那裡，
             // 而那正是最需要保住待記組的時刻，清掉等於把這條 feature 的存在理由刪掉。
+            //
+            // F131 ⑥：**SetOutbox 不在此列**。停止只代表「這段休息不數了」，
+            // 不代表「那組沒做」——按過「完成這組」就是做了。清掉等於把已經按下的組
+            // 靜默刪除（v139 以前 PendingLog 就是這樣掉資料的）。
             PendingLog.clear(this);
+            // 停止前先把還沒送出去的組踢一次：服務即將停掉，之後就沒有網路回呼可用了
+            SetUploader.flush(this);
             // F127 ①②：把「這輪被明確結束」寫成跨行程都看得到的事實。
             // Activity 已被銷毀時上面那個 emit("stop") 會靜靜地掉，前端的休息快照留在
             // localStorage，下次開 app 就被 resumeRestAfterRestore() 重建成一輪殭屍倒數。
@@ -200,6 +258,28 @@ public class RestTimerService extends Service {
             // 剛好抵銷掉本條要的「視窗留著」（2026-07-31 真機第一版實測就是這樣消失的）。
             // 另開一個事件，前端只停自己那份倒數、不回送任何原生指令。
             RestTimerPlugin.emit("halt", targetSeconds);
+            return START_NOT_STICKY;
+        }
+
+        if (ACTION_NEXT_ROUND.equals(action)) {
+            // F131 ①：那一組已經落地（至少已進 outbox，不會再被弄丟）→ 當場開新的一輪。
+            // 與 ACTION_RESTART 的差別：那條是「停止態的再開始」，從剩餘秒數接續；
+            // 這條是**新的一輪**，回到這輪原本設定的秒數（F100 ② 的語意：調整值不外溢）。
+            stopAlarm();
+            halted = false;
+            paused = false;
+            overtime = false;
+            remainingSeconds = targetSeconds;
+            elapsedSeconds = 0;
+            roundStartedAt = System.currentTimeMillis();
+            startTimer(targetSeconds);
+            notifyUpdate(buildNotification(targetSeconds, false));
+            RestOverlay.setHalted(this, false, targetSeconds);
+            RestOverlay.advanceDraftSetNumber(); // 新的一輪＝下一組，組號 +1
+            // 前端要據此接手這一輪，而不是自己再開一輪（兩個各數各的是 F128 ④ 點名的坑）。
+            // ⚠ 帶**開始時刻**而不只是秒數（codex review P1）：WebView 在背景是凍住的，
+            // 這個事件可能 30 秒後才被處理；只給秒數的話前端會從「現在」重數，兩邊當場分叉。
+            RestTimerPlugin.emitNextRound(targetSeconds, roundStartedAt);
             return START_NOT_STICKY;
         }
 
@@ -265,6 +345,8 @@ public class RestTimerService extends Service {
         paused = false;
         halted = false; // F100：新的一輪；上一輪停在哪裡跟這輪無關
         remainingSeconds = seconds;
+        elapsedSeconds = 0; // F131：新的一輪，休息秒數重新算
+        roundStartedAt = System.currentTimeMillis();
         // F100 ②：調整值不外溢到下一輪——targetSeconds 每輪由啟動的 intent 重設，
         // 下一輪的長度仍照課表的參考休息
         targetSeconds = seconds;
@@ -294,6 +376,11 @@ public class RestTimerService extends Service {
     @Override
     public void onDestroy() {
         sessionActive = false; // F104-A：服務沒了就不再撐著 WebView
+        if (networkCallback != null) {
+            ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+            if (cm != null) cm.unregisterNetworkCallback(networkCallback);
+            networkCallback = null;
+        }
         stopAlarm(); // ⑦：服務被系統回收時聲音與震動一起收乾淨
         stopTimer();
         // F64 ④ 的第二條路徑：系統回收服務時也要收掉 overlay。
@@ -310,6 +397,7 @@ public class RestTimerService extends Service {
                 // 每秒更新同一則通知（相同 id ＝ 就地更新，不會堆疊）
                 int remaining = (int) Math.ceil(remainingMs / 1000.0);
                 remainingSeconds = remaining;
+                elapsedSeconds += 1; // F131：累加，不由 targetSeconds - remaining 推算（±15s 會算錯）
                 notifyUpdate(buildNotification(remaining, false));
                 // F64 ①：overlay 的秒數也由這裡推——WebView 在背景會被節流，畫不動
                 RestOverlay.update(RestTimerService.this, remaining);
@@ -351,6 +439,7 @@ public class RestTimerService extends Service {
                 notifyUpdate(buildNotification(remainingSeconds, true));
                 RestOverlay.update(RestTimerService.this, -remainingSeconds);
                 remainingSeconds += 1;
+                elapsedSeconds += 1; // F131：歸零後仍在休息，照樣累加
                 overtimeTicker.postDelayed(this, 1000L);
             }
         });
@@ -643,6 +732,12 @@ public class RestTimerService extends Service {
     /** F100：停止鈴聲並歸位，視窗與服務都留著。浮動視窗的停止鈕走這條，不走 stop()。 */
     static void halt(Context context) {
         context.startService(new Intent(context, RestTimerService.class).setAction(ACTION_HALT));
+    }
+
+    /** F131 ①：背景記完一組 → 當場開新的一輪。 */
+    static void nextRound(Context context) {
+        context.startService(
+            new Intent(context, RestTimerService.class).setAction(ACTION_NEXT_ROUND));
     }
 
     /** F103 ③：停止之後的再開始。浮動視窗的「再開始」鈕走這條。 */

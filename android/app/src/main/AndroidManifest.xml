@@ -56,6 +56,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- F131 ⑥-1：網路恢復時自動重送 outbox。少了這條，registerDefaultNetworkCallback()
+         會丟 SecurityException，三個重送觸發點就少掉「有網就送」那一個 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- F62 休息倒數的本機通知 -->
     <!-- Android 13+ 才需要；12 以下安裝即授予，不會跳授權框 -->

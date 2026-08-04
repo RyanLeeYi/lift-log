@@ -35,8 +35,12 @@ import {
   cancelRestNotifyScheduleOnly,
   disableRestNotify,
   disableRestOverlay,
+  discardRestOutboxFailed,
   enableRestNotify,
   enableRestOverlay,
+  flushRestOutbox,
+  nativeOutboxCounts,
+  pushRestAuth,
   pauseRestNotify,
   refreshRestNotifyState,
   reportLogResult,
@@ -86,6 +90,7 @@ import {
   pauseRest,
   restElapsedSeconds,
   restHintFor,
+  adoptNativeRound,
   restartRestFromNative,
   restPaused,
   restRemainingSeconds,
@@ -280,9 +285,12 @@ function isOffline(err) {
 async function refreshQueueCounts() {
   // 一次讀取同時推導計數與逐筆狀態——done-list 的 ⏳/⚠ 標示以佇列為唯一事實來源
   const entries = await listQueued();
+  // F131 ⑧：原生 outbox 的待送／失敗併進同一組計數。刻意不新增 UI——
+  // 「同步失敗 N 組（點此捨棄）」那條橫幅本來就在講同一件事，多一個顯示位置只會讓人問哪個才準。
+  const nativeOutbox = await nativeOutboxCounts();
   state.queue = {
-    pending: entries.filter((e) => e.status === "pending").length,
-    failed: entries.filter((e) => e.status === "failed").length,
+    pending: entries.filter((e) => e.status === "pending").length + nativeOutbox.pending,
+    failed: entries.filter((e) => e.status === "failed").length + nativeOutbox.failed,
   };
   state.queueStatus = Object.fromEntries(entries.map((e) => [e.client_uuid, e.status]));
 }
@@ -363,6 +371,9 @@ function syncStatusLine() {
           onclick: () =>
             guard(async () => {
               const discarded = new Set(await discardFailed());
+              // F131 ⑥：原生 outbox 的 failed 也一起捨棄（pending 不動）——同一顆按鈕、
+              // 同一個語意，不能只清掉前端那半而讓數字永遠歸不了零
+              await discardRestOutboxFailed();
               // 捨棄＝這些組沒進 server——從清單與鏡射一併移除（F32 P1），不能讓它們看起來像已同步
               reconcileDoneSets({ remove: discarded });
               await refreshQueueCounts();
@@ -386,6 +397,7 @@ function renderSetup() {
   });
   const save = async () => {
     setToken(input.value.trim());
+    await syncAuthToNative(); // F131 ⑤：換 token 就要同步鏡射，否則原生還拿著舊的打 401
     await loadExercises(""); // 驗證 token 可用，順便預載動作庫
     await loadHome(); // F81：進首頁前把三張卡的資料補上（否則第一眼是空的，要離開再回來才出現）
     state.screen = "home";
@@ -2638,6 +2650,88 @@ async function logFromOverlay(draft) {
  * 動作清單裡找得到那個 id、而且**那一輪休息確實屬於它**。
  * 記錯一組比少記一組糟得多——少記使用者看得出來，記錯他不會發現。
  */
+/**
+ * F131 ⑤：把目前的 token 與站別鏡射給原生。
+ *
+ * <p>原生在背景要自己打 API（那時 WebView 凍住，跟它要 token 就回到 F125 的老路）。
+ * 事實來源仍是這裡，原生只是存一份在 EncryptedSharedPreferences。
+ * web 版是 no-op——沒有原生寫入路徑，也就沒有第二個地方存憑證。
+ */
+async function syncAuthToNative() {
+  // 沒有 token 也要推——那代表登出，原生留著舊的會繼續在背景寫入
+  await pushRestAuth(getToken() ?? "", apiBase());
+}
+
+/**
+ * F131 ⑦：回前景時把這場訓練的組重抓一遍，覆蓋本機鏡射。
+ *
+ * <p>原生在背景寫進去的組，前端完全不知道有哪些——事件送不到凍住的 WebView（F124）。
+ * 所以對帳的方式是**重抓**，不是增量合併：合併要猜「哪些是原生寫的、哪些是我自己寫的」，
+ * 那份猜測就是第二個會走鐘的來源（同 ③ 不讓組號規則有兩份的理由）。
+ *
+ * <p>離線或沒有進行中的訓練就整支跳過——本機那份仍是當下最好的資料，覆蓋不了就別動它。
+ */
+async function refetchActiveWorkoutSets() {
+  const workoutId = state.workoutId;
+  if (workoutId === null) return;
+  let detail;
+  try {
+    detail = await api.workoutDetail(workoutId);
+  } catch {
+    return; // 離線／伺服器不可達：保留本機鏡射，下次回前景再試
+  }
+  // ⚠ 回應期間使用者可能已經結束這場、開了新的一場（codex review P2）。
+  // 拿舊場的回應覆蓋新場，會讓剛開的訓練憑空長出上一場的組。
+  if (state.workoutId !== workoutId) return;
+
+  const sets = detail?.sets ?? [];
+  const byExercise = {};
+  for (const s of sets) {
+    (byExercise[s.exercise_id] ??= []).push(s);
+  }
+  // ⚠ **保留前端還沒同步出去的組**（codex review P1）：它們只存在本機佇列，
+  // 伺服器當然回不了。整份覆蓋會讓那些組從清單與課表進度上消失，
+  // 而 reconcileDoneSets() 只能替換既有項目、加不回來——等於樂觀寫入的那幾組人間蒸發。
+  const onServer = new Set(sets.map((s) => s.client_uuid));
+  for (const [id, arr] of Object.entries(state.doneByExercise ?? {})) {
+    const localOnly = arr.filter((s) => s.client_uuid && !onServer.has(s.client_uuid) && !s.id);
+    if (localOnly.length > 0) (byExercise[id] ??= []).push(...localOnly);
+  }
+  // 原生 outbox 裡還沒送出去的組**兩邊都不在**：伺服器沒收到，前端也從沒寫進鏡射。
+  // 不補進來的話它們在 app 裡完全看不見，使用者會以為沒記到而再按一次——
+  // 兩筆 uuid 不同，伺服器的冪等去重擋不住，同一組變兩筆（review HIGH）。
+  const { entries: outboxEntries = [] } = await nativeOutboxCounts();
+  for (const e of outboxEntries) {
+    if (onServer.has(e.uuid)) continue;
+    const arr = (byExercise[e.exerciseId] ??= []);
+    arr.push({
+      client_uuid: e.uuid,
+      exercise_id: e.exerciseId,
+      weight_kg: e.weight,
+      reps: e.reps,
+      rpe: null, // F104 ⑦：就地記的組留 null
+      rest_seconds: e.restSeconds >= 0 ? e.restSeconds : null,
+      // 組號由伺服器算（F131 ③），送達前先接在目前最大值後面純粹是為了顯示
+      set_number: arr.reduce((m, x) => Math.max(m, x.set_number ?? 0), 0) + 1,
+    });
+    state.queueStatus = { ...state.queueStatus, [e.uuid]: e.status };
+  }
+  for (const arr of Object.values(byExercise)) {
+    arr.sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0));
+  }
+  state.doneByExercise = byExercise;
+  state.setCounts = Object.fromEntries(
+    Object.entries(byExercise).map(([id, arr]) => [id, arr.length]),
+  );
+  if (state.exercise) {
+    state.doneSets = byExercise[state.exercise.id] ?? [];
+    // 組號續接目前最大值（伺服器算的那個），不是重數幾筆——刪過組時兩者不同
+    state.setNumber = state.doneSets.reduce((m, x) => Math.max(m, x.set_number ?? 0), 0) + 1;
+  }
+  saveActiveWorkout();
+  renderUnlessTyping();
+}
+
 async function replayPendingLog() {
   const pending = await getPendingRestLog();
   if (!pending) return;
@@ -2777,6 +2871,14 @@ document.addEventListener("visibilitychange", () => {
   // 「跑去系統設定改通知／精確鬧鐘再切回來」永遠反映不到——⑤ 的靜默失敗會從這條路復活，
   // 而照 README 去開精確鬧鐘的人也會看到按鈕永遠停在「可能延遲」。
   if (!document.hidden) {
+    // F131 ⑥-1 觸發點 3 ＋ ⑦：回前景時踢一次原生 outbox，並把這場的組重抓一遍。
+    // 重抓而不做增量合併是刻意的——原生在背景寫進去的組，前端無從得知有哪些；
+    // 合併邏輯會是第二份會走鐘的東西（同 ③ 不讓組號規則有兩份的理由）。
+    guard(async () => {
+      await flushRestOutbox();
+      await refreshQueueCounts();
+      await refetchActiveWorkoutSets();
+    });
     refreshRestNotifyState().then(() => {
       // ⚠ 不能只在首頁重繪。F81 把通知開關搬進**設定畫面**之後，「跑去系統設定關掉
       // 這類通知再切回來」剛好落在唯一不重繪的畫面上——開關繼續顯示舊狀態，
@@ -2971,7 +3073,7 @@ refreshRestNotifyState().then(() => {
 });
 // F71 ⑥：原生端（浮動視窗）的暫停／繼續／停止回傳。只訂閱一次，事件驅動不輪詢。
 // 前端仍是狀態的事實來源——原生只回報「使用者按了什麼」，實際的計時狀態在這裡改。
-subscribeRestControl((action, seconds, draft) => {
+subscribeRestControl((action, seconds, draft, startedAt) => {
   // F103 ③：「再開始」是唯一在「前端這份倒數已經停掉」時仍要處理的動作——
   // 其餘動作沒有進行中的休息就無事可做。這個判斷要放在 restStartedAt 檢查之前。
   if (action === "restart") {
@@ -2981,6 +3083,36 @@ subscribeRestControl((action, seconds, draft) => {
     restartRestFromNative(seconds, haltedRestElapsed);
     haltedRestElapsed = 0;
     startRestTicker();
+    render();
+    return;
+  }
+  // F131 ①④：原生在背景記完一組後自己開了新的一輪——前端**接手**，不得再開一輪。
+  // 判準與秒數以原生為準（它才是真的在數）。這條同樣要放在 restStartedAt 檢查之前：
+  // 背景那一輪結束時前端這份可能早就收掉了。
+  if (action === "nextround") {
+    if (seconds === null) return; // 舊版原生不帶秒數：寧可不動，也不要憑空猜一個起點
+    // 以原生那一輪的開始時刻接手，不是從「現在」重數（背景時這個事件會遲到）
+    adoptNativeRound(seconds, startedAt);
+    startRestTicker();
+    // 這一輪的組已經由原生寫入（或排進 outbox），回前景時 refetchActiveWorkoutSets() 會對帳
+    render();
+    return;
+  }
+  // F131 ⑧：原生 outbox 的計數變了——併進既有的同步狀態列，不新增 UI。
+  // 送成功的那幾組只有伺服器知道細節，所以連同清單一起對帳（不是只更新數字）。
+  if (action === "outbox") {
+    guard(async () => {
+      await refreshQueueCounts();
+      await refetchActiveWorkoutSets();
+      renderUnlessTyping();
+    });
+    return;
+  }
+  // F131 ⑧：token 在背景失效。只標 failed 的話使用者會以為自己還登著，
+  // 之後每一組原生寫入都繼續失敗——走既有的重新登入流程。
+  if (action === "unauthorized") {
+    state.screen = "setup";
+    state.error = "Token 無效——重新輸入";
     render();
     return;
   }
@@ -3038,4 +3170,10 @@ if (!getToken()) {
     await replayPendingLog();
   });
   guard(syncQueue); // 開站補傳上次離線留下的佇列
+  // F131 ⑤⑥-1：開機把憑證鏡射給原生，並踢一次 outbox（上次休息結束後躺著的那些）
+  guard(async () => {
+    await syncAuthToNative();
+    await flushRestOutbox();
+    await refreshQueueCounts();
+  });
 }

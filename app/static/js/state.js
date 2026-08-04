@@ -5,7 +5,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v139";
+export const APP_VERSION = "v140";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -246,6 +246,25 @@ export function pauseRest() {
  * @param {number} carriedElapsed 停止之前已經休息掉的秒數。接回去而不是歸零——
  *   停止再開始仍是「同一輪休息」，寫進下一組的 rest_seconds 要涵蓋整段。
  */
+/**
+ * F131 ①④：接手原生在背景開的那一輪（不是自己再開一輪）。
+ *
+ * <p>以原生給的**開始時刻**為準，不是「現在」——WebView 在背景是凍住的，事件可能
+ * 30 秒後才處理完，從現在重數會讓畫面比通知列多出那 30 秒（codex review P1）。
+ *
+ * @param {number} targetSeconds 這一輪的目標秒數
+ * @param {number} startedAt 原生那一輪的開始時刻（epoch ms）
+ */
+export function adoptNativeRound(targetSeconds, startedAt) {
+  const now = Date.now();
+  const began = Number.isFinite(startedAt) && startedAt > 0 && startedAt <= now ? startedAt : now;
+  state.restStartedAt = began;
+  state.restAccumulatedMs = 0;
+  state.restResumedAt = began;
+  state.restTargetSeconds = targetSeconds;
+  state.pendingRestSeconds = null; // 這輪還沒結束，別讓它被下一組當成凍結值取用
+}
+
 export function restartRestFromNative(seconds, carriedElapsed = 0) {
   const now = Date.now();
   state.restStartedAt = now;

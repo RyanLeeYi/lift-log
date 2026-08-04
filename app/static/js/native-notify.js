@@ -397,6 +397,66 @@ export async function getRestStoppedAt() {
   }
 }
 
+/**
+ * F131 ⑤：把 Bearer token 與 base URL 鏡射給原生。
+ *
+ * 事實來源仍是這裡（setup 頁輸入、換 token 都在前端）；原生存一份只是為了在**背景**
+ * 打得到 API——那時 WebView 是凍住的，跟它要 token 就等於回到 F125 那條「等回前景」的路。
+ * 原生用 EncryptedSharedPreferences 存，不落明文。
+ */
+export async function pushAuthToNative(token, baseUrl) {
+  const api = restTimerPlugin();
+  if (!api?.setAuth) return;
+  try {
+    // 空 token 要**推出去**（不是不推）：那是登出，原生留著舊的會繼續在背景寫入
+    await api.setAuth({ token: token ?? "", baseUrl: baseUrl ?? "" });
+  } catch {
+    /* 推不過去：原生寫入路徑會自己跳過，退回「回 app 再寫」，不擋前端任何事 */
+  }
+}
+
+/**
+ * F131 ⑥-1 觸發點 3：回 app 時取件原生 outbox 的狀態，並踢一次重送。
+ *
+ * @returns {Promise<{pending: number, failed: number}>} 舊版 APK 或查詢失敗回 0/0
+ */
+export async function getNativeOutbox() {
+  const api = restTimerPlugin();
+  if (!api?.getOutbox) return { pending: 0, failed: 0, entries: [] };
+  try {
+    const res = await api.getOutbox();
+    return {
+      pending: Number(res?.pending) || 0,
+      failed: Number(res?.failed) || 0,
+      // 內容也要拿：只給計數的話，還沒送出去的那幾組在 app 裡完全看不見
+      entries: Array.isArray(res?.entries) ? res.entries : [],
+    };
+  } catch {
+    return { pending: 0, failed: 0, entries: [] };
+  }
+}
+
+export async function flushNativeOutbox() {
+  const api = restTimerPlugin();
+  if (!api?.flushOutbox) return;
+  try {
+    await api.flushOutbox();
+  } catch {
+    /* 踢不動：網路回呼與下次按下一組還是會再試 */
+  }
+}
+
+/** F131 ⑥：使用者按「捨棄」時，原生側的 failed 也要跟著清（只清 failed，pending 不動）。 */
+export async function discardNativeFailed() {
+  const api = restTimerPlugin();
+  if (!api?.discardFailedOutbox) return;
+  try {
+    await api.discardFailedOutbox();
+  } catch {
+    /* 清不掉：下次還會顯示，不會變成資料遺失 */
+  }
+}
+
 /** F125 ⑤：確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
 export async function clearPendingLog() {
   const api = restTimerPlugin();
@@ -497,6 +557,9 @@ export function onNativeRestControl(handler) {
             // 補送與這條 bridge 事件必須用同一個值，否則伺服器去重不到。
             { weight: event.weight, reps: event.reps, uuid: event.uuid ?? null }
           : null,
+        // F131 ①：nextround 帶的是原生那一輪的**開始時刻**。背景時這個事件可能
+        // 幾十秒後才被處理，只看秒數的話前端會從「現在」重數，兩邊當場分叉。
+        typeof event?.startedAt === "number" ? event.startedAt : null,
       ),
     );
   } catch {

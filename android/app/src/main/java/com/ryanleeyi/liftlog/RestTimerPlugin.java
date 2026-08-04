@@ -119,6 +119,109 @@ public class RestTimerPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /**
+     * F131 ①④：原生在背景開了新的一輪——前端要接手，不是自己再開一輪。
+     *
+     * <p>帶 {@code startedAt} 而不只是秒數：這個事件可能在 WebView 解凍後才被處理
+     * （背景時整條鏈是凍住的），只給秒數的話前端會從「現在」重數，兩邊當場分叉。
+     */
+    static void emitNextRound(int seconds, long startedAt) {
+        RestTimerPlugin plugin = instance;
+        if (plugin == null) return;
+        JSObject data = new JSObject();
+        data.put("action", "nextround");
+        data.put("seconds", seconds);
+        data.put("startedAt", startedAt);
+        plugin.notifyListeners("restControl", data);
+    }
+
+    /**
+     * F131 ⑧：token 在背景失效（401）——只標 failed 不夠，使用者會以為自己還登著。
+     *
+     * <p>導回 setup 的判斷留在前端（既有的 guard()），原生只負責把事實送過去。
+     */
+    static void emitUnauthorized() {
+        RestTimerPlugin plugin = instance;
+        if (plugin == null) return;
+        JSObject data = new JSObject();
+        data.put("action", "unauthorized");
+        plugin.notifyListeners("restControl", data);
+    }
+
+    /**
+     * F131 ⑧：原生 outbox 的狀態變化，推給前端併進既有的同步計數。
+     *
+     * <p>前端不在時送不出去也無妨——回 app 時 {@link #getOutbox} 會被主動取件（同 F124 的教訓）。
+     */
+    static void emitOutbox(int pending, int failed) {
+        RestTimerPlugin plugin = instance;
+        if (plugin == null) return;
+        JSObject data = new JSObject();
+        data.put("action", "outbox");
+        data.put("pending", pending);
+        data.put("failed", failed);
+        plugin.notifyListeners("restControl", data);
+    }
+
+    /**
+     * F131 ⑤：前端把 Bearer token 與 base URL 鏡射給原生。
+     *
+     * <p>事實來源仍是前端（setup 頁）；原生只是為了在**背景**打得到 API 而留一份，
+     * 存在 {@link SecureStore} 的加密儲存裡。啟動與換 token 時各推一次。
+     */
+    @PluginMethod
+    public void setAuth(PluginCall call) {
+        String token = call.getString("token");
+        String baseUrl = call.getString("baseUrl");
+        // 空 token ＝ 登出（review MEDIUM）：前端清掉 token 而原生仍留著舊的，
+        // 背景休息時照樣會把組 POST 出去——使用者以為登出了，資料還在寫。
+        if (token == null || token.isEmpty()) {
+            SecureStore.clear(getContext());
+            call.resolve();
+            return;
+        }
+        if (baseUrl == null) {
+            call.reject("setAuth 需要 baseUrl");
+            return;
+        }
+        SecureStore.save(getContext(), token, baseUrl);
+        call.resolve();
+    }
+
+    /**
+     * F131 ⑥-1：回 app 時取件——原生 outbox 目前的狀態與內容。
+     *
+     * <p><b>內容也要給</b>（review HIGH）：還在 pending 的組伺服器還沒收到、前端也從沒寫過，
+     * 只給計數的話那幾組在 app 裡完全看不見——使用者會以為沒記到而再按一次，
+     * 兩筆 uuid 不同，伺服器的冪等去重擋不住，同一組變兩筆。
+     */
+    @PluginMethod
+    public void getOutbox(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("pending", SetOutbox.count(getContext(), SetOutbox.STATUS_PENDING));
+        result.put("failed", SetOutbox.count(getContext(), SetOutbox.STATUS_FAILED));
+        result.put("entries", SetOutbox.all(getContext()));
+        call.resolve(result);
+    }
+
+    /**
+     * F131 ⑥-1 觸發點 3：回 app 時踢一次重送。
+     *
+     * <p>**等送完才 resolve**（codex review P1）：前端接著就要 GET 這場的組來對帳，
+     * 早一步 resolve 會讓那個 GET 取不到剛送出去的那幾組，清單與下一組組號停在舊值。
+     */
+    @PluginMethod
+    public void flushOutbox(PluginCall call) {
+        SetUploader.flush(getContext(), call::resolve);
+    }
+
+    /** F131 ⑥：使用者在 app 內按「捨棄」——只清 failed，pending 不動。 */
+    @PluginMethod
+    public void discardFailedOutbox(PluginCall call) {
+        SetOutbox.discardFailed(getContext());
+        call.resolve();
+    }
+
     /** F125 ⑤：前端確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
     @PluginMethod
     public void clearPendingLog(PluginCall call) {
