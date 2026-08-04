@@ -5,7 +5,7 @@
 
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v137";
+export const APP_VERSION = "v138";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
 const LANG_KEY = "liftlog.lang"; // zh | en
@@ -52,6 +52,7 @@ export const state = {
   lastSetsOpen: false, // F101：完整紀錄視窗開著嗎
   restHintOverrides: {}, // {exerciseId: 秒}——R10 訓練中臨時調整，僅本次 workout、不寫回課表
   pendingRestSeconds: null, // F15：按「繼續下一組」凍結的休息秒數，寫進下一組後清空（transient，不持久化）
+  pendingRestExerciseId: null, // F129：pendingRestSeconds 歸屬哪個動作，選到別的動作要丟棄（transient，不持久化）
   muscleFilter: null,
   searchQ: "",
   submitting: false,

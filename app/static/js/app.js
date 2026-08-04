@@ -1112,6 +1112,12 @@ function rememberDoneSets() {
 
 async function pickExercise(exercise) {
   addPanelOpen = false; // F49：選了動作就離開 picker，視窗狀態不留到下次回來（否則回 picker 會自己彈開）
+  // F129 codex review P1：冷開機丟棄殭屍休息時凍結的秒數綁著原動作（pendingRestExerciseId）。
+  // 選到別的動作就代表那筆休息跟這組無關，不能讓它被 logCurrentSet() 誤貼上去。
+  if (state.pendingRestExerciseId !== null && state.pendingRestExerciseId !== exercise.id) {
+    state.pendingRestSeconds = null;
+  }
+  state.pendingRestExerciseId = null;
   state.exercise = exercise;
   state.rpe = 6; // F40：進動作預設累度「輕鬆」
   state.doneSets = [];
@@ -2218,6 +2224,7 @@ function renderLogger() {
     // F70 ①：換動作**不再**結束休息——「換個地方看」不等於「休息結束」。
     // 倒數、通知列與浮動視窗照常走完；真正結束休息的只有「繼續下一組」與收工（②）。
     state.pendingRestSeconds = null; // 換動作：未用的凍結休息值不跨動作帶
+    state.pendingRestExerciseId = null;
     // F66 ④（review MEDIUM-3）：「倒數沒還原」的提示看過一次就夠。離開 logger 就消掉，
     // 否則它會黏著整個 session——每次回到 logger 都再說一次同一件已經知道的事。
     state.restRestoreDropped = false;
@@ -2810,6 +2817,14 @@ async function resumeRestAfterRestore() {
   //   行程被系統殺掉 → 沒有標記（或標記是更早那輪留下的）→ 照舊還原（F66 不回歸）
   const stoppedAt = await restStoppedAt();
   if (stoppedAt > state.restStartedAt) {
+    // F129：對照 app.js:2989 活著的 stop 路徑，凍結休息秒數才丟——不能用
+    // restElapsedSeconds()（算到「現在」），要用快照＋停止時刻回推。
+    const runningMs = state.restResumedAt !== null ? stoppedAt - state.restResumedAt : 0;
+    state.pendingRestSeconds = Math.round((state.restAccumulatedMs + runningMs) / 1000);
+    // codex review P1：stopRestTimer() 接下來會把 restExerciseId 清成 null（真結束），
+    // 但這裡是跨 session 冷開機，使用者接下來可能選別的動作記組——先記下歸屬，
+    // pickExercise() 會在動作不符時把這個凍結值丟掉，不能讓它跟錯動作。
+    state.pendingRestExerciseId = state.restExerciseId;
     stopRestTimer(); // 清 state ＋ 把 localStorage 的快照寫回 null
     return;
   }
