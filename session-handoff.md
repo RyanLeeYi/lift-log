@@ -15,8 +15,19 @@ Ryan 原本預期「浮動視窗按完成這組之後，視窗會像 app 內一�
 最需要注意的技術點是 ④：回到 app 時前端必須**接手**原生已經在跑的那一輪，
 不能再 scheduleRestNotify 開一輪新的，否則會變成兩輪各數各的。
 
-⚠ F127 的 `codex exec review` 這場沒等到結果（背景跑到收工還沒回）。
-下一場開工前補跑一次：`codex exec review --commit f2a1a06`。
+### ⚠ 先修 F129，再做 F128
+
+F127 的 codex review 收工後才回來，抓到一條 **P1，我已讀碼確認屬實**：
+
+F127 的丟棄路徑直接呼叫 `stopRestTimer()`，**沒先凍結 `state.pendingRestSeconds`**。
+而 `logCurrentSet()` 只有它非 null 才送 `rest_seconds`（app.js:2165）。
+⇒「滑掉 app → 通知按停止 → 重開 app → 記下一組」那一組的**組間休息秒數會漏掉**。
+對照組 app.js:2989（活著的 stop 路徑）有做這件事。
+
+條文寫成 **F129**（failing，草案未簽核）。⚠ 修法有個坑：不能直接用
+`restElapsedSeconds()`（那算到「現在」），要用快照 ＋ `stoppedAt` 回推。公式在條文 ④。
+
+**這條影響已經出貨的 v137**——資料會少一個欄位，畫面上看不出來。優先度高於 F128。
 
 ## 這一場（8/4）之二：F127 —— 原生端結束的休息不再復活
 
