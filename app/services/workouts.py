@@ -3,7 +3,7 @@ from datetime import date as date_type
 from datetime import datetime
 from difflib import SequenceMatcher
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -272,6 +272,21 @@ def _as_idempotent_hit(existing: WorkoutSet, workout_id: int) -> WorkoutSet:
     return existing
 
 
+def _next_set_number(session: Session, workout_id: int, exercise_id: int) -> int:
+    """F131 ③：該 workout 該動作的最大組號 +1（F32 語意，範圍是「這一場的這個動作」）。
+
+    **軟刪的組仍計入**：後端沒有組號唯一約束，重用已刪組的號碼會靜默造成同場同動作
+    兩筆相同組號（前端 app.js:1095 有同一個顧慮）。寧可跳號也不撞號。
+    """
+    highest = session.scalar(
+        select(func.max(WorkoutSet.set_number)).where(
+            WorkoutSet.workout_id == workout_id,
+            WorkoutSet.exercise_id == exercise_id,
+        )
+    )
+    return (highest or 0) + 1
+
+
 def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[WorkoutSet, bool]:
     """寫入一組。回傳 (set, created)；同 client_uuid 重放冪等回傳既有那筆。
 
@@ -286,7 +301,10 @@ def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[Workout
     if existing is not None:
         return _as_idempotent_hit(existing, workout_id), False
 
-    workout_set = WorkoutSet(workout_id=workout_id, **data.model_dump())
+    fields = data.model_dump()
+    if fields.get("set_number") is None:
+        fields["set_number"] = _next_set_number(session, workout_id, data.exercise_id)
+    workout_set = WorkoutSet(workout_id=workout_id, **fields)
     session.add(workout_set)
     try:
         session.commit()

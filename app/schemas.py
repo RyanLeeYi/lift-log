@@ -148,7 +148,9 @@ class WorkoutCreate(BaseModel):
 class SetCreate(BaseModel):
     client_uuid: str = Field(min_length=8)
     exercise_id: int
-    set_number: int = Field(gt=0)
+    # F131 ③：省略時由 server 算（該 workout 該動作最大組號 +1）。選填是為了讓原生側的
+    # 寫入路徑不必把 F32 的組號規則再實作一份；有帶就沿用，前端與匯入路徑行為不變。
+    set_number: int | None = Field(default=None, gt=0)
     weight_kg: float = Field(ge=0)
     reps: int = Field(gt=0)
     rpe: int | None = Field(default=None, ge=1, le=10)

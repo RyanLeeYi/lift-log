@@ -131,6 +131,77 @@ class TestLogSet:
         assert "exercise" in resp.json()["error"]
 
 
+class TestServerAssignedSetNumber:
+    """F131 ③：`set_number` 省略時由 server 算。
+
+    原本一律由前端算好帶進來。F131 讓原生側也能寫入，那條路徑不該把
+    「該動作本次最大組號 +1」（F32）再實作一次——規則只留 server 一份。
+    """
+
+    def _post(self, client, workout_id, exercise_id, uuid, **overrides):
+        payload = make_set_payload(exercise_id, client_uuid=uuid, **overrides)
+        payload.pop("set_number", None)
+        return client.post(f"/api/workouts/{workout_id}/sets", json=payload)
+
+    def test_omitted_set_number_starts_at_one(self, client, exercise_id):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        resp = self._post(client, workout_id, exercise_id, "aaaaaaaa-0000-0000-0000-000000000001")
+        assert resp.status_code == 201
+        assert resp.json()["set_number"] == 1
+
+    def test_omitted_set_number_increments_per_exercise(self, client, exercise_id):
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        other = client.post(
+            "/api/exercises",
+            json={"name_zh": "臥推", "name_en": "Bench", "muscle_group": "胸"},
+        ).json()["id"]
+
+        first = self._post(client, workout_id, exercise_id, "aaaaaaaa-0000-0000-0000-000000000001")
+        second = self._post(client, workout_id, exercise_id, "aaaaaaaa-0000-0000-0000-000000000002")
+        # 換動作 → 從 1 重新算（F32 是「該動作」的最大組號，不是整場的）
+        other_first = self._post(client, workout_id, other, "aaaaaaaa-0000-0000-0000-000000000003")
+
+        assert [first.json()["set_number"], second.json()["set_number"]] == [1, 2]
+        assert other_first.json()["set_number"] == 1
+
+    def test_omitted_set_number_is_scoped_to_this_workout(self, client, exercise_id):
+        """上一場的組號不得延續到這一場。"""
+        old = client.post("/api/workouts", json={}).json()["id"]
+        self._post(client, old, exercise_id, "aaaaaaaa-0000-0000-0000-000000000001")
+        new = client.post("/api/workouts", json={}).json()["id"]
+        resp = self._post(client, new, exercise_id, "aaaaaaaa-0000-0000-0000-000000000002")
+        assert resp.json()["set_number"] == 1
+
+    def test_omitted_set_number_skips_numbers_of_deleted_sets(self, client, exercise_id):
+        """軟刪的組**仍佔號**：重用會讓同一場同一動作出現兩筆一樣的組號。
+
+        後端沒有組號唯一約束，撞號是靜默的（app.js:1095 的同一個顧慮）。
+        """
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        first = self._post(client, workout_id, exercise_id, "aaaaaaaa-0000-0000-0000-000000000001")
+        client.delete(f"/api/sets/{first.json()['id']}")
+        resp = self._post(client, workout_id, exercise_id, "aaaaaaaa-0000-0000-0000-000000000002")
+        assert resp.json()["set_number"] == 2
+
+    def test_explicit_set_number_is_still_honoured(self, client, exercise_id):
+        """相容性：前端照舊帶 set_number 的路徑不得改變行為。"""
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        resp = client.post(
+            f"/api/workouts/{workout_id}/sets",
+            json=make_set_payload(exercise_id, set_number=7),
+        )
+        assert resp.json()["set_number"] == 7
+
+    def test_explicit_zero_set_number_still_rejected(self, client, exercise_id):
+        """選填不等於放寬驗證：有帶就仍要 > 0。"""
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        resp = client.post(
+            f"/api/workouts/{workout_id}/sets",
+            json=make_set_payload(exercise_id, set_number=0),
+        )
+        assert resp.status_code == 400
+
+
 class TestIdempotencyEdges:
     """code review C1/C2/C3：冪等重放的邊界（詳見 PRD 邊界情況）。"""
 
