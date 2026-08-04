@@ -1,8 +1,8 @@
 # session handoff
 
-最後更新：2026-08-04（**120/130 passing，v138**；線上仍 v124，正式版 APK v138 已出，commit `85ffa04`）
+最後更新：2026-08-04（**121/130 passing，v139**；線上仍 v124，正式版 APK v139-F130 已出）
 
-## 這一場（8/4 之五）：架構討論 + F130 起頭（用量門檻收工，未完）
+## 這一場（8/4 之五）：架構討論 + F130（完成）
 
 ### 討論結論（尚未寫成條文，Ryan 已表態方向）
 
@@ -24,15 +24,23 @@ Ryan 想要「**背景記組即時寫入**」，取代 F125 現行的「排入 �
   這場 sets）⑤ workout_id 走鐘。**不是問題**：背景網路（前景服務在跑）、重複寫入
   （server 對 client_uuid 已冪等，`workouts.py:285`）。
 
-### F130（做了一半）
+### F130（passing，v139）
 
-`AndroidManifest.xml` `allowBackup` true → false。merged manifest 兩個 flavor 都已確認 false。
-**codex review 抓到 1 個 P1 未修**：targetSdk 36 的 Android 12+ 上，`allowBackup=false`
-不涵蓋部分 OEM 的「裝置對裝置轉移」，換機時 WebView 的 `liftlog.token` 仍可能被複製。
-修法：加 `android:dataExtractionRules`，在 `<device-transfer>` 排除 WebView／全部 app 資料。
-**status 維持 failing**，未跑 codex-verify、未出 APK。
+`allowBackup` true → false，並新增 `res/xml/data_extraction_rules.xml`。
 
-**下一場入口**：修 F130 的 P1 → verify → passing → 再寫 F131 條文給 Ryan 簽核。
+**codex review 第一輪的 P1 值得記**：`allowBackup=false` 在 targetSdk 36 的 Android 12+
+**不涵蓋「裝置對裝置轉移」**（換機時部分 OEM 的直接複製）。光關 allowBackup 沒有達到
+宣稱的安全邊界，要靠 `dataExtractionRules` 的 `<device-transfer>` 才擋得住。
+
+另一個容易寫錯的地方：`data-extraction-rules` 裡**只寫 exclude 時，沒列到的網域一律視為包含**，
+所以兩個區塊都要逐一排除 root/file/database/sharedpref/external 五個，不能只排 root。
+`android:dataExtractionRules` 是 API 31 的屬性，minSdk 24 要配 `tools:targetApi="31"`。
+
+驗證：兩 flavor merged manifest ＋ **aapt2 dump xmltree 於已封裝的 APK 內**確認
+（`allowBackup=false`、`dataExtractionRules=@0x7f100001`、versionName=139）。
+codex-verify 五條全 pass，F67 20/20、F93 12/12 E2E 不回歸。
+
+**下一場入口**：寫 F131（背景記組即時寫入）條文給 Ryan 簽核。
 
 ## 前一場（8/4 之四）：F129 —— 原生停止時凍結 rest_seconds，補 codex review P1
 

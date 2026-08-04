@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- F130：關閉 Android auto-backup。開著時系統會把 app 私有資料（SharedPreferences、
          檔案、**WebView 的 localStorage**）上傳到使用者的 Google 帳號雲端——而 Bearer token
@@ -7,6 +8,8 @@
          代價：換手機不會自動還原，要重新輸入 token 與站別。訓練資料在 server，不受影響。 -->
     <application
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:targetApi="31"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

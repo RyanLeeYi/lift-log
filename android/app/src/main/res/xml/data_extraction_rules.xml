@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  F130：Android 12+ 的資料擷取規則。
+
+  allowBackup="false" 只擋雲端備份，**不擋「裝置對裝置轉移」**（換機時的直接複製，
+  部分 OEM 的轉移工具會走這條）。Bearer token 存在 WebView 的 localStorage
+  （app_webview/，屬 root 網域），轉移過去等於憑證跟著換機離開原裝置。
+
+  兩個區塊都逐一 exclude 所有網域：只寫 exclude 時，**沒列到的網域一律視為包含**，
+  所以不能只排除 root 就當作全關。
+
+  代價：換手機不會自動還原 app 資料，要重新輸入 token 與站別。訓練資料在 server。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

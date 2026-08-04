@@ -2276,10 +2276,15 @@
     {
       "id": "F130",
       "name": "關閉 Android auto-backup（token 不隨備份離開裝置）",
-      "status": "failing",
+      "status": "passing",
       "acceptance": "**已簽核凍結（2026-08-04，Ryan 於討論中直接拍板「先做 1」）**。安全性修補，非行為 feature。\n\n① `android/app/src/main/AndroidManifest.xml` 的 `android:allowBackup` 由 `true` 改為 `false`。\n\n② 動機：auto-backup 會把 app 私有資料上傳到使用者的 Google 帳號雲端，\n   **WebView 的 localStorage 也在內**——Bearer token 存在 `liftlog.token`（`app/static/js/api.js:6`），\n   等於 token 跟著離開裝置。攻擊路徑：Google 帳號被入侵 → 還原到攻擊者裝置 → 取得 token。\n\n③ 已知代價（可接受）：換手機不會自動還原 app 資料，要重新輸入 token 與站別。\n   訓練資料在 server，不受影響。\n\n④ 不得回歸：F67（APK 自我更新）、F93（雙站別 APK 並存）——兩者都不依賴 auto-backup。\n\n⑤ 驗收：建置後的 merged manifest 中 `android:allowBackup=\"false\"`。",
-      "evidence": "改動：AndroidManifest.xml `android:allowBackup` true → false。\n驗證：gradle processProdReleaseManifest / processDevReleaseManifest 後，兩個 flavor 的 merged manifest 皆為 `android:allowBackup=\"false\"`（prodRelease:62、devRelease:62）。\ncodex review（--uncommitted）抓到 1 個 **P1，尚未修**：targetSdk 36 的 Android 12+ 上 allowBackup=false 不涵蓋部分 OEM 的「裝置對裝置轉移」，換機時 WebView 的 liftlog.token 仍可能被複製過去。建議加 `android:dataExtractionRules`，在 <device-transfer> 排除 WebView 資料。\n→ 因用量門檻收工，P1 留待下一場處理；status 維持 failing。",
-      "reviewed_by": "codex (2026-08-04, --uncommitted)"
+      "evidence": "改動：AndroidManifest.xml `android:allowBackup` true → false，並新增 `res/xml/data_extraction_rules.xml`（`cloud-backup` 與 `device-transfer` 兩區塊各自 exclude root/file/database/sharedpref/external 五個網域；只寫 exclude 時未列到的網域算包含，故不能只排 root），manifest 以 `android:dataExtractionRules` 連結、加 `tools:targetApi=\"31\"`（minSdk 24）。\n⑤ 驗證：gradle processProdReleaseManifest / processDevReleaseManifest 後，兩個 flavor 的 merged manifest 皆為 `android:allowBackup=\"false\"` 且帶 `android:dataExtractionRules`（prodRelease:62/64、devRelease:62/64）。\ncodex review 第一輪抓到 1 個 P1：allowBackup=false 在 targetSdk 36 的 Android 12+ 不涵蓋部分 OEM 的「裝置對裝置轉移」，換機時 WebView 的 liftlog.token 仍可能被複製 → 已以 dataExtractionRules 修正。第二輪 review：「未發現會造成行為或安全性回歸的缺陷」。\ncodex-verify：五條全 pass（① allowBackup、② token 風險與 D2D、③ 代價與 server 資料不受影響、④ F67 20/20 + F93 12/12 E2E 不回歸、⑤ 兩 flavor merged manifest），git 基線比對 PASS（驗收者未動追蹤檔）。\npytest 274 passed、ruff All checks passed。\n出貨驗證：正式版 APK lift-log-v139-F130.apk（build-apk.ps1 -Site prod，applicationId=com.ryanleeyi.liftlog、env.js 指向正式站），aapt2 dump xmltree 於**已封裝的 APK 內**確認 `allowBackup=false`、`dataExtractionRules=@0x7f100001`、versionName=139。",
+      "reviewed_by": "codex (2026-08-04, --uncommitted, 兩輪)",
+      "verified_by": "codex-verify (2026-08-04)",
+      "touches": [
+        "android/app/src/main/AndroidManifest.xml",
+        "android/app/src/main/res/xml/data_extraction_rules.xml"
+      ]
     }
   ]
 }
