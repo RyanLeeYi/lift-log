@@ -1,8 +1,40 @@
 # session handoff
 
-最後更新：2026-08-04（**120/129 passing，v138**；線上仍 v124，正式版 APK v138 已出，commit `85ffa04`）
+最後更新：2026-08-04（**120/130 passing，v138**；線上仍 v124，正式版 APK v138 已出，commit `85ffa04`）
 
-## 這一場（8/4 之四）：F129 —— 原生停止時凍結 rest_seconds，補 codex review P1
+## 這一場（8/4 之五）：架構討論 + F130 起頭（用量門檻收工，未完）
+
+### 討論結論（尚未寫成條文，Ryan 已表態方向）
+
+Ryan 想要「**背景記組即時寫入**」，取代 F125 現行的「排入 → 回 app 才寫」。
+下一場要把它寫成 **F131 條文送簽核**（F130 已被本場佔用）。討論中確認的事實：
+
+- **今天原生完全不打 API**（F104 ④ / F125 ② 明文禁止）。唯一例外是 APK 自我更新
+  `AppUpdatePlugin.java:98`，token 由 JS 當參數傳入、原生不留。
+- **既有資料遺失缺陷（v138 就有，非 F128 造成）**：`RestTimerService.java:177`，
+  按浮動視窗 ✕／停止走 `ACTION_STOP` → `PendingLog.clear()`，那組從沒寫進 DB 就被清掉，
+  而視窗前一秒才說「已排入，回 app 後記錄」。建議修法：`clear()` 從 `ACTION_STOP` 拿掉，
+  只留在寫入成功／補送成功／結束訓練三處。**若 F131 即時寫入做了，這條自動消失**。
+- **F128 草案的漏洞**：`PendingLog.enqueue()`（PendingLog.java:53）舊的還在就回舊 uuid、
+  丟掉新資料。F125 下安全（按鈕鎖住按不到第二次），但 F128 讓視窗回就緒態 →
+  背景第二組會被靜默吞掉。F128 若要做，得先決定單格鎖住 vs 佇列化。
+- **即時寫入的技術難點**（排序）：① set_number 誰算（現在前端算好帶進來，
+  `services/workouts.py:289`）→ 建議搬進 server ② token 要進原生側（現在只在 WebView
+  localStorage `api.js:6`）③ 原生要自己一套離線重試 ④ 回 app 的畫面對帳（建議直接重抓
+  這場 sets）⑤ workout_id 走鐘。**不是問題**：背景網路（前景服務在跑）、重複寫入
+  （server 對 client_uuid 已冪等，`workouts.py:285`）。
+
+### F130（做了一半）
+
+`AndroidManifest.xml` `allowBackup` true → false。merged manifest 兩個 flavor 都已確認 false。
+**codex review 抓到 1 個 P1 未修**：targetSdk 36 的 Android 12+ 上，`allowBackup=false`
+不涵蓋部分 OEM 的「裝置對裝置轉移」，換機時 WebView 的 `liftlog.token` 仍可能被複製。
+修法：加 `android:dataExtractionRules`，在 `<device-transfer>` 排除 WebView／全部 app 資料。
+**status 維持 failing**，未跑 codex-verify、未出 APK。
+
+**下一場入口**：修 F130 的 P1 → verify → passing → 再寫 F131 條文給 Ryan 簽核。
+
+## 前一場（8/4 之四）：F129 —— 原生停止時凍結 rest_seconds，補 codex review P1
 
 F127 丟棄殭屍倒數時沒先凍結 `pendingRestSeconds`，`resumeRestAfterRestore()` 直接
 `stopRestTimer()`，害「滑掉 app → 通知按停止 → 重開 app → 記下一組」那組漏休息秒數。
