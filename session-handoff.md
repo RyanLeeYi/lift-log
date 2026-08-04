@@ -1,6 +1,48 @@
 # session handoff
 
-最後更新：2026-08-04（**121/130 passing，v139**；線上仍 v124，正式版 APK v139-F130 已出）
+最後更新：2026-08-04（**121/131 passing，v140 未出 APK**；線上仍 v124，最新正式版 APK 是 v139-F130）
+
+## 這一場（8/4 之六）：F131 實作完成，**卡在真機驗收**
+
+### 現況
+
+F131（背景記組即時寫入）**已簽核凍結、程式碼寫完並通過兩輪 review**，commit `45ec320`。
+`feature_list.json` 仍是 **failing** —— 缺的只有 ⑩ 的十條真機驗收。
+
+- 測試：`uv run pytest` 283 passed、`ruff` 全過、`:app:compileProdReleaseJavaWithJavac` 過
+- 版本已升 v140（`state.js` APP_VERSION ＋ `sw.js` CACHE_NAME），**APK 還沒出**
+- 手機 SM_N9750（RF8NB0BSEFE）當時是連著的
+
+### 下一場入口（照順序）
+
+1. `.\scripts\build-apk.ps1 -Site dev -Tag F131` 出 dev APK 裝上手機
+2. 跑 F131 ⑩ 的十條驗收（背景不回 app 直接查 DB、✕/停止後那組仍在、飛航兩組、force-stop、前景不變、token 不得明文…）
+3. 過了才 `/codex-verify` → 改 passing → 出正式版 APK
+
+### ⚠ 動工前必須先問 Ryan 的一件事
+
+條文 ① 字面寫「**成功後**視窗才切休息態」，我實作成「**進 outbox 後**就切」。
+理由：照字面等 HTTP 成功的話，**離線時倒數永遠不會開始**，而離線是健身房的常態；
+進 outbox 已經是不可遺失的落地（跨行程存活、停止不清、失敗會回報）。
+這是對凍結 acceptance 的偏離，**要 Ryan 認可或改回字面**，不可自行決定。
+
+### 這一場的技術重點（值得記）
+
+- **server 算 `set_number`**：`SetCreate.set_number` 改選填，`_next_set_number()` 取
+  「該 workout 該動作最大組號 +1」，**軟刪的組仍佔號**（後端沒有唯一約束，重用會靜默撞號）。
+  這樣原生側就不必把 F32 的規則再實作一份。
+- **401 不是永久失敗**（review CRITICAL）：`SetOutbox` 沒有 failed→pending 的回復路徑，
+  把 401 標 failed 等於 token 過期時整批組永久送不出去。比照 5xx `break` 保持 pending。
+- **`elapsed` 要累加不要推算**：`targetSeconds - remaining` 在 ±15s 之後會歸零或多算 15 秒，
+  而那個值直接寫進 `rest_seconds`。
+- **`onOutboxState()` 曾經寫了沒接上**：`apply()` → `attach()` 在視窗已附著時只重畫秒數，
+  `paintLogStatus()` 沒有呼叫點。機制寫了不等於接上了。
+- **原生 pending 的組伺服器與前端都沒有**：不補進清單，使用者會以為沒記到而重按，
+  uuid 不同 → 冪等擋不住 → 同一組兩筆。
+- Codex review 這場**連兩次被中止**（背景任務 killed、無報告），退到第 2 層
+  `claude -p` headless reviewer——它抓到的反而更硬。第 2 層是同模型，回報時要講清楚。
+
+## 前一場（8/4 之五）：F130
 
 ## 這一場（8/4 之五）：架構討論 + F130（完成）
 
