@@ -2692,19 +2692,27 @@ async function refetchActiveWorkoutSets() {
   // ⚠ **保留前端還沒同步出去的組**（codex review P1）：它們只存在本機佇列，
   // 伺服器當然回不了。整份覆蓋會讓那些組從清單與課表進度上消失，
   // 而 reconcileDoneSets() 只能替換既有項目、加不回來——等於樂觀寫入的那幾組人間蒸發。
-  const onServer = new Set(sets.map((s) => s.client_uuid));
+  const seen = new Set(sets.map((s) => s.client_uuid));
+  const takeLocal = (id, s) => {
+    if (!s.client_uuid || s.id || seen.has(s.client_uuid)) return;
+    seen.add(s.client_uuid); // ⚠ 去重必須跨兩個來源：注入的原生組下一次回前景會出現在
+    // doneByExercise 裡、同樣符合「有 uuid 沒 id」，不記下來就每切一次前景多長一組
+    (byExercise[id] ??= []).push(s);
+  };
   for (const [id, arr] of Object.entries(state.doneByExercise ?? {})) {
-    const localOnly = arr.filter((s) => s.client_uuid && !onServer.has(s.client_uuid) && !s.id);
-    if (localOnly.length > 0) (byExercise[id] ??= []).push(...localOnly);
+    // 前端自己的離線佇列組：只存在本機，伺服器當然回不了
+    for (const s of arr) if (!s.native_outbox) takeLocal(id, s);
   }
   // 原生 outbox 裡還沒送出去的組**兩邊都不在**：伺服器沒收到，前端也從沒寫進鏡射。
   // 不補進來的話它們在 app 裡完全看不見，使用者會以為沒記到而再按一次——
   // 兩筆 uuid 不同，伺服器的冪等去重擋不住，同一組變兩筆（review HIGH）。
   const { entries: outboxEntries = [] } = await nativeOutboxCounts();
   for (const e of outboxEntries) {
-    if (onServer.has(e.uuid)) continue;
+    if (seen.has(e.uuid)) continue;
+    seen.add(e.uuid);
     const arr = (byExercise[e.exerciseId] ??= []);
     arr.push({
+      native_outbox: true, // 標記來源：下一次回前景不得把它再當成「本機未同步組」注入一次
       client_uuid: e.uuid,
       exercise_id: e.exerciseId,
       weight_kg: e.weight,
