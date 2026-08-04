@@ -14,6 +14,7 @@ import {
   enableNativeNotify,
   enableRestOverlay as enableNativeOverlay,
   getPendingLog as nativeGetPendingLog,
+  getRestStoppedAt as nativeGetRestStoppedAt,
   nativeExactAlarmOff,
   nativeNotifyAvailable,
   nativeNotifyEnabled,
@@ -122,6 +123,11 @@ export function syncRestCardVisible(visible, force = false) {
 // F125 ③：開機取件補送。web 版沒有原生儲存＝永遠沒有待補送的。
 export async function getPendingRestLog() {
   return native() ? nativeGetPendingLog() : null;
+}
+
+// F127 ②：web 版沒有原生停止那條路，回 0＝「沒有人明確結束過」，還原行為不變。
+export async function restStoppedAt() {
+  return native() ? nativeGetRestStoppedAt() : 0;
 }
 
 export async function clearPendingRestLog() {

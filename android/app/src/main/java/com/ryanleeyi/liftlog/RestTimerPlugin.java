@@ -106,6 +106,19 @@ public class RestTimerPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /**
+     * F127 ②：前端開機時問「有沒有哪一輪是被明確結束的，那是什麼時候」。
+     *
+     * <p>方向與 getPendingLog 一樣是**前端取件**：按下停止那一刻 Activity 已經沒了，
+     * 推送必掉（F124）。回 0 代表從沒被明確結束過。
+     */
+    @PluginMethod
+    public void getRestStoppedAt(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("stoppedAt", RestTimerService.stoppedAt(getContext()));
+        call.resolve(result);
+    }
+
     /** F125 ⑤：前端確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
     @PluginMethod
     public void clearPendingLog(PluginCall call) {

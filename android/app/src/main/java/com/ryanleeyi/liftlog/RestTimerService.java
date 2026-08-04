@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
@@ -36,6 +37,9 @@ public class RestTimerService extends Service {
 
     public static final String ACTION_START = "com.ryanleeyi.liftlog.REST_START";
     public static final String ACTION_STOP = "com.ryanleeyi.liftlog.REST_STOP";
+    /** F127：與 PendingLog 分開的小狀態檔——那個是待記組，這個是「這輪被結束了沒」。 */
+    private static final String STATE_PREFS = "liftlog_rest_state";
+    private static final String KEY_STOPPED_AT = "stopped_at";
     public static final String EXTRA_SECONDS = "seconds";
     /** F64：這次休息要不要同時畫浮動視窗。使用者沒開就是 false，行為與 F64 之前完全一致。 */
     public static final String EXTRA_OVERLAY = "overlay";
@@ -171,6 +175,10 @@ public class RestTimerService extends Service {
             // ⚠ 刻意只掛在這條路，**不放 onDestroy()**：系統低記憶體回收服務時也會走那裡，
             // 而那正是最需要保住待記組的時刻，清掉等於把這條 feature 的存在理由刪掉。
             PendingLog.clear(this);
+            // F127 ①②：把「這輪被明確結束」寫成跨行程都看得到的事實。
+            // Activity 已被銷毀時上面那個 emit("stop") 會靜靜地掉，前端的休息快照留在
+            // localStorage，下次開 app 就被 resumeRestAfterRestore() 重建成一輪殭屍倒數。
+            markStopped(this);
             sessionActive = false; // F104-A：這輪結束了
             stopSelf();
             return START_NOT_STICKY;
@@ -648,6 +656,34 @@ public class RestTimerService extends Service {
 
     static void resume(Context context) {
         context.startService(new Intent(context, RestTimerService.class).setAction(ACTION_RESUME));
+    }
+
+    /**
+     * F127 ②④：記下「有人明確結束了這輪」的時刻。
+     *
+     * <p>存的是時間戳而不是布林旗標，因為 ④ 要求能分辨兩件事：
+     * <ul>
+     *   <li>有人按了停止 → 留下一個**比那輪 startedAt 還新**的時間戳</li>
+     *   <li>行程被系統殺掉 → 什麼都沒留下，F66 照舊還原</li>
+     * </ul>
+     *
+     * <p>用時間戳還順帶解決了「舊標記污染新一輪」：新的休息開始得比標記晚，
+     * 比大小自然就過關，不必在開新一輪時記得去清它。
+     *
+     * <p>⚠ 不可以改成「服務不在了就當這輪結束」——那正是 ④ 禁止的判準，
+     * 會把 F66（app 與服務一起被回收後還原休息）整個殺掉。
+     */
+    static void markStopped(Context context) {
+        statePrefs(context).edit().putLong(KEY_STOPPED_AT, System.currentTimeMillis()).apply();
+    }
+
+    /** F127 ②：前端開機時取件用。沒有標記回 0（＝從沒被明確結束過）。 */
+    static long stoppedAt(Context context) {
+        return statePrefs(context).getLong(KEY_STOPPED_AT, 0L);
+    }
+
+    private static SharedPreferences statePrefs(Context context) {
+        return context.getApplicationContext().getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE);
     }
 
     static void stop(Context context) {

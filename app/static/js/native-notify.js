@@ -378,6 +378,25 @@ export async function getPendingLog() {
   }
 }
 
+/**
+ * F127 ②：問原生「有沒有哪一輪是被人明確按停止結束的，那是什麼時候」。
+ *
+ * <p>回 0 代表沒有——包含舊版 APK（沒有這條路）與查詢失敗。0 會讓呼叫端走「照舊還原」，
+ * 也就是 ④ 要保住的 F66 行為：**查不到時寧可還原，也不要誤刪一輪真的還在跑的休息**。
+ *
+ * @returns {Promise<number>} epoch ms
+ */
+export async function getRestStoppedAt() {
+  const api = restTimerPlugin();
+  if (!api?.getRestStoppedAt) return 0;
+  try {
+    const res = await api.getRestStoppedAt();
+    return typeof res?.stoppedAt === "number" ? res.stoppedAt : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** F125 ⑤：確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
 export async function clearPendingLog() {
   const api = restTimerPlugin();

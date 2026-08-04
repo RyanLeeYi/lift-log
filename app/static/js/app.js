@@ -45,6 +45,7 @@ import {
   restNotifyDelayed,
   restNotifyEnabled,
   restNotifySupported,
+  restStoppedAt,
   restOverlayEnabled,
   restOverlayPermitted,
   restOverlaySupported,
@@ -2799,6 +2800,19 @@ async function resumeRestAfterRestore() {
   // 等他走回 logger 時提示早就沒了——那還是靜默沒有倒數。
   if (state.restRestoreDropped) return;
   if (state.restStartedAt === null) return;
+
+  // F127 ②：這一輪是不是已經被人在原生那半按停止結束了？
+  // 那一刻 Activity 通常已經沒了，服務送的 "stop" 事件會靜靜地掉（F124），
+  // 所以快照還留著。不擋的話下面就會把一輪早就結束的休息重建成殭屍倒數。
+  //
+  // ④ 判準是**時間戳比大小**，不是「服務還在不在」：
+  //   有人按停止 → 標記比這輪 startedAt 新 → 丟掉
+  //   行程被系統殺掉 → 沒有標記（或標記是更早那輪留下的）→ 照舊還原（F66 不回歸）
+  const stoppedAt = await restStoppedAt();
+  if (stoppedAt > state.restStartedAt) {
+    stopRestTimer(); // 清 state ＋ 把 localStorage 的快照寫回 null
+    return;
+  }
 
   const remaining = restRemainingSeconds();
   // 已經超時的話不要再武裝一次提醒——還原當下立刻震動／響鈴，等於把使用者嚇一跳，
