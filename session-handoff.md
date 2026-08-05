@@ -2,7 +2,41 @@
 
 最後更新：2026-08-04（**121/131 passing，v140 未出 APK**；線上仍 v124，最新正式版 APK 是 v139-F130）
 
-## 這一場（8/4 之七）：F131 真機驗收（做了一半）
+## 這一場（8/5）：F131 真機驗收續（⑩-3 過，⑩-4 開頭撞額度）
+
+### 新驗過的（dev APK v141，workout 76，exercise_id=2）
+
+| 驗收 | 判定 | 證據 |
+|---|---|---|
+| ⑩-3 背景按下 → 立刻按 ✕ → 那組仍在 | **pass** | 12:09:45 背景按「完成這組」，1 秒後按 ✕；`sets.id=419`、`set_number=10`、`rest_seconds=51` 仍在 DB；server log 對應一筆 `POST /api/workouts/76/sets 201` |
+| ⑩-2 回 app 只有一筆（再驗一次） | **pass** | 回 app 後清單只有 `#10` 一列，無重複 |
+
+### ⚠ 待 Ryan 裁示：兩條寫入路徑的 set_number 算式不同
+
+同一場、同一動作，前景寫入拿到 `#1`、背景寫入拿到 `#10`。原因：
+
+- 前端算的是 **可見（未軟刪）sets 的 max + 1**
+- server（③ 新增的 `_next_set_number`）算的是 **含軟刪 sets 的 max + 1**（沒有 unique 約束，跳號是刻意的）
+
+只有在「最高的幾組都被刪掉」時才會分叉（本次 workout 76 的 1–9 全是軟刪）。
+兩種都符合 ③ 的字面（「client 有帶就沿用」），所以這是規格層的取捨，不是實作 bug。
+選項：(a) 維持現狀、接受偶發跳號；(b) 讓 JS 記錄路徑也不帶 set_number，統一由 server 算
+（但那動到 ② 的「前景行為完全不變」）。**別自己決定，回到簽核。**
+
+### 還沒驗的（下一場從這裡接）
+- ⑩-4 飛航模式背景記兩組 → 開網路 → 兩組都進、組號正確（**這場已開飛航又關掉，什麼都還沒按**）
+- ⑩-5 背景按下 → `am force-stop` → 重開 → 不重複寫入
+- ⑩-7 token 不得以明文存在裝置上
+- 全部過了才 `/codex-verify` → 改 passing → 出正式版 APK
+
+### 環境備忘（這場踩到）
+- **mission-control MCP 連不上**、`lift-log-dev` 沒在跑（站台 502）。手動起：
+  `Start-Process .venv\Scripts\uvicorn.exe -ArgumentList "app.main:app_factory","--factory","--host","0.0.0.0","--port","8138","--env-file",".env.dev"`
+  （port 8138 是 `mission-control/services.toml` 定的）。**用 Bash 背景跑會被連帶殺掉**，要 detached。
+- 飛航模式可用 `adb shell cmd connectivity airplane-mode enable|disable`（免 root）。
+- 浮動視窗倒數中只有「回 app 記下一組」，**「完成這組」要先按「停止」才會出現**——背景驗收都要先停止。
+
+## 前一場（8/4 之七）：F131 真機驗收（做了一半）
 
 ### 已驗過的（真機 SM_N9750，dev APK v140，workout 76）
 
