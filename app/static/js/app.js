@@ -2170,7 +2170,10 @@ async function logCurrentSet({ rpe = undefined, clientUuid = null } = {}) {
       // 這裡自己生的那條路仍然是常態（app 內記組）。
       client_uuid: clientUuid ?? crypto.randomUUID(),
       exercise_id: exercise.id,
-      set_number: state.setNumber,
+      // F131 ③（2026-08-05 Ryan 改判 (b)）：**不帶 set_number，一律由 server 算**。
+      // 原本這裡送 state.setNumber——那是「畫面上的 max + 1」，而畫面不見得看得到
+      // 原生剛剛在背景寫進去的那組，於是兩個寫入者各算各的，真的撞出兩列同組號
+      // （驗收在 workout 77 實測到 id 430 與 433 都是 #7）。組號只有一個算式才不會撞。
       weight_kg: state.weightKg,
       reps: state.reps,
       // F40：app 內記的組累度軸一律有值（6–10）。
@@ -2188,7 +2191,10 @@ async function logCurrentSet({ rpe = undefined, clientUuid = null } = {}) {
     } catch (err) {
       if (!isOffline(err)) throw err;
       await enqueueSet(state.workoutId, payload); // 離線：入列緩衝，恢復連線自動補傳
-      saved = payload; // 標示由 state.queueStatus 推導，不另存旗標
+      // 標示由 state.queueStatus 推導，不另存旗標。
+      // set_number 只補在**本機這份**給畫面用（送出去的 payload 仍不帶，補傳時由 server 算）：
+      // 少了它列表會印成 `#undefined`，而真正的號碼要等補傳成功、回 app 對帳才知道。
+      saved = { ...payload, set_number: state.setNumber };
       await refreshQueueCounts();
     }
     // 到這裡才代表這組已保住（線上成功 or 離線入列成功）——此時才清凍結休息值；
@@ -2205,7 +2211,10 @@ async function logCurrentSet({ rpe = undefined, clientUuid = null } = {}) {
       state.doneSets.length,
       state.setCounts[exercise.id] || 0,
     );
-    state.setNumber += 1;
+    // 用 server 回的組號往上數，不是把本機那個 +1（codex review P2）：最高幾組被軟刪時
+    // 前端看到的是 #3、server 配的卻是 #11，繼續用本機值會讓標題與浮動視窗顯示的號碼
+    // 跟下一筆實際寫進去的號碼對不上。離線時 saved 是本機那份，仍走舊路。
+    state.setNumber = (saved.set_number ?? state.setNumber) + 1;
     state.rpe = 6; // F40：記完重置回預設「輕鬆」（下一組不碰即帶 6）
     rememberDoneSets(); // F32：換動作後回到此動作可還原本次組
     saveActiveWorkout(); // setCounts/doneByExercise 持久化：重新整理後編號續接、組不丟
@@ -2283,9 +2292,14 @@ function renderLogger() {
       });
       replaceInDone(s, updated); // 原位 PATCH
     } else {
-      const payload = { ...s, weight_kg: w, reps: r, rpe }; // 未同步：覆蓋佇列同 client_uuid
+      // 未同步：覆蓋佇列同 client_uuid。
+      // set_number 要拿掉再送（codex review P1）：`s` 上那個號碼只是離線時給畫面用的本機值，
+      // 帶著它等於把 F131 ③ 拿掉的「client 自己算組號」從編輯這條路放回來，而那個值此刻
+      // 更可能已經過期（原生 outbox 或別的裝置已經寫了同一個動作）。
+      const { set_number: _displayOnly, ...rest } = s;
+      const payload = { ...rest, weight_kg: w, reps: r, rpe };
       await enqueueSet(state.workoutId, payload);
-      replaceInDone(s, payload);
+      replaceInDone(s, { ...payload, set_number: s.set_number });
     }
     editDraft = null;
     rememberDoneSets(); // F32：編輯後鏡射同步，換動作後還原帶回修改值

@@ -1,3 +1,4 @@
+import threading
 import uuid
 from datetime import date as date_type
 from datetime import datetime
@@ -272,6 +273,9 @@ def _as_idempotent_hit(existing: WorkoutSet, workout_id: int) -> WorkoutSet:
     return existing
 
 
+_SET_NUMBER_LOCK = threading.Lock()
+
+
 def _next_set_number(session: Session, workout_id: int, exercise_id: int) -> int:
     """F131 ③：該 workout 該動作的最大組號 +1（F32 語意，範圍是「這一場的這個動作」）。
 
@@ -302,12 +306,18 @@ def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[Workout
         return _as_idempotent_hit(existing, workout_id), False
 
     fields = data.model_dump()
-    if fields.get("set_number") is None:
-        fields["set_number"] = _next_set_number(session, workout_id, data.exercise_id)
-    workout_set = WorkoutSet(workout_id=workout_id, **fields)
-    session.add(workout_set)
     try:
-        session.commit()
+        # 配號與寫入要在同一把鎖裡：兩個 client_uuid 不同的請求（原生背景上傳 ＋ 前景記組）
+        # 若同時跑到這裡，各自的 SELECT MAX 會讀到同一個值，寫出兩筆相同組號（codex review P1
+        # 實測重現）。組號沒有唯一約束擋，所以只能在配號前就把寫入這段序列化。
+        # ponytail: 行程內的鎖，單一 uvicorn worker 夠用；哪天要跑多 worker／多機，
+        # 換成 (workout_id, exercise_id, set_number) 唯一約束加重試。
+        with _SET_NUMBER_LOCK:
+            if fields.get("set_number") is None:
+                fields["set_number"] = _next_set_number(session, workout_id, data.exercise_id)
+            workout_set = WorkoutSet(workout_id=workout_id, **fields)
+            session.add(workout_set)
+            session.commit()
     except IntegrityError:
         session.rollback()
         raced = _find_by_client_uuid(session, data.client_uuid)
