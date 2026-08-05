@@ -48,9 +48,34 @@ release 版 `run-as` 會被擋（`package not debuggable`），所以 Ryan 授�
 **已還原**：debug 版移除、重裝 `release-dev/lift-log-v141.apk` 並重新登入，
 `appops SYSTEM_ALERT_WINDOW` 重新授權（移除 app 會一起清掉）。萃取出來的 prefs 檔已刪除。
 
+### 兩輪獨立驗收（8/5 傍晚）
+
+1. **`/codex-verify`（gpt-5.6-terra）**：完成定義全過（`pytest 283 passed`、`ruff` 乾淨、`init.sh` exit 0）；
+   **③ pass**（省略組號得 `[1,2]`、軟刪保留號碼、顯式帶值得 `7`）；其餘因碰不到手機一律 unverified，**零 fail**。
+   它抓到我漏的一件事：前言要求的 `superseded_by` 沒填 → 已補（commit `09f0daf`）。
+2. **acceptance-verifier（自己用 adb 重跑真機，workout 77）**：
+   ①、⑧離線、⑩-1、⑩-2、⑩-3、⑩-4、⑩-5 **全部 pass**，證據是它自己按出來的 DB 列與截圖。
+   仍 unverified：**⑩-6**（本機沒有 v139 可並排比對）、**⑩-7**（它評估還原風險太高，沒做）、
+   **⑧ 的永久失敗態**（沒去製造 404/401）。
+
+### ⚠ 拍板 (a) 的前提被推翻了：撞號真的會發生
+
+我當初推薦 (a) 的理由是「跳號只是顯示，撞號才是資料問題，而 server 端把軟刪算進去就不會撞號」。
+**錯的是後半句**——驗收者在 workout 77 實測到兩列同組號：
+
+```
+(430, 'e04c6235-…', 77, 1, set_number=7, 10:10:39)   ← 原生背景寫入（server 指派）
+(433, '45458475-…', 77, 1, set_number=7, 10:14:12)   ← 前景寫入（JS 自己算）
+```
+
+原因不是軟刪，是**兩個寫入者各算各的**：JS 算的是它自己畫面上的 max+1，而它畫面上沒有那筆
+剛剛由原生寫進去的組（還沒對帳），於是算出同一個號。**只要保留兩套算式就會有這個 race。**
+(b)（JS 也不帶 `set_number`、一律 server 算）才真的消掉它。**要回去重新拍板。**
+
 ### 還沒做的
-- set_number 兩條算式分叉（見上，要 Ryan 拍板）
-- 拍板後 `/codex-verify` → 改 passing → 出正式版 APK
+- set_number：(a) 的前提已被推翻，重新拍板 (a)／(b)
+- ⑩-6、⑩-7、⑧永久失敗態的**獨立**證據（⑩-7 我自己驗過，但執行者＝驗收者）
+- 上面收完才改 passing → 出正式版 APK
 
 ### 環境備忘（這場踩到）
 - **mission-control MCP 連不上**、`lift-log-dev` 沒在跑（站台 502）。手動起：
