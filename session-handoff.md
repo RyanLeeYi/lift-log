@@ -30,20 +30,27 @@
 | ⑩-4 飛航兩組 → 開網路 → 都進、組號正確 | **pass** | 飛航下按兩組，視窗依序顯示「離線，已排隊 1 組」→「2 組」；關飛航後**不碰 app**，20 秒內 `id=421`（5 次、`set_number=12`）與 `id=422`（6 次、13）依序落地，`NetworkCallback.onAvailable` 觸發生效；落地後狀態列自動消失 |
 | ⑩-5 背景按下 → `force-stop` → 重開 → 不重複 | **pass** | 12 秒後重開 app，`client_uuid=0f316374…` 仍只有 1 列（`id=423`、`set_number=14`），沒有新增列 |
 
-### ⑩-7 卡住：release 版讀不到 shared_prefs
+### ⑩-7 原生側 pass（用 debuggable build 取證，之後已還原）
 
-`adb shell run-as` 回 `package not debuggable`，裝置未 root、`allowBackup=false`（F130）也擋掉備份萃取，
-**真機上無法直接看檔案內容**。目前只有靜態證據：`SecureStore.java` 只走
-`EncryptedSharedPreferences`（`MasterKey` AES256_GCM），Keystore 失敗時回 null 讓原生寫入路徑停擺，
-**沒有明文退路**（第 24–25、62 行的註解就是這件事）。
+release 版 `run-as` 會被擋（`package not debuggable`），所以 Ryan 授權後改跑：
+`assembleDevDebug` → 移除現有 dev app → 裝 debug 版 → 用 `.env.dev` 的 token 登入 → `run-as` 讀檔。
 
-要真機證據只有一條路：出一顆 **debuggable 的 dev build** 裝上去再 `run-as ... cat`。
-代價是簽章不同要先移除現有 dev app，**Ryan 得重新輸入 dev token 登入一次**。要不要做由 Ryan 決定。
+證據（`shared_prefs/liftlog_secure.xml`）：
+- 明文 token 出現次數 **0**
+- **鍵名也是密文**（`name="AWG2/QRiy6dD…"`），只有 androidx 自己的 keyset 鍵是明文
+- 檔案內容是 `__androidx_security_crypto_encrypted_prefs_key_keyset__` 開頭的密文 map
+
+**同時發現（既有狀況，非 F131 引入）**：全裝置搜同一顆 token，
+`app_webview/Default/Local Storage/leveldb/000003.log` **有明文**——那是前端 `localStorage` 的那份，
+從 F125 時代的 setup 畫面就這樣。⑩-7 的括號寫的是「EncryptedSharedPreferences；⑤」，
+即這條管的是**原生側那份**；WebView 那份要不要處理是另一條 feature 的事，交給 Ryan／verifier 判。
+
+**已還原**：debug 版移除、重裝 `release-dev/lift-log-v141.apk` 並重新登入，
+`appops SYSTEM_ALERT_WINDOW` 重新授權（移除 app 會一起清掉）。萃取出來的 prefs 檔已刪除。
 
 ### 還沒做的
-- ⑩-7 的真機證據（見上，要 Ryan 拍板）
 - set_number 兩條算式分叉（見上，要 Ryan 拍板）
-- 兩件都結案才 `/codex-verify` → 改 passing → 出正式版 APK
+- 拍板後 `/codex-verify` → 改 passing → 出正式版 APK
 
 ### 環境備忘（這場踩到）
 - **mission-control MCP 連不上**、`lift-log-dev` 沒在跑（站台 502）。手動起：
