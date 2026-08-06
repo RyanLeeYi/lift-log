@@ -93,10 +93,30 @@ Ryan 8/5 改判 **(b)**：`logCurrentSet()` 不再帶 `set_number`，一律 serv
   五筆組號是 1,1,2,2,3（id 64、70 撞 1；66、71 撞 2）。成因是 F131 之前就有的舊路徑，
   **沒有動它**——那是正式訓練資料，要不要重編號等 Ryan 決定（照 created_at 重排會是 1..5）。
 
+### 組號機制還沒關上的兩個洞（F131 範圍外，下一場先決定怎麼開條目）
+
+1. **日曆補記仍自己算組號**（`calendar.js:432`、`calendar.js:504`）——而且算的是**筆數**不是最大值：
+   一場有 #1–#5、#3 被軟刪 → `existing = 4` → 送出 `5`，直接撞既有的 #5。
+   比原本前景那條更容易撞。`/codex-review` 沒點名是因為那兩行不在這次 diff 裡。
+   修法與主線同一招：把 `set_number` 那行拿掉，讓 server 算。
+2. **DB 沒有唯一約束當最後防線**。現在靠行程內的 `_SET_NUMBER_LOCK`，前提是單一 uvicorn worker；
+   而且**只要 client 有帶號，鎖也擋不住**（server 照單全收）——這正是第 1 點會出事的原因。
+   要加 `(workout_id, exercise_id, set_number)` 唯一約束＋撞了重試，**得先清掉 prod 那筆舊撞號**。
+
+Ryan 8/5 尚未決定這兩件要開新 feature 還是當 bug 直接修——下一場先問。
+
 ### 還沒做的
 - ⑩-6、⑧永久失敗態的**獨立**證據（⑩-7 我自己驗過，但執行者＝驗收者）
-- prod 舊撞號要不要修
+- prod 舊撞號要不要修（workout 33／exercise 30，見上）
 - 上面收完才改 passing → 出正式版 APK
+- **F131 目前仍是 failing**；121/131 passing 不變
+
+### 這場的環境狀態（接手前先確認）
+- dev server 是我**手動起的**（mission-control MCP 連不上、服務原本沒在跑）：
+  `Start-Process .venv\Scripts\uvicorn.exe -ArgumentList "app.main:app_factory","--factory","--host","0.0.0.0","--port","8138","--env-file",".env.dev"`
+  ——用 Bash 背景跑會被連帶殺掉，要 detached。prod（8137）本來就在跑，沒動過。
+- 手機裝的是 **dev v143**，已登入、`SYSTEM_ALERT_WINDOW` 已授權、飛航模式已關。
+- 改後端要重啟 dev server 才會生效；改前端要升版號（`state.js` ＋ `sw.js`）才推得過 SW 快取。
 
 ### 環境備忘（這場踩到）
 - **mission-control MCP 連不上**、`lift-log-dev` 沒在跑（站台 502）。手動起：
