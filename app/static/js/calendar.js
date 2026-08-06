@@ -421,15 +421,11 @@ async function addSet(rerender) {
     if (workoutId == null) {
       workoutId = (await api.createWorkout({ date: cal.selected })).id;
     }
-    // set_number＝該動作在此 workout 既有未軟刪組數＋1（cal.detail 只含未軟刪組）
-    const existing = cal.detail
-      .filter((x) => x.workout.id === workoutId)
-      .flatMap((x) => x.sets)
-      .filter((s) => s.exercise_id === ex.id).length;
+    // F132 ①：不再自算 set_number（cal.detail 只看得到未軟刪組，算出來的數字撞既有號）。
+    // 一律由 server 的 _next_set_number() 指派（同 F131 ③）。
     await api.logSet(workoutId, {
       client_uuid: d.uuid, // Codex P2：重試沿用同 uuid，伺服器對重複 client_uuid 冪等去重
       exercise_id: ex.id,
-      set_number: existing + 1,
       weight_kg: d.weight,
       reps: d.reps,
       rpe: d.rpe,
@@ -478,7 +474,7 @@ async function openBatch(tpl, rerender) {
   rerender();
 }
 
-// F47：把勾選的動作依各自組數一次寫進選中日的 workout（同 addSet 的 workout 解析與 set_number 規則）
+// F47：把勾選的動作依各自組數一次寫進選中日的 workout（workout 解析同 addSet；F132 起 set_number 皆由 server 指派）
 async function batchLog(rerender) {
   if (cal.batchSubmitting) return;
   cal.batchSubmitting = true;
@@ -493,15 +489,12 @@ async function batchLog(rerender) {
     }
     for (const row of cal.batch.rows.filter((r) => r.checked)) {
       ensureUuids(row);
-      const existing = cal.detail
-        .filter((x) => x.workout.id === workoutId)
-        .flatMap((x) => x.sets)
-        .filter((s) => s.exercise_id === row.item.exercise_id).length;
+      // F132 ①：同 addSet——不再自算 set_number，一律由 server 依序指派。
+      // 逐組 await（不平行）本來就保證送達順序，server 的 _next_set_number() 因此連續。
       for (let i = 0; i < row.sets; i++) {
         await api.logSet(workoutId, {
           client_uuid: row.uuids[i],
           exercise_id: row.item.exercise_id,
-          set_number: existing + i + 1,
           weight_kg: row.weight,
           reps: row.reps,
           rpe: 6, // 批次一律預設「輕鬆」，要調再逐組編輯（F45 modal）
