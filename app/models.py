@@ -1,11 +1,16 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, String, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, String, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
+
+
+# F133 ①：sets 組號唯一約束的索引名——app/migrations.py 補這個索引到既有 DB 時要用同一個
+# 名字（IF NOT EXISTS 才認得出「已經建過」），兩處共用常數避免打錯字彼此漂移。
+SET_NUMBER_UNIQUE_INDEX = "ix_sets_workout_exercise_set_number_active"
 
 
 class Exercise(Base):
@@ -97,6 +102,18 @@ class WorkoutSet(Base):
     """一組訓練，append-only：不做 update，記錯用軟刪除（deleted_at）。"""
 
     __tablename__ = "sets"
+    __table_args__ = (
+        # F133 ①：同場同動作組號不得撞號，但只擋未軟刪列——軟刪後重用組號是既有語意（F32），
+        # partial unique index 讓 SQLite 只在 deleted_at IS NULL 時強制唯一。
+        Index(
+            SET_NUMBER_UNIQUE_INDEX,
+            "workout_id",
+            "exercise_id",
+            "set_number",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_uuid: Mapped[str] = mapped_column(String, unique=True, index=True)

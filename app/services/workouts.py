@@ -1,4 +1,3 @@
-import threading
 import uuid
 from datetime import date as date_type
 from datetime import datetime
@@ -273,14 +272,14 @@ def _as_idempotent_hit(existing: WorkoutSet, workout_id: int) -> WorkoutSet:
     return existing
 
 
-_SET_NUMBER_LOCK = threading.Lock()
+_SET_NUMBER_MAX_RETRIES = 5  # F133 ②：server 配號撞唯一約束的重試上限
 
 
 def _next_set_number(session: Session, workout_id: int, exercise_id: int) -> int:
     """F131 ③：該 workout 該動作的最大組號 +1（F32 語意，範圍是「這一場的這個動作」）。
 
-    **軟刪的組仍計入**：後端沒有組號唯一約束，重用已刪組的號碼會靜默造成同場同動作
-    兩筆相同組號（前端 app.js:1095 有同一個顧慮）。寧可跳號也不撞號。
+    **軟刪的組仍計入**：重用已刪組的號碼會讓同場同動作出現兩筆相同組號（前端
+    app.js:1095 有同一個顧慮）。寧可跳號也不撞號。DB 端由 F133 的唯一約束兜底。
     """
     highest = session.scalar(
         select(func.max(WorkoutSet.set_number)).where(
@@ -294,8 +293,12 @@ def _next_set_number(session: Session, workout_id: int, exercise_id: int) -> int
 def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[WorkoutSet, bool]:
     """寫入一組。回傳 (set, created)；同 client_uuid 重放冪等回傳既有那筆。
 
-    順序：先驗證 workout（404）與 exercise（400），再查冪等鍵；
-    insert 撞 UNIQUE（TOCTOU 輸掉競賽）時 rollback 重查復原為冪等回應。
+    順序：先驗證 workout（404）與 exercise（400），再查冪等鍵；insert 撞 UNIQUE 時
+    rollback 重查——命中 client_uuid 就是併發重放，復原為冪等回應；否則是 F133 ①的
+    (workout_id, exercise_id, set_number) 唯一約束擋下撞號：
+      - server 自己配的號撞號 → 重新配號重試（上限 `_SET_NUMBER_MAX_RETRIES`），
+        耗盡就回 409，不得靜默吞掉（F133 ②）。
+      - client 自己帶號撞號 → 直接回 409，不得改配別的號碼靜默寫成重複列（F133 ③）。
     """
     get_workout(session, workout_id)
     if session.get(Exercise, data.exercise_id) is None:
@@ -306,26 +309,34 @@ def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[Workout
         return _as_idempotent_hit(existing, workout_id), False
 
     fields = data.model_dump()
-    try:
-        # 配號與寫入要在同一把鎖裡：兩個 client_uuid 不同的請求（原生背景上傳 ＋ 前景記組）
-        # 若同時跑到這裡，各自的 SELECT MAX 會讀到同一個值，寫出兩筆相同組號（codex review P1
-        # 實測重現）。組號沒有唯一約束擋，所以只能在配號前就把寫入這段序列化。
-        # ponytail: 行程內的鎖，單一 uvicorn worker 夠用；哪天要跑多 worker／多機，
-        # 換成 (workout_id, exercise_id, set_number) 唯一約束加重試。
-        with _SET_NUMBER_LOCK:
-            if fields.get("set_number") is None:
-                fields["set_number"] = _next_set_number(session, workout_id, data.exercise_id)
-            workout_set = WorkoutSet(workout_id=workout_id, **fields)
-            session.add(workout_set)
+    client_supplied_set_number = fields.get("set_number") is not None
+    max_attempts = 1 if client_supplied_set_number else _SET_NUMBER_MAX_RETRIES
+
+    for attempt in range(1, max_attempts + 1):
+        if not client_supplied_set_number:
+            fields["set_number"] = _next_set_number(session, workout_id, data.exercise_id)
+        workout_set = WorkoutSet(workout_id=workout_id, **fields)
+        session.add(workout_set)
+        try:
             session.commit()
-    except IntegrityError:
-        session.rollback()
-        raced = _find_by_client_uuid(session, data.client_uuid)
-        if raced is None:
-            raise
-        return _as_idempotent_hit(raced, workout_id), False
-    session.refresh(workout_set)
-    return workout_set, True
+        except IntegrityError:
+            session.rollback()
+            raced = _find_by_client_uuid(session, data.client_uuid)
+            if raced is not None:
+                return _as_idempotent_hit(raced, workout_id), False
+            if client_supplied_set_number:
+                raise ConflictError(
+                    f"set_number {fields['set_number']} 在這場這個動作已存在"
+                    f"（workout_id={workout_id}, exercise_id={data.exercise_id}）"
+                ) from None
+            if attempt == max_attempts:
+                raise ConflictError(
+                    f"組號配號重試 {max_attempts} 次仍撞號"
+                    f"（workout_id={workout_id}, exercise_id={data.exercise_id}），請重新嘗試"
+                ) from None
+            continue
+        session.refresh(workout_set)
+        return workout_set, True
 
 
 def soft_delete_set(session: Session, set_id: int) -> None:
