@@ -1689,7 +1689,11 @@
         "tests/e2e/verify_f60.py",
         "tests/e2e/verify_f86.py"
       ],
-      "requires": []
+      "requires": [],
+      "prerequisites": [
+        "F59",
+        "F60"
+      ]
     },
     {
       "id": "F87",
@@ -1712,7 +1716,17 @@
         "tests/e2e/verify_f58.py",
         "tests/e2e/verify_f87.py"
       ],
-      "requires": []
+      "requires": [],
+      "prerequisites": [
+        "F50",
+        "F53",
+        "F54",
+        "F55",
+        "F56",
+        "F57",
+        "F58",
+        "F59"
+      ]
     },
     {
       "id": "F88",
@@ -1733,7 +1747,15 @@
         "tests/e2e/verify_f88.py"
       ],
       "requires": [],
-      "superseded_by": "F96（僅 ② 的「第一張（或選中的）用 --card-hi 站出來」一句：編輯課表沒有「選中」這個狀態，該高亮是純裝飾且會誤導，已拿掉；F88 其餘條文全部有效）；F97（僅 ③ 的「右「上下箭頭 刪除」」一句：排序改為長按拖曳，上下箭頭兩顆鈕移除，控制列剩三顆圓鈕；圓鈕本身的規格不變）；F98（僅 ③ 的「組數靠左、刪除靠右」半句：卡片可收合後刪除鈕移到標題列，否則收合時它會跟著被收起來；圓鈕本身的規格與誤觸間距不變）"
+      "superseded_by": "F96（僅 ② 的「第一張（或選中的）用 --card-hi 站出來」一句：編輯課表沒有「選中」這個狀態，該高亮是純裝飾且會誤導，已拿掉；F88 其餘條文全部有效）；F97（僅 ③ 的「右「上下箭頭 刪除」」一句：排序改為長按拖曳，上下箭頭兩顆鈕移除，控制列剩三顆圓鈕；圓鈕本身的規格不變）；F98（僅 ③ 的「組數靠左、刪除靠右」半句：卡片可收合後刪除鈕移到標題列，否則收合時它會跟著被收起來；圓鈕本身的規格與誤觸間距不變）",
+      "prerequisites": [
+        "F21",
+        "F48",
+        "F49",
+        "F50",
+        "F51",
+        "F52"
+      ]
     },
     {
       "id": "F89",
@@ -1752,7 +1774,17 @@
       "requires": [
         "android-device"
       ],
-      "superseded_by": "F100（僅 ② 的「右側收合圖示」半句：那顆改成關閉鈕。收合另有 F89 ⑤ 的「點本體」，關閉則一直沒有入口；圖示外觀本來就是 ✕）"
+      "superseded_by": "F100（僅 ② 的「右側收合圖示」半句：那顆改成關閉鈕。收合另有 F89 ⑤ 的「點本體」，關閉則一直沒有入口；圖示外觀本來就是 ✕）",
+      "prerequisites": [
+        "F63",
+        "F64",
+        "F69",
+        "F70",
+        "F71",
+        "F72",
+        "F73",
+        "F74"
+      ]
     },
     {
       "id": "F93",
@@ -1799,7 +1831,11 @@
       "requires": [
         "android-device"
       ],
-      "acceptance": "（2026-07-30 F65 的 code review 發現，同日 Ryan 簽核凍結）\n① 背景：F65 ② 凍結時寫的是「Capacitor 的 default channel」，但**使用者實際看到、也實際會去長按的那則通知不在那個 channel 上**。F63 之後休息倒數由前景服務負責（`RestTimerService`，channel id `rest-timer`、顯示名「休息倒數」、IMPORTANCE_LOW），F62 的 default channel 只是它啟不動時的退路。\n② 後果：長按通知列的休息倒數選「關閉這類通知」→ 系統把 `rest-timer` 設成 IMPORTANCE_NONE → `areEnabled()` 仍 true、default channel 也仍正常 → 開關顯示「開」→ 前景服務照跑但通知不顯示、歸零也看不到。**F65 想消滅的靜默失敗，在主要路徑上原封不動。**\n③ 要做的事：把 `rest-timer` channel 的 importance 一併納入 granted 判定（與 F65 的 default channel 同一套規則：查不到不算被關、拋錯退回 areEnabled）。\n④ E2E 補回歸情境：app 層允許 ＋ default channel 正常 ＋ `rest-timer` importance=0 → 顯示「關」。F65 的 verify_f65.py 沒有這條（假 plugin 沒有 RestTimer，測到的一律是 F62 退路）。\n⑤ 提示文案要能指到對的地方，但**不要寫死類別名稱**——default 在系統設定顯示為 Capacitor 寫死的「Default」、前景服務那則叫「休息倒數」，講錯名字會讓人在正確的頁面上找不到東西。可考慮改用 ACTION_CHANNEL_NOTIFICATION_SETTINGS 直接深連到該 channel。\n⑥ 真機驗：長按休息倒數通知 →「關閉這類通知」→ 回 app 確認開關變「關」並給引導。"
+      "acceptance": "（2026-07-30 F65 的 code review 發現，同日 Ryan 簽核凍結）\n① 背景：F65 ② 凍結時寫的是「Capacitor 的 default channel」，但**使用者實際看到、也實際會去長按的那則通知不在那個 channel 上**。F63 之後休息倒數由前景服務負責（`RestTimerService`，channel id `rest-timer`、顯示名「休息倒數」、IMPORTANCE_LOW），F62 的 default channel 只是它啟不動時的退路。\n② 後果：長按通知列的休息倒數選「關閉這類通知」→ 系統把 `rest-timer` 設成 IMPORTANCE_NONE → `areEnabled()` 仍 true、default channel 也仍正常 → 開關顯示「開」→ 前景服務照跑但通知不顯示、歸零也看不到。**F65 想消滅的靜默失敗，在主要路徑上原封不動。**\n③ 要做的事：把 `rest-timer` channel 的 importance 一併納入 granted 判定（與 F65 的 default channel 同一套規則：查不到不算被關、拋錯退回 areEnabled）。\n④ E2E 補回歸情境：app 層允許 ＋ default channel 正常 ＋ `rest-timer` importance=0 → 顯示「關」。F65 的 verify_f65.py 沒有這條（假 plugin 沒有 RestTimer，測到的一律是 F62 退路）。\n⑤ 提示文案要能指到對的地方，但**不要寫死類別名稱**——default 在系統設定顯示為 Capacitor 寫死的「Default」、前景服務那則叫「休息倒數」，講錯名字會讓人在正確的頁面上找不到東西。可考慮改用 ACTION_CHANNEL_NOTIFICATION_SETTINGS 直接深連到該 channel。\n⑥ 真機驗：長按休息倒數通知 →「關閉這類通知」→ 回 app 確認開關變「關」並給引導。",
+      "prerequisites": [
+        "F63",
+        "F65"
+      ]
     },
     {
       "id": "F96",
@@ -1931,7 +1967,18 @@
       "requires": [
         "F103"
       ],
-      "superseded_by": "F125（僅背景情境下的 3 秒回報行為）；F131（僅 ④「原生不得自己打 API」一句）"
+      "superseded_by": "F125（僅背景情境下的 3 秒回報行為）；F131（僅 ④「原生不得自己打 API」一句）",
+      "prerequisites": [
+        "F32",
+        "F69",
+        "F71",
+        "F72",
+        "F73",
+        "F89",
+        "F100",
+        "F103",
+        "F125"
+      ]
     },
     {
       "id": "F105",
@@ -1949,7 +1996,11 @@
         "app/static/js/exercise-detail.js",
         "docs/prd/f105-timed-exercises.md"
       ],
-      "requires": []
+      "requires": [],
+      "prerequisites": [
+        "F10",
+        "F102"
+      ]
     },
     {
       "id": "F106",
@@ -2236,7 +2287,11 @@
       "name": "Activity 重建時原生送給前端的控制事件會被丟掉（尚未簽核）",
       "status": "failing",
       "acceptance": "（2026-08-03 Codex review P2 發現，**條文未簽核**——動工前要 Ryan 拍板值不值得做。）\n\n## 症狀\n\n`RestTimerPlugin.emit()` 不暫存事件：JS 那邊 `subscribeRestControl()` 還沒跑起來時送出的\n事件會被靜默丟棄。Activity 需要**重建**（而非只是回到前景）時，onCreate 早於 WebView 載入，\n此時派送的任何原生→前端命令都會消失，而原生那半的動作（例如停掉服務）已經發生\n→ 前端從 F66 的快照還原出一輪「原生已經不存在」的休息，兩邊對不上。\n\n## 現況（F123 的處置）\n\nF123 的「回到 app」**只掛 onNewIntent，不掛 onCreate**，寧可什麼都不做也不做一半。\n那條路在 F123 的設計下幾乎不會走到：heads-up 只在 app 前景時存在，Activity 一被銷毀就\n`setAppForeground(false)` → `refreshAlarmSurface()` 把通知收掉。**殘留的風險只有\n「銷毀與收掉之間那一瞬按下去」，結果是那一按沒反應（鈴照響，再按一次即可）。**\n\n## 待決\n\n① 要不要做「延後派送」——原生把待處理命令存起來，等前端訂閱就緒後補送。\n② 若要做，就緒訊號從哪來（Capacitor 沒有現成的 listener-ready 回呼，\n   可能要前端啟動時主動呼叫 plugin 取件）。\n③ 範圍是否擴及其他原生→前端事件（stop / halt / focus / plus15 / minus15 / logset）\n   ——它們在 app 被系統回收後重建時有同一個問題，只是觸發條件更罕見。\n\n⚠ 這條**不是** F123 的缺口：F123 ⑨ 驗的路徑全部通過。這是既有機制的邊界，\n被 F123 的 review 順手照出來。",
-      "evidence": ""
+      "evidence": "",
+      "prerequisites": [
+        "F66",
+        "F123"
+      ]
     },
     {
       "id": "F125",
@@ -2265,7 +2320,14 @@
       "name": "浮動視窗按「完成這組」後當場開新一輪倒數（不等前端解凍）",
       "status": "failing",
       "acceptance": "⚠ **草案，尚未簽核凍結**（2026-08-04 起草）。動工前必須經 Ryan 簽核。\n\n起因：Ryan 原本預期浮動視窗按「完成這組」之後，視窗會像 app 內一樣長出\n±15s／停止／暫停，結果只看到「已排入，回 app 後記錄」。\n根因是**開新一輪的決定在前端 JS**（logCurrentSet 成功後才 scheduleRestNotify），\n而 app 在背景時 WebView 被凍住 → 沒寫入 → 沒開新一輪 → 視窗停在就緒態。\n（記錄本身沒掉，F125 已保證。這條要解的是「介面停在那裡不動」。）\n\n① **app 在背景**時，浮動視窗按「完成這組」→ **原生當場開新一輪倒數**，不等前端。\n   視窗立刻切成休息態（F116 ② 既有的兩態切換：暫停／停止／±15s 出現，「完成這組」收起）。\n\n② 新一輪的秒數＝**剛結束那一輪的 targetSeconds**（原生手上就有，不必問前端）。\n\n③ 那一組的寫入**行為完全不變**（F125）：一樣排進 PendingLog，一樣等回 app 才落地。\n   ⚠ 本條只改「介面何時開始倒數」，不改「資料何時寫入」。\n\n④ **回到 app 時不得變成兩輪**：前端補送完那一組後，必須**接手原生已經在跑的那一輪**，\n   而不是再 scheduleRestNotify 開一輪新的。判準與秒數以原生為準（原生才是真的在數）。\n\n⑤ **app 在前景**時走原路徑不變（JS 活著，本來就沒這個問題）。\n   ⚠ 不要為了統一而把前景也改成原生先開——那會多一條沒必要的分歧路徑。\n\n⑥ **樂觀倒數的代價要講清楚**（這是本條最需要 Ryan 拍板的地方）：\n   倒數是先開的，但那筆寫入可能之後被判定不該補送（F125 的驗證關卡——\n   換了 workout、換了動作、workoutId 對不上就會清掉）。\n   那種情況會出現「休息倒數跑了，但那組沒進資料庫」。\n   **選一個**：\n   (a) 接受——罕見，且 F125 的關卡本來就只在狀態真的對不上時才清\n   (b) 回 app 發現那筆被清掉時，明確告訴使用者「這組沒記到」（多做一個回報路徑）\n\n⑦ **不得回歸**：F125（排入→回 app 寫入）、F116 ②（兩態按鈕互斥）、\n   F103 ①（導頁不是結束這輪的入口）、F71 ④（停止＝結束這輪並凍結累計）、\n   F127（原生明確結束的輪次不得復活——新開的這一輪不可被舊標記誤殺）。\n\n⑧ 驗收（真機）：\n   1. app 在背景・浮動視窗按「完成這組」→ 視窗**當場**顯示新倒數與 ±15s／停止／暫停\n   2. 承上，回到 app → 那一組寫進資料庫（F125 不變）、且**只有一輪**倒數在跑，\n      秒數與視窗上顯示的一致（④）\n   3. 承上，回 app 後在計時頁看到的卡片與視窗是同一輪（不是兩個各數各的）\n   4. app 在前景時的行為與 v137 完全相同（⑤）",
-      "evidence": ""
+      "evidence": "",
+      "prerequisites": [
+        "F71",
+        "F103",
+        "F116",
+        "F125",
+        "F127"
+      ]
     },
     {
       "id": "F129",
@@ -2292,12 +2354,65 @@
       "name": "背景記組即時寫入（原生直接打 API，取代排入→回 app 才寫）",
       "status": "failing",
       "acceptance": "**已簽核凍結（2026-08-04，Ryan）**。A/B 兩點與 ⑥-1 觸發點於討論中拍板並回填後簽核。\n**本條取代 F104 ④「原生不得自己打 API」與 F125 ①②（背景排入→回 app 才寫）。**\n簽核通過後 F104 ④／F125 ①② 標為 superseded_by F131，條文本身不刪。\n\n起因：F125 的「排入→回 app 才寫」有兩個結構性代價，即時寫入把兩個一起解掉：\n  - `RestTimerService.java:177`：按 ✕／停止走 ACTION_STOP → `PendingLog.clear()`，\n    那組從沒進 DB 就被清掉，而視窗前一秒才說「已排入，回 app 後記錄」。\n  - `PendingLog.enqueue()`（PendingLog.java:53）只有一格，舊的還在就回舊 uuid、丟掉新資料。\n\n① **背景按「完成這組」→ 原生當場打 API 寫入**，不等回 app。\n   休息中 `RestTimerService` 是前景服務，Doze／背景網路限制不擋它。\n   成功後視窗才切休息態（F128 若要做，樂觀倒數的兩難因此消失）。\n\n② **前景行為完全不變**（JS 活著，本來就沒這個問題）。\n   ⚠ 不要為了統一而把前景也改走原生——那是多一條沒必要的分歧路徑（同 F128 ⑤ 的理由）。\n\n③ **`set_number` 由 server 算，不由 client 帶**（2026-08-04 Ryan 拍板 A：搬 server）。\n   現在是前端算好塞進 `SetCreate`（`app/services/workouts.py:289` 直接 `**data.model_dump()`）。\n   改為：`log_set()` 在 server 端以「該 workout 該動作目前最大 set_number + 1」決定（F32 語意不變）。\n   理由：這是本條唯一會被複製到第二個語言的業務規則，搬到 server 就只剩一份、由 pytest 蓋著。\n   相容性：`set_number` 改為選填，client 有帶就沿用（F16 原位編輯、既有匯入路徑不受影響）。\n\n④ **去重靠 `client_uuid`，由原生在按下的那一刻生成**（F125 ④ 不變）。\n   `services/workouts.py:285` 已對 client_uuid 冪等 → 原生寫過、JS 之後又補送同一顆 uuid\n   也不會變成兩列。**這是本條敢開第二條寫入路徑的前提。**\n\n⑤ **原生側要有 token 與 base URL。**\n   - token 由 JS 在啟動與換 token 時經 plugin 推一份給原生，存 **EncryptedSharedPreferences**\n     （androidx.security-crypto），不得用一般 SharedPreferences 明文存。\n   - base URL 沿用 build 時決定的站別（與 env.js 的 SITE 同源，dev/prod 不得混）。\n   - token 失效（401）→ 原生不得自行處理，標記後留給 JS，回 app 時由既有 guard() 導回 setup。\n\n⑥ **送不出去時的退路（笨 outbox，不做狀態機）。**\n   網路失敗（逾時／status 0／5xx）→ 留在原生 outbox，下次有網或回 app 時重送。\n   **outbox 必須支援多筆**（解掉 PendingLog 單格吞資料的問題）。\n   永久性 4xx（404 workout 已刪／400）→ 停止重試，標記為失敗待回報（見 ⑧）。\n   ⚠ **outbox 不得被 ✕／停止／結束訓練清空**——那是現行 F125 ⑤ 的資料遺失來源。\n   清除時機只有兩個：寫入成功、使用者在 app 內明確捨棄。\n\n⑥-1 **重送的觸發點只有三個，不做背景排程**：\n   1. `ConnectivityManager.NetworkCallback` 的 `onAvailable`，註冊在已經在跑的\n      `RestTimerService` 裡（休息期間服務本來就活著，等於免費）。\n   2. 下次按「完成這組」時順帶重送（訓練中每幾分鐘一次，等於高頻重試）。\n   3. 回 app 時由 JS 經 plugin 讀原生 outbox，併進既有的 `syncQueue()`（`app.js:327`）一起送。\n   ⚠ **已知缺口，接受**：休息結束→服務停掉→app 也沒開，此時沒有任何觸發點，\n   那些組會躺在 outbox 直到下次開 app。不做 WorkManager——資料沒有時效性，\n   為幾分鐘的延遲養一個背景任務不划算（2026-08-04 Ryan 確認接受）。\n   對照：JS 側現行的 `window.addEventListener(\"online\", ...)`（`app.js:2772`）也只在 app 開著時有效。\n\n⑦ **回 app 的對帳：直接重抓這場的 sets 覆蓋畫面**，不做增量合併。\n   理由同 ③——合併邏輯是第二份會走鐘的東西；重抓一次的成本可忽略。\n\n⑧ **失敗要明確，但不做新 UI**（2026-08-04 Ryan 質疑後收斂）。\n   即時寫入讓失敗變少，**不會消滅**兩類真正的失敗：\n   永久性 4xx（workout 已被「結束訓練」作廢、動作 id 走鐘 → 404/400，重試無用）與 401（token 失效）。\n   這兩類若靜默吞掉，就是「人以為記完、資料卻缺一筆」，正是 F104 ⑤ 要擋的事。\n   分兩態，**沿用既有元件，不新增頁面或元件**：\n   - **離線待送**（網路失敗）→ 視窗顯示「離線，已排隊」，**不是失敗態**。\n   - **永久失敗**（4xx／401）→ 視窗顯示明確失敗態；回 app 後併入既有的\n     `同步失敗 N 組（點此捨棄）` 橫幅（`app.js:372`）與逐組狀態（`app.js:2328`\n     的 `pending | failed`）。原生 outbox 的計數餵進同一個 `state.queue` 即可。\n   實作工作量是「原生把 outbox 狀態回報給 JS」，不是做一套回報系統。\n\n⑨ **不得回歸**：F32（組號語意）、F16（原位編輯不動 set_number）、F125 ③④（跨行程保全、uuid 來源）、\n   F127、F129、F71 ④、F116 ②、F104 ⑤⑦（失敗態、rpe 留 null）、F93（雙站別不得混）。\n\n⑩ **驗收（真機，逐條）**：\n   1. 背景按「完成這組」→ **不回 app**、直接查 API/DB → 那組已經在，且 `set_number` 正確\n   2. 承上，之後回 app → 清單裡**只有一筆**（冪等生效）\n   3. 背景按下 → 立刻按 ✕／停止 → 查 DB → **那組仍在**（現行版本會消失，這是本條的核心價值）\n   4. 飛航模式下背景按兩組 → 開網路 → 兩組**都**進 DB、順序與組號正確（多筆 outbox）\n   5. 背景按下 → `am force-stop` 殺行程 → 重開 → 不重複寫入\n   6. 前景行為與 v139 完全相同（②）\n   7. token 於裝置上不得以明文存在（EncryptedSharedPreferences；⑤）\n\n---\n\n**動工前 Ryan 要拍板的兩點**：\n(A) `set_number` 搬 server —— **已拍板：搬**（2026-08-04）。\n(B) 失敗回報範圍 —— **已拍板：沿用既有同步失敗橫幅，不新增 UI**（2026-08-04）。\n兩點皆已於簽核前決定並回填，動工後不得再改本條 acceptance。",
-      "evidence": "",
+      "evidence": "真機 SM_N9750（dev APK v140→v143）逐條，DB 為 liftlog-dev.db。\n⑩-1 背景按下不回 app → sets.id=417、set_number=9（server 指派）、rest_seconds=146（2026-08-04）。\n⑩-2 回 app 後只有一筆（id=417；驗收者於 workout 77 再驗一次）。\n⑩-3 背景按下→立刻按 ✕ → sets.id=419、set_number=10 仍在，server log 對應 POST 201（2026-08-05）。\n⑩-4 飛航下按兩組→開網路→不碰 app，20 秒內 id=421(set 12)、id=422(set 13) 依序落地，NetworkCallback.onAvailable 生效。\n⑩-5 背景按下→force-stop→重開 → client_uuid=0f316374… 仍只有 id=423 一列，無重複。\n⑩-6 前景行為與 v139 並排比對（2026-08-06，v139 dev APK 由 b9ee5f6 重建、SITE=dev、同 release 憑證簽章）：\n     v139 記一組 → workout 79 建立、sets.id=440、set_number=1、UI 顯示 #1、標題「第 2 組」、倒數 30s；\n     v143 記一組 → sets.id=441、set_number=2、UI 顯示 #2、標題「第 3 組」、倒數 30s；\n     v139 原位編輯 reps 8→9、set_number 不變；v143 原位編輯 reps 9→10、set_number 不變。\n     唯一差異＝組號來源（v139 由 JS 自算、v143 由 server 指派），即 (b) 改判的刻意變更，見 spec_feedback ②。\n⑩-7 token 明文次數 0、鍵名亦為密文（debuggable build 取證後已還原；執行者＝取證者，非獨立）。\n⑧ 永久失敗態（2026-08-06）：workout 78 從 DB 移除製造 404（curl 覆核 POST /api/workouts/78/sets → 404），\n   背景按「完成這組」→ 浮動視窗紅字「沒記到 1 組——回 app 處理」；回 app 後出現既有橫幅\n   「⚠ 同步失敗 1 組（點此捨棄）」，未新增任何 UI；按捨棄後橫幅消失。截圖 s11/s12/s13。\n   註：401 依 SetUploader.java:101 屬可重試而非永久失敗（codex review 時刻意改），故永久失敗態以 404 驗。\n完成定義：pytest 283 passed、ruff 乾淨、init.sh exit 0（2026-08-05 codex-verify 當輪）。\n組號回歸：全 dev DB 未軟刪重複組號 0 筆；prod 舊撞號（workout 33／exercise 30）已於 2026-08-06 依 created_at 重編為 1..5，備份見 lift-log-backups。",
       "requires": [
         "F125",
         "F130"
       ],
-      "spec_feedback": "① 字面寫「成功後視窗才切休息態」，實作為「進 outbox 後就切」。理由：照字面等 HTTP 成功，離線時倒數永遠不會開始，而離線是健身房常態；進 outbox 已是不可遺失的落地（跨行程存活、停止不清、失敗會回報）。**2026-08-04 Ryan 認可此讀法**（「可以 沒有問題」），acceptance 文字不改。\n\n③ 兩條寫入路徑的 set_number 算式不同：前景（JS 帶值）＝可見 sets 的 max+1，背景（server 算）＝含軟刪 sets 的 max+1。最高幾組被軟刪時會分叉（實測 workout 76 出現 #1 與 #10 並排）。兩者都符合 ③ 的字面（「client 有帶就沿用」）。**2026-08-05 Ryan 拍板 (a) 維持現狀**：跳號只是顯示，撞號才是資料問題（set_number 無 unique 約束，server 端不把軟刪算進去就會靜默撞號）。不改 code、不改 acceptance。"
+      "spec_feedback": "① 字面寫「成功後視窗才切休息態」，實作為「進 outbox 後就切」。理由：照字面等 HTTP 成功，離線時倒數永遠不會開始，而離線是健身房常態；進 outbox 已是不可遺失的落地（跨行程存活、停止不清、失敗會回報）。**2026-08-04 Ryan 認可此讀法**（「可以 沒有問題」），acceptance 文字不改。\n\n③ 兩條寫入路徑的 set_number 算式不同：前景（JS 帶值）＝可見 sets 的 max+1，背景（server 算）＝含軟刪 sets 的 max+1。最高幾組被軟刪時會分叉（實測 workout 76 出現 #1 與 #10 並排）。兩者都符合 ③ 的字面（「client 有帶就沿用」）。**2026-08-05 Ryan 先拍板 (a) 維持現狀**：跳號只是顯示，撞號才是資料問題。\n\n③-續 **(a) 已被實測推翻，2026-08-05 晚改判 (b)**：驗收者在 workout 77 量到兩列同為 `set_number=7`（id 430 背景寫入、id 433 前景寫入）。撞號的成因不是軟刪，是**兩個寫入者各算各的**——JS 算的是它畫面上的 max+1，而畫面上還沒有剛由原生寫進去的那組。只要保留兩套算式就有這個 race。改判內容：`logCurrentSet()` 不再帶 `set_number`（離線分支只在本機那份補號給畫面用），一律 server 算；並把配號＋寫入包進 `_SET_NUMBER_LOCK`（真正的根因是 SELECT MAX 再 INSERT 不是原子操作）。commit `f829f85`，回歸測試 `tests/test_set_number_race.py`。\n\n② 的例外（隨 (b) 一併認可）：② 寫「前景行為完全不變」，但 (b) 動到了前景的 `logCurrentSet()`——**改的只有組號來源（client 自算 → server 指派）**，使用者可見行為（按下即寫、離線排隊、編輯、倒數）不變。⑩-6 的比對以此為準。acceptance 文字不改。",
+      "prerequisites": [
+        "F16",
+        "F32",
+        "F71",
+        "F93",
+        "F104",
+        "F116",
+        "F125",
+        "F127",
+        "F129",
+        "F130"
+      ]
+    },
+    {
+      "id": "F132",
+      "name": "日曆補記改由 server 指派組號（client 自算組號的最後一條路）",
+      "status": "failing",
+      "acceptance": "**待簽核**（2026-08-06 開條目）。F131 (b) 只清掉「當場記組」那條自算組號的路，日曆補記還留著一條，而且算法更糟。\n\n現況：`calendar.js:432`（單筆補記）與 `calendar.js:504`（F47 批次補記）自己算 `set_number`，算的是**該動作既有未軟刪組數**（`existing + 1` / `existing + i + 1`），不是最大值。\n一場有 #1–#5、#3 被軟刪 → `existing = 4` → 送出 `5`，**直接撞既有的 #5**。比 F131 修掉的前景那條更容易撞。\n\n① 兩處都不再送 `set_number`，一律由 server 的 `_next_set_number()` 指派（同 F131 ③）。\n② **撞號重現與修復**：造一場某動作有 #1–#5、軟刪 #3，用日曆補記加一組 → 新組號為 **6**，且該 `(workout_id, exercise_id)` 未軟刪組號無重複。修改前跑同一步驟必須重現撞號（會紅的回歸測試）。\n③ **批次補記（F47）組號連續**：一次補同一動作 3 組 → 得到連續三個號碼、無重複。\n④ 離線／佇列路徑不得把顯示用組號送出去（同 F131 修掉 `saveEditDoneSet()` 的那個坑）。\n⑤ **不得回歸**：F32（組號語意）、F16（原位編輯不動 set_number）、F47（批次補記）、F131 ③。\n⑥ **完成定義**：`uv run pytest` 全綠、`uv run ruff check .` 乾淨、②的回歸測試存在且移除修法會 fail；動到 `app/static/` → 升版號（`state.js` ＋ `sw.js`）並出 APK。",
+      "evidence": "",
+      "requires": [
+        "F131"
+      ],
+      "touches": [
+        "app/static/js/calendar.js"
+      ],
+      "prerequisites": [
+        "F16",
+        "F32",
+        "F47",
+        "F131"
+      ]
+    },
+    {
+      "id": "F133",
+      "name": "sets 組號唯一約束當最後防線（撞了重試，取代行程內鎖）",
+      "status": "failing",
+      "acceptance": "**待簽核**（2026-08-06 開條目）。F131 的 `_SET_NUMBER_LOCK` 是行程內鎖，兩個前提會破：多 uvicorn worker，以及**client 自己帶號時鎖根本擋不住**（server 照單全收）。DB 約束是唯一擋得住兩者的防線。\n\n**前置**：上線前 dev 與 prod DB 不得存在重複組號（prod workout 33／exercise 30 已於 2026-08-06 重編為 1..5）。migration 必須先驗資料、有重複就中止而不是靜默略過。\n\n① `sets` 加 `(workout_id, exercise_id, set_number)` 唯一約束，**只約束未軟刪列**（SQLite partial unique index `WHERE deleted_at IS NULL`）——軟刪後重用組號不得被擋。\n② server 配號撞到約束 → 重試（上限固定、寫在常數），重試耗盡回 409 並帶明確訊息，不得靜默吞掉。\n③ **client 帶號撞既有號 → 回 409**，不再靜默寫成重複列。\n④ 約束上線後 `_SET_NUMBER_LOCK` 可移除，但②的重試必須留；`tests/test_set_number_race.py` 改為驗「兩執行緒同時進場 → 兩列組號不同、都寫入成功」，移除重試會 fail。\n⑤ **不得回歸**：F32、F16（原位編輯不動 set_number）、軟刪語意（刪掉的組號可被後來的組重用）、F131 ③④。\n⑥ **完成定義**：`uv run pytest` 全綠、`uv run ruff check .` 乾淨、migration 在 `liftlog-dev.db` 實跑成功並貼出前後 schema，prod 套用前先備份。",
+      "evidence": "",
+      "requires": [
+        "F131",
+        "F132"
+      ],
+      "touches": [
+        "app/models.py",
+        "app/services/workouts.py",
+        "tests/test_set_number_race.py"
+      ],
+      "prerequisites": [
+        "F16",
+        "F32",
+        "F131",
+        "F132"
+      ]
     }
   ]
 }

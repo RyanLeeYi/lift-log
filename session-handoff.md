@@ -1,8 +1,67 @@
 # session handoff
 
-最後更新：2026-08-04（**121/131 passing，v140 未出 APK**；線上仍 v124，最新正式版 APK 是 v139-F130）
+最後更新：2026-08-06（**121/133 passing**；F132／F133 為新開條目，待簽核。線上仍 v124，最新正式版 APK 是 v139-F130）
 
-## 這一場（8/5）：F131 真機驗收續（⑩-3 過，⑩-4 開頭撞額度）
+## 這一場（8/6）：補完 F131 最後兩條驗收 ＋ 開組號收尾的兩條 feature
+
+### Ryan 這場的三個裁示
+
+1. 日曆補記自算組號 ＋ DB 缺唯一約束 → **開兩條新 feature 標 failing**（F132／F133，acceptance 待簽核）
+2. F131 缺的 ⑩-6、⑧ → **這場補完，改 passing 出正式版**
+3. prod 舊撞號 → **照 created_at 重編成 1..5**
+
+### 已完成
+
+- **prod 舊撞號已修**：`liftlog.db` workout 33／exercise 30 依 `created_at` 重編為 1..5
+  （id 69 是軟刪的，佔號 #3，未軟刪剩 1,2,4,5——符合軟刪語意）。
+  全庫未軟刪重複組號現為 **0 筆**。備份：`../lift-log-backups/liftlog-20260806-111526-pre-renumber.db`
+- **⑧ 永久失敗態 pass**：把 workout 78 從 dev DB 移除製造 404（curl 覆核 `POST /api/workouts/78/sets` → 404），
+  背景按「完成這組」→ 浮動視窗紅字「**沒記到 1 組——回 app 處理**」；回 app 後出現既有橫幅
+  「⚠ 同步失敗 1 組（點此捨棄）」，**未新增任何 UI**；按捨棄後橫幅消失。
+  ⚠ **401 不能拿來驗這條**——`SetUploader.java:101` 刻意把 401 歸為可重試（review 時改的），
+  永久失敗態只有真正的 4xx 走得到。
+- **⑩-6 前景行為比對 pass**：v139 的 dev APK 本機沒有，從 `b9ee5f6` 重建（詳見下方陷阱），並排比對：
+
+  | 前景操作 | v139 | v143 |
+  |---|---|---|
+  | 記一組 | workout 79 建立、`sets.id=440`、`#1`、標題「第 2 組」、倒數 30s | `sets.id=441`、`#2`、標題「第 3 組」、倒數 30s |
+  | 原位編輯 | reps 8→9、`set_number` 不變 | reps 9→10、`set_number` 不變 |
+
+  唯一差異＝組號來源（v139 由 JS 自算、v143 由 server 指派），即 8/5 拍板 (b) 的刻意變更。
+- **修掉一處文件與碼相反**：`F131.spec_feedback` ③ 原本還寫著「Ryan 拍板 (a) 維持現狀」，
+  但 8/5 晚已改判 (b) 且程式照 (b) 改了（`f829f85`）。已補 ③-續 與 ② 的例外說明。
+- **F132／F133 已開條目**（failing，acceptance 待 Ryan 簽核）：
+  F132＝日曆補記改由 server 指派組號（`calendar.js:432`／`504` 算的是**筆數**不是最大值，軟刪後必撞）；
+  F133＝`(workout_id, exercise_id, set_number)` 唯一約束 ＋ 撞了重試，取代行程內鎖。
+
+### 這場踩到的陷阱（重建舊版 APK 要用）
+
+- **`npx cap sync` + `gradlew assembleDevRelease` 建出來的 dev APK 會指向正式站**。
+  站別是 `scripts/build-apk.ps1` 在建置前改寫 `app/static/js/env.js` 的 `const SITE` 那一行決定的，
+  只跑 gradle 不會改。第一顆 v139 裝上去就是「dev package 連 prod API」，開啟顯示「正式環境」＋
+  「Token 無效」（dev token 打 prod）。**沒有登入**，prod 資料未受污染。重建時手動把 SITE 改成 `dev` 才對。
+- **git worktree 建的舊版無法用 gradle 簽章**：`android/keystore.properties` 是 git-ignored，
+  worktree 內沒有 → gradle **靜默**產 `app-dev-release-unsigned.apk`，不噴錯也不警告。
+  解法：留在 worktree 出 unsigned，再用主 repo 的金鑰簽（金鑰不進暫存目錄）。
+- **`apksigner.bat` 會吃掉含特殊字元的密碼**，報成「Unexpected parameter(s) after input APK」。
+  改用 `java -jar <sdk>/build-tools/36.0.0/lib/apksigner.jar` ＋ `--ks-pass env:VAR` 才過。
+- 降版安裝要 `adb install -r -d`；同簽章 → **資料與登入狀態保留**，不用重新輸入 token。
+
+### 還沒收的
+
+- **F131 仍是 failing**：`/codex-verify` 重驗跑到一半（8/5 那兩輪在 `f829f85` 之前，已失效）。
+  驗收過了才改 passing → 出正式版 APK（`scripts/build-apk.ps1 -Site prod`）→ 丟 `G:\我的雲端硬碟\lift-log-apk\`
+- ⑩-7 仍是「執行者＝取證者」，沒有獨立第三方驗過
+- F132／F133 的 acceptance **等 Ryan 簽核**才能動工
+
+### 環境狀態
+
+- dev(8138)／prod(8137) 兩台 server 都在跑
+- 手機裝的是 **dev v143**（v139 比對後已裝回），已登入，`SYSTEM_ALERT_WINDOW` 仍有效
+- `release-dev/lift-log-v139.apk` 是這場重建並簽好的，之後要再比對可以直接用
+- dev DB 的 workout 79 是這場驗收造的測試資料（肩推 2 組）；workout 78 是 ⑧ 的拋棄式標的，已刪
+
+## 前一場（8/5）：F131 真機驗收續（⑩-3 過，⑩-4 開頭撞額度）
 
 ### 新驗過的（dev APK v141，workout 76，exercise_id=2）
 
