@@ -35,3 +35,6 @@ debug.log
 deploy/
 liftlog-dev.db
 release-dev/
+
+# agent worktrees (本地用，不進版控)
+.claude/
