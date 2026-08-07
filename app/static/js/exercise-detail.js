@@ -211,6 +211,23 @@ function chartPoints(sessions) {
   }));
 }
 
+// F135：高 N（練很多次的動作切到「全部」）時，序位等距佈局把點擠在一起——
+// 未選中點依區間內實際點數分級縮小（① 350px 寬圖寬 252px、N=50 時點距僅 ~5px，
+// 8px 的點會黏成一條粗線）。分級只動視覺尺寸（CSS class），不動 x 座標公式與命中判定，
+// 所以 ⑤ 頭尾一致的命中寬與 F134 ⑥ 的門檻不受影響。選中點（.sel）尺寸不分級（③）。
+function pointSizeClass(n) {
+  if (n > 40) return " sz-sm"; // 4px
+  if (n > 20) return " sz-md"; // 6px
+  return ""; // N ≤ 20：8px，F134 現行尺寸不變
+}
+
+// PR 獎盃 icon 尺寸比照同一套分級縮小（④），高 N 時避免獎盃彼此蓋住；不省略任何一個。
+function trophySize(n) {
+  if (n > 40) return 8;
+  if (n > 20) return 9;
+  return 11;
+}
+
 // 命中判定：x 軸距離最近的點（不要求精準落在點上）。points 已經是等距排列，
 // 相鄰兩點的邊界自然落在中點，不會重疊也不會留空隙。
 function nearestPointIndex(points, xPct) {
@@ -259,6 +276,7 @@ function barChart(rerender) {
   }
 
   const selected = detail.chartSelected != null ? points[detail.chartSelected] : null;
+  const sizeClass = pointSizeClass(points.length); // F135 ①②④：依 N 分級
 
   // 點擊落在 .line-chart 內：選最近的點（再點已選中的就關閉）。
   // 落在 .bars-card 其餘地方（標題列／底部標示等空白處）：關閉浮動資訊。
@@ -287,7 +305,7 @@ function barChart(rerender) {
       svg,
       ...points.map((point) =>
         el("div", {
-          class: `line-pt${point.isPr ? " pr" : ""}${point === selected ? " sel" : ""}`,
+          class: `line-pt${sizeClass}${point.isPr ? " pr" : ""}${point === selected ? " sel" : ""}`,
           style: `left:${point.x}%;top:${point.y}px`,
           "aria-label": `${point.date} 最佳組 ${point.best.weight_kg}kg × ${point.best.reps}`,
         }, []),
@@ -295,8 +313,8 @@ function barChart(rerender) {
       // 獎盃只在 PR 那幾點才畫（不像長條圖需要每欄都保留節點來撐版面——
       // 這裡每個點的 y 各自獨立算出，沒有那個限制）。
       ...points.filter((p) => p.isPr).map((point) =>
-        el("div", { class: "line-flag", style: `left:${point.x}%;top:${point.y}px` }, [
-          icon("trophy", { size: 11, label: "個人紀錄" }),
+        el("div", { class: `line-flag${sizeClass}`, style: `left:${point.x}%;top:${point.y}px` }, [
+          icon("trophy", { size: trophySize(points.length), label: "個人紀錄" }),
         ]),
       ),
       ...(selected ? [lineTip(selected)] : []),

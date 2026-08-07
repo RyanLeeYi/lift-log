@@ -987,12 +987,20 @@ body {
   border-radius: 50%; background: var(--line);
 }
 .line-pt.pr { background: var(--accent); }
+/* F135 ①②：未選中點依區間內點數 N 分級縮小，N 高時點間距會小於 8px 直徑、視覺黏成一條線。
+   縮小（不是放大）不牴觸 F134 ⑧ 的「不放大點半徑」；.sel 寫在後面，同 specificity 下靠
+   cascade 順序覆蓋掉分級尺寸，選中狀態不受影響（③）。 */
+.line-pt.sz-md { width: 6px; height: 6px; margin: -3px 0 0 -3px; }
+.line-pt.sz-sm { width: 4px; height: 4px; margin: -2px 0 0 -2px; }
 /* 選中：放大＋外圈光暈，兩種視覺區別一起給（acceptance 只要求擇一） */
 .line-pt.sel {
   width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px;
   box-shadow: 0 0 0 4px rgba(217, 178, 95, .32);
 }
 .line-flag { position: absolute; margin: -22px 0 0 -5.5px; color: var(--accent); pointer-events: none; }
+/* F135 ④：獎盃 icon 尺寸比照同一套分級縮小（exercise-detail.js trophySize），offset 跟著調整 */
+.line-flag.sz-md { margin: -18px 0 0 -4.5px; }
+.line-flag.sz-sm { margin: -16px 0 0 -4px; }
 .line-tip {
   position: absolute; top: 0; z-index: 2; pointer-events: none;
   background: var(--card-hi); border-radius: 12px; padding: 7px 10px;
