@@ -1,8 +1,60 @@
 # session handoff
 
-最後更新：2026-08-06（**121/133 passing**；F131／F132 都做完但都**還不能改 passing**，見下。線上仍 v124，最新正式版 APK 是 v139-F130）
+最後更新：2026-08-07（**124/137 passing**；F131／F132／F133 收掉了，F134 已併 main 但**還不能改 passing**。線上仍 v124，最新正式版 APK 仍是 v139-F130）
 
-## 接手就看這段（8/6 收官時的狀態）
+## 接手就看這段（8/7 收官時的狀態）
+
+**這場收掉三條**：F131（背景記組即時寫入）、F132（日曆補記組號）、F133（組號唯一約束）全部 **passing**，三要件（evidence／reviewed_by／verified_by）都齊。F133 已 ff 併入 main，migration 也在真 `liftlog-dev.db` 套用了。
+
+**F134（折線圖）差最後兩步**
+
+| 已完成 | 還缺 |
+|---|---|
+| 實作已 ff 併入 main（`63962a4`）；`verify_f134.py` **46/46**、pytest 296、ruff 乾淨；`verify_f86` 38/38、`verify_f87` 38/38、`verify_f59`／`verify_f58` ALL PASS（在**主工作區**跑的，見下方 F137 的陷阱）；review 的 P1 已修並自證會紅；v145 dev APK 已出並裝上手機 | ① **獨立驗收沒跑**（我指揮了實作，逐條判定不能由我來）② **真機 320px 觸控沒驗** ③ 以上過了才改 passing、才出正式版 APK |
+
+**真機 320px 那步有個字面問題**：F134 ⑫ 寫「真機確認 320px 寬的觸控命中」，但 Note10+ 原生不是 320dp。做法是 `adb shell wm density 540`（1080 ÷ 320 × 160 = 540 → 邏輯寬度剛好 320dp），**驗完 `adb shell wm density reset`**。Ryan 尚未表態要不要改用這條路（另一條是把 320px 認定為 E2E 責任、真機只驗原生寬度，那要回簽核改條文）。
+
+**下一步最短路徑**：① 派 acceptance-verifier 驗 F134（含上面那個 density 手法，要求它還原）→ ② 過了改 passing → ③ 然後照 **F137 → F135 → F136** 的順序做（F135／F136 的 `touches` 完全重疊，只能串行）。
+
+### 這場新開並已凍結的三條（都是 F134 的 review 副產品）
+
+| id | 內容 | 為什麼不是 F134 的缺陷 |
+|---|---|---|
+| **F135** | 高 N 點重疊（320px／N=50 → 間距 5.1px，點直徑 8px 黏成一條）。**方向 ① 拍板**：未選中點依 N 分級縮小（≤20→8px、21–40→6px、>40→4px）；真正的驗收是「相鄰圓緣間距 ≥ 1px」可量測 | F134 ⑥ 的門檻 `min(44, W/N)` 在等距佈局下對內部點恆成立（`W/(N-1) > W/N`）擋不住；⑧ 又禁止縮點以外的三種解法。**Ryan 裁示不改 ⑥ 的條文** |
+| **F136** | 折線圖浮動資訊沒有鍵盤／螢幕閱讀器入口（`.line-pt` 無 `role`／`tabindex`，`.line-tip` 無 `aria-live`） | 長條圖的 `aria-label` 已等價保留在 `.line-pt`，**不是無障礙回歸**，是新互動缺非指標入口 |
+| **F137** | `verify_f58.py`／`verify_f59.py` 的 `REPO` **寫死主工作區絕對路徑** → 在 worktree 裡跑會測到主工作區的舊碼 | 既有基礎設施缺陷。F134 的 agent 因此吃過一次假失敗。**危險的一半是假通過**——驗收要求「在 worktree 改個 DOM，證明腳本看得到」 |
+
+F137 排在 F135／F136 之前是刻意的：不先修掉它，後兩條在 worktree 裡的驗收本身不可信。
+
+### F86 ⑤ 已標 `superseded_by: F134`（`83de4b7`）
+
+只取代長條圖的呈現細節；`.bars-max`／`.bars-foot`／獎盃累進判定／y 值定義／空區間文案 F134 都明文承接。**F86 本身仍是 failing**（從 8/4 就是，evidence 空，與本次無關）。
+
+### ⚠ 這場的三個坑（值得記）
+
+1. **`isolation: "worktree"` 的 agent 從 `origin/<default-branch>` 開分支，不是本地 HEAD**（`worktree.baseRef` 預設 `fresh`）。我把 F134 規格 commit 成 `e42aed6` 才派工，worker 拿到的仍是 `9164c28`＝當時的 `origin/main`，回報「檔案不存在」後正確停工，白燒 41k token。**判準一行可查：`git log origin/main..HEAD` 有輸出，那些 commit 對 worktree agent 就不存在。** 已改全域規則與三個角色檔（見下），**沒有改 `worktree.baseRef` 設定**——那是全域開關，會讓 HEAD 停在半途分支時污染 worker 基底。
+2. **沒產生變更就停工的 agent，worktree 會被自動回收、無法 resume**，只能重派。我一度以為可以 resume。
+3. **測試綠在沒測到的地方**：F134 第一版 `verify_f134.py` 只量中段點的命中寬（index 3），42/42 全綠，而頭尾點其實只有半格（18px）。review 抓到後補測 index 0／n-1，改回舊公式時精準紅在那兩條。**「全綠」只證明被斷言的東西成立。**
+
+### 這場的環境狀態（接手前先確認）
+
+- dev(8138)／prod(8137) 都在跑。**dev server 這場重啟過**（F133 併入後要讓它跑含重試邏輯的新碼）：`/health` 回 `200 {"status":"ok","env":"dev"}`
+- **`liftlog-dev.db` 已套用 F133 的唯一索引**（`ix_sets_workout_exercise_set_number_active`）。備份：`../lift-log-backups/liftlog-dev-20260807-pre-f133-migration.db`
+- **prod 的索引還沒套用**：`migrate_schema()` 掛在 `app/main.py:50` 的啟動流程，prod 下次重啟自動套用（自帶「有重複資料就中止」防呆，prod 舊撞號已於 8/6 清乾淨）。驗收者判定這不擋 F133 passing
+- 手機裝的是 **dev v145**，已登入
+- dev DB 有這場驗收造的資料：workout 80（深蹲 #1,2,4,5,6／#3 軟刪；硬舉 #2,3,4,5／#1 軟刪）刻意保留當 F132 證據
+- **`.claude/worktrees/agent-a1e004955c81f8154` 刪不掉**（OneDrive 鎖住，`git worktree remove` Permission denied）。內容已 ff 併入 main，**可以安全 prune**：`git worktree prune` 或手動刪目錄
+- `G:\我的雲端硬碟\lift-log-apk` 仍不存在（Google Drive 未掛載）→ 正式版 APK 依 Ryan 決定延後，等 F134 一起出
+
+### 全域 harness 改動（不在本 repo）
+
+`~/.claude/` 改了三處，起因是上面第 1 個坑：`rules/common/agents.md` 的機制敘述改正（含可查判準與「不改設定」的理由）、`agents/executor.md`／`mech-executor.md`／`acceptance-verifier.md` 各加「規格檔看不到時改讀 prompt 給的絕對路徑、註明、不停工；自己推導位置仍算越界」的例外、新增記憶 `worktree-agent-base-ref.md`。改動前有跑 plan-verifier 冷讀，它砍掉了我原本要改 `worktree.baseRef` 設定的那項（4×P1／4×P2，其中「不做 C1 也行」最關鍵）。
+
+### 這場的 review 與驗收都是 Claude，不是跨模型
+
+Codex 額度用盡，所以 F132／F133／F134 的 review 走 headless `claude -p`、驗收走 acceptance-verifier。**跨 session、跨 context，但不跨模型**——獨立性打折，evidence 裡每條都註明了。
+
+## 前一場（8/6）收官時的狀態
 
 **三條 feature 各卡在哪**
 
