@@ -25,7 +25,7 @@ from verify_f67 import (  # noqa: E402
     wait_home,
 )
 
-REPO = Path(r"C:\Users\user\OneDrive\Desktop\SideProject\lift-log")
+REPO = Path(__file__).resolve().parents[2]
 TOKEN = "f49-own-token"
 
 
