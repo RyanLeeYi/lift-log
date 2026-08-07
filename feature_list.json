@@ -2522,6 +2522,23 @@
         "不改任何 E2E 的斷言內容或涵蓋範圍——只改路徑推導方式",
         "不重寫 E2E 的共用基礎設施（不抽 conftest、不建共用 helper 模組）"
       ]
+    },
+    {
+      "id": "F138",
+      "name": "E2E 腳本在預設 cp950 主控台下會 UnicodeEncodeError 中斷（假訊號）",
+      "status": "failing",
+      "acceptance": "**未簽核（2026-08-07 由 F134 驗收的 P2 開出，等 Ryan 簽核後才凍結）**。基礎設施缺陷，非行為 feature。\n\n`tests/e2e/` 的多支腳本在斷言訊息裡用了 `≥`、`×` 等非 cp950 字元。Windows 主控台預設 cp950，\n照 feature 的完成定義字面跑 `uv run python tests/e2e/verify_f134.py` 會在第一個含這類字元的斷言處\n`UnicodeEncodeError` 中斷——**腳本沒跑完，但看起來像是「測試失敗」**。要靠呼叫端補\n`PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8` 才跑得完。\n\n危險在於這是「假訊號」類缺陷：不知道這件事的人（或 agent）會把中斷當成回歸、或反過來把\n「跑到一半就死」誤讀成通過。全域記憶 `windows-cp950-silent-script-failure` 已記錄同一類坑，\n結論是**腳本自己釘 UTF-8，不要靠呼叫端帶環境變數**。\n\n① `tests/e2e/` 底下每一支會 print 非 ASCII 的腳本，開頭都加 `sys.stdout.reconfigure(encoding=\"utf-8\")`\n   （若有寫 stderr 也一併），使它在**未設任何環境變數**的預設 Windows 主控台下能跑完。\n② 驗收要證明「修好了」而不只是「還能跑」：在乾淨的 PowerShell（不設 PYTHONUTF8／PYTHONIOENCODING）\n   跑 `uv run python tests/e2e/verify_f134.py`，修法前會 UnicodeEncodeError、修法後跑完全綠——前後對照要貼出來。\n③ 不改任何斷言內容、涵蓋範圍或路徑推導方式（路徑那件事是 F137 的範圍，不要重疊）。\n④ 不得回歸：所有既有 E2E 在主工作區照常全過。\n⑤ **完成定義**：`uv run ruff check .` 乾淨、② 的前後對照證據齊全、受影響腳本各跑一次全過。\n   純測試基礎設施改動，不必升版號、不必出 APK。",
+      "evidence": "",
+      "requires": [],
+      "touches": [
+        "tests/e2e/"
+      ],
+      "prerequisites": [],
+      "non_goals": [
+        "不改任何 E2E 的斷言內容或涵蓋範圍",
+        "不改路徑推導方式（那是 F137 的範圍）",
+        "不改專案的全域編碼設定或 uv／pytest 設定檔"
+      ]
     }
   ]
 }
