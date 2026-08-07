@@ -203,33 +203,24 @@ def run_checks(base: str) -> None:  # noqa: C901
         pills.nth(4).click()
         page.wait_for_timeout(900)
 
-        # ⑤ 每次最佳組長條圖
-        check(page.locator(".bars-card").count() == 1, "⑤ 長條圖卡存在")
-        check(not page.locator("svg polyline, .ex-chart").count(), "⑤ 舊的折線圖已移除")
-        bars = page.locator(".bars .bar")
-        check(bars.count() == 5, f"⑤ 五次訓練＝五根長條（實際 {bars.count()}）")
-        heights = [bars.nth(i).bounding_box()["height"] for i in range(bars.count())]
-        check(heights[4] == max(heights), "⑤ 最重那次（最後一次 75kg）是最高的一根")
-        # 高度＝值／最大值：60/75 = 0.8
-        ratio = heights[0] / heights[4]
-        check(0.75 <= ratio <= 0.85, f"⑤ 長條高度＝值／最大值（60/75 應約 0.80，實際 {ratio:.2f}）")
-        chart_h = page.locator(".bars").bounding_box()["height"]
-        check(abs(chart_h - 130) <= 1, f"⑤ 圖表高 130px（實際 {round(chart_h)}）")
-        # PR 那幾根用 --accent；第三次（比上次輕）不該是
-        bar_colors = [
-            css(page, f".bar-col:nth-child({i + 1}) .bar", "backgroundColor") for i in range(5)
-        ]
-        check(bar_colors[0] == accent and bar_colors[1] == accent,
-              "⑤ 累進 PR 的那幾次用 --accent")
-        check(bar_colors[2] != accent,
-              "⑤ 比上次輕的那次**不是** PR（不能全部都標，否則等於沒標）")
-        # 每欄都有獎盃節點（保留版面），所以問**看得見的有幾個**，不是問有幾個節點——
-        # 問節點數會變成「五個都在」也通過的假綠
-        visible_trophies = page.evaluate(
-            """() => [...document.querySelectorAll('.bar-flag')]
-                 .filter(e => getComputedStyle(e).visibility === 'visible').length"""
-        )
-        check(visible_trophies == 4, f"⑤ 四次突破各一個獎盃圖示（看得見 {visible_trophies} 個）")
+        # ⑤ 每次最佳組折線圖（F134 取代長條圖；F86 ⑤ 條文標 superseded_by: F134，
+        # 這段 E2E 改驗折線圖，但 .bars-max／.bars-foot 的斷言必須留著——F134 明文
+        # 要求那兩處資訊不得消失。詳細的點選互動由 verify_f134.py 驗，這裡只驗
+        # 「圖表本身畫對了」這件事，避免兩支測試重複覆蓋同一批斷言。）
+        check(page.locator(".bars-card").count() == 1, "⑤ 圖表卡存在")
+        check(page.locator(".bars-card .bar, .bars-card .bar-col").count() == 0,
+              "⑤ 舊的長條圖 DOM（.bar／.bar-col）已移除")
+        pts = page.locator(".line-pt")
+        check(pts.count() == 5, f"⑤ 五次訓練＝五個資料點（實際 {pts.count()}）")
+        check(page.locator(".line-path").count() == 1, "⑤ 五個點以一條折線相連")
+        ys = [pts.nth(i).bounding_box()["y"] for i in range(5)]
+        check(ys[4] < ys[0], "⑤ 最重那次（最後一次 75kg）的點比第一次（60kg）高（y 座標較小）")
+        chart_top = page.locator(".line-chart").bounding_box()["y"]
+        check(min(ys) >= chart_top - 0.5,
+              f"⑤ 最高點沒有被容器上緣裁切（點頂 {min(ys):.1f}, 容器頂 {chart_top:.1f}）")
+        # PR 那幾點才有獎盃節點；第三次（比上次輕）不該有
+        check(page.locator(".line-flag").count() == 4,
+              f"⑤ 四次突破各一個獎盃圖示（實際 {page.locator('.line-flag').count()}）")
         head_max = page.locator(".bars-max").inner_text().strip()
         check(head_max.startswith("75"), f"⑤ 標題列右側是區間最大值（實際 {head_max}）")
         foot = page.locator(".bars-foot").inner_text()

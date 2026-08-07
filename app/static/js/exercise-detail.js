@@ -1,4 +1,5 @@
-// 動作表現頁（F36 起，F86 改版）：三張全期 PR 卡 ＋ 五檔時間窗 ＋ 每次最佳組長條圖 ＋ 歷來紀錄卡。
+// 動作表現頁（F36 起，F86 改版，F134 起圖表換成可點選折線圖）：
+// 三張全期 PR 卡 ＋ 五檔時間窗 ＋ 每次最佳組折線圖 ＋ 歷來紀錄卡。
 // 資料源＝GET /api/exercises/{id}/history（F35；F86 起 prs 多了 top_est_1rm 與 top_session_volume）。
 
 import { api } from "./api.js";
@@ -21,6 +22,7 @@ const detail = {
   range: { kind: "preset", months: 3 }, // months=null＝「全部」
   rangeNote: null, // F59：點到停用檔位時的一次性說明（初次退檔是靜默的，同 F58 的 openBody）
   data: { prs: {}, sessions: [] },
+  chartSelected: null, // F134：折線圖目前選中的資料點索引（對應 barChart() 內建出的 points 陣列）
   bodyweight: 0, // F37：自體重動作噸位用（取最新體重，同日曆的近似）
 };
 
@@ -45,6 +47,7 @@ async function loadRange(newRange) {
   if (seq !== reqSeq) return; // 較舊但較慢的回應——丟棄
   detail.range = newRange;
   detail.data = data;
+  detail.chartSelected = null; // F134 ⑤：切換區間要清掉浮動資訊與選中狀態，不殘留上一個區間的點
 }
 
 export function detailReturnScreen() {
@@ -58,6 +61,7 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
   detail.returnScreen = returnScreen;
   detail.range = { kind: "preset", months: 3 };
   detail.data = { prs: {}, sessions: [] }; // 清掉上一個動作殘留
+  detail.chartSelected = null; // F134：換動作也要清掉上一個動作殘留的圖表選中狀態
   // 自體重動作：取最新體重，噸位才不會把引體向上算成 0（同日曆 set_tonnage 的近似）
   detail.bodyweight = 0;
   if (exercise.is_bodyweight) {
@@ -100,7 +104,7 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
 // ---------- F86：每次最佳組 ----------
 
 // 一次訓練的「最佳組」＝重量最大者；同重量取次數多的。
-// ⚠ 這是整個畫面的軸心（長條圖的高度、chip 的獎盃、右上角的最大值都問它），
+// ⚠ 這是整個畫面的軸心（折線圖的 y 座標、chip 的獎盃、右上角的最大值都問它），
 // 所以只能有一個定義。先前 dayBlock 自己用 `Math.max(weight)` 判當日最重，
 // 遇到同重量不同次數會同時標兩顆——那不是「最佳組」，是「最重的重量」。
 function bestSet(session) {
@@ -149,59 +153,154 @@ function prCards() {
   );
 }
 
+// ---------- F134：可點選的折線圖（取代上面 F86 ⑤ 的長條圖） ----------
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag, attrs = {}) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  return node;
+}
+
+// 折線圖高度與上緣留白（px）。PAD_TOP 要放得下「獎盃 icon＋最高點的圓點」，
+// 不夠的話最高那點（若剛好也是 PR）會被容器上緣裁切——這是量出來才發現的坑，
+// 跟原本長條圖註解記的兩個坑同一類。改這兩個數字要連 app.css 的 .line-chart 一起改。
+const CHART_H = 140;
+const CHART_PAD_TOP = 26;
+const CHART_PAD_BOTTOM = 12;
+
 /**
- * 每次最佳組長條圖。
+ * 把 sessions 轉成畫圖用的點陣列：x／y 座標、是否 PR，並過濾掉算不出最佳組的那次
+ * （F134 邊界情況：sets 是空陣列，或 bestSet() 給的 weight_kg 是 null——沿用 bestSet()
+ * 本身的定義，這裡只加一層「算不出來就跳過、不連線」的防呆）。
  *
- * 高度＝值／最大值，所以最高那根一定滿格——這是設計稿的規則，代價是「全部都很接近」
- * 時看起來差距被放大。可接受：這張圖要回答的是「有沒有在進步」，不是絕對值比較
- * （絕對值在右上角與 chips 上都有）。
- *
- * PR 那次的判定用**累進**最佳（到那次為止的最高），不是「等於全期最大值」——
- * 後者只會標到最後一次，而設計稿裡的星號是一路上的每一次突破。
+ * PR 判定沿用 F86：**累進**最佳（到那次為止的最高），不是「等於全期最大值」。
  */
-function barChart() {
-  const sessions = detail.data.sessions;
-  if (!sessions.length) {
+function chartPoints(sessions) {
+  const raw = sessions
+    .map((s) => {
+      if (!s.sets.length) return null;
+      const best = bestSet(s);
+      return best && best.weight_kg != null ? { date: s.date, session: s, best } : null;
+    })
+    .filter(Boolean);
+  let running = -Infinity;
+  for (const point of raw) {
+    point.isPr = point.best.weight_kg > running;
+    if (point.isPr) running = point.best.weight_kg;
+  }
+  const n = raw.length;
+  const vals = raw.map((p) => p.best.weight_kg);
+  const valMax = Math.max(...vals);
+  const valMin = Math.min(...vals);
+  const span = valMax - valMin;
+  const plotH = CHART_H - CHART_PAD_TOP - CHART_PAD_BOTTOM;
+  return raw.map((p, i) => ({
+    ...p,
+    // x：序位等距、內縮到各自那一格的中心（不是依實際天數比例）——同一天兩場也各占自己的
+    // 位置，不會疊到同一像素。⚠ 這裡故意不用 i/(n-1)（頭尾點會落在 0%／100%，貼齊容器邊緣）：
+    // nearestPointIndex() 的邊界在兩點中點，頭尾點只有一側有鄰居，命中寬會只剩內部點的一半、
+    // 跌破 F113 的 44px 線（P1 review 抓到，2026-08-07）。改成 (i+0.5)/n 讓每個點（含頭尾）
+    // 各佔 1/n 格、命中寬全部一致＝圖寬/n。
+    x: n === 1 ? 50 : ((i + 0.5) / n) * 100,
+    // y：span===0（只有一筆，或所有值都相同）畫在圖高中線，不除以 0。
+    y: span === 0
+      ? CHART_PAD_TOP + plotH / 2
+      : CHART_PAD_TOP + (1 - (p.best.weight_kg - valMin) / span) * plotH,
+  }));
+}
+
+// 命中判定：x 軸距離最近的點（不要求精準落在點上）。points 已經是等距排列，
+// 相鄰兩點的邊界自然落在中點，不會重疊也不會留空隙。
+function nearestPointIndex(points, xPct) {
+  let best = 0;
+  let bestDist = Infinity;
+  points.forEach((p, i) => {
+    const dist = Math.abs(p.x - xPct);
+    if (dist < bestDist) { bestDist = dist; best = i; }
+  });
+  return best;
+}
+
+function lineTip(point) {
+  // 選中的點落在最左/最右 30% 就靠邊貼齊，否則置中——避免框被容器裁切（F134 ⑦）。
+  const align = point.x <= 30 ? "left" : point.x >= 70 ? "right" : "center";
+  return el("div", {
+    class: `line-tip align-${align}`,
+    ...(align === "center" ? { style: `left:${point.x}%` } : {}),
+  }, [
+    // 日期沿用 sessionCard() 同一段算式（slice(5)+replace），確保與歷史清單同一天那張卡文字一致。
+    el("span", { class: "line-tip-date" }, [point.date.slice(5).replace("-", "/")]),
+    el("span", { class: "line-tip-sets" }, [`${point.session.sets.length} 組`]),
+    el("span", { class: "line-tip-best" }, [`${fmtNum(point.best.weight_kg)}kg × ${point.best.reps}`]),
+  ]);
+}
+
+function barChart(rerender) {
+  const points = chartPoints(detail.data.sessions);
+  if (!points.length) {
     return el("div", { class: "bars-card" }, [
       el("p", { class: "bars-empty" }, ["這個區間內沒有紀錄"]),
     ]);
   }
-  const points = sessions.map((s) => ({ date: s.date, best: bestSet(s) }));
-  const max = Math.max(...points.map((x) => x.best.weight_kg));
-  let running = -Infinity;
-  for (const point of points) {
-    point.isPr = point.best.weight_kg > running;
-    if (point.isPr) running = point.best.weight_kg;
-  }
+  const max = Math.max(...points.map((p) => p.best.weight_kg));
   const monthOf = (d) => `${+d.slice(5, 7)}月`;
-  return el("div", { class: "bars-card" }, [
+
+  const svg = svgEl("svg", {
+    class: "line-svg", viewBox: `0 0 100 ${CHART_H}`, preserveAspectRatio: "none",
+  });
+  if (points.length >= 2) {
+    svg.append(svgEl("polyline", {
+      class: "line-path",
+      points: points.map((p) => `${p.x},${p.y}`).join(" "),
+      "vector-effect": "non-scaling-stroke",
+    }));
+  }
+
+  const selected = detail.chartSelected != null ? points[detail.chartSelected] : null;
+
+  // 點擊落在 .line-chart 內：選最近的點（再點已選中的就關閉）。
+  // 落在 .bars-card 其餘地方（標題列／底部標示等空白處）：關閉浮動資訊。
+  const onCardClick = (e) => {
+    const chartEl = e.currentTarget.querySelector(".line-chart");
+    if (!chartEl || !chartEl.contains(e.target)) {
+      if (detail.chartSelected !== null) {
+        detail.chartSelected = null;
+        rerender();
+      }
+      return;
+    }
+    const rect = chartEl.getBoundingClientRect();
+    const frac = rect.width > 0 ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
+    const idx = nearestPointIndex(points, frac * 100);
+    detail.chartSelected = detail.chartSelected === idx ? null : idx;
+    rerender();
+  };
+
+  return el("div", { class: "bars-card", onclick: onCardClick }, [
     el("div", { class: "bars-head" }, [
       el("span", { class: "bars-title" }, ["每次最佳組"]),
       el("span", { class: "bars-max" }, [`${fmtNum(max)} kg`]),
     ]),
-    el(
-      "div",
-      { class: "bars" },
-      points.map((point) =>
-        el("div", { class: "bar-col" }, [
-          // ⚠ 獎盃那一列**每一欄都要有**（非 PR 的隱藏起來）。只在 PR 欄放的話，
-          // 有獎盃的欄可用高度少 12px，最高那根被擠短，長條比例就不再是「值／最大值」
-          // ——60/75 會量到 0.88 而不是 0.80。這是實際量出來才發現的。
-          el("span", { class: `bar-flag${point.isPr ? " on" : ""}` },
-            [icon("trophy", { size: 9, label: point.isPr ? "個人紀錄" : "" })]),
-          // 長條放在自己的軌道裡，百分比才是「值／最大值」——直接掛在 bar-col 上的話
-          // 100% 會連同獎盃列一起超出欄高，被 flex 壓縮，最高那根反而變矮（比例失真）
-          el("div", { class: "bar-track" }, [
-            el("div", {
-              class: `bar${point.isPr ? " pr" : ""}`,
-              // 高度用 style 而非 class：值是連續的，沒辦法用固定幾檔 class 表達
-              style: `height:${Math.max(4, (point.best.weight_kg / max) * 100)}%`,
-              "aria-label": `${point.date} 最佳組 ${point.best.weight_kg}kg × ${point.best.reps}`,
-            }, []),
-          ]),
+    el("div", { class: "line-chart" }, [
+      svg,
+      ...points.map((point) =>
+        el("div", {
+          class: `line-pt${point.isPr ? " pr" : ""}${point === selected ? " sel" : ""}`,
+          style: `left:${point.x}%;top:${point.y}px`,
+          "aria-label": `${point.date} 最佳組 ${point.best.weight_kg}kg × ${point.best.reps}`,
+        }, []),
+      ),
+      // 獎盃只在 PR 那幾點才畫（不像長條圖需要每欄都保留節點來撐版面——
+      // 這裡每個點的 y 各自獨立算出，沒有那個限制）。
+      ...points.filter((p) => p.isPr).map((point) =>
+        el("div", { class: "line-flag", style: `left:${point.x}%;top:${point.y}px` }, [
+          icon("trophy", { size: 11, label: "個人紀錄" }),
         ]),
       ),
-    ),
+      ...(selected ? [lineTip(selected)] : []),
+    ]),
     el("div", { class: "bars-foot" }, [
       el("span", {}, [monthOf(points[0].date)]),
       el("span", { class: "bars-legend" }, [icon("trophy", { size: 9 }), "個人紀錄"]),
@@ -291,7 +390,7 @@ export function renderExerciseDetail(rerender, goBack, guard) {
     prCards(),
     el("div", { class: "range-pills" }, PRESETS.map(presetBtn)),
     ...(detail.rangeNote ? [el("p", { class: "range-note" }, [detail.rangeNote])] : []),
-    barChart(),
+    barChart(rerender),
     el("div", { class: "hist-list" }, renderHistory()),
   ]);
 }

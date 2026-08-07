@@ -279,11 +279,13 @@ def main():
             page.wait_for_timeout(400)
             on_c = page.locator(".range-pills button.on").inner_text().strip()
             hist_c = page.locator(".hist-list .hist-card").count()
-            bars_c = page.locator(".bars-card .bar-col").count()
+            # F134：折線圖取代長條圖，DOM 從 .bar-col 換成 .line-pt——這裡驗的是「退檔後
+            # 那一次仍看得到圖表資料點」這個行為，不是某種圖表型別，選用器跟著換掉。
+            bars_c = page.locator(".bars-card .line-pt").count()
             check(
                 "④/F121 動作 C（唯一一次訓練在 10 天前）：退檔後那一次仍看得到（不是空清單）",
                 hist_c == 1 and bars_c == 1,
-                f"on={on_c!r} 歷來卡={hist_c} 長條={bars_c}",
+                f"on={on_c!r} 歷來卡={hist_c} 圖表點={bars_c}",
             )
 
             # review P2-2 回歸：進「只有今天一次訓練」的動作時，**不該**多發一次 history 請求
