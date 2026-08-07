@@ -9,7 +9,7 @@ class Base(DeclarativeBase):
 
 
 # F133 ①：sets 組號唯一約束的索引名——app/migrations.py 補這個索引到既有 DB 時要用同一個
-# 名字（IF NOT EXISTS 才認得出「已經建過」），兩處共用常數避免打錯字彼此漂移。
+# 名字（用 `PRAGMA index_list` 比對名稱才認得出「已經建過」），兩處共用常數避免打錯字彼此漂移。
 SET_NUMBER_UNIQUE_INDEX = "ix_sets_workout_exercise_set_number_active"
 
 

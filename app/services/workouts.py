@@ -319,21 +319,27 @@ def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[Workout
         session.add(workout_set)
         try:
             session.commit()
-        except IntegrityError:
+        except IntegrityError as exc:
             session.rollback()
             raced = _find_by_client_uuid(session, data.client_uuid)
             if raced is not None:
                 return _as_idempotent_hit(raced, workout_id), False
+            # SQLite 的 IntegrityError 訊息列出撞到的欄位（如「UNIQUE constraint failed:
+            # sets.workout_id, sets.exercise_id, sets.set_number」），不是索引名。只有這個
+            # 約束涉及 set_number，其他 IntegrityError（FK 違反、未來新增的 NOT NULL 欄位
+            # 漏填…）不是組號衝突，翻成 409 會誤導使用者、也讓 server 端查不出真因，原樣拋出。
+            if "sets.set_number" not in str(exc.orig):
+                raise
             if client_supplied_set_number:
                 raise ConflictError(
                     f"set_number {fields['set_number']} 在這場這個動作已存在"
                     f"（workout_id={workout_id}, exercise_id={data.exercise_id}）"
-                ) from None
+                ) from exc
             if attempt == max_attempts:
                 raise ConflictError(
                     f"組號配號重試 {max_attempts} 次仍撞號"
                     f"（workout_id={workout_id}, exercise_id={data.exercise_id}），請重新嘗試"
-                ) from None
+                ) from exc
             continue
         session.refresh(workout_set)
         return workout_set, True
