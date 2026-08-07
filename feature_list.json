@@ -2424,9 +2424,9 @@
     {
       "id": "F134",
       "name": "動作表現頁改用可點選的折線圖（點資料點顯示日期／組數／最佳組）",
-      "status": "failing",
+      "status": "passing",
       "acceptance": "**已簽核凍結（2026-08-07，Ryan）**。詳見 docs/prd/f134-performance-line-chart.md。\nRyan 實際使用後回報：長條圖看不出趨勢，折線圖比較好懂；而且要知道某根是哪一天，得往下滑到歷史清單對照，太費事。\n\n① 折線圖取代長條圖：N ≥ 2 次紀錄時出現一條折線、N 個資料點依日期左舊右新相連，y ＝該次最佳組重量（沿用 bestSet().weight_kg，值的定義不變）；最大值那一點不得被容器上緣裁切（點的半徑完整可見）。\n② PR 標記保留：累進最佳判定（現行 running 邏輯）不變，PR 那幾次的資料點有獎盃 icon，非 PR 的沒有。\n③ 既有資訊不得消失：圖右上的區間最大值（現 .bars-max）與下緣首末月份（現 .bars-foot）。\n④ 點資料點顯示三項齊全：日期（M/D）、該次組數（n 組）、最佳組（{weight}kg × {reps}）；內容必須與歷史清單裡同一天那張卡一致（同一份 sessions 資料，不重新查詢 API）。\n⑤ 選中狀態：被選中的點有視覺區別（放大或換色），其他點不變；點另一個點 → 內容換成那點且不累積出第二個框；再點同一個已選中的點 → 關閉；點圖表區空白處 → 關閉；切換區間藥丸 → 浮動資訊與選中狀態清除。\n⑥ 命中判定用「x 軸距離最近的點」，不要求手指精準落在點上；在 320px 寬下每個點的可命中寬度 ≥ 44px 或 ≥ 圖寬÷N（取較小者），相鄰命中區不重疊。\n⑦ 浮動框不被容器裁切：最左與最右的點被選中時，整個框仍完整在畫面內（靠邊對齊或位移）。\n⑧ 邊界：0 筆沿用現行文字「這個區間內沒有紀錄」，不畫圖也無可點區；1 筆畫點不畫線且點擊照常可用；所有點 y 值相同時不得除以 0（畫在圖高中線或固定基線，仍可點）；同一天兩場照序位均分、不重疊到同一像素；50 點時不省略資料點、不放大點半徑、不做橫向捲動；某次算不出最佳組時該點跳過不畫、其餘點照常相連。\n⑨ 不引入圖表庫（CLAUDE.md 硬約束）：inline SVG（polyline + circle）或 CSS 自繪，package.json 的依賴數量不變。\n⑩ **F86 ⑤ 標 superseded_by: F134**（F86 ⑤ 的條文原文保留、不抹掉歷史，F86 其餘條文與 status 不動）；verify_f86.py:207-236 改為驗折線圖，但**必須保留 .bars-max 與 .bars-foot 的斷言**（③ 要求那兩處資訊留著）。\n⑪ 不得回歸：F35、F86 其餘條文、F59／F58（區間藥丸與退檔行為）、F113（44px 觸控目標）。\n⑫ **完成定義**：uv run pytest（純前端改動，可只跑相關子集；後端未動）全綠、uv run ruff check . 乾淨、uv run python tests/e2e/verify_f134.py 全過且移除修法會 fail（會紅的回歸測試）、verify_f86／verify_f87／verify_f59／verify_f58 不回歸、APP_VERSION（state.js）與 CACHE_NAME（sw.js）同步升號、dev APK 出一顆並在真機確認 320px 寬的觸控命中。",
-      "evidence": "",
+      "evidence": "實作於 worktree 分支後併入 main（63962a4）；⑧ 補測（60/60 那 14 條）另一個 commit。\n\n完成定義（⑫）：uv run pytest 286 passed／uv run ruff check . 乾淨／verify_f134.py **60/60**（原 46 條＋⑧ 補測 14 條）／\nverify_f86 38/38、verify_f87 38/38、verify_f59 ALL PASS、verify_f58 ALL PASS、verify_f113 15/15（⑪ 的不得回歸清單全數重跑）／\nAPP_VERSION 與 CACHE_NAME 同為 v145／dev APK release-dev/lift-log-v145.apk 已建置並裝上真機。\n⚠ 這些腳本在預設 cp950 主控台會 UnicodeEncodeError 中斷，須 PYTHONUTF8=1；該缺陷已 DEFER 為 F138。\n\n① 5 點、1 條 polyline、min(點頂)=311.0 ≥ 容器頂 289.0（最大值那點未被裁切）；bestSet() 函式體逐字未變（git diff 8264630 63962a4 對照）。\n② .line-flag=4，第 3 筆比上筆輕正確不標（running 累進判定不變）。\n③ .bars-max 顯示 75 kg、.bars-foot 含「月」與「個人紀錄」，兩處斷言都保留。\n④ 三項與 .hist-card 逐項比對一致；驗收者另寫 page.on(\"request\") 監控腳本，點選／換點／關閉三動作 request 數皆 0（不重新查 API）。\n⑤ 四條路徑都有實測斷言：換點不累積（.line-tip=1）、再點同一點關閉、點 .bars-head 空白處關閉、切區間藥丸清除。\n⑥ 320px／8 點：圖寬 252px、門檻 min(44, 252/8)=31.5，實測頭 32.0px／中段 32.0px／尾 31.0px；落在兩點之間仍選最近點。\n   **移除修法會 fail 的證明**：x 公式由 ((i+0.5)/n)*100 改回 (i/(n-1))*100 → 頭尾命中寬掉到 18-19px，紅掉頭尾兩條斷言（主 session 實跑過）。\n⑦ 最左點 tip 左緣 34≥34、最右點 tip 右緣 286≤286，兩端都完整在容器內。\n⑧ (a) 0 筆：文字「這個區間內沒有紀錄」、.line-svg/.line-pt/.line-path 皆 0、點卡片不產生 tip（導覽走訓練記錄頁的「動作表現」捷徑，\n      因「表現」頁籤的清單走 has_data=true 過濾，全無紀錄的動作不會出現在那裡）。\n   (b) 同日兩場：x0=114.50 vs x1=275.50、圓心距 161.00px，兩點 aria-label 同日期。\n   (c) 50 點：.line-pt=50（不省略）、未選中點直徑 8.00px＝N=8 基準 8.00px（未放大）、scrollWidth 323 ≤ clientWidth+1 323（無橫向捲動）。\n   (d) **結構上不可觸發**，兩條 API 邊界探測寫進腳本：POST 缺 weight_kg 被擋在 400（schema 必填、DB 非 nullable）；\n      整場的組軟刪後該場整個從 sessions 消失（不是 sets:[] 殘影，sessions 內 workout_id 清單為 []）。\n      故 chartPoints() 的跳過分支是純防禦性程式碼，現行公開 API 無輸入路徑可達——不是「測到但沒處理」。\n⑨ .line-chart svg.line-svg 為 inline SVG；package.json 依賴仍 4 顆，git diff 對 package.json 完全無輸出。\n⑩ F86 superseded_by 已寫入（83de4b7），F86 ⑤ 原文完整保留、其餘條文與 status（本來就 failing）未動；verify_f86 的 .bars-max／.bars-foot 斷言保留。\n⑪ F35 純後端未動（pytest 286 全過）、F86 其餘 38/38、F59／F58 ALL PASS、F113 15/15。\n\n**真機 320dp（主 session 本人，Galaxy RF8NB0BSEFE，adb wm density 720 → 320dp 寬，事後還原成 Ryan 原本的 override 600）**：\n折線圖正常出現（25 點、PR 獎盃 2 顆、右上 42.5 kg、下緣 5月／8月）；最左點命中 → 05/09 · 3 組 · 40kg × 8 靠左對齊未裁切；\n最右點**故意點偏**（往上偏約 200 裝置 px）仍命中 → 08/07 · 5 組 · 40kg × 5 靠右對齊未裁切，且與下方歷史清單同一天那張卡（5 組、最佳 40×5）一致；\n換點不累積第二個框；再點同一點關閉。",
       "requires": [
         "F35",
         "F86"
@@ -2452,7 +2452,9 @@
         "不做縮放、拖曳平移、多動作疊圖、匯出圖片",
         "不做桌機 hover 預覽",
         "不做歷史清單預設收起（Ryan 2026-08-07 決定先不做）"
-      ]
+      ],
+      "reviewed_by": "code review 由主 session 執行（Codex 額度耗盡，無跨模型 reviewer）。開出 1×P1（頭尾點命中寬只有半個 slot、18px）已修（x 公式改 inset 等距 ((i+0.5)/n)*100）並補頭／中／尾三處命中寬斷言；2 項 P2/P3 DEFER 為 F135（高 N 點重疊）與 F136（鍵盤與螢幕閱讀器入口）。",
+      "verified_by": "acceptance-verifier agent（獨立 fresh context，2026-08-07）判 PASS-WITH-CAVEATS、無 P0／P1；唯一 P2 是 cp950 假訊號 → DEFER 為 F138。當時列為 unverified 的 ⑧ 四個子項已由後續補測（verify_f134 60/60）補上執行證據。⑫ 真機 320px 由主 session 本人驗（實作指揮與真機驗證同一人，這一項的獨立性不足，已如實記錄）。⚠ **驗收者與實作指揮同模型（Claude）不同 context，非跨模型獨立驗收**——Codex 額度耗盡所致。"
     },
     {
       "id": "F135",

@@ -10,6 +10,15 @@
 - 臥推（Bench Press）：一筆——① N=1 邊界（畫點不畫線）。
 - 硬舉（Deadlift）：四筆同重量——① y 值全同邊界（不得除以 0）。
 - 槓鈴划船（Barbell Row）：八筆遞增、320px 寬——⑥ 命中寬度實測、⑦ 最左/最右浮動框不裁切。
+
+⑧ 邊界情況補測（原本只讀 code 判斷，這裡補實測）：
+- 腿推（Leg Press）：完全沒有紀錄——(a) 0 筆空狀態，經由訓練記錄頁『動作表現』捷徑進去
+  （picker 走 has_data=true，完全沒紀錄的動作進不去『表現』頁籤）。
+- 前蹲舉（Front Squat）：同一天兩個不同 workout——(b) 不重疊到同一像素。
+- 腿彎舉（Leg Curl）：50 筆不同日期——(c) 不省略、不放大、不橫向捲動。
+- 腿伸展（Leg Extension）：(d) 只探測——weight_kg 是必填非 nullable 欄位，
+  exercise_history() 只收有未軟刪組的 workout，兩者疊加使『某次算不出最佳組』這個
+  輸入狀態在現行公開 API 下結構上不可觸發；探測印出實測回應佐證，不硬繞。
 """
 
 from __future__ import annotations
@@ -30,6 +39,7 @@ from verify_f67 import (  # noqa: E402
     TOKEN,
     safe_port,
     setup_and_home,
+    start_from_home,
     start_server,
     wait_home,
 )
@@ -96,12 +106,57 @@ def seed_edge_cases(base: str) -> dict:
     }
 
 
+def seed_new_edge_cases(base: str) -> dict:
+    """⑧ 剩餘四個邊界情況（0 筆／同日兩場／50 點／算不出最佳組）專用種子資料。
+
+    腿推刻意不寫入任何組——留給 (a) 當『完全沒有紀錄的動作』。
+    """
+    exercises = api(base, "GET", "/api/exercises")
+    leg_press = next(e for e in exercises if e["name_en"].lower() == "leg press")
+    front_squat = next(e for e in exercises if e["name_en"].lower() == "front squat")
+    leg_curl = next(e for e in exercises if e["name_en"].lower() == "leg curl")
+    leg_ext = next(e for e in exercises if e["name_en"].lower() == "leg extension")
+
+    # (b) 同一天兩場：兩個不同 workout、同一天，各自一組（log_set 每次呼叫都開新 workout）
+    same_day = log_set(base, front_squat["id"], 10, 60.0, 5, "fsqA")
+    log_set(base, front_squat["id"], 10, 65.0, 5, "fsqB")
+
+    # (c) 50 筆不同日期
+    for i, days_ago in enumerate(range(1, 51)):
+        log_set(base, leg_curl["id"], days_ago, 40.0 + i * 0.5, 8, "curl")
+
+    return {
+        "leg_press_id": leg_press["id"],
+        "front_squat_id": front_squat["id"],
+        "same_day": same_day,
+        "leg_curl_id": leg_curl["id"],
+        "leg_ext_id": leg_ext["id"],
+    }
+
+
 def open_detail(page, muscle: str, name: str) -> None:
     page.locator(".bottom-nav").get_by_role("button", name="表現").click()
     page.wait_for_timeout(900)
     page.get_by_role("button", name=muscle).first.click()
     page.wait_for_timeout(700)
     page.get_by_role("button", name=name).first.click()
+    page.wait_for_selector(".exercise-detail", timeout=8000)
+    page.wait_for_timeout(600)
+
+
+def open_detail_via_logger(page, name: str) -> None:
+    """⑧(a) 專用：完全沒有紀錄的動作不會出現在『表現』頁籤（picker 走 has_data=true），
+    只能經由訓練記錄頁的『動作表現』捷徑（F38）進去——先開一場自由訓練、選到該動作、
+    再點標題列的『動作表現』圖示。不會真的記下任何一組，動作紀錄數維持 0。
+    """
+    start_from_home(page)
+    free = page.get_by_role("button", name="自由訓練")
+    if free.count():
+        free.click()
+        page.wait_for_timeout(700)
+    page.locator("button").filter(has_text=name).first.click()
+    page.wait_for_timeout(900)
+    page.get_by_role("button", name="動作表現").click()
     page.wait_for_selector(".exercise-detail", timeout=8000)
     page.wait_for_timeout(600)
 
@@ -142,6 +197,7 @@ def main() -> int:
     try:
         seed_squat(base)
         edge = seed_edge_cases(base)
+        edge.update(seed_new_edge_cases(base))
         run_checks(base, edge)
     finally:
         proc.terminate()
@@ -290,6 +346,8 @@ def run_checks(base: str, edge: dict) -> None:  # noqa: C901
         row_pts = page.locator(".line-pt")
         n = row_pts.count()
         check(n == 8, f"⑥⑦（前置）八個資料點都畫出來（實際 {n}）")
+        # ⑧(c) 用：N=8、320px 寬情境下未選中點的直徑基準（此時還沒點過任何點）
+        n8_pt_width = row_pts.nth(0).bounding_box()["width"]
 
         chart_box = page.locator(".line-chart").bounding_box()
         y_mid = chart_box["y"] + chart_box["height"] / 2
@@ -394,6 +452,114 @@ def run_checks(base: str, edge: dict) -> None:  # noqa: C901
               f"⑨ package.json 依賴數量不變（實際 {len(pkg.get('dependencies', {}))} 顆）")
 
         ctx.close()
+
+        # ---------- ⑧(a) 0 筆空狀態（腿推：從沒紀錄過。picker 走 has_data=true 進不去
+        # 『表現』頁籤，改由訓練記錄頁的『動作表現』捷徑進去） ----------
+        ctx = browser.new_context(viewport=PHONE)
+        page = ctx.new_page()
+        page.goto(base, wait_until="domcontentloaded")
+        page.wait_for_selector("input", timeout=10_000)
+        setup_and_home(page)
+        open_detail_via_logger(page, "腿推")
+        empty_text = page.locator(".bars-empty").inner_text().strip()
+        check(empty_text == "這個區間內沒有紀錄",
+              f"⑧(a) 0 筆：沿用現行文字「這個區間內沒有紀錄」（實際 {empty_text!r}）")
+        check(page.locator(".line-svg").count() == 0, "⑧(a) 0 筆：不畫 SVG（.line-svg 為 0）")
+        check(page.locator(".line-pt").count() == 0, "⑧(a) 0 筆：無可點資料點（.line-pt 為 0）")
+        check(page.locator(".line-path").count() == 0, "⑧(a) 0 筆：無折線（.line-path 為 0）")
+        page.locator(".bars-card").click()
+        page.wait_for_timeout(300)
+        check(page.locator(".line-tip").count() == 0, "⑧(a) 0 筆：點擊空狀態卡片不產生浮動資訊")
+        ctx.close()
+
+        # ---------- ⑧(b) 同一天兩場不重疊到同一像素（前蹲舉：兩個不同 workout、同一天） ----------
+        ctx = browser.new_context(viewport=PHONE)
+        page = ctx.new_page()
+        page.goto(base, wait_until="domcontentloaded")
+        page.wait_for_selector("input", timeout=10_000)
+        setup_and_home(page)
+        open_detail(page, "腿", "前蹲舉")
+        fs_pts = page.locator(".line-pt")
+        check(fs_pts.count() == 2, f"⑧(b) 同一天兩場：兩個資料點都畫出來（實際 {fs_pts.count()}）")
+        l0 = fs_pts.nth(0).get_attribute("aria-label") or ""
+        l1 = fs_pts.nth(1).get_attribute("aria-label") or ""
+        check(l0.startswith(edge["same_day"]) and l1.startswith(edge["same_day"]),
+              f"⑧(b)（前置）兩個點確實同一天（{l0!r} / {l1!r}）")
+        b0, b1 = fs_pts.nth(0).bounding_box(), fs_pts.nth(1).bounding_box()
+        x0, x1 = b0["x"] + b0["width"] / 2, b1["x"] + b1["width"] / 2
+        dx = abs(x1 - x0)
+        check(x0 != x1, f"⑧(b) 同一天兩場：兩點 x 座標不相等（x0={x0:.2f}, x1={x1:.2f}）")
+        check(dx >= 1, f"⑧(b) 同一天兩場：兩點圓心距離 ≥1px（實際 {dx:.2f}px）")
+        ctx.close()
+
+        # ---------- ⑧(c) 50 點：不省略、不放大、不橫向捲動（腿彎舉，50 筆不同日期） ----------
+        ctx = browser.new_context(viewport=PHONE)
+        page = ctx.new_page()
+        page.goto(base, wait_until="domcontentloaded")
+        page.wait_for_selector("input", timeout=10_000)
+        setup_and_home(page)
+        open_detail(page, "腿", "腿彎舉")
+        lc_pts = page.locator(".line-pt")
+        lc_count = lc_pts.count()
+        check(lc_count == 50, f"⑧(c) 50 點：不省略資料點（實際 {lc_count}）")
+        w50 = lc_pts.nth(0).bounding_box()["width"]
+        check(w50 <= n8_pt_width + 0.5,
+              f"⑧(c) 50 點：未選中點直徑未放大（50 點測得 {w50:.2f}px，"
+              f"8 點基準 {n8_pt_width:.2f}px）")
+        scroll_w, client_w = page.eval_on_selector(
+            ".line-chart", "e => [e.scrollWidth, e.clientWidth]"
+        )
+        check(scroll_w <= client_w + 1,
+              f"⑧(c) 50 點：無橫向捲動（scrollWidth={scroll_w} ≤ clientWidth+1={client_w + 1}）")
+        ctx.close()
+
+        # ---------- ⑧(d) 某次算不出最佳組時該點跳過——探測現行 API 能否從外部
+        # 製造這個輸入狀態 ----------
+        # SetCreate/SetUpdate 的 weight_kg 是必填 float（ge=0），DB 欄位也非 nullable；
+        # exercise_history() 只把『有未軟刪組』的 workout 收進 sessions——因此照規格看，
+        # 無法從公開 API 生出『sessions 裡有一場、但 sets 是空陣列或 best.weight_kg
+        # 是 null』這個輸入狀態。下面兩個探測分別打中 chartPoints() 跳過分支的兩個成因，
+        # 都印出實測回應而不是憑空斷言。
+        missing_weight_error = None
+        try:
+            probe_workout = api(
+                base, "POST", "/api/workouts",
+                {"date": (date.today() - timedelta(days=90)).isoformat()},
+            )
+            api(base, "POST", f"/api/workouts/{probe_workout['id']}/sets", {
+                "client_uuid": "f134-probe-noweight",
+                "exercise_id": edge["leg_ext_id"],
+                "set_number": 1,
+                "reps": 5,
+            })
+        except AssertionError as exc:
+            missing_weight_error = str(exc)
+        # app/errors.py 把 pydantic 的 422 統一轉成 400 + {"error": "<field> required"}
+        # （REST 與 MCP 共用同一句話），所以這裡驗的是 400 不是原生 422。
+        check(missing_weight_error is not None and "400" in missing_weight_error
+              and "weight_kg" in missing_weight_error,
+              f"⑧(d) 探測 1：POST 缺 weight_kg 被 schema 擋在 400（實際：{missing_weight_error}）")
+
+        probe_workout2 = api(
+            base, "POST", "/api/workouts",
+            {"date": (date.today() - timedelta(days=91)).isoformat()},
+        )
+        probe_set = api(base, "POST", f"/api/workouts/{probe_workout2['id']}/sets", {
+            "client_uuid": "f134-probe-softdel", "exercise_id": edge["leg_ext_id"],
+            "set_number": 1, "weight_kg": 50.0, "reps": 5, "rpe": 7,
+        })
+        api(base, "DELETE", f"/api/sets/{probe_set['id']}")
+        hist = api(
+            base, "GET",
+            f"/api/exercises/{edge['leg_ext_id']}/history?from=2000-01-01&to="
+            f"{date.today().isoformat()}",
+        )
+        visible = any(s["workout_id"] == probe_workout2["id"] for s in hist["sessions"])
+        check(not visible,
+              "⑧(d) 探測 2：整場的組被軟刪後，該場整個從 sessions 消失（不是 sets:[] 殘影）"
+              f"——證實這個輸入狀態在現行 API 下無法從外部製造（sessions 內 workout_id 清單："
+              f"{[s['workout_id'] for s in hist['sessions']]}）")
+
         browser.close()
 
 
