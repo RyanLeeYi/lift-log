@@ -2417,6 +2417,38 @@
         "F131",
         "F132"
       ]
+    },
+    {
+      "id": "F134",
+      "name": "動作表現頁改用可點選的折線圖（點資料點顯示日期／組數／最佳組）",
+      "status": "failing",
+      "acceptance": "**已簽核凍結（2026-08-07，Ryan）**。詳見 docs/prd/f134-performance-line-chart.md。\nRyan 實際使用後回報：長條圖看不出趨勢，折線圖比較好懂；而且要知道某根是哪一天，得往下滑到歷史清單對照，太費事。\n\n① 折線圖取代長條圖：N ≥ 2 次紀錄時出現一條折線、N 個資料點依日期左舊右新相連，y ＝該次最佳組重量（沿用 bestSet().weight_kg，值的定義不變）；最大值那一點不得被容器上緣裁切（點的半徑完整可見）。\n② PR 標記保留：累進最佳判定（現行 running 邏輯）不變，PR 那幾次的資料點有獎盃 icon，非 PR 的沒有。\n③ 既有資訊不得消失：圖右上的區間最大值（現 .bars-max）與下緣首末月份（現 .bars-foot）。\n④ 點資料點顯示三項齊全：日期（M/D）、該次組數（n 組）、最佳組（{weight}kg × {reps}）；內容必須與歷史清單裡同一天那張卡一致（同一份 sessions 資料，不重新查詢 API）。\n⑤ 選中狀態：被選中的點有視覺區別（放大或換色），其他點不變；點另一個點 → 內容換成那點且不累積出第二個框；再點同一個已選中的點 → 關閉；點圖表區空白處 → 關閉；切換區間藥丸 → 浮動資訊與選中狀態清除。\n⑥ 命中判定用「x 軸距離最近的點」，不要求手指精準落在點上；在 320px 寬下每個點的可命中寬度 ≥ 44px 或 ≥ 圖寬÷N（取較小者），相鄰命中區不重疊。\n⑦ 浮動框不被容器裁切：最左與最右的點被選中時，整個框仍完整在畫面內（靠邊對齊或位移）。\n⑧ 邊界：0 筆沿用現行文字「這個區間內沒有紀錄」，不畫圖也無可點區；1 筆畫點不畫線且點擊照常可用；所有點 y 值相同時不得除以 0（畫在圖高中線或固定基線，仍可點）；同一天兩場照序位均分、不重疊到同一像素；50 點時不省略資料點、不放大點半徑、不做橫向捲動；某次算不出最佳組時該點跳過不畫、其餘點照常相連。\n⑨ 不引入圖表庫（CLAUDE.md 硬約束）：inline SVG（polyline + circle）或 CSS 自繪，package.json 的依賴數量不變。\n⑩ **F86 ⑤ 標 superseded_by: F134**（F86 ⑤ 的條文原文保留、不抹掉歷史，F86 其餘條文與 status 不動）；verify_f86.py:207-236 改為驗折線圖，但**必須保留 .bars-max 與 .bars-foot 的斷言**（③ 要求那兩處資訊留著）。\n⑪ 不得回歸：F35、F86 其餘條文、F59／F58（區間藥丸與退檔行為）、F113（44px 觸控目標）。\n⑫ **完成定義**：uv run pytest（純前端改動，可只跑相關子集；後端未動）全綠、uv run ruff check . 乾淨、uv run python tests/e2e/verify_f134.py 全過且移除修法會 fail（會紅的回歸測試）、verify_f86／verify_f87／verify_f59／verify_f58 不回歸、APP_VERSION（state.js）與 CACHE_NAME（sw.js）同步升號、dev APK 出一顆並在真機確認 320px 寬的觸控命中。",
+      "evidence": "",
+      "requires": [
+        "F35",
+        "F86"
+      ],
+      "touches": [
+        "app/static/js/exercise-detail.js",
+        "app/static/css/app.css",
+        "app/static/js/state.js",
+        "app/static/sw.js",
+        "tests/e2e/verify_f134.py",
+        "tests/e2e/verify_f86.py"
+      ],
+      "prerequisites": [
+        "F35",
+        "F86"
+      ],
+      "non_goals": [
+        "不改 y 值定義（仍是每次最佳組重量）",
+        "不改 API 與 GET /api/exercises/{id}/history 的回傳形狀",
+        "不引入圖表庫或任何新前端依賴",
+        "不動區間藥丸的檔位邏輯（F119／F120／F121／F86 ④）",
+        "不做縮放、拖曳平移、多動作疊圖、匯出圖片",
+        "不做桌機 hover 預覽",
+        "不做歷史清單預設收起（Ryan 2026-08-07 決定先不做）"
+      ]
     }
   ]
 }
