@@ -2457,7 +2457,7 @@
       "id": "F135",
       "name": "折線圖在高 N（例如 50 次）時點重疊到無法辨識",
       "status": "failing",
-      "acceptance": "**草案未簽核**（2026-08-07 由 F134 的 code review P2 開出，Ryan 已裁示開條目、acceptance 待簽核）。\nF134 的折線圖是序位等距全寬佈局。練了很多次的動作切到「全部」時點會擠在一起：320px 寬、圖寬 252px、N=50 →\n點間距 5.1px，而 `.line-pt` 直徑 8px（選中放大到 13px ＋ 4px 光暈）——點與點視覺上黏成一條粗線，使用者無法可靠看出「有幾次、哪一次」。\n\n⚠ 這不是 F134 的實作缺陷：F134 ⑥ 的命中寬門檻 `min(44px, 圖寬÷N)` 在等距佈局下對內部點恆成立\n（`W/(N-1) > W/N`），所以門檻擋不住這件事；而 F134 ⑧ 明文禁止「省略資料點、放大點半徑、橫向捲動」。\n**Ryan 2026-08-07 裁示：不改 F134 ⑥ 的條文**（門檻只是下限，不是可用性保證），高 N 的可用性由本條處理。\n\n待簽核的方向（動工前要定案，不可由實作者自行選）：\n① N 超過某個門檻時縮小點半徑（例如 N > 20 時 4px、N > 40 時 3px），或只在 PR 點畫實心點、其餘畫細刻度。\n② 或改變佈局（例如依實際天數比例而非序位等距）——但那會動到 F134 ⑧「同日兩場照序位均分不重疊」。\n③ 或提供「只看最近 N 次」的視圖——但那與既有區間藥丸（F119／F120）的職責重疊。\n④ 命中判定不得因此變差：任何方案都要維持 F134 ⑥ 的命中寬（≥ min(44px, 圖寬÷N)），且頭尾點與內部點一致。\n⑤ 不得回歸：F134 ①–⑪、F35、F86 其餘條、F113。\n⑥ 完成定義：`uv run pytest` 相關子集全綠、`ruff` 乾淨、`verify_f134.py` 不回歸、新增 N ≥ 40 的 E2E 情境把數字釘出來、\n   升版號並出 APK、真機 320px 確認。",
+      "acceptance": "**已簽核凍結（2026-08-07，Ryan；方向 ① 拍板）**。由 F134 的 code review P2 開出。\n\nF134 的折線圖是序位等距全寬佈局。練了很多次的動作切到「全部」時點會擠在一起：320px 寬、圖寬 252px、N=50 →\n點間距 5.1px，而 `.line-pt` 直徑 8px（選中放大到 13px ＋ 4px 光暈）——點與點視覺上黏成一條粗線，\n使用者無法可靠看出「有幾次、哪一次」。\n\n⚠ 這不是 F134 的實作缺陷：F134 ⑥ 的命中寬門檻 `min(44px, 圖寬÷N)` 在等距佈局下對內部點恆成立（`W/(N-1) > W/N`），\n擋不住這件事；而 F134 ⑧ 明文禁止「省略資料點、放大點半徑、橫向捲動」。\n**Ryan 2026-08-07 裁示不改 F134 ⑥ 的條文**（門檻只是下限，不是可用性保證），高 N 的可用性由本條處理。\n\n**拍板方向 ①：依 N 分級縮小未選中點的尺寸。**（F134 ⑧ 禁的是「放大」點半徑，縮小不在禁止範圍內。）\n否決的兩個替代方案與理由一併記錄：② 改成依實際天數比例佈局 → 會撞 F134 ⑧ 的「同一天兩場照序位均分、不重疊到同一像素」；\n③ 另做「只看最近 N 次」的視圖 → 與既有區間藥丸（F119／F120）的職責重疊。\n\n① 未選中點的直徑依區間內點數 N 分級：N ≤ 20 → 8px（現行不變）；20 < N ≤ 40 → 6px；N > 40 → 4px。\n② **相鄰未選中點不得重疊**：320px 寬、N=50 的情境下，相鄰兩點的圓緣間距 ≥ 1px（可量測；這是本條真正要達成的結果，① 只是達成它的手段）。\n③ 選中點的尺寸與樣式不變（維持 F134 現行的放大 ＋ 光暈），選中狀態在任何 N 下都必須看得出來。\n④ PR 獎盃（`.line-flag`）在高 N 下不得互相重疊或蓋住鄰點；重疊無法避免時可縮小 icon，但**不得省略任何 PR 標記**。\n⑤ 命中判定不得因此變差：維持 F134 ⑥ 的命中寬（≥ min(44px, 圖寬÷N)），且**頭尾點與內部點一致**。\n⑥ 不得回歸：F134 ①–⑪（尤其 ⑧ 的「不省略資料點、不放大點半徑、不橫向捲動」）、F35、F86 其餘條、F113。\n⑦ **完成定義**：`uv run pytest` 相關子集全綠、`uv run ruff check .` 乾淨、`verify_f134.py` 不回歸、\n   `verify_f135.py` 新增 N=50 與 N=21 兩個情境把直徑與相鄰圓緣間距的實測數字釘出來且移除修法會 fail、\n   `APP_VERSION` 與 `CACHE_NAME` 同步升號、dev APK 出一顆並真機 320px 確認。",
       "evidence": "",
       "requires": [
         "F134"
@@ -2465,23 +2465,26 @@
       "touches": [
         "app/static/js/exercise-detail.js",
         "app/static/css/app.css",
-        "tests/e2e/verify_f134.py"
+        "app/static/js/state.js",
+        "app/static/sw.js",
+        "tests/e2e/verify_f135.py"
       ],
       "prerequisites": [
         "F134"
       ],
       "non_goals": [
         "不改 F134 ⑥ 的命中寬門檻條文（Ryan 2026-08-07 裁示 (a)）",
-        "不改 y 值定義、不改 API",
-        "不引入圖表庫",
-        "不做縮放／拖曳平移"
+        "不改成依實際天數比例佈局（會撞 F134 ⑧ 的同日兩場序位均分）",
+        "不另做「只看最近 N 次」視圖（與 F119／F120 區間藥丸職責重疊）",
+        "不省略資料點、不放大點半徑、不加橫向捲動（F134 ⑧）",
+        "不改 y 值定義、不改 API、不引入圖表庫"
       ]
     },
     {
       "id": "F136",
       "name": "折線圖浮動資訊要能用鍵盤與螢幕閱讀器打開",
       "status": "failing",
-      "acceptance": "**草案未簽核**（2026-08-07 由 F134 的 code review P3 開出，Ryan 已裁示開條目、acceptance 待簽核）。\nF134 的折線圖浮動資訊只能用指標裝置打開：`.line-pt` 是沒有 `role`／`tabindex` 的 `div`，點擊事件掛在 `.bars-card` 上做代理，\n所以鍵盤使用者與開啟 TalkBack 的使用者**完全打不開浮動框**（沒有可聚焦節點、沒有 Enter/Space 路徑）；\n`.line-tip` 也沒有 `aria-live`，即使用滑鼠選中也不會被朗讀。\n\n⚠ **這不是無障礙回歸**：長條圖時代每根長條的 `aria-label`（`{date} 最佳組 {weight}kg × {reps}`）在 F134 已等價保留在 `.line-pt` 上，\n資訊沒有只存在於視覺上。缺的是**新互動（點選 → 浮動資訊）沒有非指標裝置的入口**。\n\n待簽核的方向：\n① `.line-pt` 加 `role=\"button\"` ＋ `tabindex=\"0\"`，keydown 的 Enter／Space 走與點擊同一個選中分支（不複製一套邏輯）。\n② `.line-tip` 加 `role=\"status\"`（或 `aria-live=\"polite\"`），選中時內容變更會被朗讀。\n③ 焦點順序：資料點依日期左舊右新，Tab 順序與視覺順序一致；Esc 關閉浮動資訊。\n④ 不得回歸：F134 ⑤（四種關閉／切換路徑）、F134 ⑥（指標裝置的最近點命中不受影響）、F113。\n⑤ 完成定義：`uv run pytest` 相關子集全綠、`ruff` 乾淨、`verify_f134.py` 不回歸、新增鍵盤路徑的 E2E（Tab → Enter → 浮動框出現 → Esc 關閉）、\n   升版號並出 APK。真機 TalkBack 驗收若成本過高，明確標成 unverified 而不是假 pass。",
+      "acceptance": "**已簽核凍結（2026-08-07，Ryan）**。由 F134 的 code review P3 開出。\n\nF134 的折線圖浮動資訊只能用指標裝置打開：`.line-pt` 是沒有 `role`／`tabindex` 的 `div`，點擊事件掛在 `.bars-card` 上做代理，\n所以鍵盤使用者與開啟 TalkBack 的使用者**完全打不開浮動框**（沒有可聚焦節點、沒有 Enter/Space 路徑）；\n`.line-tip` 也沒有 `aria-live`，即使用滑鼠選中也不會被朗讀。\n\n⚠ **這不是無障礙回歸**：長條圖時代每根長條的 `aria-label`（`{date} 最佳組 {weight}kg × {reps}`）在 F134 已等價保留在 `.line-pt` 上，\n資訊沒有只存在於視覺上。缺的是**新互動（點選 → 浮動資訊）沒有非指標裝置的入口**。\n\n① `.line-pt` 加 `role=\"button\"` ＋ `tabindex=\"0\"`；keydown 的 Enter 與 Space 走**與點擊同一個**選中分支（不複製第二套邏輯）。\n② `.line-tip` 加 `role=\"status\"`（或 `aria-live=\"polite\"`），選中內容變更時會被朗讀。\n③ 焦點順序與視覺順序一致（依日期左舊右新）；Esc 關閉浮動資訊並保留焦點在該點上。\n④ 不得回歸：F134 ⑤（四種關閉／切換路徑）、F134 ⑥（指標裝置的最近點命中行為完全不變）、F113。\n⑤ **完成定義**：`uv run pytest` 相關子集全綠、`uv run ruff check .` 乾淨、`verify_f134.py` 不回歸、\n   `verify_f136.py` 新增鍵盤路徑（Tab 走到資料點 → Enter 開啟 → Esc 關閉 → Space 亦可開啟）且移除修法會 fail、\n   `APP_VERSION` 與 `CACHE_NAME` 同步升號、出 APK。\n   真機 TalkBack 若成本過高，明確標成 **unverified 並說明**，不得寫成 pass。",
       "evidence": "",
       "requires": [
         "F134"
@@ -2489,7 +2492,9 @@
       "touches": [
         "app/static/js/exercise-detail.js",
         "app/static/css/app.css",
-        "tests/e2e/verify_f134.py"
+        "app/static/js/state.js",
+        "app/static/sw.js",
+        "tests/e2e/verify_f136.py"
       ],
       "prerequisites": [
         "F134"
@@ -2504,7 +2509,7 @@
       "id": "F137",
       "name": "E2E 腳本寫死主工作區絕對路徑，在 worktree 裡測到錯的程式碼",
       "status": "failing",
-      "acceptance": "**草案未簽核**（2026-08-07 由 F134 實作 agent 的意外發現開出）。基礎設施缺陷，非行為 feature。\n\n`tests/e2e/verify_f58.py` 與 `tests/e2e/verify_f59.py` 的 `REPO` 常數是**寫死的主工作區絕對路徑**\n（`C:\\Users\\user\\OneDrive\\Desktop\\SideProject\\lift-log`），不像 `verify_f67.py` 用 `Path(__file__).resolve().parents[2]`。\n\n後果：在 git worktree 裡跑這兩支，**測到的是主工作區沒改過的舊程式碼**，不是 worktree 的變更。\nF134 的實作 agent 因此吃到一次假失敗（`.bars-card .line-pt` count=0），追查後用 `urllib.request` 直接打 server\n確認回的 `/js/exercise-detail.js` 是舊版才排除。任何以 worktree 方式驗收 F58／F59 涵蓋範圍的 agent 都會拿到**假訊號**\n——假失敗浪費時間，**假通過會讓驗收失效**（更危險）。\n\n① 把 `verify_f58.py`、`verify_f59.py` 的 `REPO` 改成 `Path(__file__).resolve().parents[2]`。\n② 掃 `tests/e2e/` 全部腳本，找出所有其他寫死絕對路徑的地方（不限 `REPO` 這個名字），一併改成相對推導。\n③ 驗證方式必須證明「修好了」而不只是「還能跑」：在一個 worktree 內改動某個前端檔（例如加一個明顯的 DOM 變更），\n   跑改過的腳本，確認它**看到那個變更**（修法前會看不到）。\n④ 不得回歸：F58、F59、F67 及所有既有 E2E 在主工作區照常全過。\n⑤ 完成定義：`uv run ruff check .` 乾淨、受影響的 E2E 在主工作區與 worktree 兩處各跑一次都對。",
+      "acceptance": "**已簽核凍結（2026-08-07，Ryan）**。基礎設施缺陷，非行為 feature。由 F134 實作 agent 的意外發現開出。\n\n`tests/e2e/verify_f58.py` 與 `tests/e2e/verify_f59.py` 的 `REPO` 常數是**寫死的主工作區絕對路徑**\n（`C:\\Users\\user\\OneDrive\\Desktop\\SideProject\\lift-log`），不像 `verify_f67.py` 用 `Path(__file__).resolve().parents[2]`。\n\n後果：在 git worktree 裡跑這兩支，**測到的是主工作區沒改過的舊程式碼**，不是 worktree 的變更。\nF134 的實作 agent 因此吃到一次假失敗（`.bars-card .line-pt` count=0），追查後用 `urllib.request` 直接打 server\n確認回的 `/js/exercise-detail.js` 是舊版才排除。任何以 worktree 方式驗收 F58／F59 涵蓋範圍的 agent 都會拿到**假訊號**\n——假失敗浪費時間，**假通過會讓那次驗收整體失效**（更危險的那一半）。\n\n① 把 `verify_f58.py`、`verify_f59.py` 的 `REPO` 改成 `Path(__file__).resolve().parents[2]`。\n② 掃過 `tests/e2e/` 全部腳本，找出所有其他寫死絕對路徑的地方（不限 `REPO` 這個名字，含 DB 路徑、venv 路徑、截圖輸出路徑），\n   一併改成相對推導；找不到其他的就明確回報「已掃過、只有這兩處」。\n③ **驗收必須證明「修好了」而不只是「還能跑」**：在一個 git worktree 內對前端檔做一個明顯的 DOM 變更，\n   跑改過的腳本，確認它**看得到那個變更**（修法前會看不到）。這一步的前後對照要貼出來。\n④ 不得回歸：F58、F59、F67 及所有既有 E2E 在主工作區照常全過。\n⑤ **完成定義**：`uv run ruff check .` 乾淨、受影響的 E2E 在主工作區與 worktree 兩處各跑一次都對、\n   ③ 的前後對照證據齊全。純測試基礎設施改動，**不必升版號、不必出 APK**。",
       "evidence": "",
       "requires": [],
       "touches": [
