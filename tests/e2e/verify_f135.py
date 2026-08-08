@@ -8,9 +8,12 @@
 - 腿伸展（Leg Extension）：N=21——20/40 分級邊界的上緣，釘住「> 20 就要進 6px 檔」。
 
 兩個情境的每一筆訓練重量都刻意在時間軸上嚴格遞增（累進 PR 定義下每一次都是新 PR），
-製造獎盃最壞情況：N=50 時獎盃 icon（8px）比點距（~5px）還寬，重疊無法避免——用來驗證
-④「重疊無法避免時縮小 icon、但不省略任何一個」；N=21 時 icon（9px）比點距（12px）窄，
-用來驗證「能避免重疊時就不重疊」。
+製造獎盃最壞情況：N=50 時獎盃 icon（8px）比點距（~5px）還寬。
+
+⚠ ④ 的判定在 2026-08-08 收緊（Ryan 裁示「照字面」）：獎盃**互不重疊**且**不蓋住鄰點**
+兩條都是硬性斷言，沒有「重疊無法避免」的豁免。做法是點距容不下 icon 時把獎盃移進繪圖區
+上方的專用帶並分層交錯（exercise-detail.js 的 flagLayout）。判定一律用二維矩形相交
+（rect_overlap）——帶內相鄰序位在 x 上本來就交錯，用一維間距會誤判。
 """
 
 from __future__ import annotations
@@ -71,6 +74,7 @@ def seed(base: str) -> dict:
     exercises = api(base, "GET", "/api/exercises")
     leg_curl = next(e for e in exercises if e["name_en"].lower() == "leg curl")
     leg_ext = next(e for e in exercises if e["name_en"].lower() == "leg extension")
+    leg_press = next(e for e in exercises if e["name_en"].lower() == "leg press")
 
     n50 = 50
     for i in range(n50):
@@ -80,7 +84,18 @@ def seed(base: str) -> dict:
     for i in range(n21):
         log_set(base, leg_ext["id"], n21 - i, 30.0 + i * 1.0, 10, "ext")
 
-    return {"leg_curl_id": leg_curl["id"], "leg_ext_id": leg_ext["id"]}
+    # N=34：中階（icon 9px）點距只有 252/34≈7.4px < icon，同樣要走獎盃帶。
+    # 這一格是 Ryan 手機上肩推的實際筆數——2026-08-08 驗收前只測 N=50／N=21，
+    # 剛好一個在帶狀、一個在原位，把「中階也會撞 ④」整格漏掉了。
+    n34 = 34
+    for i in range(n34):
+        log_set(base, leg_press["id"], n34 - i, 60.0 + i * 2.5, 6, "press")
+
+    return {
+        "leg_curl_id": leg_curl["id"],
+        "leg_ext_id": leg_ext["id"],
+        "leg_press_id": leg_press["id"],
+    }
 
 
 def edge_gaps(boxes: list[dict]) -> list[float]:
@@ -88,6 +103,17 @@ def edge_gaps(boxes: list[dict]) -> list[float]:
     d = boxes[0]["width"]
     centers = [b["x"] + b["width"] / 2 for b in boxes]
     return [(centers[i + 1] - centers[i]) - d for i in range(len(centers) - 1)]
+
+
+def rect_overlap(a: dict, b: dict, tol: float = 0.3) -> float:
+    """兩個 bounding box 的重疊面積（px²）；不重疊或只是貼邊（任一軸重疊 ≤ tol）回 0。
+
+    ④ 的兩條禁止項（獎盃互疊、獎盃蓋住鄰點）都是二維幾何問題——獎盃帶會把相鄰序位
+    分到不同層，x 交錯但 y 分離，用一維間距判定會誤報。tol 吸收子像素捨入。
+    """
+    ow = min(a["x"] + a["width"], b["x"] + b["width"]) - max(a["x"], b["x"])
+    oh = min(a["y"] + a["height"], b["y"] + b["height"]) - max(a["y"], b["y"])
+    return ow * oh if ow > tol and oh > tol else 0.0
 
 
 def check_hit_consistency(
@@ -189,18 +215,42 @@ def run_scenario(browser, base: str, name: str, ex_id: int, n: int, expect_pt: f
     check(abs(icon_w - expect_icon) < 0.6,
           f"{scen}④ N={n} 獎盃 icon 尺寸＝{icon_w:.2f}px（預期 {expect_icon}px 分級）")
     flag_boxes = [flags.locator("svg").nth(i).bounding_box() for i in range(flag_count)]
-    min_flag_gap = min(edge_gaps(flag_boxes))
     spacing = diam + min_gap  # 點中心間距＝點距（gap 定義見 edge_gaps：中心距離－直徑）
-    print(f"    [量測] {scen}④ 相鄰獎盃最小間距={min_flag_gap:.2f}px "
+
+    # ④-a 獎盃彼此不得重疊。
+    # ⚠ 這裡必須用**二維**矩形相交判定，不能沿用一維的 x 間距：獎盃帶把相鄰序位分到不同層，
+    # 它們在 x 上本來就會交錯，只有 y 分開。用 x 間距判會把正確的佈局誤判成重疊。
+    overlaps = [
+        (i, j, ov)
+        for i in range(flag_count)
+        for j in range(i + 1, flag_count)
+        if (ov := rect_overlap(flag_boxes[i], flag_boxes[j]))
+    ]
+    worst = max((ov for _, _, ov in overlaps), default=0.0)
+    print(f"    [量測] {scen}④ 獎盃互疊 {len(overlaps)} 對，最大重疊面積={worst:.2f}px² "
           f"(icon={expect_icon}px, 點距≈{spacing:.2f}px)")
-    if expect_icon < spacing:
-        # 點距比 icon 寬：重疊可避免，這裡才要求真的不重疊
-        check(min_flag_gap >= -0.3,
-              f"{scen}④ 點距（{spacing:.2f}px）>icon（{expect_icon}px），相鄰獎盃不重疊"
-              f"（間距 {min_flag_gap:.2f}px）")
-    else:
-        print(f"    [量測] {scen}④ 點距<icon 寬，重疊在此密度下無法避免"
-              "（acceptance 允許，僅要求已縮小且不省略）")
+    check(not overlaps,
+          f"{scen}④ 相鄰獎盃互不重疊（實際 {len(overlaps)} 對重疊，最大 {worst:.2f}px²）")
+
+    # ④-b 獎盃不得蓋住「不屬於自己」的資料點。
+    # 這條是 2026-08-08 驗收抓到的覆蓋率缺口：舊版腳本只量獎盃彼此，
+    # 而 acceptance ④ 的另一半「蓋住鄰點」從來沒有被斷言過（當時實際有 98 起）。
+    covered = [
+        (i, j, ov)
+        for i, fb in enumerate(flag_boxes)
+        for j, pb in enumerate(boxes)
+        if i != j and (ov := rect_overlap(fb, pb))
+    ]
+    worst_cover = max((ov for _, _, ov in covered), default=0.0)
+    print(f"    [量測] {scen}④ 獎盃蓋住鄰點 {len(covered)} 起，最大重疊面積={worst_cover:.2f}px²")
+    for i, j, ov in covered[:4]:
+        fb, pb = flag_boxes[i], boxes[j]
+        print(f"      flag#{i} x=[{fb['x']:.2f},{fb['x'] + fb['width']:.2f}] "
+              f"y=[{fb['y']:.2f},{fb['y'] + fb['height']:.2f}] vs "
+              f"point#{j} x=[{pb['x']:.2f},{pb['x'] + pb['width']:.2f}] "
+              f"y=[{pb['y']:.2f},{pb['y'] + pb['height']:.2f}] ov={ov:.2f}")
+    check(not covered,
+          f"{scen}④ 獎盃不蓋住任何鄰點（實際 {len(covered)} 起，最大 {worst_cover:.2f}px²）")
 
     ctx.close()
 
@@ -218,8 +268,11 @@ def main() -> int:
             browser = pw.chromium.launch()
             # N=50：> 40 分級門檻，未選中點 4px、獎盃 icon 8px
             run_scenario(browser, base, "腿彎舉", edge["leg_curl_id"], 50, 4.0, 8.0, "[N=50] ")
-            # N=21：20/40 邊界上緣，未選中點 6px、獎盃 icon 9px
+            # N=21：20/40 邊界上緣，未選中點 6px、獎盃 icon 9px（點距 12px > icon，獎盃維持原位）
             run_scenario(browser, base, "腿伸展", edge["leg_ext_id"], 21, 6.0, 9.0, "[N=21] ")
+            # N=34：同為中階（點 6px／icon 9px），但點距 ~7.4px < icon → 走獎盃帶。
+            # 釘住「切換條件是點距容不下 icon」，不是「N > 40」。
+            run_scenario(browser, base, "腿推", edge["leg_press_id"], 34, 6.0, 9.0, "[N=34] ")
             browser.close()
     finally:
         proc.terminate()

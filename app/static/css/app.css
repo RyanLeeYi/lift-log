@@ -1001,6 +1001,12 @@ body {
 /* F135 ④：獎盃 icon 尺寸比照同一套分級縮小（exercise-detail.js trophySize），offset 跟著調整 */
 .line-flag.sz-md { margin: -18px 0 0 -4.5px; }
 .line-flag.sz-sm { margin: -16px 0 0 -4px; }
+/* F135 ④ 重做：走獎盃帶時 top 已是帶內的絕對位置，不再相對於資料點往上位移；
+   橫向置中的 margin-left 仍沿用各分級的值。必須排在 .sz-md／.sz-sm 之後才蓋得掉 margin-top。 */
+/* line-height:0 是必要的：icon 是 inline svg，預設坐在文字基線上、在 div 內被往下推，
+   帶子的實際佔高會超出 rows × rowH 而壓到最高的資料點（實測差 0.31px）。非帶狀模式的
+   -22／-18／-16px offset 早把這個位移吃進去了，所以只在 .band 歸零，不動原本的樣子。 */
+.line-flag.band { margin-top: 0; line-height: 0; }
 .line-tip {
   position: absolute; top: 0; z-index: 2; pointer-events: none;
   background: var(--card-hi); border-radius: 12px; padding: 7px 10px;

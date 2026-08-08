@@ -195,7 +195,11 @@ function chartPoints(sessions) {
   const valMax = Math.max(...vals);
   const valMin = Math.min(...vals);
   const span = valMax - valMin;
-  const plotH = CHART_H - CHART_PAD_TOP - CHART_PAD_BOTTOM;
+  // 走獎盃帶時，繪圖區整個下移到帶子底下——這就是「獎盃永不蓋住資料點」的來源。
+  // 圖總高（CHART_H／app.css 的 .line-chart）維持不變，只有繪圖區被壓縮。
+  const band = flagLayout(n);
+  const padTop = band ? band.height + FLAG_BAND_GAP : CHART_PAD_TOP;
+  const plotH = CHART_H - padTop - CHART_PAD_BOTTOM;
   return raw.map((p, i) => ({
     ...p,
     // x：序位等距、內縮到各自那一格的中心（不是依實際天數比例）——同一天兩場也各占自己的
@@ -206,8 +210,8 @@ function chartPoints(sessions) {
     x: n === 1 ? 50 : ((i + 0.5) / n) * 100,
     // y：span===0（只有一筆，或所有值都相同）畫在圖高中線，不除以 0。
     y: span === 0
-      ? CHART_PAD_TOP + plotH / 2
-      : CHART_PAD_TOP + (1 - (p.best.weight_kg - valMin) / span) * plotH,
+      ? padTop + plotH / 2
+      : padTop + (1 - (p.best.weight_kg - valMin) / span) * plotH,
   }));
 }
 
@@ -226,6 +230,36 @@ function trophySize(n) {
   if (n > 40) return 8;
   if (n > 20) return 9;
   return 11;
+}
+
+// 320px 視窗下的實際圖寬——獎盃佈局一律用這個最窄情境判定，寬螢幕只會更鬆。
+// （x 是百分比、真實寬度要 layout 後才知道，這裡不量 DOM，用最壞情況換取可預測與可測試。）
+const MIN_CHART_W = 252;
+const FLAG_ROW_GAP = 2;   // 帶內兩層之間的垂直留白
+const FLAG_BAND_GAP = 6;  // 獎盃帶與繪圖區之間的留白
+
+/**
+ * F135 ④ 的獎盃佈局（2026-08-08 Ryan 裁示「照字面」後重做）。
+ *
+ * 原本獎盃畫在各自資料點正上方。icon 寬 8–11px，而點距在 N 變大時會縮到更小
+ * （N=50／320px 下只有 5.03px），於是兩件事同時發生：獎盃彼此重疊，且 icon 橫向
+ * 侵入鄰點欄位、把 y 剛好落在那條帶子裡的鄰點蓋住。要讓 icon 窄到不重疊就得縮到
+ * 5px 以下，那個尺寸的獎盃（stroke 2/24 → 0.42px）已經看不出形狀，等於變相省略標記。
+ *
+ * 改法：點距容不下 icon 時，把獎盃移進繪圖區**上方的專用帶**，並依序位 `i % rows`
+ * 分層交錯。兩條保證都變成幾何上的必然，不是靠調參數湊出來的餘裕：
+ *   - 不蓋住鄰點：帶子與所有資料點分屬不相交的 y 區間（padTop 已把繪圖區整個推到帶子下方）
+ *   - 不互相重疊：同一層相鄰兩個獎盃的 x 間距＝rows × 點距 ≥ icon 寬（rows 就是這樣取的）
+ *
+ * 回傳 null＝點距夠寬，維持 F134 原本畫在點正上方的樣子（低 N 的常態不受影響）。
+ */
+function flagLayout(n) {
+  const iconW = trophySize(n);
+  const spacing = MIN_CHART_W / n;
+  if (iconW <= spacing) return null;
+  const rows = Math.ceil(iconW / spacing);
+  const rowH = iconW + FLAG_ROW_GAP;
+  return { iconW, rows, rowH, height: rows * rowH };
 }
 
 // 命中判定：x 軸距離最近的點（不要求精準落在點上）。points 已經是等距排列，
@@ -277,6 +311,7 @@ function barChart(rerender) {
 
   const selected = detail.chartSelected != null ? points[detail.chartSelected] : null;
   const sizeClass = pointSizeClass(points.length); // F135 ①②④：依 N 分級
+  const band = flagLayout(points.length); // F135 ④：null＝獎盃維持畫在點正上方
 
   // 點擊落在 .line-chart 內：選最近的點（再點已選中的就關閉）。
   // 落在 .bars-card 其餘地方（標題列／底部標示等空白處）：關閉浮動資訊。
@@ -312,8 +347,16 @@ function barChart(rerender) {
       ),
       // 獎盃只在 PR 那幾點才畫（不像長條圖需要每欄都保留節點來撐版面——
       // 這裡每個點的 y 各自獨立算出，沒有那個限制）。
-      ...points.filter((p) => p.isPr).map((point) =>
-        el("div", { class: `line-flag${sizeClass}`, style: `left:${point.x}%;top:${point.y}px` }, [
+      // 點距容不下 icon 時走專用帶（見 flagLayout）：top 改用帶內固定分層，不再跟著點的 y。
+      // 交錯用的是**序位 i**（不是第幾個 PR）——相鄰序位必落在不同層，而同層兩個獎盃
+      // 至少隔 rows 個序位，橫向間距因此 ≥ icon 寬。
+      ...points.map((point, i) => [point, i]).filter(([p]) => p.isPr).map(([point, i]) =>
+        el("div", {
+          class: `line-flag${sizeClass}${band ? " band" : ""}`,
+          style: band
+            ? `left:${point.x}%;top:${(i % band.rows) * band.rowH}px`
+            : `left:${point.x}%;top:${point.y}px`,
+        }, [
           icon("trophy", { size: trophySize(points.length), label: "個人紀錄" }),
         ]),
       ),
