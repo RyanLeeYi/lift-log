@@ -236,7 +236,12 @@ function trophySize(n) {
 // （x 是百分比、真實寬度要 layout 後才知道，這裡不量 DOM，用最壞情況換取可預測與可測試。）
 const MIN_CHART_W = 252;
 const FLAG_ROW_GAP = 2;   // 帶內兩層之間的垂直留白
-const FLAG_BAND_GAP = 6;  // 獎盃帶與繪圖區之間的留白
+// 獎盃帶與繪圖區之間的留白。下限不是隨手取的：帶底到最高點圓心的距離＝
+// FLAG_BAND_GAP + FLAG_ROW_GAP，而**選中**的點是 13px（半徑 6.5）再加 4px 光暈＝10.5px，
+// 不留夠就會在選中最大重量那點（嚴格遞增的紀錄裡就是最後一點，日常最常見）時
+// 讓光暈畫進獎盃列。box-shadow 不進 bounding box，E2E 量不到，只能從這裡保證。
+const FLAG_BAND_GAP = 9;
+const MIN_PLOT_H = 60;    // 繪圖區的下限：帶子再厚也不能把折線壓成一橫
 
 /**
  * F135 ④ 的獎盃佈局（2026-08-08 Ryan 裁示「照字面」後重做）。
@@ -257,8 +262,15 @@ function flagLayout(n) {
   const iconW = trophySize(n);
   const spacing = MIN_CHART_W / n;
   if (iconW <= spacing) return null;
-  const rows = Math.ceil(iconW / spacing);
   const rowH = iconW + FLAG_ROW_GAP;
+  // rows 必須有上界：CHART_H 是固定的 140，讓 rows 無限長會把 plotH 吃成負數
+  // （n≥379 時），而負的 plotH 會讓 y 公式反轉——最大重量畫到最下面，最小重量頂進帶子裡，
+  // 正好違反這條 feature 要保證的 ④。review 2026-08-08 抓到。
+  const maxRows = Math.max(1, Math.floor((CHART_H - CHART_PAD_BOTTOM - MIN_PLOT_H - FLAG_BAND_GAP) / rowH));
+  const rows = Math.min(Math.ceil(iconW / spacing), maxRows);
+  // ponytail: rows 撞到 maxRows 之後（8px icon 約 n>127）同層間距不再必然 ≥ icon 寬，
+  // 獎盃會重新開始重疊。那個密度下 ② 的「相鄰點圓緣間距 ≥1px」本來就已經不可能成立
+  // （點距 <2px），要救得連點的佈局一起改（分頁或聚合），不是這條 feature 的範圍。
   return { iconW, rows, rowH, height: rows * rowH };
 }
 

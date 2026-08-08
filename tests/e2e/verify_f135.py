@@ -105,15 +105,22 @@ def edge_gaps(boxes: list[dict]) -> list[float]:
     return [(centers[i + 1] - centers[i]) - d for i in range(len(centers) - 1)]
 
 
-def rect_overlap(a: dict, b: dict, tol: float = 0.3) -> float:
-    """兩個 bounding box 的重疊面積（px²）；不重疊或只是貼邊（任一軸重疊 ≤ tol）回 0。
+def rect_overlap(a: dict, b: dict, min_area: float = 0.25) -> float:
+    """兩個 bounding box 的重疊面積（px²）；不重疊或面積 ≤ min_area 回 0。
 
     ④ 的兩條禁止項（獎盃互疊、獎盃蓋住鄰點）都是二維幾何問題——獎盃帶會把相鄰序位
-    分到不同層，x 交錯但 y 分離，用一維間距判定會誤報。tol 吸收子像素捨入。
+    分到不同層，x 交錯但 y 分離，用一維間距判定會誤報。
+
+    ⚠ 容差用**面積**而不是逐軸 px：逐軸 0.3px 的話，0.3px × 9px＝2.7px² 的實體重疊會被
+    當成沒重疊放行，而本設計的餘裕本來就薄（N=50 同層 x 間距只有 2.08px），容差與餘裕
+    同一個數量級就足以掩蓋一次真實回歸。review 2026-08-08 抓到。
     """
     ow = min(a["x"] + a["width"], b["x"] + b["width"]) - max(a["x"], b["x"])
     oh = min(a["y"] + a["height"], b["y"] + b["height"]) - max(a["y"], b["y"])
-    return ow * oh if ow > tol and oh > tol else 0.0
+    if ow <= 0 or oh <= 0:
+        return 0.0
+    area = ow * oh
+    return area if area > min_area else 0.0
 
 
 def check_hit_consistency(
@@ -208,6 +215,13 @@ def run_scenario(browser, base: str, name: str, ex_id: int, n: int, expect_pt: f
           "預期 13x13px）")
 
     # ④ PR 獎盃：不省略任何一個 ＋ icon 依分級縮小
+    # ⚠ 先取消選取再量：③ 剛剛把 mid_idx 那點選起來，它現在是 13x13 而不是分級尺寸。
+    # 舊版在這裡沿用 ② 擷取的那份 boxes（選取前的），等於拿 4x4 去比一個實際 13x13 的點——
+    # 選中態的覆蓋回歸永遠測不到，是假通過。review 2026-08-08 抓到。
+    page.locator(".bars-head").click()
+    page.wait_for_timeout(120)
+    boxes_now = [pts.nth(i).bounding_box() for i in range(count)]
+
     flags = page.locator(".line-flag")
     flag_count = flags.count()
     check(flag_count == n, f"{scen}④ 全部 N={n} 筆皆為累進 PR，獎盃不省略（實際 {flag_count}）")
@@ -216,6 +230,16 @@ def run_scenario(browser, base: str, name: str, ex_id: int, n: int, expect_pt: f
           f"{scen}④ N={n} 獎盃 icon 尺寸＝{icon_w:.2f}px（預期 {expect_icon}px 分級）")
     flag_boxes = [flags.locator("svg").nth(i).bounding_box() for i in range(flag_count)]
     spacing = diam + min_gap  # 點中心間距＝點距（gap 定義見 edge_gaps：中心距離－直徑）
+
+    # 第 i 個獎盃對應的是「第 i 個 **PR** 點」，不是第 i 個點——本檔三個情境剛好全是累進 PR
+    # 所以兩者一致，但真實資料的常態不是。用 DOM 上的 .pr class 取真正的序位對應，
+    # 否則 ④-b 的自我排除會排掉錯的那一對（真鄰點被當自己放行、自己被當鄰點誤報）。
+    pr_idx = page.evaluate(
+        "() => Array.from(document.querySelectorAll('.line-pt'))"
+        ".flatMap((e, i) => e.classList.contains('pr') ? [i] : [])"
+    )
+    check(len(pr_idx) == flag_count,
+          f"{scen}④ 獎盃數與 PR 點數相符（PR {len(pr_idx)} 個、獎盃 {flag_count} 個）")
 
     # ④-a 獎盃彼此不得重疊。
     # ⚠ 這裡必須用**二維**矩形相交判定，不能沿用一維的 x 間距：獎盃帶把相鄰序位分到不同層，
@@ -238,19 +262,40 @@ def run_scenario(browser, base: str, name: str, ex_id: int, n: int, expect_pt: f
     covered = [
         (i, j, ov)
         for i, fb in enumerate(flag_boxes)
-        for j, pb in enumerate(boxes)
-        if i != j and (ov := rect_overlap(fb, pb))
+        for j, pb in enumerate(boxes_now)
+        if pr_idx[i] != j and (ov := rect_overlap(fb, pb))
     ]
     worst_cover = max((ov for _, _, ov in covered), default=0.0)
     print(f"    [量測] {scen}④ 獎盃蓋住鄰點 {len(covered)} 起，最大重疊面積={worst_cover:.2f}px²")
     for i, j, ov in covered[:4]:
-        fb, pb = flag_boxes[i], boxes[j]
+        fb, pb = flag_boxes[i], boxes_now[j]
         print(f"      flag#{i} x=[{fb['x']:.2f},{fb['x'] + fb['width']:.2f}] "
               f"y=[{fb['y']:.2f},{fb['y'] + fb['height']:.2f}] vs "
               f"point#{j} x=[{pb['x']:.2f},{pb['x'] + pb['width']:.2f}] "
               f"y=[{pb['y']:.2f},{pb['y'] + pb['height']:.2f}] ov={ov:.2f}")
     check(not covered,
           f"{scen}④ 獎盃不蓋住任何鄰點（實際 {len(covered)} 起，最大 {worst_cover:.2f}px²）")
+
+    # ④-c 選中**最高**那點時，光暈也不得畫進獎盃列。
+    # 測資的重量嚴格遞增 → 最後一點就是最高點，也是離獎盃帶最近的那個。
+    # box-shadow 不進 bounding box，量不到光暈本身，所以改量「點的框頂緣到帶底緣」
+    # 要留得下 SEL_GLOW；帶底緣取所有獎盃框的最大 bottom。review 2026-08-08 抓到
+    # （選中點 13px 半徑 6.5 ＋ 4px 光暈＝10.5px，原本只留 8px）。
+    # 只在帶狀模式判定——原位模式的獎盃本來就貼在自己那點上方，兩者相鄰是 F134 的既有樣子。
+    if page.locator(".line-flag.band").count():
+        sel_glow = 4.0
+        band_bottom = max(fb["y"] + fb["height"] for fb in flag_boxes)
+        pts.nth(n - 1).click()
+        page.wait_for_timeout(200)
+        top_sel = page.locator(".line-pt.sel").bounding_box()
+        clearance = top_sel["y"] - band_bottom
+        print(f"    [量測] {scen}④-c 選中最高點：框頂緣距帶底緣={clearance:.2f}px"
+              f"（需 ≥{sel_glow}px 放光暈）")
+        check(clearance >= sel_glow,
+              f"{scen}④-c 選中最高點時光暈不進獎盃列"
+              f"（實測餘裕 {clearance:.2f}px，需 ≥{sel_glow}px）")
+    else:
+        print(f"    [量測] {scen}④-c 非帶狀模式（獎盃畫在點正上方），不適用")
 
     ctx.close()
 
