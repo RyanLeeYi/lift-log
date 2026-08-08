@@ -1,8 +1,69 @@
 # session handoff
 
-最後更新：2026-08-07 夜（**126/138 passing**；F134／F137 已收，F135 實作寫完但仍 failing。線上仍 v124，最新正式版 APK 仍是 v139-F130）
+最後更新：2026-08-08（**126/138 passing**；F135 ④ 重做完成、review 也收了，但**仍是 failing**——差最後一輪重驗。線上仍 v124，最新正式版 APK 仍是 v139-F130）
 
-## 接手就看這段（8/7 第二場收官時的狀態）
+## 接手就看這段（8/8 收官時的狀態）
+
+**這場把 F135 的 ④ 整個重做了。** Ryan 8/8 裁示：④「獎盃不得互相重疊**或**蓋住鄰點」照字面判 **fail**，重做修法（不改條文、不放水）。
+
+### 為什麼原本的修法不夠
+
+8/7 的做法是把獎盃 icon 依 N 分級縮小。第一輪 acceptance-verifier 量出來：N=50／320px 下**獎盃互疊 49 對**（最大 17.58px²）、**獎盃蓋住鄰點 98 起**。關鍵是**「蓋住鄰點」那半句從來沒有被斷言過**——舊的 `verify_f135.py` 只量獎盃彼此的 x 間距，而且點距小於 icon 時**連斷言都不做、只印數字**。要讓 icon 窄到不重疊得縮到 5px 以下，那個尺寸的獎盃（stroke 2/24 → 0.42px）已經看不出形狀，等於變相省略標記——而 F134 ② 明文要求「PR 那幾次的資料點有獎盃 icon」，所以「不畫 icon、只靠點的 accent 色標示」那條路被堵死。
+
+### 現在的修法（commit `a9805b8` ＋ `a0e72d2`，都已 push）
+
+`flagLayout(n)`：**點距容不下 icon 時，獎盃移進繪圖區上方的專用帶**，依序位 `i % rows` 分層交錯，`rows = ceil(iconW / spacing)`，繪圖區 padTop 跟著下移到帶子底下。兩條保證是幾何上的必然，不是調參數湊的餘裕：
+
+- **不蓋住鄰點**：帶子與所有資料點佔不相交的 y 區間
+- **不互相重疊**：同層兩個獎盃相隔 `rows × 點距 ≥ icon 寬`
+
+| 量測（N=50／320px） | 重做前 | 重做後 |
+|---|---|---|
+| 獎盃互疊 | 49 對，最大 17.58px² | **0** |
+| 獎盃蓋住鄰點 | 98 起 | **0** |
+
+**切換條件是「點距容不下 icon」，不是寫死的 N > 40**——中階（21–40）本來也在違反 ④：icon 9px，N=34 時點距只有 7.4px。Ryan 手機上肩推正好 34 場。已加 N=34 情境進 `verify_f135.py`。
+
+### 三個值得記的坑
+
+1. **inline svg 坐在文字基線上**。帶子的實際佔高會超出 `rows × rowH`，壓到最高的資料點——實測只差 **0.31px**，肉眼與截圖都看不出來，只有量才知道。`.line-flag.band` 補 `line-height: 0` 修掉。非帶狀模式的 `-22/-18/-16px` offset 早就把這個位移吃進去了，所以不能動基底那三個值。
+2. **斷言必須是二維矩形相交**。獎盃帶把相鄰序位分到不同層，它們在 x 上本來就交錯、只有 y 分開——沿用一維 x 間距會把正確的佈局誤判成重疊。
+3. **這支手機的實體寬度是 1440px，不是 1080**。320dp 要 `adb shell wm density 720`（1440 ÷ 320 × 160）。**handoff 之前寫的 540 是錯的**，那會得到 426dp。驗完 `adb shell wm density reset`（會回到 Ryan 自己的顯示設定 override 560，那是正常值）。
+
+### 這場的檢查者結果
+
+- **第一輪 acceptance-verifier**（重做前）：判 ④ unverified 並自己量出 98 起蓋住鄰點——就是這條讓 Ryan 拍板重做。它同時誤報「dev APK 未出」（只查了 `G:\我的雲端硬碟\lift-log-apk\`，沒查 repo 的 `release-dev\`）。
+- **第二輪 acceptance-verifier**（重做後，v147）：**①–⑦ 全條 pass，含真機 320px**。它另寫獨立腳本重量（不沿用主 session 的 `rect_overlap`）、用混合 PR 資料（N=45／15 PR）確認獎盃數量與 x 對齊、負向測試也自己重現（49／87／33 三個數字與主 session 量到的完全一致）。真機上是靠**槓鈴臥推 N=33（9 顆獎盃兩層交錯）**才看得到交錯效果——肩推只有 1 個 PR，看不出來。
+- **code review**（headless `claude -p`，Codex 額度用盡）：7 條。處置 **FIX 5 / REJECT 1 / DEFER 2**，見 `a0e72d2` 的 commit message。最硬的一條是 `rows` 無上界 → n≥379 時 `plotH` 變負、y 軸反轉，最小值那點頂進帶子裡，正好違反這條 feature 要保證的 ④。
+
+### F135 現在缺什麼才能改 passing
+
+**只差一輪重驗。** 第二輪驗收是對 **v147**（`a9805b8`）做的，而 review 的修正 `a0e72d2`（v148）**在那之後才進去**——照規矩「通過之後又動的改動會讓那次驗收失效」。
+
+下一場的最短路徑：
+
+1. **出 v148 dev APK**（`.\scripts\build-apk.ps1 -Site dev -Tag F135`）→ 裝機
+2. **重跑一輪 acceptance-verifier**（針對性重驗，不是重頭做）：`verify_f135.py` 44/44、`verify_f134.py` 不回歸、真機 320px（記得 density **720**）
+3. 過了才改 passing、填 evidence（**要註明 review 與驗收都不跨模型**——Codex 額度用盡，兩者都是 Claude）
+4. 然後做 **F136**（`touches` 與 F135 完全重疊，只能串行）
+
+### 這場開出來、還沒寫進 feature_list 的兩條 DEFER
+
+都是 review 的 P2／P3，**都不是這次引入的**，需要 Ryan 決定要不要開條目：
+
+- **寬螢幕不需要帶卻進帶**：`MIN_CHART_W = 252` 是「320px 視窗」的圖寬，但實際圖寬是響應式的（`min(vw,480) − 68`，範圍 252–412px）。Ryan 手機 411dp → 圖寬 343px，n=34 的真實點距 10.1px > icon 9px，**其實不需要帶子**。純視覺退化（繪圖區白白被砍 22px、獎盃離開點正上方），不是錯誤。要根治得量 layout 後的真實寬度。
+- **`.line-tip` 蓋住獎盃帶**：tip 釘在 `top:0`、`z-index:2`，而帶子佔的正是 y=0 起算那 20–22px → 選任何一點都會遮掉幾顆獎盃。改動前 tip 一樣會蓋到高點的獎盃，所以非本次引入。
+
+### 這場的環境狀態（接手前先確認）
+
+- **dev server 這場是我手動起的**（原本沒在跑，`/health` 連不上）：
+  `Start-Process -FilePath ".venv\Scripts\uvicorn.exe" -ArgumentList "app.main:app_factory","--factory","--host","0.0.0.0","--port","8138","--env-file",".env.dev" -WindowStyle Hidden`
+  ——用 Bash 背景跑會被連帶殺掉，要 detached。現在 `/health` 回 `{"status":"ok","env":"dev"}`。
+- 手機 SM_N9750 已接上並授權，裝的是 **dev v147**（不是最新的 v148）。density 已 `reset` 還原成 560。
+- `release-dev\lift-log-v147.apk` 已建好，也自動上了 Google Drive（`lift-log-dev-v147-F135.apk`）——**G: 這次有掛載**，之前 handoff 說的「Google Drive 未掛載」已不成立。
+- 第二輪驗收的截圖留在 `C:\Users\user\AppData\Local\Temp\f135_verify\`（screen1~10 系列）。
+
+## 前一場（8/7 第二場收官時的狀態）
 
 **這場只做了一件事：F135（高 N 時折線圖點重疊）的實作 ＋ 自己那份 E2E。**
 commit `d0eeeda`，已 push。**F135 仍是 failing**，缺的是 review 與獨立驗收。
