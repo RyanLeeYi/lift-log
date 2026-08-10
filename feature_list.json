@@ -2572,10 +2572,10 @@
       "id": "F139",
       "name": "Android LocalStore 基礎",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "Android 具備可升級、可交易、可測試的單一原生 SQLite LocalStore，存放 domain 資料與同步狀態。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 docs/prd/local-first-cloud-sync.md R2、技術約束與完成定義：① 使用 Android SQLiteOpenHelper 建立具 schema version 的 domain tables、sync_outbox、sync_state、sync_conflicts；domain row 與 outbox 必須同 transaction 成功或回滾。② 薄 Capacitor plugin 提供具型別的 transaction/CRUD 邊界，不對 WebView 暴露任意 SQL。③ 既有 exercise seed 可重跑且不重複；upgrade 保留舊資料，migration 失敗保留原 DB 並禁止寫入，不得重建空 DB 冒充成功。④ Android Auto Backup 排除 local DB、outbox、conflict 與 auth。⑤ JVM tests 證明 create、upgrade、rollback、seed idempotency；移除 transaction 或 migration 會 fail。",
-      "evidence": "",
+      "evidence": "2026-08-10：Android JVM LocalStoreTest 4/4、uv run pytest 全量、uv run ruff check . 全綠。Claude acceptance-verifier 逐條判定 ①–⑤ 全 pass；另以兩次 mutation test 證明移除 transaction 完整性或 migration fail-lock 時測試確實轉紅。驗收前後 git status 一致，integrity valid。",
       "prerequisites": [],
       "touches": [
         "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStore.java",
@@ -2590,7 +2590,9 @@
         "不在本 slice 改 Web UI 或 server API",
         "不加入 Room 或其他 database dependency",
         "不保留 IndexedDB、SharedPreferences 或 SetOutbox 作為第二份正式 domain store"
-      ]
+      ],
+      "reviewed_by": "Claude Code fresh-context reviewer（2026-08-10，0 findings，integrity valid）",
+      "verified_by": "Claude Code acceptance-verifier（2026-08-10，①–⑤ 與 completion-definition 全 pass，兩次 mutation test 皆成功抓到缺陷，integrity valid）"
     },
     {
       "id": "F140",
