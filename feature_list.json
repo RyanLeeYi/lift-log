@@ -1,4 +1,26 @@
 {
+  "envelopes": [
+    {
+      "id": "E1",
+      "outcome": "lift-log 成為可讓任何 Google 帳號使用的正式多使用者產品；Android 完整 local-first，雲端提供多裝置同步、Web、備份與每位使用者自己的 MCP。",
+      "constraints": [
+        "全部 slice 通過前不得對外發布；單一 slice 完成不算可發布版本",
+        "Android 維持 Capacitor＋原生 JS/CSS，所有日常資料先寫同一個原生 SQLite；Web 維持 online-only",
+        "後端維持家機＋Cloudflare Tunnel、FastAPI、SQLAlchemy、SQLite，採 control DB＋每 user 一顆隨機 UUID 檔名 data DB",
+        "任何 Google 帳號可註冊；server 可讀資料供 MCP，不採端對端加密",
+        "跨帳號讀寫、資料靜默遺失、未授權 token、同步 sequence regression 任一項都屬 release blocker",
+        "所有 server domain mutation 共用 app/services、版本欄位、tombstone、change log 與 mutation idempotency"
+      ],
+      "non_goals": [
+        "iOS App、Web 完整離線、匿名或密碼登入",
+        "社群、排行榜、共同課表、教練查看、即時多人協作、AI 教練建議",
+        "付費、訂閱、商店內購、VPS、managed database、第三方 SaaS backend",
+        "端對端加密、同一場進行中 workout 由兩台裝置同時寫入",
+        "把既有 domain tables 全面改成單一共用多租戶表"
+      ],
+      "signed_off": "2026-08-09"
+    }
+  ],
   "features": [
     {
       "id": "F1",
@@ -2545,6 +2567,164 @@
         "不改路徑推導方式（那是 F137 的範圍）",
         "不改專案的全域編碼設定或 uv／pytest 設定檔"
       ]
+    },
+    {
+      "id": "F139",
+      "name": "Android LocalStore 基礎",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "Android 具備可升級、可交易、可測試的單一原生 SQLite LocalStore，存放 domain 資料與同步狀態。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 docs/prd/local-first-cloud-sync.md R2、技術約束與完成定義：① 使用 Android SQLiteOpenHelper 建立具 schema version 的 domain tables、sync_outbox、sync_state、sync_conflicts；domain row 與 outbox 必須同 transaction 成功或回滾。② 薄 Capacitor plugin 提供具型別的 transaction/CRUD 邊界，不對 WebView 暴露任意 SQL。③ 既有 exercise seed 可重跑且不重複；upgrade 保留舊資料，migration 失敗保留原 DB 並禁止寫入，不得重建空 DB 冒充成功。④ Android Auto Backup 排除 local DB、outbox、conflict 與 auth。⑤ JVM tests 證明 create、upgrade、rollback、seed idempotency；移除 transaction 或 migration 會 fail。",
+      "evidence": "",
+      "prerequisites": [],
+      "touches": [
+        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStore.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStorePlugin.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/MainActivity.java",
+        "android/app/src/main/AndroidManifest.xml",
+        "android/app/src/main/res/xml/data_extraction_rules.xml",
+        "android/app/src/main/res/xml/backup_rules.xml",
+        "android/app/src/test/java/com/ryanleeyi/liftlog/LocalStoreTest.java"
+      ],
+      "non_goals": [
+        "不在本 slice 改 Web UI 或 server API",
+        "不加入 Room 或其他 database dependency",
+        "不保留 IndexedDB、SharedPreferences 或 SetOutbox 作為第二份正式 domain store"
+      ]
+    },
+    {
+      "id": "F140",
+      "name": "Android 完整本地讀寫與單一資料源",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "核心紀錄、課表、體重、狀態、統計與 native overlay 在無網路時完整運作，且只讀寫 F139 LocalStore。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R2：Android 全部核心讀寫改走 LocalStore；冷啟動且完全離線時可開練、記組、結束、查歷史/統計、改課表、記體重與每日狀態。native overlay 與 WebView 寫同一 store；process death 後資料仍在。移除舊 IndexedDB/localStorage/SharedPreferences domain queue 的正式讀寫路徑；現有受影響 E2E 與 Android instrumentation tests 全綠。",
+      "evidence": "",
+      "prerequisites": ["F139"],
+      "touches": [
+        "app/static/js/api.js",
+        "app/static/js/app.js",
+        "app/static/js/body.js",
+        "app/static/js/calendar.js",
+        "app/static/js/exercise-detail.js",
+        "app/static/js/queue.js",
+        "app/static/js/state.js",
+        "app/static/js/templates.js",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/PendingLog.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/SetOutbox.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/SetUploader.java",
+        "tests/e2e/"
+      ],
+      "non_goals": ["不讓 Web 取得離線能力", "不在本 slice 啟用雲端同步"]
+    },
+    {
+      "id": "F141",
+      "name": "Google Sign-In、session 與公開註冊防濫用",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "任何有效 Google 帳號可建立隔離 user/device，Android 與 Web 使用各自安全的 session。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R9、Auth API 與錯誤行為：驗 aud/iss/exp/nonce/email_verified/signature，以 Google sub 對應 internal UUID；建立 control DB 的 user/device/session，失敗不留半成品。Android 使用 15 分鐘 access token＋rotating refresh token（idle 30 天／absolute 90 天、重放撤銷 family）並安全保存；Web 使用 Secure HttpOnly SameSite cookie＋CSRF。登入 rate limit 10/min/IP；token、email 與健康 payload 不進 log。正反向 auth/security tests 全綠。",
+      "evidence": "",
+      "prerequisites": ["F139"],
+      "touches": ["app/config.py", "app/main.py", "app/api/deps.py", "app/api/auth.py", "app/services/auth.py", "app/control_db.py", "app/control_models.py", "app/schemas.py", "android/app/src/main/", "app/static/", "tests/"],
+      "non_goals": ["不支援匿名或密碼登入", "不以 email 當主鍵或資料庫檔名"]
+    },
+    {
+      "id": "F142",
+      "name": "雲端每使用者 data DB 隔離",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "所有 domain API 只會連到目前已驗證 user 的獨立 data DB，跨帳號無法讀寫。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R3、R5、R9 與技術約束：control DB 與每 user 隨機 UUID data DB 分離；request context 決定 session，domain service 不接受外部 user/path。data DB 建立、migration、quota、停權與關閉生命週期可重跑且失敗安全。既有 domain API 全部多帳號化；至少跨兩帳號的 read/write/list/IDOR 測試證明零洩漏。",
+      "evidence": "",
+      "prerequisites": ["F141"],
+      "touches": ["app/db.py", "app/models.py", "app/migrations.py", "app/api/", "app/services/", "app/mcp.py", "tests/"],
+      "non_goals": ["不把 domain tables 改為共享 user_id 多租戶表", "不接受 client 傳入 DB path"]
+    },
+    {
+      "id": "F143",
+      "name": "同步 server 協定",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "server 提供冪等 push 與游標 pull，正確處理版本、tombstone、分頁與穩定錯誤。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R3、R4、Sync API、共用欄位與邊界錯誤：mutation_id 重送只套用一次並回相同結果；每 user server_seq 單調遞增，pull cursor 不漏不重，push 上限 500 筆或 1 MiB。upsert/delete 以 base_version、version、tombstone 判定；未知 schema/entity 不前移 cursor；DB full/locked 回 503。Android/server 共用 JSON fixture contract tests，sequence regression 會停用 sync。",
+      "evidence": "",
+      "prerequisites": ["F142"],
+      "touches": ["app/api/sync.py", "app/services/sync.py", "app/sync_models.py", "app/schemas.py", "tests/fixtures/sync/", "tests/test_sync.py"],
+      "non_goals": ["不以 device clock 判定勝負", "不做即時 WebSocket 同步"]
+    },
+    {
+      "id": "F144",
+      "name": "Android sync client 與狀態 UI",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "Android 在恢復連線後可靠 push/pull，離線操作不被阻塞，使用者看得到同步狀態。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R2、R3：local transaction 同時寫 domain＋outbox；連線後 5 秒內開始 push 再 pull，response 遺失可安全重送。cursor 與套用 pull 具 transaction，失敗不前移；指數退避上限 15 分鐘，支援啟動、前景、網路恢復、背景與手動同步。UI 顯示已同步/待同步/離線/錯誤；process death、離線數週與重試 tests 全綠。",
+      "evidence": "",
+      "prerequisites": ["F140", "F143"],
+      "touches": ["android/app/src/main/", "app/static/js/", "app/static/index.html", "app/static/css/app.css", "tests/"],
+      "non_goals": ["不阻塞本地寫入等待 server", "不靠固定輪詢維持前景常駐"]
+    },
+    {
+      "id": "F145",
+      "name": "多裝置衝突、workout 接管與復原",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "追加資料自動合併；同筆版本衝突由使用者選擇；進行中 workout 只有一台 owner 並可安全接管。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R4 與三個具體範例：append-only entity 自動 merge；同筆 base_version 衝突進 inbox，顯示本機/雲端值並能保留任一方後重新送出。active workout 使用 owner device＋lease_generation；在線明確接管後舊 owner 的離線組不靜默遺失，進 conflict 並可移到 recovery workout。刪除/舊版編輯遵守 tombstone，不復活。兩裝置 instrumentation/contract tests 全綠。",
+      "evidence": "",
+      "prerequisites": ["F144"],
+      "touches": ["app/services/sync.py", "app/static/", "android/app/src/main/", "tests/"],
+      "non_goals": ["不做同一 active workout 即時共同編輯", "不自動覆蓋同筆版本衝突"]
+    },
+    {
+      "id": "F146",
+      "name": "Web 多帳號化",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "Web 以 Google session 使用自己的雲端資料，未連線時明確不可用且不混用 Android local store。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R5：Web Google 登入使用 Secure HttpOnly SameSite cookie；所有 state-changing request 通過 CSRF。domain API 綁定 session user；登出清 session。server 不可用時顯示明確狀態，不寫本地假資料。Playwright 驗登入/登出、CSRF、兩帳號隔離與 outage；現有 Web 行為不回歸。",
+      "evidence": "",
+      "prerequisites": ["F142"],
+      "touches": ["app/main.py", "app/api/", "app/static/", "tests/e2e/"],
+      "non_goals": ["不做 Web 完整離線", "不把 Android refresh token 放進 Web storage"]
+    },
+    {
+      "id": "F147",
+      "name": "User-scoped MCP token",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "每位使用者可管理只作用於自己資料的 MCP token，MCP 寫入可被其他裝置同步。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R6、R9：MCP token 僅建立時顯示明文，control DB 只存 hash，可命名、列出、撤銷；驗證後只 route 到該 user data DB。所有 MCP mutation 經 app/services 並寫 change log。錯 token 401、跨 user IDOR 不洩漏；token 不進 log。MCP 查寫、撤銷與 Android pull tests 全綠。",
+      "evidence": "",
+      "prerequisites": ["F143"],
+      "touches": ["app/mcp.py", "app/control_models.py", "app/services/mcp_tokens.py", "app/api/mcp_tokens.py", "tests/test_mcp.py"],
+      "non_goals": ["不提供跨使用者或管理員 MCP token", "不儲存可還原的 token 明文"]
+    },
+    {
+      "id": "F148",
+      "name": "資料生命週期、匯出、登出與刪帳",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "使用者可完整匯出資料、安全登出，並在重新驗證後刪除帳號與所有可用副本。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R7、R9：匯出為具 schema version 的完整 JSON。Android 有 pending mutation/conflict 時，登出前必須同步、匯出或明確丟棄；登出後清 token 與帳號綁定本地 DB。刪帳需近期 Google reauth，撤銷 session/device/MCP，刪 active data DB 與裝置本地資料；backup 中殘留最長 30 天且不可恢復為 active。匯出/刪除 rate limit 3/hour；失敗不回假成功。",
+      "evidence": "",
+      "prerequisites": ["F145", "F146", "F147"],
+      "touches": ["app/api/", "app/services/", "app/static/", "android/app/src/main/", "tests/"],
+      "non_goals": ["不在未處理 pending/conflict 時靜默清本地資料", "不讓備份刪除繞過 retention 紀錄"]
+    },
+    {
+      "id": "F149",
+      "name": "既有資料遷移、營運與完整正式發布",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "Ryan 現有正式資料無損遷移，家機具可恢復備份與濫用控制，Android/Web/MCP 全路徑通過後正式發布。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R8、R9 與完整完成定義：Ryan 首次登入後以安全輸入綁 Google sub，migration 可 dry-run/重跑/回滾，前後 row count 與 domain result 一致，舊共用 token 撤銷。每日加密備份保留 7 daily＋4 weekly 並離開主機實體磁碟；完成 active DB→空環境 restore→client catch-up drill。驗 20 帳號×2 裝置的隔離、分頁、quota（100 MiB/user、20,000 mutations/day）與 rate limit。uv pytest、ruff、Android unit/instrumentation、Playwright、contract、security 全綠；release-signed APK 實機跑完登入、完整離線訓練、接管/衝突、換機、MCP、匯出、刪帳。Web/APK/MCP/schema 版本一致，獨立 review 與 acceptance verification 通過後才改 passing 並發布。",
+      "evidence": "",
+      "prerequisites": ["F148"],
+      "touches": ["scripts/", "docs/", "app/", "android/", "tests/", "session-handoff.md", "feature_list.json"],
+      "non_goals": ["不在任一前置 slice failing 時發布", "不把正式密鑰、Google sub 或健康資料寫進 repo、vault 或 log"]
     }
   ]
 }

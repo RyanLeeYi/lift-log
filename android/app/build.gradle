@@ -89,6 +89,8 @@ dependencies {
     implementation "androidx.security:security-crypto:$androidxSecurityCryptoVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
+    // F139：在 JVM 真的執行 SQLite create／upgrade／rollback，不以 mock 冒充資料安全驗證。
+    testImplementation "org.robolectric:robolectric:4.16.1"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
