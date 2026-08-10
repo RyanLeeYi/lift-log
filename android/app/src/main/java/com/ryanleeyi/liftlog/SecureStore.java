@@ -7,6 +7,8 @@ import android.util.Log;
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKey;
 
+import java.util.UUID;
+
 /**
  * F131 ⑤：原生側要打 API，所以要有 Bearer token 與 base URL。
  *
@@ -30,6 +32,10 @@ final class SecureStore {
     private static final String PREFS = "liftlog_secure";
     private static final String KEY_TOKEN = "token";
     private static final String KEY_BASE_URL = "base_url";
+    private static final String KEY_ACCESS_TOKEN = "auth_access_token";
+    private static final String KEY_REFRESH_TOKEN = "auth_refresh_token";
+    private static final String KEY_ACCESS_EXPIRES_AT = "auth_access_expires_at";
+    private static final String KEY_DEVICE_ID = "auth_device_id";
 
     private SecureStore() {}
 
@@ -87,5 +93,57 @@ final class SecureStore {
         SharedPreferences p = prefs(context);
         if (p == null) return;
         p.edit().clear().apply();
+    }
+
+    static String deviceId(Context context) {
+        SharedPreferences p = prefs(context);
+        if (p == null) return null;
+        String id = p.getString(KEY_DEVICE_ID, null);
+        if (id != null) return id;
+        id = UUID.randomUUID().toString();
+        return p.edit().putString(KEY_DEVICE_ID, id).commit() ? id : null;
+    }
+
+    static boolean saveAuthSession(
+        Context context,
+        String accessToken,
+        String refreshToken,
+        long accessExpiresAt
+    ) {
+        SharedPreferences p = prefs(context);
+        if (p == null || accessToken == null || accessToken.trim().isEmpty()
+            || refreshToken == null || refreshToken.trim().isEmpty() || accessExpiresAt <= 0) {
+            return false;
+        }
+        return p.edit()
+            .putString(KEY_ACCESS_TOKEN, accessToken)
+            .putString(KEY_REFRESH_TOKEN, refreshToken)
+            .putLong(KEY_ACCESS_EXPIRES_AT, accessExpiresAt)
+            .commit();
+    }
+
+    static String accessToken(Context context) {
+        SharedPreferences p = prefs(context);
+        return p == null ? null : p.getString(KEY_ACCESS_TOKEN, null);
+    }
+
+    static String refreshToken(Context context) {
+        SharedPreferences p = prefs(context);
+        return p == null ? null : p.getString(KEY_REFRESH_TOKEN, null);
+    }
+
+    static long accessExpiresAt(Context context) {
+        SharedPreferences p = prefs(context);
+        return p == null ? 0 : p.getLong(KEY_ACCESS_EXPIRES_AT, 0);
+    }
+
+    static void clearAuthSession(Context context) {
+        SharedPreferences p = prefs(context);
+        if (p == null) return;
+        p.edit()
+            .remove(KEY_ACCESS_TOKEN)
+            .remove(KEY_REFRESH_TOKEN)
+            .remove(KEY_ACCESS_EXPIRES_AT)
+            .commit();
     }
 }

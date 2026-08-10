@@ -34,8 +34,8 @@ class ConflictError(Exception):
         super().__init__(message)
 
 
-def _error(status_code: int, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"error": message})
+def _error(status_code: int, message: str, headers: dict[str, str] | None = None) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"error": message}, headers=headers)
 
 
 def validation_message(exc: RequestValidationError | ValidationError) -> str:
@@ -79,4 +79,4 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def on_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         detail = exc.detail if isinstance(exc.detail, str) else "error"
-        return _error(exc.status_code, detail)
+        return _error(exc.status_code, detail, exc.headers)

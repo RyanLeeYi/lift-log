@@ -1,6 +1,7 @@
 // Web 版走 REST；Android 核心 domain 走原生 LocalStore，網路只留給更新與推播等非 domain 功能。
 
 import { apiBase, isNativeApp } from "./env.js";
+import { getNativeAccessToken, restoreNativeSession } from "./auth.js";
 
 const TOKEN_KEY = "liftlog.token";
 
@@ -19,13 +20,13 @@ export function setToken(token) {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, bearerToken = getToken()) {
   let resp;
   try {
     resp = await fetch(apiBase() + path, {
       method,
       headers: {
-        Authorization: `Bearer ${getToken()}`,
+        Authorization: `Bearer ${bearerToken}`,
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -414,7 +415,13 @@ export const api = {
     request("POST", "/api/daily-status", payload)),
   deleteDailyStatus: (date) => nativeOr(() => localApi.deleteDailyStatus(date), () =>
     request("DELETE", `/api/daily-status/${date}`)),
-  appLatest: () => request("GET", "/api/app/latest"),
+  appLatest: async () => {
+    if (isNativeApp()) await restoreNativeSession();
+    return request(
+      "GET", "/api/app/latest", undefined,
+      isNativeApp() ? getNativeAccessToken() : getToken(),
+    );
+  },
   lastSetValues: (ids, exclude) => nativeOr(() => localApi.lastSetValues(ids, exclude), () =>
     request("GET", `/api/exercises/last-set-values?ids=${ids.join(",")}`
       + (exclude ? `&exclude_workout=${exclude}` : ""))),

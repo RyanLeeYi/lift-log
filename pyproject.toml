@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-settings>=2.3",
     "fastmcp>=2.0",
     "pywebpush>=2.3.0",
+    "google-auth[requests]>=2.55",
+    "cachecontrol>=0.14",
 ]
 
 [dependency-groups]

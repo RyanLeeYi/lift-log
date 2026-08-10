@@ -4,6 +4,7 @@
 // `checkForUpdate()` 直接回 null，首頁不會出現任何橫幅。
 
 import { api, getToken } from "./api.js";
+import { getNativeAccessToken, restoreNativeSession } from "./auth.js";
 import { apiBase, isNativeApp } from "./env.js";
 
 function plugin() {
@@ -48,6 +49,7 @@ export async function downloadAndInstall(update, onProgress) {
 
   let listener = null;
   try {
+    await restoreNativeSession();
     if (onProgress) {
       listener = await nativeApi.addListener("downloadProgress", ({ written, total }) => {
         if (total > 0) onProgress(written / total);
@@ -55,7 +57,7 @@ export async function downloadAndInstall(update, onProgress) {
     }
     const { path } = await nativeApi.download({
       url: new URL(update.url, apiBase() || location.origin).toString(),
-      token: getToken(),
+      token: getNativeAccessToken() || getToken(),
     });
     await nativeApi.install({ path });
     return { ok: true };

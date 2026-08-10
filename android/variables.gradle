@@ -15,4 +15,6 @@ ext {
     cordovaAndroidVersion = '14.0.1'
     // F131 ⑤：原生側要存 Bearer token，不得明文落地
     androidxSecurityCryptoVersion = '1.1.0-beta01' // 1.0.0 的 MasterKey API 已棄用；beta01 是目前唯一有維護的線
+    androidxCredentialsVersion = '1.6.0'
+    googleIdVersion = '1.2.0'
 }

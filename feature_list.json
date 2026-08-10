@@ -2626,10 +2626,10 @@
       "id": "F141",
       "name": "Google Sign-In、session 與公開註冊防濫用",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "任何有效 Google 帳號可建立隔離 user/device，Android 與 Web 使用各自安全的 session。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R9、Auth API 與錯誤行為：驗 aud/iss/exp/nonce/email_verified/signature，以 Google sub 對應 internal UUID；建立 control DB 的 user/device/session，失敗不留半成品。Android 使用 15 分鐘 access token＋rotating refresh token（idle 30 天／absolute 90 天、重放撤銷 family）並安全保存；Web 使用 Secure HttpOnly SameSite cookie＋CSRF。登入 rate limit 10/min/IP；token、email 與健康 payload 不進 log。正反向 auth/security tests 全綠。",
-      "evidence": "",
+      "evidence": "2026-08-10：Claude Code cross-model review 最終 0 findings、integrity valid；canonical acceptance-verifier 10/10 pass、integrity true。獨立執行 ./init.sh、uv run pytest（308 passed）、tests/test_auth.py（22 passed）、ruff、npm run test:auth（5 passed）、Playwright F141 全綠；Android testProdDebugUnitTest、instrumentation compile 與 assembleProdDebug BUILD SUCCESSFUL。",
       "prerequisites": ["F139"],
       "touches": ["app/config.py", "app/main.py", "app/api/deps.py", "app/api/auth.py", "app/services/auth.py", "app/control_db.py", "app/control_models.py", "app/schemas.py", "android/app/src/main/", "app/static/", "tests/"],
       "non_goals": ["不支援匿名或密碼登入", "不以 email 當主鍵或資料庫檔名"]

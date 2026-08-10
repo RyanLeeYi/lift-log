@@ -17,6 +17,10 @@ class Settings(BaseSettings):
         default="./liftlog.db",
         validation_alias=AliasChoices("LIFTLOG_DB", "db_path"),
     )
+    control_db_path: str = "./control.db"
+    user_data_dir: str = "./users"
+    # OAuth client ID 是公開識別值，不是 secret；Android 與 Web 都把它當 audience。
+    google_client_id: str = ""
     # F67 app 自我更新：release APK 的存放目錄。build 完把 lift-log-v<N>.apk 放進來，
     # 伺服器就會把它當成最新版供 app 下載（目錄不存在＝沒有可更新的版本，不是錯誤）。
     release_dir: str = "./release"

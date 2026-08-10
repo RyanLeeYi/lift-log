@@ -2,10 +2,12 @@
   "name": "lift-log-android",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Capacitor shell for lift-log (F61). Web assets come straight from app/static — no bundler.",
   "scripts": {
     "sync": "cap sync android",
-    "open": "cap open android"
+    "open": "cap open android",
+    "test:auth": "node --test tests/js/auth.test.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

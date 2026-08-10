@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api import (
     app_release,
+    auth,
     body_metrics,
     daily_status,
     exercises,
@@ -21,12 +22,14 @@ from app.api import (
     settings as settings_api,
 )
 from app.config import Settings
+from app.control_db import make_control_session_factory
 from app.db import make_engine
 from app.errors import register_error_handlers
 from app.mcp import create_mcp
 from app.migrations import migrate_schema
 from app.models import Base
 from app.seed import seed_exercises
+from app.services.auth import GoogleTokenVerifier, google_verifier
 
 STATIC_DIR = Path(__file__).parent / "static"
 MCP_MOUNT = "/mcp"  # middleware 的路徑改寫與 mount 共用，兩處不得漂移
@@ -41,7 +44,10 @@ CAPACITOR_ORIGINS = [
 ]
 
 
-def create_app(settings: Settings) -> FastAPI:
+def create_app(
+    settings: Settings,
+    google_token_verifier: GoogleTokenVerifier | None = None,
+) -> FastAPI:
     if not settings.token:
         raise ValueError("LIFTLOG_TOKEN is required")
 
@@ -49,6 +55,7 @@ def create_app(settings: Settings) -> FastAPI:
     Base.metadata.create_all(engine)
     migrate_schema(engine)
     session_factory = sessionmaker(bind=engine)
+    control_session_factory = make_control_session_factory(settings.control_db_path)
 
     # MCP 先建：FastAPI 必須接 mcp_app.lifespan，session manager 才會初始化
     mcp_app = create_mcp(session_factory, settings.token).http_app(path="/")
@@ -56,12 +63,17 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="lift-log", lifespan=mcp_app.lifespan)
     app.state.settings = settings
     app.state.session_factory = session_factory
+    app.state.control_session_factory = control_session_factory
+    app.state.google_token_verifier = google_token_verifier or google_verifier(
+        settings.google_client_id
+    )
+    app.state.auth_rate_limiter = auth.AuthRateLimiter()
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=CAPACITOR_ORIGINS,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
     )
 
     @app.middleware("http")
@@ -90,6 +102,7 @@ def create_app(settings: Settings) -> FastAPI:
         return {"status": "ok", "env": settings.env_label}
 
     register_error_handlers(app)
+    app.include_router(auth.router)
     app.include_router(workouts.router)
     app.include_router(exercises.router)
     app.include_router(stats.router)

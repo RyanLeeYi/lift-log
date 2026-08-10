@@ -2,6 +2,7 @@
 // 課表管理（templates / templateEdit）在 templates.js。
 
 import { api, ApiError, getToken, setToken } from "./api.js";
+import { getNativeAccessToken, restoreNativeSession, signInNative } from "./auth.js";
 import { captureBodyScroll, openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
@@ -101,6 +102,8 @@ import {
 } from "./state.js";
 
 const root = document.getElementById("app");
+let nativeAuthenticated = false;
+let nativeSignInBusy = false;
 let restTicker = null;
 let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
 let wakeLockPending = false; // request 進行中——完成時要重驗畫面狀態，避免離開後鎖洩漏
@@ -387,6 +390,32 @@ function syncStatusLine() {
 // ---------- setup ----------
 
 function renderSetup() {
+  if (isNativeApp()) {
+    const signIn = async () => {
+      nativeSignInBusy = true;
+      render();
+      try {
+        await signInNative();
+        location.reload();
+      } catch (error) {
+        nativeSignInBusy = false;
+        throw error;
+      }
+    };
+    return el("section", { class: "screen setup" }, [
+      el("div", { class: "mark" }, [icon("dumbbell", { size: 44, label: "lift-log" })]),
+      el("h1", {}, ["lift-log"]),
+      el("p", {}, ["使用 Google 帳號登入；登入後沒有網路也能完整記錄。"]),
+      ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+      el("button", {
+        class: "btn btn-primary",
+        ...(nativeSignInBusy ? { disabled: "" } : {}),
+        onclick: () => guard(signIn),
+      }, [nativeSignInBusy ? "登入中…" : "使用 Google 登入"]),
+      versionTag(),
+      ...envTag(),
+    ]);
+  }
   const input = el("input", {
     type: "password",
     placeholder: "API token",
@@ -2826,7 +2855,21 @@ document.addEventListener("visibilitychange", () => {
 });
 
 loadEnvLabel(); // F93：開站就問一次「我連到哪一站」（免 auth，setup 畫面也顯示得出來）
-restoreActiveWorkout();
+if (isNativeApp()) {
+  const restoredScreen = state.screen;
+  state.screen = "setup";
+  nativeSignInBusy = true;
+  render();
+  try {
+    nativeAuthenticated = (await restoreNativeSession()).authenticated;
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    nativeSignInBusy = false;
+  }
+  if (nativeAuthenticated) state.screen = restoredScreen;
+}
+if (!isNativeApp() || nativeAuthenticated) restoreActiveWorkout();
 if (!isNativeApp()) resumeRestAfterRestore();
 
 /**
@@ -3019,7 +3062,11 @@ async function restoreNativeActiveWorkout() {
   await resumeRestAfterRestore();
 }
 
-guard(isNativeApp() ? restoreNativeActiveWorkout : confirmActiveWorkout);
+if (isNativeApp()) {
+  if (nativeAuthenticated) guard(restoreNativeActiveWorkout);
+} else {
+  guard(confirmActiveWorkout);
+}
 // F62：app 版的通知權限／精確鬧鐘狀態是非同步查詢，但 render() 是同步的——
 // 啟動時先查一次填進 cache，查完重繪讓開關顯示真實狀態（web 版是同步判定，這裡 no-op）。
 // ⚠ 這裡只更新「權限狀態」，**不重排通知**：休息倒數（state.restStartedAt）本來就不持久化，
@@ -3102,8 +3149,8 @@ subscribeRestControl((action, seconds, draft, startedAt) => {
 });
 // F67：查有沒有新版（見上方 runUpdateCheck 的說明）。只在已有 token 時查——
 // setup 畫面查一定 401，而且那次失敗會讓首次設定的人到下次開 app 才看得到更新。
-if (getToken()) runUpdateCheck();
-if (!getToken() && !isNativeApp()) {
+if (getToken() || getNativeAccessToken()) runUpdateCheck();
+if ((isNativeApp() && !nativeAuthenticated) || (!isNativeApp() && !getToken())) {
   state.screen = "setup";
   render();
 } else {

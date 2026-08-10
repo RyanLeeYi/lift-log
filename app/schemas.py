@@ -1,7 +1,50 @@
 from datetime import date as date_type
 from datetime import datetime as datetime_type
+from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class GoogleLoginIn(BaseModel):
+    id_token: str = Field(min_length=1, max_length=8192)
+    nonce: str = Field(min_length=16, max_length=512)
+    device_id: UUID
+    device_name: str = Field(min_length=1, max_length=100)
+    client: Literal["android", "web"]
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str = Field(min_length=32, max_length=512)
+    device_id: UUID
+
+
+class AuthUserOut(BaseModel):
+    id: str
+
+
+class AuthDeviceOut(BaseModel):
+    id: str
+    name: str
+
+
+class AndroidAuthOut(BaseModel):
+    access_token: str
+    expires_in: int
+    refresh_token: str
+    user: AuthUserOut
+    device: AuthDeviceOut
+
+
+class WebAuthOut(BaseModel):
+    csrf_token: str
+    user: AuthUserOut
+    device: AuthDeviceOut
+
+
+class AuthSessionOut(BaseModel):
+    user: AuthUserOut
+    device: AuthDeviceOut
 
 
 class ExerciseCreate(BaseModel):

@@ -75,6 +75,12 @@ FAKE_PLUGIN = """
     isNativePlatform: () => true,
     getPlatform: () => 'android',
     Plugins: {
+      // F141：舊 feature 的 native 模擬代表「已登入過的裝置」；登入本身由 verify_f141 驗。
+      AuthSession: {
+        loadSession: async () => ({ deviceId: '11111111-1111-4111-8111-111111111111',
+          deviceName: 'Test Pixel', accessToken: 'f141-access', refreshToken: 'f141-refresh',
+          accessExpiresAt: Date.now() + 600000 }),
+      },
       LocalStore: {
         initialize: async () => ({ schemaVersion: 2, seededExercises: 1, pendingMutations: 0 }),
         snapshot: async () => structuredClone(local),

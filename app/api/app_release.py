@@ -1,7 +1,7 @@
 """F67：sideload 版 app 的自我更新端點。
 
 app 版沒有商店的更新鏈（見 README 已知限制），所以由伺服器告訴它「最新版是哪一版」並供檔。
-兩個端點都要 token——APK 不含密鑰，但沒有理由讓它對外開放下載。
+兩個端點都要 legacy token 或已驗證 Android access token——APK 不含密鑰，但沒有理由公開下載。
 """
 
 import re
@@ -10,10 +10,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse
 
-from app.api.deps import require_token
+from app.api.deps import require_app_download_auth
 from app.errors import NotFoundError
 
-router = APIRouter(prefix="/api/app", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api/app", dependencies=[Depends(require_app_download_auth)])
 
 APK_PATTERN = re.compile(r"^lift-log-v(\d+)\.apk$")
 APK_MEDIA_TYPE = "application/vnd.android.package-archive"

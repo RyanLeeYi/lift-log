@@ -1,6 +1,6 @@
 """F67 ②：app 版自我更新用的版本查詢與 APK 供檔。
 
-兩個端點都要 token——APK 本身不含密鑰（token 由使用者自己輸入），但沒有理由對外開放下載。
+兩個端點都要 legacy token 或已驗證 Android access token；未登入者不可公開下載。
 下載器是我們自己寫的，帶 Authorization header 的成本為零。
 """
 
