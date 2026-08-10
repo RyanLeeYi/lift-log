@@ -1,14 +1,20 @@
 package com.ryanleeyi.liftlog;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 /** WebView 只能呼叫具型別的 LocalStore 操作，不能送任意 SQL。 */
@@ -30,62 +36,229 @@ public class LocalStorePlugin extends Plugin {
         }
     }
 
+    /** 唯讀 domain snapshot；不接受 table、column 或 SQL 參數。 */
     @PluginMethod
-    public void createWorkout(PluginCall call) {
+    public void snapshot(PluginCall call) {
         try {
-            String syncId = requireUuid(call, "syncId");
-            String mutationId = requireUuid(call, "mutationId");
-            String date = requireDate(call);
-            String templateSyncId = optionalUuid(call, "templateSyncId");
-            String ownerDeviceId = optionalUuid(call, "ownerDeviceId");
-            String note = call.getString("note");
-            store().createWorkout(
-                syncId, date, templateSyncId, note, ownerDeviceId, mutationId
-            );
-            call.resolve();
-        } catch (IllegalArgumentException error) {
-            call.reject(error.getMessage(), "INVALID_ARGUMENT", error);
+            call.resolve(asJsObject(store().snapshot()));
         } catch (RuntimeException error) {
             rejectStore(call, error);
         }
     }
 
     @PluginMethod
+    public void createExercise(PluginCall call) {
+        try {
+            call.resolve(asJsObject(store().createExercise(
+                requireUuid(call, "syncId"),
+                requireText(call, "nameZh", 1, 120),
+                optionalText(call, "nameEn", 120),
+                optionalText(call, "muscleGroup", 60),
+                Boolean.TRUE.equals(call.getBoolean("isBodyweight", false)),
+                requireUuid(call, "mutationId")
+            )));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void createWorkout(PluginCall call) {
+        try {
+            String syncId = requireUuid(call, "syncId");
+            store().createWorkout(
+                syncId,
+                requireDate(call),
+                optionalPositive(call, "templateId"),
+                optionalText(call, "note", 2000),
+                optionalUuid(call, "ownerDeviceId"),
+                requireUuid(call, "mutationId")
+            );
+            call.resolve(asJsObject(store().workout(syncId)));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void saveTemplate(PluginCall call) {
+        try {
+            Integer id = optionalPositive(call, "id");
+            call.resolve(asJsObject(store().saveTemplate(
+                id,
+                id == null ? requireUuid(call, "syncId") : null,
+                requireText(call, "name", 1, 120),
+                requireTemplateExercises(call),
+                requireWeekdays(call),
+                requireUuid(call, "mutationId")
+            )));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void deleteTemplate(PluginCall call) {
+        mutateVoid(call, () -> store().deleteTemplate(
+            requirePositive(call, "id"), requireUuid(call, "mutationId")
+        ));
+    }
+
+    @PluginMethod
     public void addSet(PluginCall call) {
         try {
             String syncId = requireUuid(call, "syncId");
-            String mutationId = requireUuid(call, "mutationId");
-            String workoutSyncId = requireUuid(call, "workoutSyncId");
-            String exerciseSyncId = requireUuid(call, "exerciseSyncId");
-            String clientUuid = requireText(call, "clientUuid", 8);
-            int setNumber = requirePositive(call, "setNumber");
-            double weightKg = requireNonNegativeDouble(call, "weightKg");
-            int reps = requirePositive(call, "reps");
             Integer rpe = optionalInt(call, "rpe");
             Integer restSeconds = optionalInt(call, "restSeconds");
-            int leaseGeneration = requirePositive(call, "leaseGeneration");
-            if (rpe != null && (rpe < 1 || rpe > 10)) {
-                throw new IllegalArgumentException("rpe 必須介於 1 到 10");
-            }
-            if (restSeconds != null && restSeconds < 0) {
-                throw new IllegalArgumentException("restSeconds 不得小於 0");
-            }
+            validateSetOptionals(rpe, restSeconds);
             store().addSet(
                 syncId,
-                clientUuid,
-                workoutSyncId,
-                exerciseSyncId,
-                setNumber,
-                weightKg,
-                reps,
+                requireText(call, "clientUuid", 8, 200),
+                requirePositive(call, "workoutId"),
+                requirePositive(call, "exerciseId"),
+                optionalPositive(call, "setNumber"),
+                requireNonNegativeDouble(call, "weightKg"),
+                requirePositive(call, "reps"),
                 rpe,
                 restSeconds,
-                leaseGeneration,
-                mutationId
+                requirePositive(call, "leaseGeneration"),
+                requireUuid(call, "mutationId")
             );
-            call.resolve();
+            call.resolve(asJsObject(store().set(syncId)));
         } catch (IllegalArgumentException error) {
-            call.reject(error.getMessage(), "INVALID_ARGUMENT", error);
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void updateSet(PluginCall call) {
+        try {
+            Integer rpe = optionalInt(call, "rpe");
+            Integer restSeconds = optionalInt(call, "restSeconds");
+            validateSetOptionals(rpe, restSeconds);
+            call.resolve(asJsObject(store().updateSet(
+                requirePositive(call, "id"),
+                requireNonNegativeDouble(call, "weightKg"),
+                requirePositive(call, "reps"),
+                rpe,
+                restSeconds,
+                requireUuid(call, "mutationId")
+            )));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void deleteSet(PluginCall call) {
+        mutateVoid(call, () -> store().deleteSet(
+            requirePositive(call, "id"), requireUuid(call, "mutationId")
+        ));
+    }
+
+    @PluginMethod
+    public void endWorkout(PluginCall call) {
+        try {
+            call.resolve(asJsObject(store().endWorkout(
+                requirePositive(call, "id"), requireUuid(call, "mutationId")
+            )));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void deleteWorkout(PluginCall call) {
+        mutateVoid(call, () -> store().deleteWorkout(
+            requirePositive(call, "id"), requireUuid(call, "mutationId")
+        ));
+    }
+
+    @PluginMethod
+    public void saveBodyMetric(PluginCall call) {
+        try {
+            Double fat = call.getDouble("bodyFatPct");
+            if (fat != null && (!Double.isFinite(fat) || fat <= 0 || fat >= 100)) {
+                throw new IllegalArgumentException("bodyFatPct 必須大於 0 且小於 100");
+            }
+            call.resolve(asJsObject(store().saveBodyMetric(
+                requireUuid(call, "syncId"),
+                requireDate(call),
+                requireRangeDouble(call, "weightKg", 30, 300),
+                fat,
+                requireUuid(call, "mutationId")
+            )));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void deleteBodyMetric(PluginCall call) {
+        mutateVoid(call, () -> store().deleteBodyMetric(
+            requireDate(call), requireUuid(call, "mutationId")
+        ));
+    }
+
+    @PluginMethod
+    public void saveDailyStatus(PluginCall call) {
+        try {
+            Integer sleep = optionalInt(call, "sleepQuality");
+            if (sleep != null && (sleep < 1 || sleep > 5)) {
+                throw new IllegalArgumentException("sleepQuality 必須介於 1 到 5");
+            }
+            call.resolve(asJsObject(store().saveDailyStatus(
+                requireUuid(call, "syncId"),
+                requireDate(call),
+                requireRangeInt(call, "energy", 1, 5),
+                sleep,
+                optionalText(call, "note", 2000),
+                requireUuid(call, "mutationId")
+            )));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void deleteDailyStatus(PluginCall call) {
+        mutateVoid(call, () -> store().deleteDailyStatus(
+            requireDate(call), requireUuid(call, "mutationId")
+        ));
+    }
+
+    @PluginMethod
+    public void putSetting(PluginCall call) {
+        try {
+            String key = requireText(call, "key", 1, 64);
+            String value = requireText(call, "value", 1, 200);
+            if (!"weekly_target_days".equals(key) || !value.matches("[1-7]")) {
+                throw new IllegalArgumentException("weekly_target_days 必須是 1 到 7");
+            }
+            call.resolve(asJsObject(store().putSetting(
+                key,
+                value,
+                requireUuid(call, "syncId"),
+                requireUuid(call, "mutationId")
+            )));
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
         } catch (RuntimeException error) {
             rejectStore(call, error);
         }
@@ -127,17 +300,41 @@ public class LocalStorePlugin extends Plugin {
     }
 
     private static String requireText(PluginCall call, String key, int minLength) {
+        return requireText(call, key, minLength, Integer.MAX_VALUE);
+    }
+
+    private static String requireText(PluginCall call, String key, int minLength, int maxLength) {
         String value = call.getString(key);
-        if (value == null || value.trim().length() < minLength) {
-            throw new IllegalArgumentException(key + " 缺少或太短");
+        if (value == null || value.trim().length() < minLength || value.trim().length() > maxLength) {
+            throw new IllegalArgumentException(key + " 缺少或長度不合法");
         }
+        return value.trim();
+    }
+
+    private static String optionalText(PluginCall call, String key, int maxLength) {
+        String value = call.getString(key);
+        if (value == null || value.trim().isEmpty()) return null;
+        if (value.trim().length() > maxLength) throw new IllegalArgumentException(key + " 太長");
         return value.trim();
     }
 
     private static int requirePositive(PluginCall call, String key) {
         Integer value = call.getInt(key);
-        if (value == null || value <= 0) {
-            throw new IllegalArgumentException(key + " 必須大於 0");
+        if (value == null || value <= 0) throw new IllegalArgumentException(key + " 必須大於 0");
+        return value;
+    }
+
+    private static Integer optionalPositive(PluginCall call, String key) {
+        Integer value = call.getInt(key);
+        if (value == null) return null;
+        if (value <= 0) throw new IllegalArgumentException(key + " 必須大於 0");
+        return value;
+    }
+
+    private static int requireRangeInt(PluginCall call, String key, int min, int max) {
+        Integer value = call.getInt(key);
+        if (value == null || value < min || value > max) {
+            throw new IllegalArgumentException(key + " 必須介於 " + min + " 到 " + max);
         }
         return value;
     }
@@ -146,6 +343,16 @@ public class LocalStorePlugin extends Plugin {
         Double value = call.getDouble(key);
         if (value == null || !Double.isFinite(value) || value < 0) {
             throw new IllegalArgumentException(key + " 必須是大於等於 0 的有限數字");
+        }
+        return value;
+    }
+
+    private static double requireRangeDouble(
+        PluginCall call, String key, double min, double max
+    ) {
+        Double value = call.getDouble(key);
+        if (value == null || !Double.isFinite(value) || value < min || value > max) {
+            throw new IllegalArgumentException(key + " 超出允許範圍");
         }
         return value;
     }
@@ -163,6 +370,84 @@ public class LocalStorePlugin extends Plugin {
             throw new IllegalArgumentException("date 必須是有效的 YYYY-MM-DD");
         }
         return value;
+    }
+
+    private static void validateSetOptionals(Integer rpe, Integer restSeconds) {
+        if (rpe != null && (rpe < 1 || rpe > 10)) {
+            throw new IllegalArgumentException("rpe 必須介於 1 到 10");
+        }
+        if (restSeconds != null && restSeconds < 0) {
+            throw new IllegalArgumentException("restSeconds 不得小於 0");
+        }
+    }
+
+    private static JSArray requireTemplateExercises(PluginCall call) {
+        JSArray items = call.getArray("exercises");
+        if (items == null || items.length() == 0) {
+            throw new IllegalArgumentException("exercises 至少需要一個動作");
+        }
+        Set<Integer> ids = new HashSet<>();
+        for (int index = 0; index < items.length(); index++) {
+            JSObject item;
+            try {
+                item = JSObject.fromJSONObject(items.getJSONObject(index));
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("exercises 格式不合法", error);
+            }
+            Integer exerciseId = item.getInteger("exerciseId");
+            Integer defaultSets = item.getInteger("defaultSets");
+            Integer rest = item.getInteger("restHintSeconds");
+            if (exerciseId == null || exerciseId <= 0 || !ids.add(exerciseId)) {
+                throw new IllegalArgumentException("exerciseId 缺少、重複或不合法");
+            }
+            if (defaultSets == null || defaultSets <= 0) {
+                throw new IllegalArgumentException("defaultSets 必須大於 0");
+            }
+            if (rest != null && (rest < 15 || rest > 600)) {
+                throw new IllegalArgumentException("restHintSeconds 必須介於 15 到 600");
+            }
+        }
+        return items;
+    }
+
+    private static JSArray requireWeekdays(PluginCall call) {
+        JSArray days = call.getArray("weekdays", new JSArray());
+        Set<Integer> unique = new HashSet<>();
+        for (int index = 0; index < days.length(); index++) {
+            int day;
+            try {
+                day = days.getInt(index);
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("weekdays 格式不合法", error);
+            }
+            if (day < 1 || day > 7 || !unique.add(day)) {
+                throw new IllegalArgumentException("weekdays 必須是 1 到 7 且不得重複");
+            }
+        }
+        return days;
+    }
+
+    private static JSObject asJsObject(JSONObject value) {
+        try {
+            return JSObject.fromJSONObject(value);
+        } catch (JSONException error) {
+            throw new IllegalArgumentException("LocalStore 回傳格式不合法", error);
+        }
+    }
+
+    private void mutateVoid(PluginCall call, Runnable mutation) {
+        try {
+            mutation.run();
+            call.resolve();
+        } catch (IllegalArgumentException error) {
+            rejectArgument(call, error);
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
+    private static void rejectArgument(PluginCall call, IllegalArgumentException error) {
+        call.reject(error.getMessage(), "INVALID_ARGUMENT", error);
     }
 
     private static void rejectStore(PluginCall call, RuntimeException error) {

@@ -3,11 +3,14 @@
 // 分頁一關或 app 被系統回收就整份消失，首頁退回「開始訓練」→ 按下去另建一場 workout、
 // 組號從 1 重來，同一天同一場訓練被切成兩筆。localStorage 撐得過回收與重開機。
 
+import { isNativeApp } from "./env.js";
+
 // F24 版本號：顯示在畫面上供辨識手機載入的是哪一版（快取過期會顯示舊版號）。
 // ⚠ 這個字串隨 shell 被 SW 快取，改版時務必與 sw.js 的 CACHE_NAME 一起遞增（兩處同步）。
-export const APP_VERSION = "v148";
+export const APP_VERSION = "v149";
 
 const WORKOUT_KEY = "liftlog.activeWorkout";
+const NATIVE_REST_KEY = "liftlog.restUi";
 const LANG_KEY = "liftlog.lang"; // zh | en
 
 export const state = {
@@ -89,6 +92,14 @@ export function saveActiveWorkout() {
   // F66：休息狀態變動時也會呼叫這支，而那些路徑（結束訓練、登出）可能已經沒有 workout 了。
   // 沒有 workout 就沒有東西該被續接——寫下去只會留一份 restore 一定會忽略的殘骸。
   if (!state.workoutId) return;
+  if (isNativeApp()) {
+    // Domain 狀態由 SQLite 還原；localStorage 只留計時 UI，不再鏡射 workout/sets/template。
+    localStorage.setItem(NATIVE_REST_KEY, JSON.stringify({
+      workoutId: state.workoutId,
+      rest: restSnapshot(),
+    }));
+    return;
+  }
   localStorage.setItem(
     WORKOUT_KEY,
     JSON.stringify({
@@ -166,6 +177,11 @@ function restoreRestSnapshot(rest) {
  */
 export function restoreActiveWorkout() {
   try {
+    if (isNativeApp()) {
+      const saved = JSON.parse(localStorage.getItem(NATIVE_REST_KEY));
+      if (saved?.rest) state.restRestoreDropped = !restoreRestSnapshot(saved.rest);
+      return;
+    }
     // F90 遷移：舊版把狀態存在 sessionStorage。改版當下正在訓練的人重整後不該被丟掉，
     // 所以 localStorage 沒有、sessionStorage 有的話搬過來一次。
     let raw = localStorage.getItem(WORKOUT_KEY);
@@ -202,6 +218,7 @@ export function restoreActiveWorkout() {
 
 export function clearActiveWorkout() {
   localStorage.removeItem(WORKOUT_KEY);
+  localStorage.removeItem(NATIVE_REST_KEY);
   sessionStorage.removeItem(WORKOUT_KEY); // 遷移期的殘留也一併清掉
   state.workoutId = null;
   state.workoutDate = null;

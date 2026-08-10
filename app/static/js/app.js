@@ -43,7 +43,6 @@ import {
   pushRestAuth,
   pauseRestNotify,
   refreshRestNotifyState,
-  reportLogResult,
   requestRestNotifyExact,
   resumeRestNotify,
   restNotifyDelayed,
@@ -54,8 +53,6 @@ import {
   restOverlayPermitted,
   restOverlaySupported,
   restTimerRunning,
-  clearPendingRestLog,
-  getPendingRestLog,
   scheduleRestNotify,
   subscribeRestControl,
   syncRestCardVisible,
@@ -359,7 +356,7 @@ function syncStatusLine() {
   const parts = [];
   if (pending > 0) {
     parts.push(el("span", { class: "sync-pending" }, [
-      icon("hourglass", { size: 14 }), ` 待同步 ${pending} 組`,
+      icon("hourglass", { size: 14 }), ` 待同步 ${pending} ${isNativeApp() ? "筆" : "組"}`,
     ]));
   }
   if (failed > 0) {
@@ -2165,9 +2162,7 @@ async function logCurrentSet({ rpe = undefined, clientUuid = null } = {}) {
   try {
     const payload = {
       // F125 ④：uuid 可以由呼叫端帶進來。浮動視窗排入的那一組，uuid 在**排入的那一刻**
-      // 由原生生成並落地（PendingLog），bridge 事件與開機補送帶同一個值——這樣同一組
-      // 就算送兩次，伺服器的 client_uuid 冪等去重也只會留一筆。
-      // 這裡自己生的那條路仍然是常態（app 內記組）。
+      // F140：overlay 與 WebView 都直接寫同一顆 LocalStore；client_uuid 仍供 mutation 冪等。
       client_uuid: clientUuid ?? crypto.randomUUID(),
       exercise_id: exercise.id,
       // F131 ③（2026-08-05 Ryan 改判 (b)）：**不帶 set_number，一律由 server 算**。
@@ -2623,34 +2618,6 @@ function crossRestModal(onConfirm) {
 }
 
 /**
- * F104 ③⑤：浮動視窗的「記下這組」。
- *
- * <p>⚠ 成功與失敗**都要**回報給原生（⑤：不得表現得像成功、不得靜默吞掉）。
- * 原生那邊有 3 秒門檻，逾時就當作沒記到並把主按鈕退回「回 app 記下一組」。
- *
- * <p>失敗時**不開新的一輪休息**——休息開始了但組沒記到，是最糟的組合
- * （人以為記完了，資料卻缺一筆）。這裡的做法是：只有 logCurrentSet() 回 true 時
- * 才會走到它內部的 startRestTimer()，所以「不開新輪」是自然結果而不是另一段補償邏輯。
- *
- * @param {?{weight:number, reps:number}} draft 視窗上調整後的數值
- */
-async function logFromOverlay(draft) {
-  const ok = await (async () => {
-    if (!draft || typeof draft.weight !== "number" || typeof draft.reps !== "number") {
-      return false; // 舊版 APK 或壞掉的 payload：寧可回報失敗，也不要拿當前值硬記
-    }
-    if (!state.exercise || state.workoutId === null) return false;
-    state.weightKg = draft.weight;
-    state.reps = draft.reps;
-    // ⑦ 就地記的組不填累度——回 app 進 logger 時再提示補
-    // F125 ④：uuid 由原生帶來（沒帶＝舊版 APK，退回自己生一個，行為與 F125 之前相同）
-    return await logCurrentSet({ rpe: null, clientUuid: draft.uuid ?? null });
-  })().catch(() => false);
-  await reportLogResult(ok);
-  return ok;
-}
-
-/**
  * F125 ③：開機補送那一組「在 app 外按了完成這組、但行程在寫入前被殺掉」的組。
  *
  * <p>正常情況根本走不到這裡：排隊在 bridge 裡的事件會在回前景時自己跑完（那是實測過的路徑）。
@@ -2752,59 +2719,6 @@ async function refetchActiveWorkoutSets() {
   }
   saveActiveWorkout();
   renderUnlessTyping();
-}
-
-async function replayPendingLog() {
-  const pending = await getPendingRestLog();
-  if (!pending) return;
-
-  const target = pickerExercises.find((e) => e.id === pending.exerciseId);
-  // ⚠ 歸屬的判準是 **workout 身分**，不是 restExerciseId（2026-08-03 Codex review P2 ＋ 真機修正）。
-  //
-  // Codex 指出的真正風險是「寫進**別場**訓練」——那就直接比 workoutId，精準命中。
-  // 第一版改成比 restExerciseId 反而擋掉了主要情境：使用者在視窗按過「停止」之後那輪已經
-  // halt，重開 app 時 restExerciseId 是 null，補送整個不會發生（真機驗到 #17 沒寫入）。
-  // 所以 restExerciseId 降為**附加**條件：非 null 時必須相符，null 就不當作反證。
-  const sameWorkout = pending.workoutId > 0 && state.workoutId === pending.workoutId;
-  const restAgrees = state.restExerciseId === null
-    || state.restExerciseId === pending.exerciseId;
-  if (state.workoutId === null || !target || !sameWorkout || !restAgrees) {
-    await clearPendingRestLog(); // 對不上就不要硬記，也不要一直留著每次開 app 重試
-    return;
-  }
-
-  // logCurrentSet() 讀的是 state 上的當前值，所以要先擺好再還原（同 logFromOverlay 的做法）。
-  const snapshot = {
-    exercise: state.exercise,
-    setNumber: state.setNumber,
-    weightKg: state.weightKg,
-    reps: state.reps,
-    doneSets: state.doneSets,
-  };
-  state.exercise = target;
-  state.setNumber = pending.setNumber;
-  state.weightKg = pending.weight;
-  state.reps = pending.reps;
-  // ⚠ 先把該動作既有的完成組拿回來（2026-08-03 Codex review P1）。
-  // logCurrentSet() 會 push 進 state.doneSets，然後 rememberDoneSets() 用它**整個覆寫**
-  // doneByExercise[動作 id]。開機時 doneSets 是空陣列，不先補的話那個動作先前的組
-  // 會從本機鏡射（連帶課表進度與 logger 清單）整批消失。
-  state.doneSets = [...(state.doneByExercise?.[target.id] ?? [])];
-  // F104 ⑦：就地記的組留 null 累度，回 app 進 logger 時再提示補（與另一條路一致）
-  const ok = await logCurrentSet({ rpe: null, clientUuid: pending.uuid }).catch(() => false);
-  state.exercise = snapshot.exercise;
-  state.setNumber = snapshot.setNumber;
-  state.weightKg = snapshot.weightKg;
-  state.reps = snapshot.reps;
-  // doneSets 還原成原本那份；**doneByExercise 不還原**——那份已經被 rememberDoneSets()
-  // 併入補送的這一組，正是我們要留下的結果。
-  state.doneSets = snapshot.doneSets;
-
-  // ⑤：寫進去了才清。沒成功就留著，下次開 app 再試一次（uuid 不變，不會變成兩筆）。
-  if (ok) {
-    await clearPendingRestLog();
-    render();
-  }
 }
 
 /**
@@ -2913,7 +2827,7 @@ document.addEventListener("visibilitychange", () => {
 
 loadEnvLabel(); // F93：開站就問一次「我連到哪一站」（免 auth，setup 畫面也顯示得出來）
 restoreActiveWorkout();
-resumeRestAfterRestore();
+if (!isNativeApp()) resumeRestAfterRestore();
 
 /**
  * F66 ②③④：restoreActiveWorkout() 只把狀態填回 state，碼表與提醒要在這裡接回去。
@@ -2925,7 +2839,7 @@ async function resumeRestAfterRestore() {
   // 沒有 token 就停在 setup 畫面——那個 app 連不進去，卻讓碼表跑著、鬧鐘照排，
   // 幾分鐘後在一個進不去的畫面上響（review LOW-5）。401 那條路有 guard 的
   // stopRestTimer() 擋著，開機這條原本沒有。
-  if (!getToken()) return;
+  if (!getToken() && !isNativeApp()) return;
   // ④ 存過休息但還原不了（過舊或壞資料）→ 旗標留著，由 logger 在「倒數本來該在的位置」
   // 講出來。**不要**用 state.error：那個一換畫面就被清掉，而還原後人是先落在首頁的，
   // 等他走回 logger 時提示早就沒了——那還是靜默沒有倒數。
@@ -3085,7 +2999,27 @@ async function confirmActiveWorkout() {
   saveActiveWorkout();
   render();
 }
-guard(confirmActiveWorkout);
+async function restoreNativeActiveWorkout() {
+  const today = todayIso();
+  const active = (await api.listWorkouts(today, today))
+    .filter((workout) => !workout.ended_at)
+    .sort((a, b) => a.id - b.id)
+    .at(-1);
+  if (!active) {
+    clearActiveWorkout();
+    stopRestTimer();
+    return;
+  }
+  state.workoutId = active.id;
+  state.workoutDate = active.date;
+  state.template = active.template_snapshot ?? (active.template_id == null
+    ? null
+    : (await api.listTemplates()).find((template) => template.id === active.template_id) ?? null);
+  await confirmActiveWorkout();
+  await resumeRestAfterRestore();
+}
+
+guard(isNativeApp() ? restoreNativeActiveWorkout : confirmActiveWorkout);
 // F62：app 版的通知權限／精確鬧鐘狀態是非同步查詢，但 render() 是同步的——
 // 啟動時先查一次填進 cache，查完重繪讓開關顯示真實狀態（web 版是同步判定，這裡 no-op）。
 // ⚠ 這裡只更新「權限狀態」，**不重排通知**：休息倒數（state.restStartedAt）本來就不持久化，
@@ -3116,6 +3050,7 @@ subscribeRestControl((action, seconds, draft, startedAt) => {
     // 以原生那一輪的開始時刻接手，不是從「現在」重數（背景時這個事件會遲到）
     adoptNativeRound(seconds, startedAt);
     startRestTicker();
+    guard(refetchActiveWorkoutSets);
     // 這一輪的組已經由原生寫入（或排進 outbox），回前景時 refetchActiveWorkoutSets() 會對帳
     render();
     return;
@@ -3145,12 +3080,6 @@ subscribeRestControl((action, seconds, draft, startedAt) => {
     focusRestExercise();
     return;
   }
-  // F104 ③⑤：浮動視窗按了「記下這組」。原生只回報「使用者按了什麼」與那兩個數值，
-  // 實際寫入一律走 logCurrentSet()（④：記錄邏輯只有一份）。
-  if (action === "logset") {
-    guard(() => logFromOverlay(draft));
-    return;
-  }
   if (state.restStartedAt === null) return;
   if (action === "pause" && !restPaused()) pauseRest();
   else if (action === "resume" && restPaused()) resumeRest();
@@ -3174,7 +3103,7 @@ subscribeRestControl((action, seconds, draft, startedAt) => {
 // F67：查有沒有新版（見上方 runUpdateCheck 的說明）。只在已有 token 時查——
 // setup 畫面查一定 401，而且那次失敗會讓首次設定的人到下次開 app 才看得到更新。
 if (getToken()) runUpdateCheck();
-if (!getToken()) {
+if (!getToken() && !isNativeApp()) {
   state.screen = "setup";
   render();
 } else {
@@ -3189,7 +3118,6 @@ if (!getToken()) {
   // F125 ③：補送**必須**排在它後面——補送要靠 pickerExercises 驗證那一組屬於哪個動作。
   guard(async () => {
     await loadExercises();
-    await replayPendingLog();
   });
   guard(syncQueue); // 開站補傳上次離線留下的佇列
   // F131 ⑤⑥-1：開機把憑證鏡射給原生，並踢一次 outbox（上次休息結束後躺著的那些）

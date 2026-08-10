@@ -53,10 +53,35 @@ window.__emit = (action, seconds) => {
   h(seconds === undefined ? { action } : { action, seconds });
   return true;
 };
+const local = {
+  exercises: [{ id: 1, name_zh: '深蹲', name_en: 'Squat', muscle_group: '腿', is_bodyweight: 0 }],
+  templates: [], workouts: [], sets: [], body_metrics: [], daily_status: [], settings: [],
+};
+let nextWorkout = 1;
+let nextSet = 1;
 window.Capacitor = {
   isNativePlatform: () => true,
   getPlatform: () => 'android',
   Plugins: {
+    LocalStore: {
+      initialize: async () => ({ schemaVersion: 2, seededExercises: 1, pendingMutations: 0 }),
+      snapshot: async () => structuredClone(local),
+      createWorkout: async (o) => {
+        const row = { id: nextWorkout++, date: o.date, template_id: o.templateId ?? null,
+          note: o.note ?? null, created_at: new Date().toISOString(), ended_at: null };
+        local.workouts.push(row);
+        return structuredClone(row);
+      },
+      addSet: async (o) => {
+        const row = { id: nextSet, client_uuid: o.clientUuid, workout_id: o.workoutId,
+          exercise_id: o.exerciseId, set_number: o.setNumber ?? nextSet++,
+          weight_kg: o.weightKg, reps: o.reps, rpe: o.rpe ?? null,
+          rest_seconds: o.restSeconds ?? null };
+        local.sets.push(row);
+        return structuredClone(row);
+      },
+      status: async () => ({ schemaVersion: 2, pendingMutations: 0 }),
+    },
     LocalNotifications: {
       schedule: async () => ({}),
       cancel: async () => ({}),
@@ -96,7 +121,7 @@ def open_app(browser, base: str):
     page.add_init_script(FAKE)
     reroute_public_host(page, base)
     page.goto(base, wait_until="domcontentloaded")
-    page.wait_for_selector("input", timeout=10_000)
+    page.wait_for_selector("input, .home-head", timeout=10_000)
     setup_and_home(page)
     page.evaluate(f"() => localStorage.setItem('{NOTIFY_FLAG}', '1')")
     page.evaluate(f"() => localStorage.setItem('{OVERLAY_FLAG}', '1')")

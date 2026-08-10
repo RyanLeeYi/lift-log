@@ -246,6 +246,17 @@ def main() -> int:
                   "⑥ token 失效 → 回到 setup 重新輸入（401 不被當成可忽略的載入失敗）")
             ctx.close()
 
+            # F140：原生 LocalStore 是離線資料來源，冷啟時不得因 Web 的 token gate 卡在 setup。
+            ctx = browser.new_context(viewport=PHONE)
+            page = native(ctx.new_page(), base, current=85, seed_token=False)
+            check(page.evaluate("() => !localStorage.getItem('liftlog.token')"),
+                  "F140 app 冷啟沒有 Web token")
+            check(page.locator(".home-head").count() == 1,
+                  "F140 app token 空白仍從 LocalStore 進首頁")
+            check(page.locator("input[type=password]").count() == 0,
+                  "F140 app token 空白不顯示 Web setup gate")
+            ctx.close()
+
             # ⑧ app 版的設定畫面：版號是可點按鈕（web 版是純文字 div，量不到——
             #    這個 39px 的缺口就是這樣躲過前兩輪量測的，Codex 2026-07-29 驗收抓到）
             ctx = browser.new_context(viewport=PHONE)

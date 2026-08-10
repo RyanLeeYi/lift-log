@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
-import android.util.Log;
 
 import androidx.core.app.NotificationManagerCompat;
 
@@ -35,9 +34,6 @@ public class RestTimerPlugin extends Plugin {
      */
     private static RestTimerPlugin instance;
 
-    /** F104-A 的量測標籤（`adb logcat -s F104probe`）。留在正式碼裡不輸出使用者資料，只有時間戳。 */
-    private static final String PROBE = "F104probe";
-
     static void emit(String action) {
         emit(action, -1);
     }
@@ -58,58 +54,9 @@ public class RestTimerPlugin extends Plugin {
     }
 
     /**
-     * F104 ③：浮動視窗按了「記下這組」——把視窗上的數值送給前端。
-     *
-     * <p>秒數與待記組分開帶：硬擠進同一個欄位會讓每個接收端都要先猜這次是哪一種。
-     */
-    static void emitLog(double weight, int reps, String uuid) {
-        RestTimerPlugin plugin = instance;
-        // F104-A 量測：要分辨「事件送不出去」與「事件送出去了但 JS 沒跑」。
-        // 前者 instance 為 null（WebView 已被回收），後者 instance 在但 logResult 遲遲不回來。
-        Log.i(PROBE, "emitLog t=" + System.currentTimeMillis() + " pluginNull=" + (plugin == null));
-        if (plugin == null) return;
-        JSObject data = new JSObject();
-        data.put("action", "logset");
-        data.put("weight", weight);
-        data.put("reps", reps);
-        // F125 ④：uuid 由原生在**排入的那一刻**生成，這條 bridge 事件與開機補送帶同一個值。
-        // 少了它，兩條路會各自產生一筆，伺服器的冪等去重形同虛設。
-        if (uuid != null) data.put("uuid", uuid);
-        plugin.notifyListeners("restControl", data);
-    }
-
-    /**
-     * F125 ③：開機時前端主動**取件**（而不是原生推送）。
-     *
-     * <p>推送在這個時機一定會掉：`notifyListeners` 不暫存，而 app 剛起來時前端的
-     * `subscribeRestControl()` 還沒跑。所以補送的方向必須反過來——由前端在啟動流程裡問一次。
-     * （同一個坑的一般化版本記在 F124。）
-     *
-     * <p>取件**不清除**。清除要等前端回報寫入成功（⑤），否則補送失敗就再也沒有第二次機會。
-     */
-    @PluginMethod
-    public void getPendingLog(PluginCall call) {
-        JSObject result = new JSObject();
-        if (!PendingLog.has(getContext())) {
-            result.put("pending", false);
-            call.resolve(result);
-            return;
-        }
-        result.put("pending", true);
-        result.put("uuid", PendingLog.uuid(getContext()));
-        result.put("weight", PendingLog.weight(getContext()));
-        result.put("reps", PendingLog.reps(getContext()));
-        result.put("bodyweight", PendingLog.bodyweight(getContext()));
-        result.put("exerciseId", PendingLog.exerciseId(getContext()));
-        result.put("setNumber", PendingLog.setNumber(getContext()));
-        result.put("workoutId", PendingLog.workoutId(getContext()));
-        call.resolve(result);
-    }
-
-    /**
      * F127 ②：前端開機時問「有沒有哪一輪是被明確結束的，那是什麼時候」。
      *
-     * <p>方向與 getPendingLog 一樣是**前端取件**：按下停止那一刻 Activity 已經沒了，
+     * <p>方向是前端取件：按下停止那一刻 Activity 已經沒了，
      * 推送必掉（F124）。回 0 代表從沒被明確結束過。
      */
     @PluginMethod
@@ -133,114 +80,6 @@ public class RestTimerPlugin extends Plugin {
         data.put("seconds", seconds);
         data.put("startedAt", startedAt);
         plugin.notifyListeners("restControl", data);
-    }
-
-    /**
-     * F131 ⑧：token 在背景失效（401）——只標 failed 不夠，使用者會以為自己還登著。
-     *
-     * <p>導回 setup 的判斷留在前端（既有的 guard()），原生只負責把事實送過去。
-     */
-    static void emitUnauthorized() {
-        RestTimerPlugin plugin = instance;
-        if (plugin == null) return;
-        JSObject data = new JSObject();
-        data.put("action", "unauthorized");
-        plugin.notifyListeners("restControl", data);
-    }
-
-    /**
-     * F131 ⑧：原生 outbox 的狀態變化，推給前端併進既有的同步計數。
-     *
-     * <p>前端不在時送不出去也無妨——回 app 時 {@link #getOutbox} 會被主動取件（同 F124 的教訓）。
-     */
-    static void emitOutbox(int pending, int failed) {
-        RestTimerPlugin plugin = instance;
-        if (plugin == null) return;
-        JSObject data = new JSObject();
-        data.put("action", "outbox");
-        data.put("pending", pending);
-        data.put("failed", failed);
-        plugin.notifyListeners("restControl", data);
-    }
-
-    /**
-     * F131 ⑤：前端把 Bearer token 與 base URL 鏡射給原生。
-     *
-     * <p>事實來源仍是前端（setup 頁）；原生只是為了在**背景**打得到 API 而留一份，
-     * 存在 {@link SecureStore} 的加密儲存裡。啟動與換 token 時各推一次。
-     */
-    @PluginMethod
-    public void setAuth(PluginCall call) {
-        String token = call.getString("token");
-        String baseUrl = call.getString("baseUrl");
-        // 空 token ＝ 登出（review MEDIUM）：前端清掉 token 而原生仍留著舊的，
-        // 背景休息時照樣會把組 POST 出去——使用者以為登出了，資料還在寫。
-        if (token == null || token.isEmpty()) {
-            SecureStore.clear(getContext());
-            call.resolve();
-            return;
-        }
-        if (baseUrl == null) {
-            call.reject("setAuth 需要 baseUrl");
-            return;
-        }
-        SecureStore.save(getContext(), token, baseUrl);
-        call.resolve();
-    }
-
-    /**
-     * F131 ⑥-1：回 app 時取件——原生 outbox 目前的狀態與內容。
-     *
-     * <p><b>內容也要給</b>（review HIGH）：還在 pending 的組伺服器還沒收到、前端也從沒寫過，
-     * 只給計數的話那幾組在 app 裡完全看不見——使用者會以為沒記到而再按一次，
-     * 兩筆 uuid 不同，伺服器的冪等去重擋不住，同一組變兩筆。
-     */
-    @PluginMethod
-    public void getOutbox(PluginCall call) {
-        JSObject result = new JSObject();
-        result.put("pending", SetOutbox.count(getContext(), SetOutbox.STATUS_PENDING));
-        result.put("failed", SetOutbox.count(getContext(), SetOutbox.STATUS_FAILED));
-        result.put("entries", SetOutbox.all(getContext()));
-        call.resolve(result);
-    }
-
-    /**
-     * F131 ⑥-1 觸發點 3：回 app 時踢一次重送。
-     *
-     * <p>**等送完才 resolve**（codex review P1）：前端接著就要 GET 這場的組來對帳，
-     * 早一步 resolve 會讓那個 GET 取不到剛送出去的那幾組，清單與下一組組號停在舊值。
-     */
-    @PluginMethod
-    public void flushOutbox(PluginCall call) {
-        SetUploader.flush(getContext(), call::resolve);
-    }
-
-    /** F131 ⑥：使用者在 app 內按「捨棄」——只清 failed，pending 不動。 */
-    @PluginMethod
-    public void discardFailedOutbox(PluginCall call) {
-        SetOutbox.discardFailed(getContext());
-        call.resolve();
-    }
-
-    /** F125 ⑤：前端確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
-    @PluginMethod
-    public void clearPendingLog(PluginCall call) {
-        PendingLog.clear(getContext());
-        call.resolve();
-    }
-
-    /**
-     * F104 ⑤：前端回報就地記錄的結果。
-     *
-     * <p>沒有這個回報，視窗只能猜——而 ⑤ 明訂「不得表現得像成功、不得靜默吞掉」。
-     * 逾時（3 秒）沒等到就當作沒記到，由 RestOverlay 那邊的門檻處理。
-     */
-    @PluginMethod
-    public void logResult(PluginCall call) {
-        Log.i(PROBE, "logResult t=" + System.currentTimeMillis()
-            + " ok=" + Boolean.TRUE.equals(call.getBoolean("ok", false)));
-        RestOverlay.onLogResult(getContext(), Boolean.TRUE.equals(call.getBoolean("ok", false)));
-        call.resolve();
     }
 
     @Override
@@ -327,14 +166,28 @@ public class RestTimerPlugin extends Plugin {
         }
         boolean overlay = Boolean.TRUE.equals(call.getBoolean("overlay", false));
         try {
+            boolean hasDraft = call.hasOption("weight") || call.hasOption("reps")
+                || call.hasOption("exerciseId") || call.hasOption("workoutId");
+            Double weight = call.getDouble("weight");
+            Integer reps = call.getInt("reps");
+            Integer exerciseId = call.getInt("exerciseId");
+            Integer setNumber = call.getInt("setNumber");
+            Integer workoutId = call.getInt("workoutId");
+            if (hasDraft && (weight == null || !Double.isFinite(weight) || weight < 0
+                || reps == null || reps <= 0 || exerciseId == null || exerciseId <= 0
+                || setNumber == null || setNumber <= 0 || workoutId == null || workoutId <= 0)) {
+                call.reject("待記組需要合法的 weight/reps/exerciseId/setNumber/workoutId");
+                return;
+            }
             // F104 ①：待記組沒帶就用 -1／-1，overlay 那邊據此整塊不顯示（舊版前端仍能用）
             RestTimerService.start(
                 getContext(), seconds, overlay, call.getString("hint"),
-                call.getDouble("weight", -1.0), call.getInt("reps", -1),
+                weight == null ? -1.0 : weight, reps == null ? -1 : reps,
                 Boolean.TRUE.equals(call.getBoolean("bodyweight", false)),
                 // F125 ③：補送時驗證歸屬用；沒帶就是 -1，補送那條路會據此判定不可信而放棄
-                call.getInt("exerciseId", -1), call.getInt("setNumber", -1),
-                call.getInt("workoutId", -1));
+                exerciseId == null ? -1 : exerciseId,
+                setNumber == null ? -1 : setNumber,
+                workoutId == null ? -1 : workoutId);
             call.resolve();
         } catch (Exception e) {
             // Android 12+ 對背景啟動前景服務有限制；啟不起來要讓前端知道好退回 F62

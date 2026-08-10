@@ -328,22 +328,6 @@ export async function disableRestOverlay() {
   localStorage.removeItem(OVERLAY_FLAG);
 }
 
-/**
- * F104 ⑤：把就地記錄的結果回報給浮動視窗。
- *
- * <p>沒有這個回報，視窗只能猜——而 ⑤ 明訂「不得表現得像成功、不得靜默吞掉」。
- * 原生那邊有 3 秒門檻：逾時沒收到就當作沒記到（app 被回收、WebView 無回應）。
- */
-export async function reportLogResult(ok) {
-  const api = restTimerPlugin();
-  if (!api?.logResult) return;
-  try {
-    await api.logResult({ ok: Boolean(ok) });
-  } catch {
-    /* 回報不了就讓原生那邊的 3 秒門檻接手，行為與「沒記到」一致 */
-  }
-}
-
 // F69 ③：回報「現在看不看得到 app 內的 REST 卡片」。
 //
 // render() 每秒都會跑，同值不重送——每秒打一次 bridge 沒有意義，也讓原生那邊每秒重算顯示。
@@ -367,17 +351,6 @@ let lastCardVisible = null;
  * @returns {Promise<null | {uuid: string, weight: number, reps: number,
  *   bodyweight: boolean, exerciseId: number, setNumber: number}>}
  */
-export async function getPendingLog() {
-  const api = restTimerPlugin();
-  if (!api?.getPendingLog) return null; // 舊版 APK：沒有這條路，當作沒有待補送的
-  try {
-    const res = await api.getPendingLog();
-    return res?.pending ? res : null;
-  } catch {
-    return null; // 取不到就當作沒有——寧可少記一組，也不要在啟動流程拋錯擋住整個 app
-  }
-}
-
 /**
  * F127 ②：問原生「有沒有哪一輪是被人明確按停止結束的，那是什麼時候」。
  *
@@ -405,14 +378,7 @@ export async function getRestStoppedAt() {
  * 原生用 EncryptedSharedPreferences 存，不落明文。
  */
 export async function pushAuthToNative(token, baseUrl) {
-  const api = restTimerPlugin();
-  if (!api?.setAuth) return;
-  try {
-    // 空 token 要**推出去**（不是不推）：那是登出，原生留著舊的會繼續在背景寫入
-    await api.setAuth({ token: token ?? "", baseUrl: baseUrl ?? "" });
-  } catch {
-    /* 推不過去：原生寫入路徑會自己跳過，退回「回 app 再寫」，不擋前端任何事 */
-  }
+  // F140：原生不再直打 REST；F141 會另建 Google rotating session。
 }
 
 /**
@@ -421,15 +387,12 @@ export async function pushAuthToNative(token, baseUrl) {
  * @returns {Promise<{pending: number, failed: number}>} 舊版 APK 或查詢失敗回 0/0
  */
 export async function getNativeOutbox() {
-  const api = restTimerPlugin();
-  if (!api?.getOutbox) return { pending: 0, failed: 0, entries: [] };
   try {
-    const res = await api.getOutbox();
+    const res = await globalThis.Capacitor?.Plugins?.LocalStore?.status?.();
     return {
-      pending: Number(res?.pending) || 0,
-      failed: Number(res?.failed) || 0,
-      // 內容也要拿：只給計數的話，還沒送出去的那幾組在 app 裡完全看不見
-      entries: Array.isArray(res?.entries) ? res.entries : [],
+      pending: Number(res?.pendingMutations) || 0,
+      failed: 0,
+      entries: [],
     };
   } catch {
     return { pending: 0, failed: 0, entries: [] };
@@ -437,37 +400,15 @@ export async function getNativeOutbox() {
 }
 
 export async function flushNativeOutbox() {
-  const api = restTimerPlugin();
-  if (!api?.flushOutbox) return;
-  try {
-    await api.flushOutbox();
-  } catch {
-    /* 踢不動：網路回呼與下次按下一組還是會再試 */
-  }
+  // F144 才啟用 sync；F140 只保證 mutation 已交易式落在 LocalStore outbox。
 }
 
 /** F131 ⑥：使用者按「捨棄」時，原生側的 failed 也要跟著清（只清 failed，pending 不動）。 */
 export async function discardNativeFailed() {
-  const api = restTimerPlugin();
-  if (!api?.discardFailedOutbox) return;
-  try {
-    await api.discardFailedOutbox();
-  } catch {
-    /* 清不掉：下次還會顯示，不會變成資料遺失 */
-  }
+  // LocalStore outbox 不能在 sync client 判定前由 UI 任意丟棄。
 }
 
 /** F125 ⑤：確認那一組已經進資料庫（或已判定不該再補）之後才清。 */
-export async function clearPendingLog() {
-  const api = restTimerPlugin();
-  if (!api?.clearPendingLog) return;
-  try {
-    await api.clearPendingLog();
-  } catch {
-    /* 清不掉：下次開 app 會再補送一次，靠 client_uuid 去重，不會變成兩筆 */
-  }
-}
-
 export function syncRestCardVisible(visible, force = false) {
   const api = restTimerPlugin();
   const value = Boolean(visible);
@@ -500,7 +441,7 @@ export async function startForegroundRest(seconds, hint = "", draft = null) {
             weight: draft.weight,
             reps: draft.reps,
             bodyweight: Boolean(draft.bodyweight),
-            // F125 ③：補送時要驗證歸屬用的，服務同樣不解讀，只是搬給 overlay 存進 PendingLog
+            // F140：LocalStore 用的本機 rowid，服務只轉交給 overlay。
             exerciseId: draft.exerciseId ?? -1,
             setNumber: draft.setNumber ?? -1,
             workoutId: draft.workoutId ?? -1,
@@ -550,13 +491,7 @@ export function onNativeRestControl(handler) {
       handler(
         event?.action,
         typeof event?.seconds === "number" ? event.seconds : null,
-        // F104 ③：logset 帶的是視窗上調整後的重量與次數，不是秒數。
-        // 兩者分開帶——硬擠進同一個欄位會讓每個接收端都要先猜這次是哪一種。
-        typeof event?.weight === "number" && typeof event?.reps === "number"
-          ? // F125 ④：uuid 一起帶上來。它是原生在「排入」那一刻生成的，
-            // 補送與這條 bridge 事件必須用同一個值，否則伺服器去重不到。
-            { weight: event.weight, reps: event.reps, uuid: event.uuid ?? null }
-          : null,
+        null,
         // F131 ①：nextround 帶的是原生那一輪的**開始時刻**。背景時這個事件可能
         // 幾十秒後才被處理，只看秒數的話前端會從「現在」重數，兩邊當場分叉。
         typeof event?.startedAt === "number" ? event.startedAt : null,

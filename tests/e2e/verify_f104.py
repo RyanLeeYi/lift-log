@@ -1,17 +1,13 @@
-"""F104 E2E（前端那一半）：浮動視窗直接記錄下一組。
+"""F104/F140 E2E：浮動視窗收到本機 handle，並直接寫入 LocalStore。
 
 跑法：`PYTHONUTF8=1 uv run python tests/e2e/verify_f104.py`
 
-視窗的長相（待記組那一行、± 兩顆、主按鈕、失敗態）是原生 Java，Playwright 碰不到，
-一律真機驗。這支驗的是 ④ 定下的那條界線所在的一側——**實際寫入一律由前端 JS 執行**：
+視窗的長相與 SQLite 寫入在原生 Java，Playwright 碰不到；共庫與重開持久化由
+F140LocalStoreInstrumentedTest 驗。這支只驗 WebView/overlay 邊界：
 
   ① 開始休息時把「待記組」（重量／次數／是否自體重）送給原生
-  ③ 收到 logset → 走既有的記錄路徑寫入，並開新的一輪休息
-  ⑤ 成功與失敗**都要回報**給原生；失敗時**不得**開新的一輪休息
-  ⑦ 就地記的組 rpe 留 null，回 logger 時給提示（不擋操作）
-
-⚠ ⑤ 的反面斷言是這支的重點。少了它，「壞掉的 payload 就拿當前值硬記」也會全綠，
-而那正好製造出一筆使用者沒按過的紀錄。
+  ③ 草稿帶 LocalStore workout/exercise rowid
+  ④ 正式碼只有 RestOverlay → LocalStore 寫入，不再有 logset bridge
 """
 
 from __future__ import annotations
@@ -46,20 +42,36 @@ def check(ok: bool, label: str) -> None:
 
 
 FAKE = """
-window.__native = { starts: [], results: [], handler: null };
-window.__emitLog = (weight, reps) => {
-  const h = window.__native.handler;
-  if (!h) return false;
-  const payload = { action: 'logset' };
-  if (weight !== undefined) payload.weight = weight;
-  if (reps !== undefined) payload.reps = reps;
-  h(payload);
-  return true;
+window.__native = { starts: [], handler: null };
+const local = {
+  exercises: [{ id: 1, name_zh: '深蹲', name_en: 'Squat', muscle_group: '腿', is_bodyweight: 0 }],
+  templates: [], workouts: [], sets: [], body_metrics: [], daily_status: [], settings: [],
 };
+let nextWorkout = 1;
+let nextSet = 1;
 window.Capacitor = {
   isNativePlatform: () => true,
   getPlatform: () => 'android',
   Plugins: {
+    LocalStore: {
+      initialize: async () => ({ schemaVersion: 2, seededExercises: 1, pendingMutations: 0 }),
+      snapshot: async () => structuredClone(local),
+      createWorkout: async (o) => {
+        const row = { id: nextWorkout++, date: o.date, template_id: o.templateId ?? null,
+          note: o.note ?? null, created_at: new Date().toISOString(), ended_at: null };
+        local.workouts.push(row);
+        return structuredClone(row);
+      },
+      addSet: async (o) => {
+        const row = { id: nextSet, client_uuid: o.clientUuid, workout_id: o.workoutId,
+          exercise_id: o.exerciseId, set_number: o.setNumber ?? nextSet++,
+          weight_kg: o.weightKg, reps: o.reps, rpe: o.rpe ?? null,
+          rest_seconds: o.restSeconds ?? null };
+        local.sets.push(row);
+        return structuredClone(row);
+      },
+      status: async () => ({ schemaVersion: 2, pendingMutations: 0 }),
+    },
     LocalNotifications: {
       schedule: async () => ({}), cancel: async () => ({}),
       checkPermissions: async () => ({ display: 'granted' }),
@@ -76,7 +88,6 @@ window.Capacitor = {
       overlayPermitted: async () => ({ granted: true }),
       requestOverlayPermission: async () => {},
       setRestCardVisible: async () => ({}),
-      logResult: async (o) => { window.__native.results.push(Boolean(o && o.ok)); return {}; },
       addListener: async (name, cb) => {
         if (name === 'restControl') window.__native.handler = cb;
         return { remove: () => {} };
@@ -94,7 +105,7 @@ def open_app(browser, base: str):
     page.add_init_script(FAKE)
     reroute_public_host(page, base)
     page.goto(base, wait_until="domcontentloaded")
-    page.wait_for_selector("input", timeout=10_000)
+    page.wait_for_selector("input, .home-head", timeout=10_000)
     setup_and_home(page)
     page.evaluate(f"() => localStorage.setItem('{NOTIFY_FLAG}', '1')")
     page.evaluate(f"() => localStorage.setItem('{OVERLAY_FLAG}', '1')")
@@ -117,14 +128,6 @@ def into_rest(page) -> None:
 
 def native(page) -> dict:
     return page.evaluate("() => window.__native")
-
-
-def emit_log(page, weight=None, reps=None) -> None:
-    args = []
-    args.append("undefined" if weight is None else repr(weight))
-    args.append("undefined" if reps is None else repr(reps))
-    page.evaluate(f"() => window.__emitLog({args[0]}, {args[1]})")
-    page.wait_for_timeout(1600)
 
 
 def main() -> int:
@@ -175,73 +178,22 @@ def run_checks(base: str) -> None:
             f"① F89 ③ 不回歸：動作提示仍照送（{first.get('hint')!r}）",
         )
 
-        # ── ③ 收到 logset → 記進去、開新的一輪 ───────────────────
-        rows_before = page.locator(".done-row").count()
-        starts_before = len(native(page)["starts"])
-        emit_log(page, 47.5, 6)
-        check(
-            page.locator(".done-row").count() == rows_before + 1,
-            f"③ 就地記錄真的寫進去了（{rows_before} → {page.locator('.done-row').count()} 列）",
-        )
-        top = page.locator(".done-row").first.inner_text()
-        check(
-            "47.5" in top and "6" in top,
-            f"③ 記的是**視窗上調整後**的值，不是 app 裡的舊值（{top!r}）",
-        )
-        check(
-            len(native(page)["starts"]) == starts_before + 1,
-            "③ 記完接著開新的一輪休息（又交給原生一次）",
-        )
-        check(native(page)["results"][-1] is True, "⑤ 成功要回報給視窗")
-        # 新一輪的待記組要更新成剛記的值
-        latest = native(page)["starts"][-1]
-        check(
-            latest.get("weight") == 47.5 and latest.get("reps") == 6,
-            f"③ 新一輪的待記組更新成剛記的值（{latest}）",
-        )
-
-        # ── ⑦ 就地記的組 rpe 留 null ＋ logger 給提示 ────────────
-        banner = page.locator(".notice-banner")
-        banner_text = banner.first.inner_text() if banner.count() else "(無)"
-        check(
-            banner.count() >= 1 and "累度" in banner_text,
-            f"⑦ 回 logger 有「還沒填累度」的提示（{banner_text}）",
-        )
-        check(
-            page.locator(".modal-overlay").count() == 0,
-            "⑦ 反面：提示**不得**是 modal——當下不想填是正常的，補記是選項不是義務",
-        )
-        # ⑦ 那一組真的沒有累度：組列上不得出現累度詞（app 內記的那組有，這組沒有）
-        # ——驗渲染結果，不驗內部狀態。靜默沿用上一組的實作會在這裡掛掉。
-        rows = page.locator(".done-row")
-        overlay_row = rows.first.inner_text()   # 最新在最上（F20）
-        app_row = rows.nth(1).inner_text()
-        check(
-            "輕鬆" in app_row,
-            f"⑦ 前提：app 內記的那組有累度詞（{app_row!r}）",
-        )
-        check(
-            "輕鬆" not in overlay_row,
-            f"⑦ 就地記的那組**沒有**累度——不是靜默沿用上一組（{overlay_row!r}）",
-        )
+        check(first.get("workoutId", 0) > 0 and first.get("exerciseId", 0) > 0,
+              f"③ start 帶 LocalStore workout/exercise rowid（{first}）")
         ctx.close()
 
-        # ── ⑤ 反面：壞掉的 payload 不得硬記 ──────────────────────
-        ctx, page = open_app(browser, base)
-        into_rest(page)
-        rows_before = page.locator(".done-row").count()
-        starts_before = len(native(page)["starts"])
-        emit_log(page)  # 不帶重量與次數（舊版 APK）
-        check(
-            page.locator(".done-row").count() == rows_before,
-            "⑤ 反面：payload 壞掉時**不記**——寧可回報失敗，也不要製造一筆沒人按過的紀錄",
-        )
-        check(native(page)["results"][-1] is False, "⑤ 失敗也要回報（不得靜默吞掉）")
-        check(
-            len(native(page)["starts"]) == starts_before,
-            "⑤ **失敗不得開新的一輪休息**——休息開始了但組沒記到是最糟的組合",
-        )
-        ctx.close()
+        repo = Path(__file__).resolve().parents[2]
+        overlay = (
+            repo / "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java"
+        ).read_text(encoding="utf-8")
+        plugin = (
+            repo / "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerPlugin.java"
+        ).read_text(encoding="utf-8")
+        app = (repo / "app/static/js/app.js").read_text(encoding="utf-8")
+        check("LocalStore.getInstance(context)" in overlay and "store.addSet(" in overlay,
+              "④ overlay 直接寫 LocalStore")
+        check('"logset"' not in plugin and 'action === "logset"' not in app,
+              "④ 舊 logset bridge 已移除")
 
         browser.close()
 

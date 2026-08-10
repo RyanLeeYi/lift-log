@@ -12,8 +12,6 @@ import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
-import android.net.ConnectivityManager;
-import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.CountDownTimer;
@@ -39,7 +37,7 @@ public class RestTimerService extends Service {
 
     public static final String ACTION_START = "com.ryanleeyi.liftlog.REST_START";
     public static final String ACTION_STOP = "com.ryanleeyi.liftlog.REST_STOP";
-    /** F127：與 PendingLog 分開的小狀態檔——那個是待記組，這個是「這輪被結束了沒」。 */
+    /** F127：純計時 UI 狀態，與 F140 LocalStore domain 資料分開。 */
     private static final String STATE_PREFS = "liftlog_rest_state";
     private static final String KEY_STOPPED_AT = "stopped_at";
     public static final String EXTRA_SECONDS = "seconds";
@@ -175,36 +173,9 @@ public class RestTimerService extends Service {
     private final Handler overtimeTicker = new Handler(Looper.getMainLooper());
     private MediaPlayer alarmPlayer;
 
-    /**
-     * F131 ⑥-1 觸發點 1：網路恢復就重送 outbox。
-     *
-     * <p>掛在這個服務上是刻意的——休息期間它本來就活著，等於免費；休息結束服務停掉之後
-     * 就沒有觸發點了，那些組會等到下次開 app（⑥-1 明列並接受的缺口，不做 WorkManager）。
-     */
-    private ConnectivityManager.NetworkCallback networkCallback;
-
     @Override
     public IBinder onBind(Intent intent) {
         return null; // 不提供繫結：只用 startService/stopService 控制
-    }
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
-        if (cm == null) return;
-        networkCallback = new ConnectivityManager.NetworkCallback() {
-            @Override
-            public void onAvailable(Network network) {
-                SetUploader.flush(RestTimerService.this);
-            }
-        };
-        try {
-            cm.registerDefaultNetworkCallback(networkCallback);
-        } catch (RuntimeException e) {
-            // 註冊上限之類的例外：少一個觸發點而已，另外兩個（按下一組、回 app）照常
-            networkCallback = null;
-        }
     }
 
     @Override
@@ -227,12 +198,7 @@ public class RestTimerService extends Service {
             // ⚠ 刻意只掛在這條路，**不放 onDestroy()**：系統低記憶體回收服務時也會走那裡，
             // 而那正是最需要保住待記組的時刻，清掉等於把這條 feature 的存在理由刪掉。
             //
-            // F131 ⑥：**SetOutbox 不在此列**。停止只代表「這段休息不數了」，
-            // 不代表「那組沒做」——按過「完成這組」就是做了。清掉等於把已經按下的組
-            // 靜默刪除（v139 以前 PendingLog 就是這樣掉資料的）。
-            PendingLog.clear(this);
-            // 停止前先把還沒送出去的組踢一次：服務即將停掉，之後就沒有網路回呼可用了
-            SetUploader.flush(this);
+            // F140：組在按下完成時已交易式寫入 LocalStore；停止只處理計時 UI。
             // F127 ①②：把「這輪被明確結束」寫成跨行程都看得到的事實。
             // Activity 已被銷毀時上面那個 emit("stop") 會靜靜地掉，前端的休息快照留在
             // localStorage，下次開 app 就被 resumeRestAfterRestore() 重建成一輪殭屍倒數。
@@ -376,11 +342,6 @@ public class RestTimerService extends Service {
     @Override
     public void onDestroy() {
         sessionActive = false; // F104-A：服務沒了就不再撐著 WebView
-        if (networkCallback != null) {
-            ConnectivityManager cm = getSystemService(ConnectivityManager.class);
-            if (cm != null) cm.unregisterNetworkCallback(networkCallback);
-            networkCallback = null;
-        }
         stopAlarm(); // ⑦：服務被系統回收時聲音與震動一起收乾淨
         stopTimer();
         // F64 ④ 的第二條路徑：系統回收服務時也要收掉 overlay。

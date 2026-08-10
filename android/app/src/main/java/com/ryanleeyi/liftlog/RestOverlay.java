@@ -29,6 +29,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.UUID;
+
 /**
  * F64 建立、F89 改版：浮在其他 app 之上的休息倒數小視窗。
  *
@@ -80,9 +82,7 @@ final class RestOverlay {
     private static int draftSetNumber = -1;
     /** F125 ③：這一組屬於哪一場訓練。跨場寫入是補送唯一真正糟的失敗模式。 */
     private static int draftWorkoutId = -1;
-    /** F125 ①：已排入但還沒寫進去（app 在背景按下）。與 logPending 互斥，兩者文案不同。 */
-    private static boolean logQueued;
-    /** F131 ⑧：原生 outbox 現況——視窗據此顯示「離線，已排隊」或「沒記到 N 組」。 */
+    /** LocalStore outbox 現況；F144 會接上同步器。 */
     private static int outboxPending;
     private static int outboxFailed;
     private static TextView draftLabel;
@@ -92,9 +92,6 @@ final class RestOverlay {
     private static boolean logFailed;
     private static TextView logButton;
     private static TextView logStatus;
-    /** ⑤ 的 3 秒門檻：逾時沒等到回報就當作沒記到（app 被回收、WebView 無回應）。 */
-    private static final long LOG_TIMEOUT_MS = 3000L;
-    private static Runnable logTimeout;
     private static TextView mainButton; // F89 ④：回 app 記下一組（超時轉 --over）
     /** F71：暫停狀態。兩邊（app 內卡片與這裡）必須顯示一致，否則使用者不知道該信誰。 */
     private static boolean paused;
@@ -233,10 +230,6 @@ final class RestOverlay {
     static void setActive(Context context, boolean value, int seconds, String hintText) {
         // F100：新的一輪＝不再是「已停止」狀態（旗標留著會讓暫停鈕永遠消失）
         halted = false;
-        // F125 ①：新的一輪開始＝上一輪那個「已排入」已經落地了（新一輪正是寫入成功之後才開的）。
-        // 不清的話視窗會停在「已排入」，而圓環早就在跑下一輪——2026-08-03 真機抓到。
-        // ⚠ 這裡是**必要**的清除點，不能只靠 setDraft()：兩者由不同路徑呼叫，順序不保證。
-        logQueued = false;
         onMain(() -> {
             active = value;
             if (value) {
@@ -312,7 +305,6 @@ final class RestOverlay {
             draftExerciseId = exerciseId;
             draftSetNumber = setNumber;
             draftWorkoutId = workoutId;
-            logQueued = false;
             // 新的一輪＝上一輪的記錄狀態不再適用（失敗態不該跨輪殘留）
             clearLogPending();
             logFailed = false;
@@ -330,10 +322,6 @@ final class RestOverlay {
     static void onLogResult(Context context, boolean ok) {
         onMain(() -> {
             clearLogPending();
-            logQueued = false;
-            // F125 ⑤：寫進去了就清，否則下次開 app 會幽靈重播（伺服器雖然會去重，
-            // 但留著等於讓「補送」這條路永遠有東西可送）
-            if (ok) PendingLog.clear(context);
             if (ok) {
                 logFailed = false;
                 vibrateOnce(context); // ③ 成功回饋：短單擊，與鬧鈴的重複震動分得開
@@ -368,10 +356,6 @@ final class RestOverlay {
 
     private static void clearLogPending() {
         logPending = false;
-        if (logTimeout != null) {
-            MAIN.removeCallbacks(logTimeout);
-            logTimeout = null;
-        }
     }
 
     /** ③ 成功回饋的震動：**短單擊**。鬧鈴是重複震動，兩者在同一個視窗上不能混淆。 */
@@ -922,7 +906,7 @@ final class RestOverlay {
     private static View draftRow;
 
     private static boolean hasDraft() {
-        return draftWeight >= 0 && draftReps > 0;
+        return draftWeight >= 0 && draftReps > 0 && draftExerciseId > 0 && draftWorkoutId > 0;
     }
 
     /** ② 重量 ±2.5 下限 0、次數 ±1 下限 1。只動視窗上的草稿，不寫進任何地方。 */
@@ -977,68 +961,47 @@ final class RestOverlay {
     }
 
     private static void requestLog(Context context) {
-        if (!hasDraft() || logPending || logQueued) return; // 連按不得記成兩組
+        if (!hasDraft() || logPending) return; // 連按不得記成兩組
         logFailed = false;
-
-        // F131 ①：app 在背景時**原生自己寫**，不再等回前景。
-        // 休息中這個服務是前景服務，Doze 與背景網路限制不擋它；而 F125 那條「等回前景」
-        // 實測落差 19.25 秒，中間還會被 ✕／停止清掉（v139 以前的資料遺失來源）。
-        //
-        // ⚠ 憑證沒備妥（JS 從沒推過、或 Keystore 壞掉）就**不能**走這條：outbox 的內容
-        // 前端拿不到，卡進去就永遠送不出去（codex review P2）。退回 F125 那條路。
-        if (!appForeground && SetUploader.ready(context)) {
-            // rest_seconds 由原生補上：過去這個值只存在前端的 pendingRestSeconds，
-            // 原生自己寫入卻不帶，等於讓 F129 剛保住的欄位回歸成 null（F131 ⑨）。
-            SetOutbox.enqueue(
-                context, draftWeight, draftReps,
-                draftExerciseId, draftWorkoutId, RestTimerService.elapsedSeconds());
-            SetUploader.flush(context);
-            vibrateOnce(context); // F104 ③：成功回饋＝短單擊（健身房吵、手機可能在口袋）
-            // 那一組已經落地在 outbox（跨行程存活、且不會被停止清掉）→ 當場開新的一輪。
-            // 不等 HTTP 回來：離線時等於永遠不開，而離線是健身房的常態。
-            RestTimerService.nextRound(context);
-            paintLogButton();
-            paintLogStatus();
-            return;
-        }
-
-        // 前景維持原路徑（F131 ②）：JS 活著，寫入邏輯留在前端那一份。
-        // F125 ③④：uuid 在**排入的那一刻**生成並落地，bridge 事件與開機補送帶同一個值。
-        String uuid = PendingLog.enqueue(
-            context, draftWeight, draftReps, draftBodyweight,
-            draftExerciseId, draftSetNumber, draftWorkoutId);
-        RestTimerPlugin.emitLog(draftWeight, draftReps, uuid);
-
-        // F125 ①：背景且憑證沒備妥時走到這裡——JS 整條鏈是凍住的，等 3 秒再說「沒記到」
-        // 是謊報（那組會在回前景那一刻寫進去）。不設逾時，誠實顯示「已排入」。
-        if (!appForeground) {
-            logQueued = true;
-            paintLogButton();
-            paintLogStatus();
-            return;
-        }
-
         logPending = true;
         paintLogButton();
         paintLogStatus();
-        logTimeout = () -> {
-            // ⑤ 等不到回報＝沒記到。**不得**表現得像成功，也不得開新的一輪休息
-            //（新的一輪由前端在記錄成功之後才發起，這裡什麼都不做就是「不開」）。
-            logPending = false;
-            logTimeout = null;
-            logFailed = true;
-            paintLogButton();
-            paintLogStatus();
-        };
-        MAIN.postDelayed(logTimeout, LOG_TIMEOUT_MS);
+        final double weight = draftWeight;
+        final int reps = draftReps;
+        final int exerciseId = draftExerciseId;
+        final int workoutId = draftWorkoutId;
+        final int restSeconds = RestTimerService.elapsedSeconds();
+        new Thread(() -> {
+            try {
+                LocalStore store = LocalStore.getInstance(context);
+                store.addSet(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    workoutId,
+                    exerciseId,
+                    null,
+                    weight,
+                    reps,
+                    null,
+                    restSeconds,
+                    1,
+                    UUID.randomUUID().toString()
+                );
+                onMain(() -> {
+                    onLogResult(context, true);
+                    onOutboxState(context, store.pendingMutationCount(), 0);
+                    RestTimerService.nextRound(context);
+                });
+            } catch (RuntimeException error) {
+                onMain(() -> onLogResult(context, false));
+            }
+        }, "liftlog-local-set").start();
     }
 
     private static void paintLogButton() {
         if (logButton == null) return;
-        // F116 ①：與 app 內計時頁一致的文案
-        // F125 ①：三態。「已排入」不是暫時狀態——它會一直留到回前景寫入為止。
-        logButton.setText(logQueued ? "已排入" : logPending ? "記錄中…" : "完成這組");
-        logButton.setAlpha(logQueued || logPending ? 0.6f : 1f);
+        logButton.setText(logPending ? "記錄中…" : "完成這組");
+        logButton.setAlpha(logPending ? 0.6f : 1f);
     }
 
     /**
@@ -1047,16 +1010,7 @@ final class RestOverlay {
      * <p>沒有這條回報的話，離線時使用者看到的是「震動 ＋ 直接開始新一輪」，
      * 與寫進資料庫完全一樣的觀感，實際上資料只躺在 outbox（codex review P1）。
      */
-    /**
-     * F131 ①：原生開了新的一輪 → 待記組的組號要跟著 +1（review MEDIUM）。
-     *
-     * <p>資料面的理由：`draftSetNumber` 是 {@link PendingLog} 退路的來源。第 3 組走 outbox
-     * 成功、第 4 組剛好碰到憑證不可用而退回 PendingLog 時，不遞增就會用組號 3 補送，
-     * 同一動作出現兩筆 `set_number = 3`。
-     *
-     * <p>已知未修：通知列與視窗的 hint（「動作名 · 第 N 組」）由前端組好後傳下來，
-     * 原生沒有重算它的材料，所以新一輪的文案仍顯示上一組的組號。純顯示，回 app 就正確。
-     */
+    /** 原生開了新的一輪，待記組的顯示組號跟著加一；正式配號仍由 LocalStore 計算。 */
     static void advanceDraftSetNumber() {
         if (draftSetNumber > 0) draftSetNumber += 1;
     }
@@ -1078,12 +1032,7 @@ final class RestOverlay {
             logStatus.setText("沒記到 " + outboxFailed + " 組——回 app 處理");
             logStatus.setVisibility(View.VISIBLE);
         } else if (outboxPending > 0) {
-            // 離線／伺服器暫時故障：資料還在，只是還沒送出去。不假裝已經寫進資料庫
-            logStatus.setText("離線，已排隊 " + outboxPending + " 組");
-            logStatus.setVisibility(View.VISIBLE);
-        } else if (logQueued) {
-            // F125 ①：誠實講出實際會發生的事，不假裝已經寫進資料庫
-            logStatus.setText("已排入，回 app 後記錄");
+            logStatus.setText("已儲存，待同步 " + outboxPending + " 筆");
             logStatus.setVisibility(View.VISIBLE);
         } else if (logFailed) {
             logStatus.setText("沒記到——回 app 記下一組");

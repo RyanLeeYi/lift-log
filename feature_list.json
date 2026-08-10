@@ -2598,10 +2598,10 @@
       "id": "F140",
       "name": "Android 完整本地讀寫與單一資料源",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "核心紀錄、課表、體重、狀態、統計與 native overlay 在無網路時完整運作，且只讀寫 F139 LocalStore。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R2：Android 全部核心讀寫改走 LocalStore；冷啟動且完全離線時可開練、記組、結束、查歷史/統計、改課表、記體重與每日狀態。native overlay 與 WebView 寫同一 store；process death 後資料仍在。移除舊 IndexedDB/localStorage/SharedPreferences domain queue 的正式讀寫路徑；現有受影響 E2E 與 Android instrumentation tests 全綠。",
-      "evidence": "",
+      "evidence": "2026-08-10：uv run pytest 286 passed；uv run ruff check . 通過。Android testDevDebugUnitTest BUILD SUCCESSFUL（8/8；LocalStore 7 tests）。emulator-5554 F140 instrumentation OK（2 tests）：第二支以真 WebView Capacitor LocalStore plugin seed/readback，並在 overlay window 實點「停止」與「完成這組」。E2E：F67 20/20、F80 19/19、F81 50/50、F83 35/35、F85 94/94、F87 38/38、F90 30/30、F91 20/20、F92 15/15、F103 16/16、F104 7/7。packaged dev APK v149 assets SHA match；emulator tokenless／airplane-mode cold start 進 home、無 setup。",
       "prerequisites": ["F139"],
       "touches": [
         "app/static/js/api.js",
@@ -2618,7 +2618,9 @@
         "android/app/src/main/java/com/ryanleeyi/liftlog/SetUploader.java",
         "tests/e2e/"
       ],
-      "non_goals": ["不讓 Web 取得離線能力", "不在本 slice 啟用雲端同步"]
+      "non_goals": ["不讓 Web 取得離線能力", "不在本 slice 啟用雲端同步"],
+      "reviewed_by": "Codex fresh-context reviewer（2026-08-10，初始 4+ findings、最終 2 findings；tombstone、template snapshot、tokenless gate、pending 單位、顯式 set number、overlay UI test 全部 FIX 關閉）",
+      "verified_by": "fresh-context codex exec gpt-5.6-sol（2026-08-10 第二輪，六項逐條 PASS；首輪 FAIL 的 stale packaged assets 與 overlay UI evidence 已 FIX 後重驗）"
     },
     {
       "id": "F141",

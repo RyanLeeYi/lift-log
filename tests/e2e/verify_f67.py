@@ -65,10 +65,41 @@ FAKE_PLUGIN = """
 (currentVersion, canInstall) => {
   window.__au = { downloads: [], installs: [], openedSettings: 0 };
   window.__canInstall = canInstall;
+  const local = {
+    exercises: [{ id: 1, name_zh: '深蹲', name_en: 'Squat', muscle_group: '腿', is_bodyweight: 0 }],
+    templates: [], workouts: [], sets: [], body_metrics: [], daily_status: [], settings: [],
+  };
+  let nextWorkout = 1;
+  let nextSet = 1;
   window.Capacitor = {
     isNativePlatform: () => true,
     getPlatform: () => 'android',
     Plugins: {
+      LocalStore: {
+        initialize: async () => ({ schemaVersion: 2, seededExercises: 1, pendingMutations: 0 }),
+        snapshot: async () => structuredClone(local),
+        createWorkout: async (o) => {
+          const row = { id: nextWorkout++, date: o.date, template_id: o.templateId ?? null,
+            note: o.note ?? null, created_at: new Date().toISOString(), ended_at: null };
+          local.workouts.push(row);
+          return structuredClone(row);
+        },
+        addSet: async (o) => {
+          const row = { id: nextSet++, client_uuid: o.clientUuid, workout_id: o.workoutId,
+            exercise_id: o.exerciseId, set_number: o.setNumber ?? nextSet - 1,
+            weight_kg: o.weightKg, reps: o.reps, rpe: o.rpe ?? null,
+            rest_seconds: o.restSeconds ?? null };
+          local.sets.push(row);
+          return structuredClone(row);
+        },
+        putSetting: async (o) => {
+          const row = { key: o.key, value: o.value };
+          local.settings = local.settings.filter((item) => item.key !== o.key);
+          local.settings.push(row);
+          return structuredClone(row);
+        },
+        status: async () => ({ schemaVersion: 2, pendingMutations: 0 }),
+      },
       AppUpdate: {
         currentVersion: async () => ({ versionCode: currentVersion }),
         canInstall: async () => ({ allowed: window.__canInstall }),
@@ -103,20 +134,23 @@ def gradle_checks() -> None:
 PUBLIC_HOST = "https://lift-log.my-super-dev-server.work"
 
 
-def native(page, base: str, current: int, can_install: bool = True):
+def native(page, base: str, current: int, can_install: bool = True, seed_token: bool = True):
     args = f"({current}, {str(can_install).lower()})"
     page.add_init_script(FAKE_PLUGIN.strip().join(["(", f"){args}"]))
+    if seed_token:
+        page.add_init_script(f"localStorage.setItem('liftlog.token', {TOKEN!r});")
 
     # app 版的 API 會打向公開站（F61 ③）——導回本機測試伺服器，別碰正式站
     reroute_public_host(page, base)
     page.goto(base, wait_until="domcontentloaded")
-    page.wait_for_selector("input", timeout=10_000)
+    page.wait_for_selector("input, .home-head", timeout=10_000)
     return page
 
 
 def setup_and_home(page) -> None:
-    page.fill("input", TOKEN)
-    page.get_by_role("button").first.click()
+    if page.locator("input[type=password]").count():
+        page.fill("input", TOKEN)
+        page.get_by_role("button").first.click()
     page.wait_for_timeout(1200)
 
 

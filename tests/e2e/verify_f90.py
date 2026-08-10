@@ -352,7 +352,8 @@ def main() -> int:  # noqa: C901
             remaining = sorted(
                 s["set_number"] for s in api(base, f"/api/workouts/{wid4}")["sets"]
             )
-            check(remaining == [1, 3], f"前置：伺服器上剩下不連續的組號 {remaining}")
+            # F131/F133：server 配號包含軟刪 tombstone，已刪的 #1/#2 不重用。
+            check(remaining == [3, 4], f"前置：伺服器保留 tombstone 後剩 {remaining}")
 
             page.goto(base, wait_until="domcontentloaded")
             page.wait_for_timeout(2000)
@@ -366,8 +367,8 @@ def main() -> int:  # noqa: C901
                 "async () => (await import('/js/state.js')).state.setNumber"
             )
             check(
-                next_no == 4,
-                f"複審 P1-1 刪掉中間組後下一組是 4（最大組號+1），不是 3（實際 {next_no}）",
+                next_no == 5,
+                f"複審 P1-1 軟刪後下一組是 5（含 tombstone 的最大組號+1；實際 {next_no}）",
             )
             # 同一件事的另一半：setCounts 必須維持「完成組數」語意，否則課表進度（X/Y 組）
             # 會提前顯示做完。組號取最大值、組數取長度，兩者刻意分開。

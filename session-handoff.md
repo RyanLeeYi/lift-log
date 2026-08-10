@@ -1,37 +1,29 @@
 # session handoff
 
-最後更新：2026-08-10。active feature：**F139**；E1（F139–F149）已簽核。F139 **仍為 failing**，不得跳到 F140。
+最後更新：2026-08-10。active feature：**F140**；E1（F139–F149）已簽核。F140 **passing**，目前 **129/149 passing**；暫停於 F140 收官，F141 尚未啟動。
 
 ## 這場完成
 
-- 凍結 `docs/prd/local-first-cloud-sync.md` 與 `feature_list.json` 的 E1／F139–F149；`.harness/current_feature` 已是 `F139`。
-- F139 已實作：`SQLiteOpenHelper` LocalStore、typed Capacitor bridge、domain schema、`sync_outbox`／`sync_state`／`sync_conflicts`、seed、backup exclusion、Robolectric JVM tests。
-- 沒有切換既有 WebView／overlay 呼叫端；那是 F140。現有 IndexedDB／SharedPreferences queue 仍在正式路徑。
-- 沒有出 APK、沒有 deploy、沒有改正式資料。
+- F139 LocalStore foundation 已獨立驗收通過並提交；F140 已把 Android 核心 domain 讀寫切至同一顆 `liftlog-local.db`。
+- WebView 與 native overlay 共用 LocalStore；Android 舊 IndexedDB／localStorage／SharedPreferences domain queue 已移出正式寫入路徑。Web 維持 REST online-only，尚未啟用雲端同步。
+- dev assets／APK 為 **v149**；tokenless 與 airplane-mode emulator cold start 都直接進 home，無 setup。
+- F140 fresh-context Codex review 的 tombstone、template snapshot、tokenless gate、pending 單位、顯式 set number 與 overlay UI evidence findings 均已修正；第二輪六項驗收全 pass。
 
 ## 已有證據
 
-- `ANDROID_HOME=...; .\gradlew.bat :app:testDevDebugUnitTest --tests com.ryanleeyi.liftlog.LocalStoreTest` → **BUILD SUCCESSFUL**；4 個案例涵蓋建庫/seed 冪等、domain＋outbox 回滾、v1→v2 保留資料、migration 失敗回滾並鎖寫。
-- `uv run pytest` → **286 passed in 28.01s**。
-- `uv run ruff check .` → **All checks passed**。
-- Claude Code fresh-context review → **0 findings，integrity valid**；報告位於當時系統 temp `claude-review-F139-20260810-071046/report.json`。
-
-## 唯一 blocker：獨立 acceptance verification 沒拿到報告
-
-- Claude `acceptance-verifier` 連跑兩次，各在 604 秒硬上限逾時；`report.md`／`stderr.log` 都是空檔。
-- Codex same-model fallback 已成功 spawn 具名 `acceptance-verifier`，但外層 ephemeral session 也在 604 秒先逾時；無報告可採。
-- 本對話直接 spawn 被 3 個既有 explorer thread 佔滿；resume ephemeral session 失敗（`no rollout found`）。
-- 因此 F139 保持 `failing`、`evidence` 留空。這是 verifier availability，不是實作 fail，不寫 `.harness/failures.jsonl`。
+- `uv run pytest` → **286 passed**；`uv run ruff check .` → **All checks passed**。
+- Android `testDevDebugUnitTest` → **BUILD SUCCESSFUL**（8/8；`LocalStoreTest` 7 tests）。
+- `emulator-5554` F140 instrumentation → **OK (2 tests)**；第二支實際以 WebView Capacitor LocalStore plugin seed/readback，並在 overlay window 點擊「停止」與「完成這組」。
+- E2E 全綠：F67 20/20、F80 19/19、F81 50/50、F83 35/35、F85 94/94、F87 38/38、F90 30/30、F91 20/20、F92 15/15、F103 16/16、F104 7/7。
+- packaged dev APK 直接驗證 v149 assets SHA match；fresh-context `codex exec` gpt-5.6-sol 第二輪六項逐條 PASS。
 
 ## 下一個 session 最短入口
 
-1. 讀本檔、F139 acceptance、PRD；確認 `git status`，**不要碰使用者既有 `CLAUDE.md` 變更**。
-2. `claude-verify` skill 已把單輪 timeout 上限改成 **60 分鐘**。設定既有 SDK：`ANDROID_HOME=C:\Users\user\AppData\Local\Android\Sdk`，只跑一輪 F139 verifier，shell timeout 用 `3600000` ms。
-3. 只有逐條全 pass 且 integrity valid，才填 F139 evidence／reviewed_by／verified_by、改 `passing`，再把 `.harness/current_feature` 切到 `F140`。
-4. 若 verifier 提出 genuine fail，先寫 `.harness/failures.jsonl`，修完只做一次針對性重驗。
+1. 讀本檔、F141 frozen acceptance 與 PRD；確認 `git status`。
+2. **動工時才**把 `.harness/current_feature` 從 F140 設為 F141；本次不要提前切換。
+3. F141 涉及 auth/session/security，先依 frozen acceptance 確認範圍與測試門檻，再開始實作。
 
 ## 工作區注意
 
-- `CLAUDE.md` 在本場開始前就已修改，屬使用者變更；不要 stage、restore 或覆寫。
-- F139 新增 Robolectric **僅為 test dependency**，不進正式 APK；未加入 Room 或 production database dependency。
-- 正式 Web 仍 v124、正式 APK 仍 v139；本場沒有改發布狀態。
+- `CLAUDE.md` 是使用者既有未提交變更；絕對不要 stage、restore 或覆寫。
+- F140 已通過驗收但**未部署**：正式 Web／正式 APK 均未發布；只有 dev APK 與 emulator 驗證。

@@ -8,7 +8,6 @@
 import { isNativeApp } from "./env.js";
 import {
   cancelNativeRest,
-  clearPendingLog as nativeClearPendingLog,
   disableNativeNotify,
   disableRestOverlay as disableNativeOverlay,
   discardNativeFailed as nativeDiscardFailed,
@@ -16,7 +15,6 @@ import {
   enableRestOverlay as enableNativeOverlay,
   flushNativeOutbox as nativeFlushOutbox,
   getNativeOutbox as nativeGetOutbox,
-  getPendingLog as nativeGetPendingLog,
   getRestStoppedAt as nativeGetRestStoppedAt,
   nativeExactAlarmOff,
   nativeNotifyAvailable,
@@ -26,7 +24,6 @@ import {
   pauseForegroundRest,
   pushAuthToNative as nativePushAuth,
   refreshNativeNotifyState,
-  reportLogResult as reportNativeLogResult,
   requestNativeExactAlarm,
   restOverlayEnabled as nativeOverlayEnabled,
   restOverlayPermitted as nativeOverlayPermitted,
@@ -125,17 +122,9 @@ export function syncRestCardVisible(visible, force = false) {
 }
 
 // F125 ③：開機取件補送。web 版沒有原生儲存＝永遠沒有待補送的。
-export async function getPendingRestLog() {
-  return native() ? nativeGetPendingLog() : null;
-}
-
 // F127 ②：web 版沒有原生停止那條路，回 0＝「沒有人明確結束過」，還原行為不變。
 export async function restStoppedAt() {
   return native() ? nativeGetRestStoppedAt() : 0;
-}
-
-export async function clearPendingRestLog() {
-  if (native()) await nativeClearPendingLog();
 }
 
 // F131 ⑤：token 鏡射給原生。web 版沒有原生寫入路徑＝no-op。
@@ -154,11 +143,6 @@ export async function flushRestOutbox() {
 
 export async function discardRestOutboxFailed() {
   if (native()) await nativeDiscardFailed();
-}
-
-// F104 ⑤：就地記錄的結果回報給浮動視窗。web 版沒有視窗＝no-op。
-export async function reportLogResult(ok) {
-  if (native()) await reportNativeLogResult(ok);
 }
 
 export async function disableRestNotify() {
