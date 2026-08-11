@@ -21,9 +21,11 @@ SUB_JSON = {
 @pytest.fixture(autouse=True)
 def _reset_scheduler() -> None:
     # 每個測試前後清掉模組級排程 task，避免跨測試/跨事件迴圈殘留
-    svc._rest_task = None
+    svc._rest_tasks.clear()
     yield
-    svc._rest_task = None
+    for task in svc._rest_tasks.values():
+        task.cancel()
+    svc._rest_tasks.clear()
 
 
 def _sub_in(endpoint: str = "https://push.example/abc", p256dh: str = "p256") -> PushSubscriptionIn:
@@ -117,6 +119,24 @@ def test_scheduler_fires() -> None:
         return fired
 
     assert asyncio.run(run()) == [1]
+
+
+def test_scheduler_keys_do_not_replace_other_users_timer() -> None:
+    async def run() -> list[str]:
+        fired: list[str] = []
+
+        async def alice() -> None:
+            fired.append("alice")
+
+        async def bob() -> None:
+            fired.append("bob")
+
+        svc.schedule_rest(0.02, alice, key="alice")
+        svc.schedule_rest(0.02, bob, key="bob")
+        await asyncio.sleep(0.06)
+        return fired
+
+    assert sorted(asyncio.run(run())) == ["alice", "bob"]
 
 
 def test_scheduler_cancel_prevents_fire() -> None:

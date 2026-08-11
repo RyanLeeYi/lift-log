@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import (
     ExerciseCreate,
     ExerciseHistoryOut,
@@ -15,7 +15,7 @@ from app.schemas import (
 from app.services import exercises as svc
 from app.services.history import exercise_history, months_ago
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 def _parse_date(value: str) -> date:

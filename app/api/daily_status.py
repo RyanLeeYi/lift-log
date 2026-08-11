@@ -2,11 +2,11 @@ from datetime import date as date_type
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import DailyStatusIn, DailyStatusOut
 from app.services import daily_status as svc
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 @router.get("/daily-status")

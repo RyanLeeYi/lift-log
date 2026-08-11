@@ -2,11 +2,11 @@
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import SettingIn, SettingOut
 from app.services import settings as svc
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 @router.get("/settings/{key}", response_model=SettingOut)

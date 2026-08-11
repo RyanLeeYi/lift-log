@@ -23,7 +23,8 @@ from app.api import (
 )
 from app.config import Settings
 from app.control_db import make_control_session_factory
-from app.db import make_engine
+from app.control_models import User
+from app.db import canonical_user_db_path, initialize_data_db, make_engine
 from app.errors import register_error_handlers
 from app.mcp import create_mcp
 from app.migrations import migrate_schema
@@ -56,6 +57,19 @@ def create_app(
     migrate_schema(engine)
     session_factory = sessionmaker(bind=engine)
     control_session_factory = make_control_session_factory(settings.control_db_path)
+    with control_session_factory() as control:
+        users = list(control.scalars(select(User).where(User.status != "closed")))
+    unavailable_user_ids: set[str] = set()
+    for user in users:
+        try:
+            path = canonical_user_db_path(
+                settings.user_data_dir, user.id, user.data_db_name
+            )
+            if not path.is_file():
+                raise RuntimeError
+            initialize_data_db(path)
+        except Exception:
+            unavailable_user_ids.add(user.id)
 
     # MCP 先建：FastAPI 必須接 mcp_app.lifespan，session manager 才會初始化
     mcp_app = create_mcp(session_factory, settings.token).http_app(path="/")
@@ -64,10 +78,12 @@ def create_app(
     app.state.settings = settings
     app.state.session_factory = session_factory
     app.state.control_session_factory = control_session_factory
+    app.state.unavailable_user_ids = unavailable_user_ids
     app.state.google_token_verifier = google_token_verifier or google_verifier(
         settings.google_client_id
     )
     app.state.auth_rate_limiter = auth.AuthRateLimiter()
+    app.state.domain_rate_limiter = auth.AuthRateLimiter(limit=120)
 
     app.add_middleware(
         CORSMiddleware,

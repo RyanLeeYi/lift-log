@@ -9,6 +9,8 @@ from sqlalchemy.engine import Engine
 
 from app.models import SET_NUMBER_UNIQUE_INDEX
 
+DOMAIN_SCHEMA_VERSION = 1
+
 # (table, column, DDL)——新增欄位一律 nullable，舊資料自然為 NULL
 _COLUMN_MIGRATIONS = [
     (
@@ -51,6 +53,12 @@ def _assert_no_duplicate_active_set_numbers(conn) -> None:  # noqa: ANN001 - Con
 
 def migrate_schema(engine: Engine) -> None:
     with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS schema_metadata ("
+                "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+        )
         for table, column, ddl in _COLUMN_MIGRATIONS:
             existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
             if existing and column not in existing:
@@ -68,3 +76,10 @@ def migrate_schema(engine: Engine) -> None:
                     "WHERE deleted_at IS NULL"
                 )
             )
+        conn.execute(
+            text(
+                "INSERT INTO schema_metadata (key, value) VALUES ('schema_version', :version) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            ),
+            {"version": str(DOMAIN_SCHEMA_VERSION)},
+        )

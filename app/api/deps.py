@@ -1,18 +1,20 @@
 import secrets
+from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import get_session
+from app.db import (
+    UserDataUnavailable,
+    canonical_user_db_path,
+    data_db_size,
+    make_engine,
+)
 from app.services import auth as auth_service
 
-
-def require_token(request: Request) -> None:
-    expected = f"Bearer {request.app.state.settings.token}"
-    provided = request.headers.get("Authorization") or ""
-    if not secrets.compare_digest(provided.encode(), expected.encode()):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+WEB_SESSION_COOKIE = "liftlog_session"
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def require_app_download_auth(request: Request) -> None:
@@ -36,4 +38,101 @@ def require_app_download_auth(request: Request) -> None:
         ) from exc
 
 
-DbSession = Annotated[Session, Depends(get_session)]
+def _bearer(request: Request) -> str | None:
+    scheme, separator, token = (request.headers.get("Authorization") or "").partition(" ")
+    return token if separator and scheme.lower() == "bearer" and token else None
+
+
+def _is_legacy_request(request: Request) -> bool:
+    provided = request.headers.get("Authorization") or ""
+    expected = f"Bearer {request.app.state.settings.token}"
+    return secrets.compare_digest(provided.encode(), expected.encode())
+
+
+def require_domain_auth(request: Request) -> Iterator[None]:
+    """Resolve one request to either the pre-cutover DB or one verified user's DB."""
+    if _is_legacy_request(request):
+        request.state.domain_session_factory = request.app.state.session_factory
+        request.state.domain_scope = "legacy"
+        yield
+        return
+
+    try:
+        auth_session, user, device = auth_service.resolve_session(
+            request.app.state.control_session_factory,
+            access_token=_bearer(request),
+            web_cookie=request.cookies.get(WEB_SESSION_COOKIE),
+        )
+    except auth_service.InvalidSession as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
+        ) from exc
+    if user.id in request.app.state.unavailable_user_ids:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="data unavailable",
+        )
+
+    if (
+        request.method in MUTATING_METHODS
+        and auth_session.client == "web"
+        and not auth_service.csrf_matches(
+            auth_session, request.headers.get("X-CSRF-Token")
+        )
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="csrf invalid")
+
+    retry_after = request.app.state.domain_rate_limiter.retry_after(
+        f"{user.id}:{device.id}"
+    )
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="rate limit exceeded",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    try:
+        path = canonical_user_db_path(
+            request.app.state.settings.user_data_dir,
+            user.id,
+            user.data_db_name,
+        )
+    except UserDataUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="data unavailable",
+        ) from exc
+    if not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="data unavailable",
+        )
+    if (
+        request.method in MUTATING_METHODS
+        and data_db_size(path) >= request.app.state.settings.data_db_max_bytes
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            detail="data_db_quota_exceeded",
+        )
+
+    engine = make_engine(str(path))
+    request.state.domain_session_factory = sessionmaker(bind=engine)
+    request.state.domain_scope = user.id
+    try:
+        yield
+    finally:
+        engine.dispose()
+
+
+def get_domain_session(
+    request: Request,
+    _auth: Annotated[None, Depends(require_domain_auth)],
+) -> Iterator[Session]:
+    factory: sessionmaker[Session] = request.state.domain_session_factory
+    with factory() as session:
+        yield session
+
+
+DbSession = Annotated[Session, Depends(get_domain_session)]

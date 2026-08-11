@@ -2,11 +2,11 @@ from datetime import date as date_type
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import BodyMetricBounds, BodyMetricIn, BodyMetricOut
 from app.services import body_metrics as svc
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 @router.get("/body-metrics")

@@ -13,8 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
 from app.control_models import AuthSession, Device, RefreshToken, User, new_uuid
-from app.db import make_engine
-from app.models import Base
+from app.db import canonical_user_db_path, initialize_data_db
 from app.schemas import GoogleLoginIn
 
 ACCESS_TTL = timedelta(minutes=15)
@@ -65,12 +64,7 @@ def new_token() -> str:
 
 
 def create_user_data_db(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    engine = make_engine(str(path))
-    try:
-        Base.metadata.create_all(engine)
-    finally:
-        engine.dispose()
+    initialize_data_db(path)
 
 
 def google_verifier(audience: str) -> GoogleTokenVerifier:
@@ -152,9 +146,12 @@ def login_with_google(
             else:
                 if user.status != "active":
                     raise InvalidGoogleToken
-                expected_path = Path(settings.user_data_dir).resolve() / user.data_db_name
+                expected_path = canonical_user_db_path(
+                    settings.user_data_dir, user.id, user.data_db_name
+                )
                 if not expected_path.is_file():
                     raise AuthUnavailable
+                initialize_data_db(expected_path)
                 user.email = email
 
             device = db.scalar(

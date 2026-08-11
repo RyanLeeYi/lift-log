@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, status
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import TemplateCreate, TemplateOut, TemplateWeekdaysPatch
 from app.services import templates as svc
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 @router.post("/templates", status_code=status.HTTP_201_CREATED, response_model=TemplateOut)

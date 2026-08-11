@@ -70,26 +70,31 @@ def send_to_all(session_factory: sessionmaker, settings: Settings, title: str, b
 
 # ---------- 休息結束排程器（in-process、單一 task） ----------
 
-_rest_task: asyncio.Task | None = None
+_rest_tasks: dict[str, asyncio.Task] = {}
 
 
-async def _run_after(seconds: float, callback: Callable[[], Awaitable[None]]) -> None:
+async def _run_after(
+    key: str, seconds: float, callback: Callable[[], Awaitable[None]]
+) -> None:
     try:
         await asyncio.sleep(seconds)
         await callback()
     except asyncio.CancelledError:
         pass  # 被新排程或取消覆蓋：不觸發
+    finally:
+        if _rest_tasks.get(key) is asyncio.current_task():
+            _rest_tasks.pop(key, None)
 
 
-def schedule_rest(seconds: float, callback: Callable[[], Awaitable[None]]) -> None:
+def schedule_rest(
+    seconds: float, callback: Callable[[], Awaitable[None]], *, key: str = "legacy"
+) -> None:
     """排定 seconds 後執行 callback；覆蓋前一個尚未觸發的排程。"""
-    cancel_rest()
-    global _rest_task
-    _rest_task = asyncio.create_task(_run_after(seconds, callback))
+    cancel_rest(key=key)
+    _rest_tasks[key] = asyncio.create_task(_run_after(key, seconds, callback))
 
 
-def cancel_rest() -> None:
-    global _rest_task
-    if _rest_task is not None and not _rest_task.done():
-        _rest_task.cancel()
-    _rest_task = None
+def cancel_rest(*, key: str = "legacy") -> None:
+    task = _rest_tasks.pop(key, None)
+    if task is not None and not task.done():
+        task.cancel()

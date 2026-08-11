@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     )
     control_db_path: str = "./control.db"
     user_data_dir: str = "./users"
+    data_db_max_bytes: int = 100 * 1024 * 1024
     # OAuth client ID 是公開識別值，不是 secret；Android 與 Web 都把它當 audience。
     google_client_id: str = ""
     # F67 app 自我更新：release APK 的存放目錄。build 完把 lift-log-v<N>.apk 放進來，

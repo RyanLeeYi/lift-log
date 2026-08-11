@@ -2,11 +2,11 @@
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import ScheduleTodayOut
 from app.services import schedule as svc
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 @router.get("/schedule/today", response_model=ScheduleTodayOut)

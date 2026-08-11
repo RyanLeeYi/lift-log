@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import ProgressOut
 from app.services import stats as svc
 from app.services.body_metrics import latest_weight
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 @router.get("/stats/progress")

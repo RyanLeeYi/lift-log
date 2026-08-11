@@ -2638,10 +2638,10 @@
       "id": "F142",
       "name": "雲端每使用者 data DB 隔離",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "所有 domain API 只會連到目前已驗證 user 的獨立 data DB，跨帳號無法讀寫。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R3、R5、R9 與技術約束：control DB 與每 user 隨機 UUID data DB 分離；request context 決定 session，domain service 不接受外部 user/path。data DB 建立、migration、quota、停權與關閉生命週期可重跑且失敗安全。既有 domain API 全部多帳號化；至少跨兩帳號的 read/write/list/IDOR 測試證明零洩漏。",
-      "evidence": "",
+      "evidence": "2026-08-11：Claude Code cross-model review 先後抓出單一壞 DB 拖垮全站與 Android refresh 無法解除復原狀態兩項 HIGH，修正後 targeted review 0 findings、integrity valid。canonical acceptance-verifier 5/5 pass、integrity true；獨立執行 ./init.sh、uv run pytest（317 passed）、tests/test_user_isolation.py（8 passed）、tests/test_auth.py（22 passed）與 ruff 全綠。",
       "prerequisites": ["F141"],
       "touches": ["app/db.py", "app/models.py", "app/migrations.py", "app/api/", "app/services/", "app/mcp.py", "tests/"],
       "non_goals": ["不把 domain tables 改為共享 user_id 多租戶表", "不接受 client 傳入 DB path"]

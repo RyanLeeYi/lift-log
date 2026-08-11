@@ -7,6 +7,7 @@ from threading import Lock
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
+from app.db import canonical_user_db_path, initialize_data_db
 from app.schemas import GoogleLoginIn, RefreshIn
 from app.services import auth as auth_service
 
@@ -90,6 +91,26 @@ def _out(issued: auth_service.IssuedAuth) -> dict[str, object]:
     }
 
 
+def _recover_user_data_if_available(
+    request: Request, issued: auth_service.IssuedAuth
+) -> None:
+    unavailable = request.app.state.unavailable_user_ids
+    if issued.user.id not in unavailable:
+        return
+    try:
+        path = canonical_user_db_path(
+            request.app.state.settings.user_data_dir,
+            issued.user.id,
+            issued.user.data_db_name,
+        )
+        if not path.is_file():
+            return
+        initialize_data_db(path)
+    except Exception:
+        return
+    unavailable.discard(issued.user.id)
+
+
 @router.get("/config")
 def auth_config(request: Request) -> dict[str, str]:
     return {"google_client_id": request.app.state.settings.google_client_id}
@@ -115,6 +136,7 @@ def google_login(data: GoogleLoginIn, request: Request, response: Response) -> d
             detail="authentication unavailable",
         ) from exc
 
+    request.app.state.unavailable_user_ids.discard(issued.user.id)
     body = _out(issued)
     if data.client == "web":
         response.set_cookie(
@@ -148,6 +170,7 @@ def refresh(data: RefreshIn, request: Request) -> dict[str, object]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
         ) from exc
+    _recover_user_data_if_available(request, issued)
     body = _out(issued)
     body.update(
         access_token=issued.access_token,

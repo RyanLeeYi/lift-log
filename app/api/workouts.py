@@ -2,7 +2,7 @@ from datetime import date as date_type
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.deps import DbSession, require_token
+from app.api.deps import DbSession, require_domain_auth
 from app.schemas import (
     SetCreate,
     SetOut,
@@ -13,7 +13,7 @@ from app.schemas import (
 )
 from app.services import workouts as svc
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
 @router.post("/workouts", status_code=status.HTTP_201_CREATED, response_model=WorkoutOut)
