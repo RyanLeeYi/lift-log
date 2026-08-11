@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "device_id": "00000000-0000-4000-8000-000000000001",
+  "mutations": [
+    {
+      "mutation_id": "a0000000-0000-4000-8000-000000000002",
+      "entity_type": "template",
+      "entity_id": "20000000-0000-4000-8000-000000000002",
+      "operation": "upsert",
+      "base_version": 0,
+      "payload": {
+        "sync_id": "20000000-0000-4000-8000-000000000002",
+        "name": "Fixture Template",
+        "weekdays": [1, 3],
+        "exercises": [
+          {
+            "exercise_sync_id": "10000000-0000-4000-8000-000000000001",
+            "position": 0,
+            "default_sets": 3,
+            "rest_hint_seconds": 90
+          }
+        ]
+      }
+    }
+  ]
+}

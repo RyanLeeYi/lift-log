@@ -15,6 +15,7 @@ from app.api import (
     push,
     schedule,
     stats,
+    sync,
     templates,
     workouts,
 )
@@ -85,6 +86,7 @@ def create_app(
     app.state.auth_rate_limiter = auth.AuthRateLimiter()
     app.state.domain_rate_limiter = auth.AuthRateLimiter(limit=120)
 
+    app.add_middleware(sync.SyncBodyLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=CAPACITOR_ORIGINS,
@@ -128,6 +130,7 @@ def create_app(
     app.include_router(push.router)
     app.include_router(schedule.router)  # F80：今天排到什麼＋本週進度
     app.include_router(settings_api.router)  # F80：每週目標天數等設定
+    app.include_router(sync.router)
     app.include_router(app_release.router)  # F67：app 版自我更新的版本查詢與 APK 供檔
     app.mount(MCP_MOUNT, mcp_app)
     # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/* 與 /mcp

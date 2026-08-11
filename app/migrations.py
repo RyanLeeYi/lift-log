@@ -9,7 +9,7 @@ from sqlalchemy.engine import Engine
 
 from app.models import SET_NUMBER_UNIQUE_INDEX
 
-DOMAIN_SCHEMA_VERSION = 1
+DOMAIN_SCHEMA_VERSION = 2
 
 # (table, column, DDL)——新增欄位一律 nullable，舊資料自然為 NULL
 _COLUMN_MIGRATIONS = [

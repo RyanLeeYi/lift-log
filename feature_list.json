@@ -2650,10 +2650,10 @@
       "id": "F143",
       "name": "同步 server 協定",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "server 提供冪等 push 與游標 pull，正確處理版本、tombstone、分頁與穩定錯誤。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R3、R4、Sync API、共用欄位與邊界錯誤：mutation_id 重送只套用一次並回相同結果；每 user server_seq 單調遞增，pull cursor 不漏不重，push 上限 500 筆或 1 MiB。upsert/delete 以 base_version、version、tombstone 判定；未知 schema/entity 不前移 cursor；DB full/locked 回 503。Android/server 共用 JSON fixture contract tests，sequence regression 會停用 sync。",
-      "evidence": "",
+      "evidence": "2026-08-11：Codex fresh-context 主驗收除 Android sandbox UNVERIFIED 外全 PASS、integrity VALID；backend 338 passed、ruff clean，unknown cursor temp DB black-box PASS。Codex review 修正 concurrent mutation lost update 與 chunked/Content-Length/CORS 邊界。第二個 targeted fresh-context Codex 以本機 SDK 補驗 Android：Android/server 共用同一實體 JSON fixtures，Gradle BUILD SUCCESSFUL、JUnit 2/2、integrity VALID。generic sync store 與既有 REST/MCP domain tables 整合 defer F146/F147；sequence reset/restore ops defer F149。",
       "prerequisites": ["F142"],
       "touches": ["app/api/sync.py", "app/services/sync.py", "app/sync_models.py", "app/schemas.py", "tests/fixtures/sync/", "tests/test_sync.py"],
       "non_goals": ["不以 device clock 判定勝負", "不做即時 WebSocket 同步"]

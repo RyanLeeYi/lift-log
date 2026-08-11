@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "device_id": "00000000-0000-4000-8000-000000000001",
+  "mutations": [
+    {
+      "mutation_id": "a0000000-0000-4000-8000-000000000003",
+      "entity_type": "workout",
+      "entity_id": "30000000-0000-4000-8000-000000000003",
+      "operation": "upsert",
+      "base_version": 0,
+      "payload": {
+        "sync_id": "30000000-0000-4000-8000-000000000003",
+        "date": "2030-01-02",
+        "template_sync_id": "20000000-0000-4000-8000-000000000002",
+        "note": "synthetic fixture",
+        "ended_at": "2030-01-02T03:04:05Z",
+        "owner_device_id": "00000000-0000-4000-8000-000000000001",
+        "lease_generation": 1
+      }
+    }
+  ]
+}

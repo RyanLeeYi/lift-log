@@ -42,13 +42,13 @@ def canonical_user_db_path(user_data_dir: str, user_id: str, db_name: str) -> Pa
 
 def initialize_data_db(path: Path) -> None:
     from app.migrations import migrate_schema
-    from app.models import Base
     from app.seed import seed_exercises
+    from app.sync_models import SyncEntity
 
     path.parent.mkdir(parents=True, exist_ok=True)
     engine = make_engine(str(path))
     try:
-        Base.metadata.create_all(engine)
+        SyncEntity.metadata.create_all(engine)
         migrate_schema(engine)
         with sessionmaker(bind=engine)() as session:
             seed_exercises(session)

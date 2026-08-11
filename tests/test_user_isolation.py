@@ -200,7 +200,7 @@ def test_user_db_enables_required_sqlite_pragmas_and_reruns_migration(tmp_path: 
             assert connection.execute(text("PRAGMA busy_timeout")).scalar_one() >= 5000
             assert connection.execute(
                 text("SELECT value FROM schema_metadata WHERE key='schema_version'")
-            ).scalar_one() == "1"
+            ).scalar_one() == "2"
     finally:
         engine.dispose()
 
@@ -209,7 +209,7 @@ def test_user_db_enables_required_sqlite_pragmas_and_reruns_migration(tmp_path: 
         with control.connect() as connection:
             assert connection.execute(
                 text("SELECT value FROM schema_metadata WHERE key='schema_version'")
-            ).scalar_one() == "1"
+            ).scalar_one() == "2"
     finally:
         control.dispose()
 

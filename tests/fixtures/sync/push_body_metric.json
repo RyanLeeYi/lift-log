@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "device_id": "00000000-0000-4000-8000-000000000001",
+  "mutations": [
+    {
+      "mutation_id": "a0000000-0000-4000-8000-000000000005",
+      "entity_type": "body_metric",
+      "entity_id": "50000000-0000-4000-8000-000000000005",
+      "operation": "upsert",
+      "base_version": 0,
+      "payload": {
+        "sync_id": "50000000-0000-4000-8000-000000000005",
+        "date": "2030-01-03",
+        "weight_kg": 123.4,
+        "body_fat_pct": null
+      }
+    }
+  ]
+}

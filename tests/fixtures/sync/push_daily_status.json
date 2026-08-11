@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "device_id": "00000000-0000-4000-8000-000000000001",
+  "mutations": [
+    {
+      "mutation_id": "a0000000-0000-4000-8000-000000000006",
+      "entity_type": "daily_status",
+      "entity_id": "60000000-0000-4000-8000-000000000006",
+      "operation": "upsert",
+      "base_version": 0,
+      "payload": {
+        "sync_id": "60000000-0000-4000-8000-000000000006",
+        "date": "2030-01-03",
+        "energy": 3,
+        "sleep_quality": 4,
+        "note": "synthetic fixture"
+      }
+    }
+  ]
+}

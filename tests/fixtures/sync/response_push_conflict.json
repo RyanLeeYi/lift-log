@@ -1,0 +1,21 @@
+{
+  "accepted": [],
+  "conflicts": [
+    {
+      "mutation_id": "b0000000-0000-4000-8000-000000000001",
+      "reason": "version_mismatch",
+      "server": {
+        "entity_type": "setting",
+        "entity_id": "70000000-0000-4000-8000-000000000007",
+        "version": 2,
+        "updated_at": "2030-01-04T05:06:07Z",
+        "deleted_at": null,
+        "payload": {
+          "sync_id": "70000000-0000-4000-8000-000000000007",
+          "key": "fixture_setting",
+          "value": "server_value"
+        }
+      }
+    }
+  ]
+}

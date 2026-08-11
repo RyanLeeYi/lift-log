@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "device_id": "00000000-0000-4000-8000-000000000001",
+  "mutations": [
+    {
+      "mutation_id": "a0000000-0000-4000-8000-000000000007",
+      "entity_type": "setting",
+      "entity_id": "70000000-0000-4000-8000-000000000007",
+      "operation": "upsert",
+      "base_version": 0,
+      "payload": {
+        "sync_id": "70000000-0000-4000-8000-000000000007",
+        "key": "fixture_setting",
+        "value": "fixture_value"
+      }
+    }
+  ]
+}

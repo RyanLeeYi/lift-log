@@ -1,6 +1,6 @@
 from datetime import date as date_type
 from datetime import datetime as datetime_type
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -411,3 +411,133 @@ class ExerciseLastSet(BaseModel):
     exercise_id: int
     weight_kg: float
     reps: int
+
+
+class SyncPushIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: int = Field(ge=1)
+    device_id: UUID
+    mutations: list[dict[str, Any]] = Field(max_length=500)
+
+
+class SyncMutation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mutation_id: UUID
+    entity_type: str = Field(min_length=1, max_length=32)
+    entity_id: UUID
+    operation: str = Field(min_length=1, max_length=16)
+    base_version: int = Field(ge=0)
+    lease_generation: int | None = Field(default=None, ge=1)
+    payload: dict[str, Any]
+
+
+class _SyncPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sync_id: UUID
+
+
+class SyncExercisePayload(_SyncPayload):
+    name_zh: str = Field(min_length=1, max_length=100)
+    name_en: str = Field(min_length=1, max_length=100)
+    muscle_group: str = Field(min_length=1, max_length=100)
+    is_bodyweight: bool
+
+
+class SyncTemplateExercisePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    exercise_sync_id: UUID
+    position: int = Field(ge=0)
+    default_sets: int = Field(gt=0, le=100)
+    rest_hint_seconds: int | None = Field(default=None, ge=0, le=3600)
+
+
+class SyncTemplatePayload(_SyncPayload):
+    name: str = Field(min_length=1, max_length=100)
+    weekdays: list[int] | None = Field(default=None, max_length=7)
+    exercises: list[SyncTemplateExercisePayload] = Field(default_factory=list, max_length=100)
+
+    @field_validator("weekdays")
+    @classmethod
+    def _sync_weekdays(cls, value: list[int] | None) -> list[int] | None:
+        return _clean_weekdays(value)
+
+
+class SyncWorkoutPayload(_SyncPayload):
+    date: date_type
+    template_sync_id: UUID | None = None
+    note: str | None = Field(default=None, max_length=10_000)
+    ended_at: datetime_type | None = None
+    owner_device_id: UUID | None = None
+    lease_generation: int = Field(default=1, ge=1)
+
+
+class SyncSetPayload(_SyncPayload):
+    client_uuid: str = Field(min_length=8, max_length=100)
+    workout_sync_id: UUID
+    exercise_sync_id: UUID
+    set_number: int = Field(gt=0)
+    weight_kg: float = Field(ge=0)
+    reps: int = Field(gt=0)
+    rpe: int | None = Field(default=None, ge=1, le=10)
+    rest_seconds: int | None = Field(default=None, ge=0)
+
+
+class SyncBodyMetricPayload(_SyncPayload):
+    date: date_type
+    weight_kg: float = Field(ge=30, le=300)
+    body_fat_pct: float | None = Field(default=None, gt=0, lt=100)
+
+
+class SyncDailyStatusPayload(_SyncPayload):
+    date: date_type
+    energy: int = Field(ge=1, le=5)
+    sleep_quality: int | None = Field(default=None, ge=1, le=5)
+    note: str | None = Field(default=None, max_length=10_000)
+
+
+class SyncSettingPayload(_SyncPayload):
+    key: str = Field(min_length=1, max_length=100)
+    value: str = Field(min_length=1, max_length=1000)
+
+
+class SyncDeletePayload(_SyncPayload):
+    pass
+
+
+class SyncAccepted(BaseModel):
+    mutation_id: str
+    version: int
+    server_seq: int
+
+
+class SyncConflict(BaseModel):
+    mutation_id: str | None
+    reason: str
+    server: dict[str, Any] | None = None
+
+
+class SyncPushOut(BaseModel):
+    accepted: list[SyncAccepted]
+    conflicts: list[SyncConflict]
+
+
+class SyncChangeOut(BaseModel):
+    server_seq: int
+    schema_version: int
+    entity_type: str
+    entity_id: str
+    operation: str
+    version: int
+    updated_at: datetime_type
+    deleted_at: datetime_type | None
+    payload: dict[str, Any]
+
+
+class SyncPullOut(BaseModel):
+    changes: list[SyncChangeOut]
+    next_cursor: int
+    has_more: bool

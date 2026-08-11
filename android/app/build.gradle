@@ -73,6 +73,11 @@ android {
             // app_name 撞成重複資源；flavor 專屬 res 目錄也不會被 cap sync 重寫）
         }
     }
+    sourceSets {
+        test {
+            resources.srcDir rootProject.file("../tests/fixtures/sync")
+        }
+    }
 }
 
 repositories {

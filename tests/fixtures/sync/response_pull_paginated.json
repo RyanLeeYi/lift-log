@@ -1,0 +1,38 @@
+{
+  "changes": [
+    {
+      "server_seq": 11,
+      "schema_version": 1,
+      "entity_type": "exercise",
+      "entity_id": "10000000-0000-4000-8000-000000000001",
+      "operation": "upsert",
+      "version": 1,
+      "updated_at": "2030-01-04T05:06:07Z",
+      "deleted_at": null,
+      "payload": {
+        "sync_id": "10000000-0000-4000-8000-000000000001",
+        "name_zh": "Fixture 動作",
+        "name_en": "Fixture Exercise",
+        "muscle_group": "Fixture",
+        "is_bodyweight": false
+      }
+    },
+    {
+      "server_seq": 12,
+      "schema_version": 1,
+      "entity_type": "setting",
+      "entity_id": "70000000-0000-4000-8000-000000000007",
+      "operation": "upsert",
+      "version": 2,
+      "updated_at": "2030-01-04T05:06:08Z",
+      "deleted_at": null,
+      "payload": {
+        "sync_id": "70000000-0000-4000-8000-000000000007",
+        "key": "fixture_setting",
+        "value": "server_value"
+      }
+    }
+  ],
+  "next_cursor": 12,
+  "has_more": true
+}

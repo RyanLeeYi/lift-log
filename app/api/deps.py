@@ -1,5 +1,6 @@
 import secrets
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -54,6 +55,8 @@ def require_domain_auth(request: Request) -> Iterator[None]:
     if _is_legacy_request(request):
         request.state.domain_session_factory = request.app.state.session_factory
         request.state.domain_scope = "legacy"
+        request.state.domain_client = "legacy"
+        request.state.domain_device_id = None
         yield
         return
 
@@ -112,6 +115,11 @@ def require_domain_auth(request: Request) -> Iterator[None]:
         request.method in MUTATING_METHODS
         and data_db_size(path) >= request.app.state.settings.data_db_max_bytes
     ):
+        if request.url.path.startswith("/api/sync/"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="sync_unavailable",
+            )
         raise HTTPException(
             status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
             detail="data_db_quota_exceeded",
@@ -120,6 +128,8 @@ def require_domain_auth(request: Request) -> Iterator[None]:
     engine = make_engine(str(path))
     request.state.domain_session_factory = sessionmaker(bind=engine)
     request.state.domain_scope = user.id
+    request.state.domain_client = auth_session.client
+    request.state.domain_device_id = device.client_device_id
     try:
         yield
     finally:
@@ -136,3 +146,21 @@ def get_domain_session(
 
 
 DbSession = Annotated[Session, Depends(get_domain_session)]
+
+
+@dataclass(frozen=True)
+class SyncIdentity:
+    user_id: str
+    device_id: str
+
+
+def get_sync_identity(
+    request: Request,
+    _auth: Annotated[None, Depends(require_domain_auth)],
+) -> SyncIdentity:
+    if request.state.domain_client != "android":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    return SyncIdentity(
+        user_id=request.state.domain_scope,
+        device_id=request.state.domain_device_id,
+    )
