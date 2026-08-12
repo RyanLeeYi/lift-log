@@ -2662,10 +2662,10 @@
       "id": "F144",
       "name": "Android sync client 與狀態 UI",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "Android 在恢復連線後可靠 push/pull，離線操作不被阻塞，使用者看得到同步狀態。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R2、R3：local transaction 同時寫 domain＋outbox；連線後 5 秒內開始 push 再 pull，response 遺失可安全重送。cursor 與套用 pull 具 transaction，失敗不前移；指數退避上限 15 分鐘，支援啟動、前景、網路恢復、背景與手動同步。UI 顯示已同步/待同步/離線/錯誤；process death、離線數週與重試 tests 全綠。",
-      "evidence": "",
+      "evidence": "2026-08-12 Claude canonical acceptance verifier：8/8 frozen criteria pass、integrity true。獨立重跑 ./init.sh、pytest 338 passed、ruff clean、Android JVM/Robolectric 27 tests BUILD SUCCESSFUL、JS native-sync 2/2、Playwright F144 bootstrap gate＋manual sync UI pass。Claude cross-model review 的唯一 HIGH（未捕捉 SQLiteConstraintException 導致無 error/backoff）已補回歸測試並 targeted re-review 確認 FIXED、0 findings、integrity valid。",
       "prerequisites": ["F140", "F143"],
       "touches": ["android/app/src/main/", "app/static/js/", "app/static/index.html", "app/static/css/app.css", "tests/"],
       "non_goals": ["不阻塞本地寫入等待 server", "不靠固定輪詢維持前景常駐"]

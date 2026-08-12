@@ -88,6 +88,12 @@ final class SecureStore {
         return p == null ? null : p.getString(KEY_BASE_URL, null);
     }
 
+    static boolean saveBaseUrl(Context context, String baseUrl) {
+        SharedPreferences p = prefs(context);
+        return p != null && baseUrl != null && !baseUrl.trim().isEmpty()
+            && p.edit().putString(KEY_BASE_URL, baseUrl).commit();
+    }
+
     /** 401 之後由 JS 決定要不要清；原生自己不清（它分不出是 token 錯還是伺服器出包）。 */
     static void clear(Context context) {
         SharedPreferences p = prefs(context);

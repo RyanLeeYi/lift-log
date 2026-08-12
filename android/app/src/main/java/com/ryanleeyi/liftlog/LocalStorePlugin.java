@@ -49,14 +49,16 @@ public class LocalStorePlugin extends Plugin {
     @PluginMethod
     public void createExercise(PluginCall call) {
         try {
-            call.resolve(asJsObject(store().createExercise(
+            JSONObject result = store().createExercise(
                 requireUuid(call, "syncId"),
                 requireText(call, "nameZh", 1, 120),
                 optionalText(call, "nameEn", 120),
                 optionalText(call, "muscleGroup", 60),
                 Boolean.TRUE.equals(call.getBoolean("isBodyweight", false)),
                 requireUuid(call, "mutationId")
-            )));
+            );
+            SyncScheduler.kick(getContext());
+            call.resolve(asJsObject(result));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
         } catch (RuntimeException error) {
@@ -76,6 +78,7 @@ public class LocalStorePlugin extends Plugin {
                 optionalUuid(call, "ownerDeviceId"),
                 requireUuid(call, "mutationId")
             );
+            SyncScheduler.kick(getContext());
             call.resolve(asJsObject(store().workout(syncId)));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
@@ -88,14 +91,16 @@ public class LocalStorePlugin extends Plugin {
     public void saveTemplate(PluginCall call) {
         try {
             Integer id = optionalPositive(call, "id");
-            call.resolve(asJsObject(store().saveTemplate(
+            JSONObject result = store().saveTemplate(
                 id,
                 id == null ? requireUuid(call, "syncId") : null,
                 requireText(call, "name", 1, 120),
                 requireTemplateExercises(call),
                 requireWeekdays(call),
                 requireUuid(call, "mutationId")
-            )));
+            );
+            SyncScheduler.kick(getContext());
+            call.resolve(asJsObject(result));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
         } catch (RuntimeException error) {
@@ -130,6 +135,7 @@ public class LocalStorePlugin extends Plugin {
                 requirePositive(call, "leaseGeneration"),
                 requireUuid(call, "mutationId")
             );
+            SyncScheduler.kick(getContext());
             call.resolve(asJsObject(store().set(syncId)));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
@@ -144,14 +150,16 @@ public class LocalStorePlugin extends Plugin {
             Integer rpe = optionalInt(call, "rpe");
             Integer restSeconds = optionalInt(call, "restSeconds");
             validateSetOptionals(rpe, restSeconds);
-            call.resolve(asJsObject(store().updateSet(
+            JSONObject result = store().updateSet(
                 requirePositive(call, "id"),
                 requireNonNegativeDouble(call, "weightKg"),
                 requirePositive(call, "reps"),
                 rpe,
                 restSeconds,
                 requireUuid(call, "mutationId")
-            )));
+            );
+            SyncScheduler.kick(getContext());
+            call.resolve(asJsObject(result));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
         } catch (RuntimeException error) {
@@ -169,9 +177,11 @@ public class LocalStorePlugin extends Plugin {
     @PluginMethod
     public void endWorkout(PluginCall call) {
         try {
-            call.resolve(asJsObject(store().endWorkout(
+            JSONObject result = store().endWorkout(
                 requirePositive(call, "id"), requireUuid(call, "mutationId")
-            )));
+            );
+            SyncScheduler.kick(getContext());
+            call.resolve(asJsObject(result));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
         } catch (RuntimeException error) {
@@ -193,13 +203,15 @@ public class LocalStorePlugin extends Plugin {
             if (fat != null && (!Double.isFinite(fat) || fat <= 0 || fat >= 100)) {
                 throw new IllegalArgumentException("bodyFatPct 必須大於 0 且小於 100");
             }
-            call.resolve(asJsObject(store().saveBodyMetric(
+            JSONObject result = store().saveBodyMetric(
                 requireUuid(call, "syncId"),
                 requireDate(call),
                 requireRangeDouble(call, "weightKg", 30, 300),
                 fat,
                 requireUuid(call, "mutationId")
-            )));
+            );
+            SyncScheduler.kick(getContext());
+            call.resolve(asJsObject(result));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
         } catch (RuntimeException error) {
@@ -221,14 +233,16 @@ public class LocalStorePlugin extends Plugin {
             if (sleep != null && (sleep < 1 || sleep > 5)) {
                 throw new IllegalArgumentException("sleepQuality 必須介於 1 到 5");
             }
-            call.resolve(asJsObject(store().saveDailyStatus(
+            JSONObject result = store().saveDailyStatus(
                 requireUuid(call, "syncId"),
                 requireDate(call),
                 requireRangeInt(call, "energy", 1, 5),
                 sleep,
                 optionalText(call, "note", 2000),
                 requireUuid(call, "mutationId")
-            )));
+            );
+            SyncScheduler.kick(getContext());
+            call.resolve(asJsObject(result));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
         } catch (RuntimeException error) {
@@ -251,12 +265,14 @@ public class LocalStorePlugin extends Plugin {
             if (!"weekly_target_days".equals(key) || !value.matches("[1-7]")) {
                 throw new IllegalArgumentException("weekly_target_days 必須是 1 到 7");
             }
-            call.resolve(asJsObject(store().putSetting(
+            JSONObject result = store().putSetting(
                 key,
                 value,
                 requireUuid(call, "syncId"),
                 requireUuid(call, "mutationId")
-            )));
+            );
+            SyncScheduler.kick(getContext());
+            call.resolve(asJsObject(result));
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);
         } catch (RuntimeException error) {
@@ -438,6 +454,7 @@ public class LocalStorePlugin extends Plugin {
     private void mutateVoid(PluginCall call, Runnable mutation) {
         try {
             mutation.run();
+            SyncScheduler.kick(getContext());
             call.resolve();
         } catch (IllegalArgumentException error) {
             rejectArgument(call, error);

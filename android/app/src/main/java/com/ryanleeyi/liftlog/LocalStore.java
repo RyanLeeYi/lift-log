@@ -16,7 +16,7 @@ import java.util.UUID;
 /** Android 的唯一 domain store；所有本地 mutation 與 outbox 必須在同一個 transaction。 */
 public class LocalStore extends SQLiteOpenHelper {
     static final String DATABASE_NAME = "liftlog-local.db";
-    static final int DATABASE_VERSION = 2;
+    static final int DATABASE_VERSION = 3;
     private static final String WORKOUT_TEMPLATE_PREFIX = "workout_template:";
     // ponytail: rowid 只作本機 handle；若日後加入 VACUUM/rebuild，再 materialize local ids。
 
@@ -82,6 +82,7 @@ public class LocalStore extends SQLiteOpenHelper {
     public void onCreate(SQLiteDatabase db) {
         createVersion1Schema(db);
         migrateVersion2(db);
+        migrateVersion3(db);
     }
 
     @Override
@@ -89,6 +90,7 @@ public class LocalStore extends SQLiteOpenHelper {
         try {
             if (oldVersion < 1) createVersion1Schema(db);
             if (oldVersion < 2) migrateVersion2(db);
+            if (oldVersion < 3) migrateVersion3(db);
             if (newVersion > DATABASE_VERSION) {
                 throw new IllegalStateException("不支援 LocalStore schema v" + newVersion);
             }
@@ -115,8 +117,9 @@ public class LocalStore extends SQLiteOpenHelper {
         return transaction(db -> {
             int created = 0;
             for (String[] exercise : DEFAULT_EXERCISES) {
+                String syncId = seedId(exercise[1]);
                 ContentValues values = new ContentValues();
-                values.put("sync_id", seedId(exercise[1]));
+                values.put("sync_id", syncId);
                 values.put("name_zh", exercise[0]);
                 values.put("name_en", exercise[1]);
                 values.put("muscle_group", exercise[2]);
@@ -124,7 +127,13 @@ public class LocalStore extends SQLiteOpenHelper {
                 long row = db.insertWithOnConflict(
                     "exercises", null, values, SQLiteDatabase.CONFLICT_IGNORE
                 );
-                if (row != -1) created++;
+                if (row != -1) {
+                    insertOutbox(
+                        db, seedMutationId(exercise[1]), "exercise", syncId, "upsert", 0,
+                        null, exercisePayload(db, syncId)
+                    );
+                    created++;
+                }
             }
             return created;
         });
@@ -488,6 +497,268 @@ public class LocalStore extends SQLiteOpenHelper {
         return count("sync_outbox", "acked_at IS NULL", null);
     }
 
+    public int failedMutationCount() {
+        return count("sync_outbox", "acked_at IS NULL AND error_code IS NOT NULL", null);
+    }
+
+    public long nextSyncAt() {
+        String value = syncState(writableDatabase(), "next_sync_at");
+        return value == null || value.isEmpty() ? 0 : Long.parseLong(value);
+    }
+
+    public JSONObject syncStatus() {
+        SQLiteDatabase db = writableDatabase();
+        int failed = count("sync_outbox", "acked_at IS NULL AND error_code IS NOT NULL", null);
+        int pending = count("sync_outbox", "acked_at IS NULL AND error_code IS NULL", null);
+        String errorCode = syncState(db, "last_error_code");
+        JSONObject result = jsonObject();
+        put(result, "state", failed > 0 || errorCode != null && !errorCode.isEmpty()
+            ? "offline".equals(errorCode) ? "offline" : "error"
+            : pending > 0 ? "pending" : "synced");
+        put(result, "pending", pending);
+        put(result, "failed", failed);
+        put(result, "cursor", serverCursor(db));
+        put(result, "lastSyncedAt", syncState(db, "last_synced_at"));
+        put(result, "errorCode", errorCode);
+        put(result, "nextSyncAt", nextSyncAt());
+        put(result, "bootstrapComplete", "1".equals(syncState(db, "bootstrap_complete")));
+        return result;
+    }
+
+    public void markSyncSuccess(long nowMillis) {
+        transaction(db -> {
+            putSyncState(db, "last_synced_at", String.valueOf(nowMillis));
+            putSyncState(db, "last_error_code", "");
+            putSyncState(db, "sync_attempt_count", "0");
+            try (Cursor cursor = db.query(
+                "sync_outbox", new String[]{"COUNT(*)"},
+                "acked_at IS NULL AND error_code IS NULL", null, null, null, null
+            )) {
+                cursor.moveToFirst();
+                if (cursor.getInt(0) == 0) putSyncState(db, "next_sync_at", "0");
+            }
+            return null;
+        });
+    }
+
+    public void markSyncError(String errorCode) {
+        transaction(db -> {
+            putSyncState(db, "last_error_code", emptyTo(errorCode, "sync_error"));
+            putSyncState(db, "next_sync_at", "0");
+            return null;
+        });
+    }
+
+    int nextPullAttemptNumber() {
+        String value = syncState(writableDatabase(), "sync_attempt_count");
+        return (value == null ? 0 : Integer.parseInt(value)) + 1;
+    }
+
+    /** Pull 沒有 mutation body 可掛 retry；將次數與時間保存在 sync_state。 */
+    public void markPullFailure(String errorCode, long retryAtMillis) {
+        transaction(db -> {
+            int attempt = nextPullAttemptNumber();
+            putSyncState(db, "sync_attempt_count", String.valueOf(attempt));
+            putSyncState(db, "last_error_code", emptyTo(errorCode, "sync_failed"));
+            putSyncState(db, "next_sync_at", String.valueOf(retryAtMillis));
+            return null;
+        });
+    }
+
+    /** 依 server 邊界產生可重送的 push body；不改 mutation_id，也不先清 outbox。 */
+    public JSONObject pendingPushBody(
+        String deviceId, int maxCount, int maxBytes, long nowMillis
+    ) {
+        if (deviceId == null || deviceId.trim().isEmpty()) {
+            throw new IllegalArgumentException("缺少 device_id");
+        }
+        if (maxCount < 1 || maxCount > 500 || maxBytes < 1) {
+            throw new IllegalArgumentException("sync batch 邊界不合法");
+        }
+        SQLiteDatabase db = writableDatabase();
+        JSONObject body = jsonObject();
+        put(body, "schema_version", 1);
+        put(body, "device_id", deviceId);
+        JSONArray mutations = new JSONArray();
+        put(body, "mutations", mutations);
+        try (Cursor cursor = db.query(
+            "sync_outbox",
+            new String[]{
+                "mutation_id", "entity_type", "entity_id", "operation", "base_version",
+                "lease_generation", "payload_json", "next_attempt_at"
+            },
+            "acked_at IS NULL AND error_code IS NULL",
+            null,
+            null,
+            null,
+            "created_at ASC, rowid ASC"
+        )) {
+            while (cursor.moveToNext() && mutations.length() < maxCount) {
+                String nextAttempt = cursor.getString(7);
+                if (nextAttempt != null && Long.parseLong(nextAttempt) > nowMillis) break;
+                JSONObject mutation = jsonObject();
+                put(mutation, "mutation_id", cursor.getString(0));
+                put(mutation, "entity_type", cursor.getString(1));
+                put(mutation, "entity_id", cursor.getString(2));
+                put(mutation, "operation", cursor.getString(3));
+                put(mutation, "base_version", cursor.getInt(4));
+                if (cursor.isNull(5)) put(mutation, "lease_generation", JSONObject.NULL);
+                else put(mutation, "lease_generation", cursor.getInt(5));
+                put(mutation, "payload", new JSONObject(cursor.getString(6)));
+                mutations.put(mutation);
+                if (body.toString().getBytes(StandardCharsets.UTF_8).length > maxBytes) {
+                    mutations.remove(mutations.length() - 1);
+                    if (mutations.length() == 0) {
+                        throw new BatchTooLarge(cursor.getString(0));
+                    }
+                    break;
+                }
+            }
+        } catch (JSONException error) {
+            throw new IllegalStateException("outbox JSON 已損壞", error);
+        }
+        return body;
+    }
+
+    /** 暫時錯誤只延後同一批 mutation；資料與 mutation_id 都保留。 */
+    public void markPushFailure(JSONObject body, String errorCode, long retryAtMillis) {
+        transaction(db -> {
+            try {
+                JSONArray mutations = body.getJSONArray("mutations");
+                for (int index = 0; index < mutations.length(); index++) {
+                    String mutationId = mutations.getJSONObject(index).getString("mutation_id");
+                    db.execSQL(
+                        "UPDATE sync_outbox SET attempt_count = attempt_count + 1, "
+                            + "next_attempt_at = ?, error_code = NULL "
+                            + "WHERE mutation_id = ? AND acked_at IS NULL",
+                        new Object[]{String.valueOf(retryAtMillis), mutationId}
+                    );
+                }
+                putSyncState(db, "last_error_code", emptyTo(errorCode, "sync_failed"));
+                putSyncState(db, "next_sync_at", String.valueOf(retryAtMillis));
+                return null;
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("push body 格式不合法", error);
+            }
+        });
+    }
+
+    public void markPushPermanentFailure(JSONObject body, String errorCode) {
+        transaction(db -> {
+            try {
+                JSONArray mutations = body.getJSONArray("mutations");
+                for (int index = 0; index < mutations.length(); index++) {
+                    markMutationFailed(
+                        db, mutations.getJSONObject(index).getString("mutation_id"), errorCode
+                    );
+                }
+                putSyncState(db, "last_error_code", emptyTo(errorCode, "sync_failed"));
+                putSyncState(db, "next_sync_at", "0");
+                return null;
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("push body 格式不合法", error);
+            }
+        });
+    }
+
+    public void markMutationFailed(String mutationId, String errorCode) {
+        transaction(db -> {
+            markMutationFailed(db, mutationId, errorCode);
+            putSyncState(db, "last_error_code", emptyTo(errorCode, "sync_failed"));
+            putSyncState(db, "next_sync_at", "0");
+            return null;
+        });
+    }
+
+    int nextAttemptNumber(JSONObject body) {
+        try {
+            JSONArray mutations = body.getJSONArray("mutations");
+            int highest = 0;
+            SQLiteDatabase db = writableDatabase();
+            for (int index = 0; index < mutations.length(); index++) {
+                String mutationId = mutations.getJSONObject(index).getString("mutation_id");
+                try (Cursor cursor = db.query(
+                    "sync_outbox", new String[]{"attempt_count"}, "mutation_id = ?",
+                    new String[]{mutationId}, null, null, null
+                )) {
+                    if (cursor.moveToFirst()) highest = Math.max(highest, cursor.getInt(0));
+                }
+            }
+            return highest + 1;
+        } catch (JSONException error) {
+            throw new IllegalArgumentException("push body 格式不合法", error);
+        }
+    }
+
+    /** accepted receipt、下一筆 base_version 與 domain server version 在同一 transaction。 */
+    public void applyPushResponse(JSONObject response, long nowMillis) {
+        transaction(db -> {
+            try {
+                JSONArray accepted = response.getJSONArray("accepted");
+                JSONArray conflicts = response.getJSONArray("conflicts");
+                for (int index = 0; index < accepted.length(); index++) {
+                    JSONObject item = accepted.getJSONObject(index);
+                    acknowledgeMutation(
+                        db,
+                        item.getString("mutation_id"),
+                        item.getInt("version"),
+                        nowMillis
+                    );
+                }
+                for (int index = 0; index < conflicts.length(); index++) {
+                    recordPushConflict(db, conflicts.getJSONObject(index));
+                }
+                putSyncState(db, "last_error_code", "");
+                putSyncState(db, "next_sync_at", "0");
+                return null;
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("push response 格式不合法", error);
+            }
+        });
+    }
+
+    public long serverCursor() {
+        return serverCursor(writableDatabase());
+    }
+
+    /** change apply 與 cursor commit 共用 transaction；任一未知/損壞 change 全批回滾。 */
+    public void applyPullPage(JSONObject page) {
+        transaction(db -> {
+            try {
+                long cursor = serverCursor(db);
+                long expected = cursor;
+                JSONArray changes = page.getJSONArray("changes");
+                for (int index = 0; index < changes.length(); index++) {
+                    JSONObject change = changes.getJSONObject(index);
+                    long sequence = change.getLong("server_seq");
+                    if (change.getInt("schema_version") != 1 || sequence != expected + 1) {
+                        throw new IllegalArgumentException("sync sequence/schema 不連續");
+                    }
+                    String entityType = change.getString("entity_type");
+                    String entityId = change.getString("entity_id");
+                    String operation = change.getString("operation");
+                    String table = tableForEntity(entityType);
+                    if (!operation.equals("upsert") && !operation.equals("delete")) {
+                        throw new IllegalArgumentException("不支援的 sync operation");
+                    }
+                    if (!hasPendingMutation(db, entityType, entityId)) {
+                        if (operation.equals("delete")) applyRemoteDelete(db, table, change);
+                        else applyRemoteUpsert(db, entityType, table, change);
+                    }
+                    expected = sequence;
+                }
+                if (page.getLong("next_cursor") != expected) {
+                    throw new IllegalArgumentException("next_cursor 與 change 不一致");
+                }
+                putSyncState(db, "server_cursor", String.valueOf(expected));
+                putSyncState(db, "bootstrap_complete", page.getBoolean("has_more") ? "0" : "1");
+                return null;
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("pull response 格式不合法", error);
+            }
+        });
+    }
+
     private JSONArray exercises(SQLiteDatabase db) {
         JSONArray result = new JSONArray();
         try (Cursor cursor = db.query(
@@ -821,9 +1092,13 @@ public class LocalStore extends SQLiteOpenHelper {
 
     private JSONObject templatePayload(SQLiteDatabase db, String syncId) {
         JSONObject payload = payloadBySync(db, "templates", syncId, "sync_id", "name");
-        Entity template = activeByColumn(db, "templates", "sync_id", syncId);
-        JSONObject templateJson = templateById(db, template.id);
-        put(payload, "weekdays", templateJson.optJSONArray("weekdays"));
+        try (Cursor cursor = db.query(
+            "templates", new String[]{"weekdays"}, "sync_id = ?",
+            new String[]{syncId}, null, null, null
+        )) {
+            if (!cursor.moveToFirst()) throw new IllegalStateException("找不到 LocalStore 資料");
+            put(payload, "weekdays", cursor.isNull(0) ? null : parseArray(cursor.getString(0)));
+        }
         JSONArray items = new JSONArray();
         try (Cursor cursor = db.query(
             "template_exercises", new String[]{"exercise_sync_id", "position", "default_sets", "rest_hint_seconds"},
@@ -912,6 +1187,267 @@ public class LocalStore extends SQLiteOpenHelper {
         )) {
             return cursor.moveToFirst() ? cursor.getString(0) : null;
         }
+    }
+
+    private static long serverCursor(SQLiteDatabase db) {
+        String value = syncState(db, "server_cursor");
+        return value == null ? 0 : Long.parseLong(value);
+    }
+
+    private static void acknowledgeMutation(
+        SQLiteDatabase db, String mutationId, int version, long nowMillis
+    ) {
+        try (Cursor cursor = db.query(
+            "sync_outbox",
+            new String[]{"entity_type", "entity_id"},
+            "mutation_id = ?",
+            new String[]{mutationId},
+            null,
+            null,
+            null
+        )) {
+            if (!cursor.moveToFirst()) {
+                throw new IllegalArgumentException("server 回傳未知 mutation receipt");
+            }
+            String entityType = cursor.getString(0);
+            String entityId = cursor.getString(1);
+            ContentValues receipt = new ContentValues();
+            receipt.put("acked_at", String.valueOf(nowMillis));
+            receipt.putNull("next_attempt_at");
+            receipt.putNull("error_code");
+            db.update(
+                "sync_outbox", receipt, "mutation_id = ?", new String[]{mutationId}
+            );
+
+            String table = tableForEntity(entityType);
+            ContentValues serverVersion = new ContentValues();
+            serverVersion.put("version", version);
+            db.update(table, serverVersion, "sync_id = ?", new String[]{entityId});
+
+            ContentValues nextBase = new ContentValues();
+            nextBase.put("base_version", version);
+            db.update(
+                "sync_outbox",
+                nextBase,
+                "entity_type = ? AND entity_id = ? AND acked_at IS NULL "
+                    + "AND mutation_id != ? AND error_code IS NULL",
+                new String[]{entityType, entityId, mutationId}
+            );
+        }
+    }
+
+    private static void recordPushConflict(SQLiteDatabase db, JSONObject conflict)
+        throws JSONException {
+        String mutationId = conflict.getString("mutation_id");
+        String reason = conflict.getString("reason");
+        try (Cursor cursor = db.query(
+            "sync_outbox",
+            new String[]{"entity_type", "entity_id", "payload_json"},
+            "mutation_id = ? AND acked_at IS NULL",
+            new String[]{mutationId},
+            null,
+            null,
+            null
+        )) {
+            if (!cursor.moveToFirst()) return;
+            ContentValues values = new ContentValues();
+            values.put("conflict_id", UUID.nameUUIDFromBytes(
+                ("liftlog:conflict:" + mutationId + ":" + reason)
+                    .getBytes(StandardCharsets.UTF_8)
+            ).toString());
+            values.put("mutation_id", mutationId);
+            values.put("entity_type", cursor.getString(0));
+            values.put("entity_id", cursor.getString(1));
+            values.put("reason", reason);
+            values.put("local_json", cursor.getString(2));
+            values.put(
+                "server_json",
+                conflict.isNull("server") ? "null" : conflict.getJSONObject("server").toString()
+            );
+            db.insertWithOnConflict(
+                "sync_conflicts", null, values, SQLiteDatabase.CONFLICT_REPLACE
+            );
+            ContentValues failed = new ContentValues();
+            failed.put("error_code", reason);
+            failed.putNull("next_attempt_at");
+            db.update(
+                "sync_outbox", failed, "mutation_id = ?", new String[]{mutationId}
+            );
+        }
+    }
+
+    private static boolean hasPendingMutation(
+        SQLiteDatabase db, String entityType, String entityId
+    ) {
+        try (Cursor cursor = db.query(
+            "sync_outbox",
+            new String[]{"COUNT(*)"},
+            "entity_type = ? AND entity_id = ? AND acked_at IS NULL",
+            new String[]{entityType, entityId},
+            null,
+            null,
+            null
+        )) {
+            cursor.moveToFirst();
+            return cursor.getInt(0) > 0;
+        }
+    }
+
+    private static String tableForEntity(String entityType) {
+        switch (entityType) {
+            case "exercise": return "exercises";
+            case "template": return "templates";
+            case "workout": return "workouts";
+            case "set": return "sets";
+            case "body_metric": return "body_metrics";
+            case "daily_status": return "daily_status";
+            case "setting": return "app_settings";
+            default: throw new IllegalArgumentException("不支援的 sync entity: " + entityType);
+        }
+    }
+
+    private static void applyRemoteDelete(
+        SQLiteDatabase db, String table, JSONObject change
+    ) throws JSONException {
+        ContentValues values = new ContentValues();
+        values.put("version", change.getInt("version"));
+        values.put("updated_at", change.getString("updated_at"));
+        values.put(
+            "deleted_at",
+            change.isNull("deleted_at") ? change.getString("updated_at")
+                : change.getString("deleted_at")
+        );
+        db.update(table, values, "sync_id = ?", new String[]{change.getString("entity_id")});
+        if (table.equals("templates")) {
+            db.delete(
+                "template_exercises", "template_sync_id = ?",
+                new String[]{change.getString("entity_id")}
+            );
+        }
+    }
+
+    private static void applyRemoteUpsert(
+        SQLiteDatabase db, String entityType, String table, JSONObject change
+    ) throws JSONException {
+        JSONObject payload = change.getJSONObject("payload");
+        String entityId = change.getString("entity_id");
+        if (!entityId.equals(payload.getString("sync_id"))) {
+            throw new IllegalArgumentException("payload sync_id 與 entity_id 不一致");
+        }
+        ContentValues values = new ContentValues();
+        values.put("sync_id", entityId);
+        values.put("version", change.getInt("version"));
+        values.put("updated_at", change.getString("updated_at"));
+        values.putNull("deleted_at");
+        switch (entityType) {
+            case "exercise":
+                values.put("name_zh", payload.getString("name_zh"));
+                values.put("name_en", payload.getString("name_en"));
+                values.put("muscle_group", payload.getString("muscle_group"));
+                values.put("is_bodyweight", payload.getBoolean("is_bodyweight") ? 1 : 0);
+                break;
+            case "template":
+                values.put("name", payload.getString("name"));
+                if (payload.isNull("weekdays")) values.putNull("weekdays");
+                else values.put("weekdays", payload.getJSONArray("weekdays").toString());
+                break;
+            case "workout":
+                values.put("date", payload.getString("date"));
+                putJsonNullable(values, payload, "template_sync_id");
+                putJsonNullable(values, payload, "note");
+                putJsonNullable(values, payload, "ended_at");
+                putJsonNullable(values, payload, "owner_device_id");
+                values.put("lease_generation", payload.getInt("lease_generation"));
+                break;
+            case "set":
+                values.put("client_uuid", payload.getString("client_uuid"));
+                values.put("workout_sync_id", payload.getString("workout_sync_id"));
+                values.put("exercise_sync_id", payload.getString("exercise_sync_id"));
+                values.put("set_number", payload.getInt("set_number"));
+                values.put("weight_kg", payload.getDouble("weight_kg"));
+                values.put("reps", payload.getInt("reps"));
+                putJsonNullableInteger(values, payload, "rpe");
+                putJsonNullableInteger(values, payload, "rest_seconds");
+                break;
+            case "body_metric":
+                values.put("date", payload.getString("date"));
+                values.put("weight_kg", payload.getDouble("weight_kg"));
+                if (payload.isNull("body_fat_pct")) values.putNull("body_fat_pct");
+                else values.put("body_fat_pct", payload.getDouble("body_fat_pct"));
+                break;
+            case "daily_status":
+                values.put("date", payload.getString("date"));
+                values.put("energy", payload.getInt("energy"));
+                putJsonNullableInteger(values, payload, "sleep_quality");
+                putJsonNullable(values, payload, "note");
+                break;
+            case "setting":
+                values.put("key", payload.getString("key"));
+                values.put("value", payload.getString("value"));
+                break;
+            default:
+                throw new IllegalArgumentException("不支援的 sync entity: " + entityType);
+        }
+        upsertRemote(db, entityType, table, values);
+        if (entityType.equals("template")) {
+            db.delete("template_exercises", "template_sync_id = ?", new String[]{entityId});
+            JSONArray exercises = payload.getJSONArray("exercises");
+            for (int index = 0; index < exercises.length(); index++) {
+                JSONObject item = exercises.getJSONObject(index);
+                ContentValues child = new ContentValues();
+                child.put("sync_id", UUID.nameUUIDFromBytes(
+                    ("liftlog:template-exercise:" + entityId + ":" + item.getInt("position"))
+                        .getBytes(StandardCharsets.UTF_8)
+                ).toString());
+                child.put("template_sync_id", entityId);
+                child.put("exercise_sync_id", item.getString("exercise_sync_id"));
+                child.put("position", item.getInt("position"));
+                child.put("default_sets", item.getInt("default_sets"));
+                putJsonNullableInteger(child, item, "rest_hint_seconds");
+                db.insertOrThrow("template_exercises", null, child);
+            }
+        }
+    }
+
+    private static void upsertRemote(
+        SQLiteDatabase db, String entityType, String table, ContentValues values
+    ) {
+        String syncId = values.getAsString("sync_id");
+        int changed = db.update(table, values, "sync_id = ?", new String[]{syncId});
+        String naturalKey = naturalKeyColumn(entityType);
+        if (changed == 0 && naturalKey != null) {
+            changed = db.update(
+                table,
+                values,
+                naturalKey + " = ? AND deleted_at IS NULL",
+                new String[]{values.getAsString(naturalKey)}
+            );
+        }
+        if (changed == 0) db.insertOrThrow(table, null, values);
+    }
+
+    private static String naturalKeyColumn(String entityType) {
+        switch (entityType) {
+            case "body_metric":
+            case "daily_status":
+                return "date";
+            case "setting":
+                return "key";
+            default:
+                return null;
+        }
+    }
+
+    private static void putJsonNullable(
+        ContentValues values, JSONObject payload, String key
+    ) throws JSONException {
+        if (payload.isNull(key)) values.putNull(key); else values.put(key, payload.getString(key));
+    }
+
+    private static void putJsonNullableInteger(
+        ContentValues values, JSONObject payload, String key
+    ) throws JSONException {
+        if (payload.isNull(key)) values.putNull(key); else values.put(key, payload.getInt(key));
     }
 
     private int workoutLeaseGeneration(SQLiteDatabase db, int id) {
@@ -1084,6 +1620,110 @@ public class LocalStore extends SQLiteOpenHelper {
             + "ON sync_conflicts(resolved_at, created_at)");
     }
 
+    protected void migrateVersion3(SQLiteDatabase db) {
+        long localRows = 0;
+        String[] tables = {
+            "exercises", "templates", "workouts", "sets", "body_metrics",
+            "daily_status", "app_settings", "sync_outbox"
+        };
+        for (String table : tables) {
+            try (Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM " + table, null)) {
+                cursor.moveToFirst();
+                localRows += cursor.getLong(0);
+            }
+        }
+        putSyncState(db, "bootstrap_complete", localRows > 0 ? "1" : "0");
+        db.execSQL("INSERT OR IGNORE INTO sync_state(key, value) VALUES('next_sync_at', '0')");
+        db.execSQL("INSERT OR IGNORE INTO sync_state(key, value) VALUES('last_error_code', '')");
+        db.execSQL("INSERT OR IGNORE INTO sync_state(key, value) VALUES('sync_attempt_count', '0')");
+        enqueueExistingDomainRows(db);
+    }
+
+    private void enqueueExistingDomainRows(SQLiteDatabase db) {
+        String[][] entities = {
+            {"exercises", "exercise"},
+            {"templates", "template"},
+            {"workouts", "workout"},
+            {"sets", "set"},
+            {"body_metrics", "body_metric"},
+            {"daily_status", "daily_status"},
+            {"app_settings", "setting"}
+        };
+        for (String[] entity : entities) {
+            enqueueExistingRows(db, entity[0], entity[1]);
+        }
+    }
+
+    private void enqueueExistingRows(SQLiteDatabase db, String table, String entityType) {
+        try (Cursor cursor = db.query(
+            table,
+            new String[]{"sync_id", "version", "deleted_at"},
+            null,
+            null,
+            null,
+            null,
+            "rowid ASC"
+        )) {
+            while (cursor.moveToNext()) {
+                String syncId = cursor.getString(0);
+                if (hasAnyOutboxMutation(db, entityType, syncId)) continue;
+                String operation = cursor.isNull(2) ? "upsert" : "delete";
+                insertOutbox(
+                    db,
+                    migrationMutationId(entityType, syncId),
+                    entityType,
+                    syncId,
+                    operation,
+                    cursor.getInt(1),
+                    "workout".equals(entityType) ? workoutLeaseGenerationBySyncId(db, syncId) : null,
+                    payloadForEntity(db, entityType, syncId)
+                );
+            }
+        }
+    }
+
+    private static boolean hasAnyOutboxMutation(
+        SQLiteDatabase db, String entityType, String syncId
+    ) {
+        try (Cursor cursor = db.rawQuery(
+            "SELECT EXISTS(SELECT 1 FROM sync_outbox WHERE entity_type = ? AND entity_id = ?)",
+            new String[]{entityType, syncId}
+        )) {
+            cursor.moveToFirst();
+            return cursor.getInt(0) == 1;
+        }
+    }
+
+    private JSONObject payloadForEntity(SQLiteDatabase db, String entityType, String syncId) {
+        switch (entityType) {
+            case "exercise": return exercisePayload(db, syncId);
+            case "template": return templatePayload(db, syncId);
+            case "workout": return workoutPayload(db, syncId);
+            case "set": return setPayload(db, syncId);
+            case "body_metric": return bodyMetricPayload(db, syncId);
+            case "daily_status": return dailyStatusPayload(db, syncId);
+            case "setting": return settingPayload(db, syncId);
+            default: throw new IllegalArgumentException("不支援的 migration entity: " + entityType);
+        }
+    }
+
+    private static String migrationMutationId(String entityType, String syncId) {
+        return UUID.nameUUIDFromBytes(
+            ("liftlog:migration:v3:" + entityType + ":" + syncId)
+                .getBytes(StandardCharsets.UTF_8)
+        ).toString();
+    }
+
+    private int workoutLeaseGenerationBySyncId(SQLiteDatabase db, String syncId) {
+        try (Cursor cursor = db.query(
+            "workouts", new String[]{"lease_generation"}, "sync_id = ?",
+            new String[]{syncId}, null, null, null
+        )) {
+            if (cursor.moveToFirst()) return cursor.getInt(0);
+        }
+        throw new IllegalStateException("找不到訓練");
+    }
+
     private static String syncColumns() {
         return "version INTEGER NOT NULL DEFAULT 0 CHECK(version >= 0),"
             + "updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),"
@@ -1116,6 +1756,33 @@ public class LocalStore extends SQLiteOpenHelper {
         return UUID.nameUUIDFromBytes(
             ("liftlog:exercise:" + nameEn).getBytes(StandardCharsets.UTF_8)
         ).toString();
+    }
+
+    private static String seedMutationId(String nameEn) {
+        return UUID.nameUUIDFromBytes(
+            ("liftlog:seed-mutation:" + nameEn).getBytes(StandardCharsets.UTF_8)
+        ).toString();
+    }
+
+    private static void markMutationFailed(
+        SQLiteDatabase db, String mutationId, String errorCode
+    ) {
+        ContentValues failed = new ContentValues();
+        failed.put("error_code", emptyTo(errorCode, "sync_failed"));
+        failed.putNull("next_attempt_at");
+        db.update(
+            "sync_outbox", failed,
+            "mutation_id = ? AND acked_at IS NULL", new String[]{mutationId}
+        );
+    }
+
+    static final class BatchTooLarge extends IllegalStateException {
+        final String mutationId;
+
+        BatchTooLarge(String mutationId) {
+            super("單筆 mutation 超過 sync 上限");
+            this.mutationId = mutationId;
+        }
     }
 
     private static JSONObject jsonObject() {

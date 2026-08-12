@@ -26,6 +26,11 @@ import { icon, iconLabel } from "./icons.js";
 import { switchRow } from "./switch-row.js";
 import { apiBase, isNativeApp } from "./env.js";
 import {
+  initializeNativeSync,
+  readNativeSyncStatus,
+  runNativeSync,
+} from "./native-sync.js";
+import {
   detailReturnScreen,
   openExerciseDetail,
   renderExerciseDetail,
@@ -104,6 +109,9 @@ import {
 const root = document.getElementById("app");
 let nativeAuthenticated = false;
 let nativeSignInBusy = false;
+let nativeSyncStatus = null;
+let nativeSyncBusy = false;
+let nativeBootstrapRequired = false;
 let restTicker = null;
 let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
 let wakeLockPending = false; // request 進行中——完成時要重驗畫面狀態，避免離開後鎖洩漏
@@ -287,7 +295,15 @@ async function refreshQueueCounts() {
   const entries = await listQueued();
   // F131 ⑧：原生 outbox 的待送／失敗併進同一組計數。刻意不新增 UI——
   // 「同步失敗 N 組（點此捨棄）」那條橫幅本來就在講同一件事，多一個顯示位置只會讓人問哪個才準。
-  const nativeOutbox = await nativeOutboxCounts();
+  let nativeOutbox = await nativeOutboxCounts();
+  if (isNativeApp()) {
+    try {
+      nativeSyncStatus = await readNativeSyncStatus();
+      nativeOutbox = nativeSyncStatus;
+    } catch {
+      // 本地 mutation 已 commit；只因狀態 bridge 暫時失敗，不能把成功的寫入回報成失敗。
+    }
+  }
   state.queue = {
     pending: entries.filter((e) => e.status === "pending").length + nativeOutbox.pending,
     failed: entries.filter((e) => e.status === "failed").length + nativeOutbox.failed,
@@ -354,6 +370,23 @@ async function syncQueue() {
 }
 
 function syncStatusLine() {
+  if (isNativeApp()) {
+    if (!nativeSyncStatus) return [];
+    const { state: syncState, pending, failed } = nativeSyncStatus;
+    const labels = {
+      synced: pending === 0 ? "已同步" : `待同步 ${pending} 筆`,
+      pending: `待同步 ${pending} 筆`,
+      offline: `離線 · 待同步 ${pending} 筆`,
+      error: `同步錯誤 · 待同步 ${pending + failed} 筆`,
+    };
+    const iconName = syncState === "synced" ? "check"
+      : syncState === "error" ? "warning" : "hourglass";
+    return [el("div", { class: `sync-line native-sync ${syncState}` }, [
+      el("span", { class: syncState === "error" ? "sync-failed-text" : "sync-pending" }, [
+        icon(iconName, { size: 14 }), ` ${labels[syncState]}`,
+      ]),
+    ])];
+  }
   const { pending, failed } = state.queue;
   if (pending === 0 && failed === 0) return [];
   const parts = [];
@@ -391,6 +424,19 @@ function syncStatusLine() {
 
 function renderSetup() {
   if (isNativeApp()) {
+    if (nativeAuthenticated && nativeBootstrapRequired) {
+      return el("section", { class: "screen setup" }, [
+        el("div", { class: "mark" }, [icon("dumbbell", { size: 44, label: "lift-log" })]),
+        el("h1", {}, ["正在準備本機資料"]),
+        el("p", {}, ["首次登入要先完整下載雲端資料；完成前不會顯示半份紀錄。"]),
+        ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+        el("button", {
+          class: "btn btn-primary",
+          ...(nativeSyncBusy ? { disabled: "" } : {}),
+          onclick: () => guard(retryNativeBootstrap),
+        }, [nativeSyncBusy ? "同步中…" : "重試同步"]),
+      ]);
+    }
     const signIn = async () => {
       nativeSignInBusy = true;
       render();
@@ -719,6 +765,85 @@ export async function openSettings() {
     weeklyTargetDraft = null; // 讀不到就不畫這一列，其餘設定照常可用
     if (err instanceof ApiError && err.status === 401) throw err; // 同 loadHome：401 要導回登入
   }
+  if (isNativeApp()) {
+    try {
+      applyNativeSyncStatus(await readNativeSyncStatus());
+    } catch {
+      // 設定頁其他本機功能仍可用；同步狀態沿用最後一次成功讀值。
+    }
+  }
+}
+
+function applyNativeSyncStatus(status) {
+  nativeSyncStatus = status;
+  state.queue = { pending: status.pending, failed: status.failed };
+  return status;
+}
+
+async function refreshNativeSync({ run = false } = {}) {
+  if (!isNativeApp()) return null;
+  nativeSyncBusy = run;
+  try {
+    const status = run ? await runNativeSync() : await readNativeSyncStatus();
+    return applyNativeSyncStatus(status);
+  } finally {
+    nativeSyncBusy = false;
+  }
+}
+
+async function retryNativeBootstrap() {
+  state.error = null;
+  nativeSyncBusy = true;
+  render();
+  try {
+    const status = await refreshNativeSync({ run: true });
+    if (status.bootstrapComplete) {
+      nativeBootstrapRequired = false;
+      location.reload();
+      return;
+    }
+    state.error = status.state === "offline"
+      ? "目前離線；連線後再重試，已登入帳號不會遺失。"
+      : "首次同步尚未完成，請稍後重試。";
+  } finally {
+    nativeSyncBusy = false;
+    render();
+  }
+}
+
+function lastSyncLabel(status) {
+  if (!status?.lastSyncedAt) return "尚未完成同步";
+  return `上次同步 ${new Date(status.lastSyncedAt).toLocaleString("zh-TW", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+function nativeSyncSettingsRow() {
+  if (!isNativeApp() || !nativeSyncStatus) return [];
+  const summary = nativeSyncStatus.state === "offline"
+    ? `離線 · ${nativeSyncStatus.pending} 筆待同步`
+    : nativeSyncStatus.state === "error"
+      ? `錯誤 · ${nativeSyncStatus.pending + nativeSyncStatus.failed} 筆待處理`
+      : nativeSyncStatus.pending > 0
+        ? `${nativeSyncStatus.pending} 筆待同步`
+        : lastSyncLabel(nativeSyncStatus);
+  return [el("div", { class: "set-row native-sync-row" }, [
+    el("div", { class: "native-sync-copy" }, [
+      el("span", { class: "set-row-label" }, ["資料同步"]),
+      el("span", { class: "native-sync-summary" }, [summary]),
+    ]),
+    el("button", {
+      class: "btn chip",
+      ...(nativeSyncBusy ? { disabled: "" } : {}),
+      onclick: () => guard(async () => {
+        await refreshNativeSync({ run: true });
+        render();
+      }),
+    }, [nativeSyncBusy ? "同步中…" : "立即同步"]),
+  ])];
 }
 
 function weeklyTargetRow() {
@@ -835,6 +960,7 @@ function renderSettings() {
       el("h1", {}, ["設定"]),
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    ...nativeSyncSettingsRow(),
     ...weeklyTargetRow(),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
     // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js
@@ -2828,7 +2954,9 @@ window.addEventListener("beforeunload", (e) => {
     e.returnValue = ""; // Chrome 需設 returnValue 才觸發原生確認框
   }
 });
-window.addEventListener("online", () => guard(syncQueue)); // 恢復連線：自動補傳佇列
+window.addEventListener("online", () => guard(
+  isNativeApp() ? () => refreshNativeSync({ run: true }) : syncQueue,
+)); // 恢復連線：Android 走原生 sync；web 補 IndexedDB 佇列
 document.addEventListener("visibilitychange", () => {
   syncWakeLock();
   if (document.hidden) saveTemplateDraft(); // F30：切背景/OS 準備殺分頁前存草稿（手機最可靠的存檔時機）
@@ -2840,7 +2968,8 @@ document.addEventListener("visibilitychange", () => {
     // 重抓而不做增量合併是刻意的——原生在背景寫進去的組，前端無從得知有哪些；
     // 合併邏輯會是第二份會走鐘的東西（同 ③ 不讓組號規則有兩份的理由）。
     guard(async () => {
-      await flushRestOutbox();
+      if (isNativeApp()) await refreshNativeSync({ run: true });
+      else await flushRestOutbox();
       await refreshQueueCounts();
       await refetchActiveWorkoutSets();
     });
@@ -2862,8 +2991,27 @@ if (isNativeApp()) {
   render();
   try {
     nativeAuthenticated = (await restoreNativeSession()).authenticated;
+    if (nativeAuthenticated) {
+      const initialStatus = applyNativeSyncStatus(await initializeNativeSync());
+      if (!initialStatus.bootstrapComplete) {
+        nativeBootstrapRequired = true;
+        state.screen = "setup";
+        nativeSyncBusy = true;
+        render();
+        const bootstrapStatus = await refreshNativeSync({ run: true });
+        nativeBootstrapRequired = !bootstrapStatus.bootstrapComplete;
+        if (nativeBootstrapRequired) {
+          state.error = bootstrapStatus.state === "offline"
+            ? "目前離線；首次同步完成前不會顯示半份資料。"
+            : "首次同步尚未完成，請重試。";
+        }
+      }
+    }
   } catch (error) {
     state.error = error.message;
+    if (nativeAuthenticated && !nativeSyncStatus?.bootstrapComplete) {
+      nativeBootstrapRequired = true;
+    }
   } finally {
     nativeSignInBusy = false;
   }
@@ -3150,7 +3298,8 @@ subscribeRestControl((action, seconds, draft, startedAt) => {
 // F67：查有沒有新版（見上方 runUpdateCheck 的說明）。只在已有 token 時查——
 // setup 畫面查一定 401，而且那次失敗會讓首次設定的人到下次開 app 才看得到更新。
 if (getToken() || getNativeAccessToken()) runUpdateCheck();
-if ((isNativeApp() && !nativeAuthenticated) || (!isNativeApp() && !getToken())) {
+if ((isNativeApp() && (!nativeAuthenticated || nativeBootstrapRequired))
+  || (!isNativeApp() && !getToken())) {
   state.screen = "setup";
   render();
 } else {
@@ -3170,7 +3319,9 @@ if ((isNativeApp() && !nativeAuthenticated) || (!isNativeApp() && !getToken())) 
   // F131 ⑤⑥-1：開機把憑證鏡射給原生，並踢一次 outbox（上次休息結束後躺著的那些）
   guard(async () => {
     await syncAuthToNative();
-    await flushRestOutbox();
+    if (isNativeApp()) await refreshNativeSync({ run: true });
+    else await flushRestOutbox();
     await refreshQueueCounts();
+    renderUnlessTyping();
   });
 }

@@ -21,6 +21,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LocalStorePlugin.class);
         // F141：Google Credential Manager 與 Keystore-backed rotating session bridge。
         registerPlugin(AuthSessionPlugin.class);
+        registerPlugin(SyncPlugin.class);
+        SyncScheduler.initialize(getApplication());
         // F69 ②：浮動視窗要知道 app 在不在前景。用 Activity 生命週期而非 WebView 的
         // visibilitychange——後者在 app 進背景後會被節流，正是最需要它的那一刻最不可靠
         AppForegroundTracker.register(getApplication());

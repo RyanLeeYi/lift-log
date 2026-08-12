@@ -987,6 +987,7 @@ final class RestOverlay {
                     1,
                     UUID.randomUUID().toString()
                 );
+                SyncScheduler.kick(context);
                 onMain(() -> {
                     onLogResult(context, true);
                     onOutboxState(context, store.pendingMutationCount(), 0);

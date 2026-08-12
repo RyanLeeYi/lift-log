@@ -425,6 +425,8 @@ body {
   font-family: var(--mono);
 }
 .sync-pending { color: var(--accent); }
+.native-sync.offline .sync-pending { color: var(--text-mute); }
+.sync-failed-text { color: var(--over); }
 .sync-failed {
   background: transparent;
   border: none;
@@ -1347,6 +1349,11 @@ body {
   min-width: 2ch; text-align: center;
   font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--accent);
 }
+.native-sync-copy { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.native-sync-summary {
+  color: var(--text-mute); font-family: var(--mono); font-size: 12px;
+}
+.native-sync-row .chip { flex: none; min-height: 44px; }
 .settings-screen .settings-back { margin-top: auto; }
 
 /* ---------- F82：挑今日課表 ---------- */

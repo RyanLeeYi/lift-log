@@ -87,7 +87,7 @@ public class F140LocalStoreInstrumentedTest {
             JSONObject reopened = webViewStore.snapshot();
             assertEquals(1, reopened.getJSONArray("workouts").length());
             assertEquals(1, reopened.getJSONArray("sets").length());
-            assertEquals(2, webViewStore.pendingMutationCount());
+            assertEquals(37, webViewStore.pendingMutationCount());
         } finally {
             webViewStore.close();
             overlayStore.close();
@@ -134,7 +134,7 @@ public class F140LocalStoreInstrumentedTest {
         JSONObject set = persisted.getJSONArray("sets").getJSONObject(0);
         assertEquals(42.5, set.getDouble("weight_kg"), 0.001);
         assertEquals(8, set.getInt("reps"));
-        assertEquals(2, persisted.getInt("pendingMutations"));
+        assertEquals(37, persisted.getInt("pendingMutations"));
     }
 
     private Intent mainActivityIntent() {

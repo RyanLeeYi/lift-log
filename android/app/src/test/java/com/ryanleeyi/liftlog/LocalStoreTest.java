@@ -46,12 +46,13 @@ public class LocalStoreTest {
     }
 
     @Test
-    public void createAndSeedAreReadyAndIdempotent() {
+    public void createAndSeedAreReadyAndIdempotent() throws JSONException {
         assertEquals(LocalStore.DATABASE_VERSION, store.ensureReady());
         assertEquals(35, store.seedExercises());
         assertEquals(0, store.seedExercises());
         assertEquals(35, store.count("exercises", "deleted_at IS NULL", null));
-        assertEquals(0, store.pendingMutationCount());
+        assertEquals(35, store.pendingMutationCount());
+        assertFalse(store.syncStatus().getBoolean("bootstrapComplete"));
     }
 
     @Test
@@ -72,11 +73,79 @@ public class LocalStoreTest {
     }
 
     @Test
-    public void versionOneUpgradePreservesDomainRows() {
+    public void versionOneUpgradePreservesDomainRows() throws JSONException {
         String preservedId = createVersionOneDatabase();
         assertEquals(LocalStore.DATABASE_VERSION, store.ensureReady());
         assertEquals(1, store.count("exercises", "sync_id = ?", new String[]{preservedId}));
-        assertEquals(0, store.pendingMutationCount());
+        assertEquals(1, store.pendingMutationCount());
+        assertTrue(store.syncStatus().getBoolean("bootstrapComplete"));
+    }
+
+    @Test
+    public void versionTwoUpgradeBackfillsEveryExistingDomainRow() {
+        store.close();
+        SQLiteDatabase raw = context.openOrCreateDatabase(databaseName, 0, null);
+        try {
+            LocalStore.createVersion1Schema(raw);
+            store.migrateVersion2(raw);
+            String exerciseId = UUID.nameUUIDFromBytes(
+                "liftlog:exercise:Squat".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+            ).toString();
+            ContentValues exercise = new ContentValues();
+            exercise.put("sync_id", exerciseId);
+            exercise.put("name_zh", "深蹲");
+            exercise.put("name_en", "Squat");
+            exercise.put("muscle_group", "腿");
+            exercise.put("is_bodyweight", 0);
+            raw.insertOrThrow("exercises", null, exercise);
+
+            String templateId = uuid();
+            ContentValues template = new ContentValues();
+            template.put("sync_id", templateId);
+            template.put("name", "既有課表");
+            raw.insertOrThrow("templates", null, template);
+
+            String workoutId = uuid();
+            ContentValues workout = new ContentValues();
+            workout.put("sync_id", workoutId);
+            workout.put("date", "2026-08-10");
+            raw.insertOrThrow("workouts", null, workout);
+
+            ContentValues set = new ContentValues();
+            set.put("sync_id", uuid());
+            set.put("client_uuid", uuid());
+            set.put("workout_sync_id", workoutId);
+            set.put("exercise_sync_id", exerciseId);
+            set.put("set_number", 1);
+            set.put("weight_kg", 100);
+            set.put("reps", 5);
+            raw.insertOrThrow("sets", null, set);
+
+            ContentValues metric = new ContentValues();
+            metric.put("sync_id", uuid());
+            metric.put("date", "2026-08-10");
+            metric.put("weight_kg", 80);
+            raw.insertOrThrow("body_metrics", null, metric);
+
+            ContentValues status = new ContentValues();
+            status.put("sync_id", uuid());
+            status.put("date", "2026-08-10");
+            status.put("energy", 4);
+            raw.insertOrThrow("daily_status", null, status);
+
+            ContentValues setting = new ContentValues();
+            setting.put("key", "weekly_target_days");
+            setting.put("sync_id", uuid());
+            setting.put("value", "4");
+            raw.insertOrThrow("app_settings", null, setting);
+            raw.setVersion(2);
+        } finally {
+            raw.close();
+        }
+
+        store = new LocalStore(context, databaseName);
+        assertEquals(LocalStore.DATABASE_VERSION, store.ensureReady());
+        assertEquals(7, store.pendingMutationCount());
     }
 
     @Test
@@ -278,6 +347,176 @@ public class LocalStoreTest {
         assertEquals(1, snapshot.getJSONArray("weekdays").getInt(0));
     }
 
+    @Test
+    public void acceptedMutationAdvancesFollowingBaseVersionWithoutOverwritingLocalEdit()
+        throws JSONException {
+        store.ensureReady();
+        String firstMutation = uuid();
+        String secondMutation = uuid();
+        store.saveBodyMetric(uuid(), "2026-08-11", 80, null, firstMutation);
+        store.saveBodyMetric(uuid(), "2026-08-11", 79.5, null, secondMutation);
+
+        JSONObject firstBatch = store.pendingPushBody(uuid(), 1, 1024 * 1024, 0);
+        assertEquals(firstMutation,
+            firstBatch.getJSONArray("mutations").getJSONObject(0).getString("mutation_id"));
+        store.applyPushResponse(new JSONObject()
+            .put("accepted", new JSONArray().put(new JSONObject()
+                .put("mutation_id", firstMutation)
+                .put("version", 1)
+                .put("server_seq", 1)))
+            .put("conflicts", new JSONArray()), 1_000);
+
+        JSONObject secondBatch = store.pendingPushBody(uuid(), 500, 1024 * 1024, 1_000);
+        JSONObject next = secondBatch.getJSONArray("mutations").getJSONObject(0);
+        assertEquals(secondMutation, next.getString("mutation_id"));
+        assertEquals(1, next.getInt("base_version"));
+        assertEquals(79.5, store.snapshot().getJSONArray("body_metrics")
+            .getJSONObject(0).getDouble("weight_kg"), 0.001);
+    }
+
+    @Test
+    public void pullPageAndCursorCommitTogether() throws JSONException {
+        store.ensureReady();
+        String exerciseId = uuid();
+        store.applyPullPage(new JSONObject()
+            .put("changes", new JSONArray().put(new JSONObject()
+                .put("server_seq", 1)
+                .put("schema_version", 1)
+                .put("entity_type", "exercise")
+                .put("entity_id", exerciseId)
+                .put("operation", "upsert")
+                .put("version", 1)
+                .put("updated_at", "2026-08-11T00:00:00Z")
+                .put("deleted_at", JSONObject.NULL)
+                .put("payload", new JSONObject()
+                    .put("sync_id", exerciseId)
+                    .put("name_zh", "遠端動作")
+                    .put("name_en", "Remote")
+                    .put("muscle_group", "腿")
+                    .put("is_bodyweight", false))))
+            .put("next_cursor", 1)
+            .put("has_more", false));
+        assertEquals(1, store.serverCursor());
+        assertTrue(store.syncStatus().getBoolean("bootstrapComplete"));
+        assertEquals("遠端動作", store.snapshot().getJSONArray("exercises")
+            .getJSONObject(0).getString("name_zh"));
+
+        try {
+            store.applyPullPage(new JSONObject()
+                .put("changes", new JSONArray().put(new JSONObject()
+                    .put("server_seq", 2)
+                    .put("schema_version", 1)
+                    .put("entity_type", "future_entity")
+                    .put("entity_id", uuid())
+                    .put("operation", "upsert")
+                    .put("version", 1)
+                    .put("updated_at", "2026-08-11T00:00:01Z")
+                    .put("deleted_at", JSONObject.NULL)
+                    .put("payload", new JSONObject().put("sync_id", uuid()))))
+                .put("next_cursor", 2)
+                .put("has_more", false));
+            fail("未知 entity 必須回滾整批");
+        } catch (IllegalArgumentException expected) {
+            assertNotNull(expected);
+        }
+        assertEquals(1, store.serverCursor());
+        assertEquals(1, store.snapshot().getJSONArray("exercises").length());
+    }
+
+    @Test
+    public void pullReconcilesNaturalKeysWhenRemoteSyncIdDiffers() throws JSONException {
+        store.ensureReady();
+        SQLiteDatabase db = store.getWritableDatabase();
+        ContentValues metric = new ContentValues();
+        metric.put("sync_id", uuid());
+        metric.put("date", "2026-08-11");
+        metric.put("weight_kg", 80);
+        db.insertOrThrow("body_metrics", null, metric);
+        ContentValues status = new ContentValues();
+        status.put("sync_id", uuid());
+        status.put("date", "2026-08-11");
+        status.put("energy", 3);
+        db.insertOrThrow("daily_status", null, status);
+        ContentValues setting = new ContentValues();
+        setting.put("key", "weekly_target_days");
+        setting.put("sync_id", uuid());
+        setting.put("value", "4");
+        db.insertOrThrow("app_settings", null, setting);
+
+        String remoteMetric = uuid();
+        String remoteStatus = uuid();
+        String remoteSetting = uuid();
+        JSONArray changes = new JSONArray()
+            .put(remoteChange(1, "body_metric", remoteMetric, new JSONObject()
+                .put("sync_id", remoteMetric)
+                .put("date", "2026-08-11")
+                .put("weight_kg", 79.5)
+                .put("body_fat_pct", JSONObject.NULL)))
+            .put(remoteChange(2, "daily_status", remoteStatus, new JSONObject()
+                .put("sync_id", remoteStatus)
+                .put("date", "2026-08-11")
+                .put("energy", 5)
+                .put("sleep_quality", 4)
+                .put("note", JSONObject.NULL)))
+            .put(remoteChange(3, "setting", remoteSetting, new JSONObject()
+                .put("sync_id", remoteSetting)
+                .put("key", "weekly_target_days")
+                .put("value", "5")));
+
+        store.applyPullPage(new JSONObject()
+            .put("changes", changes)
+            .put("next_cursor", 3)
+            .put("has_more", false));
+
+        JSONObject snapshot = store.snapshot();
+        assertEquals(3, store.serverCursor());
+        assertEquals(1, snapshot.getJSONArray("body_metrics").length());
+        assertEquals(remoteMetric, snapshot.getJSONArray("body_metrics")
+            .getJSONObject(0).getString("sync_id"));
+        assertEquals(1, snapshot.getJSONArray("daily_status").length());
+        assertEquals(remoteStatus, snapshot.getJSONArray("daily_status")
+            .getJSONObject(0).getString("sync_id"));
+        assertEquals(1, snapshot.getJSONArray("settings").length());
+        assertEquals(remoteSetting, snapshot.getJSONArray("settings")
+            .getJSONObject(0).getString("sync_id"));
+    }
+
+    @Test
+    public void retryScheduleAndOutboxSurviveProcessDeathAndWeeksOffline() throws JSONException {
+        store.ensureReady();
+        String mutationId = uuid();
+        String deviceId = uuid();
+        store.saveBodyMetric(uuid(), "2026-08-11", 80, null, mutationId);
+        JSONObject batch = store.pendingPushBody(deviceId, 500, 1024 * 1024, 0);
+        store.markPushFailure(batch, "offline", 900_000);
+        assertEquals(0, store.pendingPushBody(deviceId, 500, 1024 * 1024, 899_999)
+            .getJSONArray("mutations").length());
+
+        store.close();
+        store = new LocalStore(context, databaseName);
+        JSONObject afterWeeks = store.pendingPushBody(
+            deviceId, 500, 1024 * 1024, 21L * 24 * 60 * 60 * 1000
+        );
+        assertEquals(1, afterWeeks.getJSONArray("mutations").length());
+        assertEquals(mutationId,
+            afterWeeks.getJSONArray("mutations").getJSONObject(0).getString("mutation_id"));
+    }
+
+    @Test
+    public void deferredMutationBlocksNewerMutationsToPreserveCausalOrder() throws JSONException {
+        store.ensureReady();
+        String deviceId = uuid();
+        store.saveBodyMetric(uuid(), "2026-08-10", 80, null, uuid());
+        store.saveBodyMetric(uuid(), "2026-08-11", 79, null, uuid());
+        JSONObject first = store.pendingPushBody(deviceId, 1, 1024 * 1024, 0);
+        store.markPushFailure(first, "offline", 5_000);
+
+        assertEquals(0, store.pendingPushBody(deviceId, 500, 1024 * 1024, 1_000)
+            .getJSONArray("mutations").length());
+        store.markSyncSuccess(1_000);
+        assertEquals(5_000, store.nextSyncAt());
+    }
+
     private String createVersionOneDatabase() {
         store.close();
         String preservedId = uuid();
@@ -297,6 +536,21 @@ public class LocalStoreTest {
         }
         store = new LocalStore(context, databaseName);
         return preservedId;
+    }
+
+    private static JSONObject remoteChange(
+        long sequence, String entityType, String entityId, JSONObject payload
+    ) throws JSONException {
+        return new JSONObject()
+            .put("server_seq", sequence)
+            .put("schema_version", 1)
+            .put("entity_type", entityType)
+            .put("entity_id", entityId)
+            .put("operation", "upsert")
+            .put("version", 1)
+            .put("updated_at", "2026-08-11T00:00:00Z")
+            .put("deleted_at", JSONObject.NULL)
+            .put("payload", payload);
     }
 
     private static String uuid() {

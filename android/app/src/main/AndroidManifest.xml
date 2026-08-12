@@ -43,6 +43,11 @@
                 android:value="訓練休息倒數：在通知列常駐顯示剩餘秒數，使用者不必開著 app" />
         </service>
 
+        <service
+            android:name=".SyncJobService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
