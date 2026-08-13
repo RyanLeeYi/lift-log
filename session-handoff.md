@@ -51,8 +51,12 @@ commit 夾帶進去（commit 訊息與內容範圍不完全相符）。下次平
 
 ## 驗收環境（更新）
 
-- **Codex 已恢復正常**（2026-08-14 實測 probe 成功）。8/13 那次 41 分鐘零產出是暫時性卡死。
-  判斷卡死看 **process CPU 時間**比看時鐘準（那次 41 分鐘只燒 0.08 秒 CPU）。
+- **Codex 已恢復正常**（2026-08-14 實測 probe 成功）。8/13 那次 41 分鐘零產出是暫時性狀況。
+  ⚠ **更正 8/13 的判斷**：當時用「process CPU 只有 0.08 秒」推論它沒在跑，**那個判準是錯的**——
+  `codex exec` 幾乎全程在等 OpenAI API，模型跑在對面，本機 CPU 本來就趨近 0（8/14 實測正常運作
+  中的 exec 同樣是 0.03 秒）。所以那次到底是真卡死還是只是慢，其實沒有證據。
+  `--ephemeral` 不寫 rollout log，也沒有進度檔可看——目前**沒有可靠的即時進度訊號**，
+  只能用「合理上限＋逾時中止」處理。
 - 純後端驗收 prompt 要明講：不要跑 `init.sh`、不要下載瀏覽器、用絕對路徑
   uv 的絕對路徑跑 pytest、單一指令 5 分鐘無輸出就中止。
 - **Android JVM 測試的 task 名是 `:app:testDevDebugUnitTest`**（`testDebugUnitTest` 會 ambiguous 失敗）。
