@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
 from app.models import BodyMetric
-from app.services import projection
 from app.schemas import BodyMetricIn
+from app.services import projection
 
 
 def upsert_body_metric(session: Session, data: BodyMetricIn) -> tuple[BodyMetric, bool]:

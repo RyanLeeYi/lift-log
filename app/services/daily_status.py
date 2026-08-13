@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
 from app.models import DailyStatus
-from app.services import projection
 from app.schemas import DailyStatusIn
+from app.services import projection
 
 
 def upsert_daily_status(session: Session, data: DailyStatusIn) -> tuple[DailyStatus, bool]:

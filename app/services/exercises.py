@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.errors import DomainError, NotFoundError
 from app.models import Exercise, Workout, WorkoutSet
-from app.services import projection
 from app.schemas import ExerciseCreate
+from app.services import projection
 
 DEFAULT_MUSCLE_GROUP = "其他"  # F10：自訂動作未填部位時的歸類
 
