@@ -353,6 +353,10 @@ class TestDeletedTemplateIdReuse:
 
     刪掉最後一份課表再建一份新的，新課表會拿到同一個 id，而歷史 workout 仍存著那個數字——
     若只靠 id 比對，新課表就會繼承前一份的訓練歷史（Codex 2026-07-29 P2）。
+
+    **F154 起課表改軟刪**（tombstone 要同步給另一台裝置），被刪的列還在，id 因此不再被重用，
+    這個 bug 從根上消失。兩條測試改成釘住「id 不重用」與「新課表看不到舊歷史」——
+    後者是使用者真正看得到的那一面，不論 id 怎麼配都必須成立。
     """
 
     def _log(self, client, exercise_id: int, template_id: int, uuid: str) -> None:
@@ -377,8 +381,7 @@ class TestDeletedTemplateIdReuse:
         client.delete(f"/api/templates/{old['id']}")
 
         new = _make_template(client, ex_id=exercise_id, name="新課表")
-        # 前提：id 真的被重用了，否則這個測試沒有測到東西
-        assert new["id"] == old["id"], "SQLite 沒有重用 id，這個情境需要重新設計測試"
+        assert new["id"] != old["id"], "軟刪之後 id 不該被重用"
 
         row = [t for t in client.get("/api/templates").json() if t["id"] == new["id"]][0]
         assert row["last_used_date"] is None
@@ -390,7 +393,7 @@ class TestDeletedTemplateIdReuse:
         self._log(client, exercise_id, old["id"], "uuid-reuse-002")
         client.delete(f"/api/templates/{old['id']}")
         new = _make_template(client, ex_id=exercise_id, name="新課表")
-        assert new["id"] == old["id"]
+        assert new["id"] != old["id"]
 
         last = client.get("/api/schedule/today").json()["last_workout"]
         assert last is not None

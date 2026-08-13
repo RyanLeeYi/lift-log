@@ -21,6 +21,7 @@ from app.schemas import (
     SetUpdate,
     WorkoutCreate,
 )
+from app.services import projection
 from app.services.body_metrics import latest_weight
 from app.services.exercises import exercise_label, normalize_name
 from app.services.stats import set_tonnage
@@ -276,6 +277,12 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
             bodyweight_kg,
         )
     try:
+        # F154：整批寫入的每一列都要進 change log，否則 agent 批次記的組手機同步不到
+        session.flush()
+        projection.record_write(session, "workout", workout)
+        for written in session.new | session.dirty:
+            if isinstance(written, WorkoutSet) and written.workout_id == workout.id:
+                projection.record_write(session, "set", written)
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -364,6 +371,7 @@ def create_workout(session: Session, data: WorkoutCreate) -> Workout:
         note=data.note,
     )
     session.add(workout)
+    projection.record_write(session, "workout", workout)
     session.commit()
     session.refresh(workout)
     return workout
@@ -371,7 +379,7 @@ def create_workout(session: Session, data: WorkoutCreate) -> Workout:
 
 def get_workout(session: Session, workout_id: int) -> Workout:
     workout = session.get(Workout, workout_id)
-    if workout is None:
+    if workout is None or workout.deleted_at is not None:
         raise NotFoundError()
     return workout
 
@@ -385,6 +393,7 @@ def end_workout(session: Session, workout_id: int) -> Workout:
     workout = get_workout(session, workout_id)
     if workout.ended_at is None:
         workout.ended_at = datetime.now()
+        projection.record_write(session, "workout", workout)
         session.commit()
         session.refresh(workout)
     return workout
@@ -402,7 +411,8 @@ def delete_workout(session: Session, workout_id: int) -> None:
     )
     if any_set is not None:
         raise ConflictError("這場訓練有紀錄過的組，不能刪除")
-    session.delete(workout)
+    # F154：改軟刪。硬刪另一台裝置收不到 tombstone，下次同步又會把這場空訓練推回來。
+    projection.record_write(session, "workout", workout, deleted=True)
     session.commit()
 
 
@@ -502,6 +512,7 @@ def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[Workout
         workout_set = WorkoutSet(workout_id=workout_id, **fields)
         session.add(workout_set)
         try:
+            projection.record_write(session, "set", workout_set)
             session.commit()
         except IntegrityError as exc:
             session.rollback()
@@ -533,7 +544,7 @@ def soft_delete_set(session: Session, set_id: int) -> None:
     workout_set = session.get(WorkoutSet, set_id)
     if workout_set is None or workout_set.deleted_at is not None:
         raise NotFoundError()
-    workout_set.deleted_at = datetime.now()
+    projection.record_write(session, "set", workout_set, deleted=True)
     session.commit()
 
 
@@ -546,6 +557,7 @@ def update_set(session: Session, set_id: int, data: SetUpdate) -> WorkoutSet:
     workout_set.reps = data.reps
     workout_set.rpe = data.rpe
     workout_set.rest_seconds = data.rest_seconds
+    projection.record_write(session, "set", workout_set)
     session.commit()
     session.refresh(workout_set)
     return workout_set

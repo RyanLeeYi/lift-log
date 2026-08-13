@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.errors import DomainError, NotFoundError
 from app.models import Exercise, Template, TemplateExercise, Workout, WorkoutSet
 from app.schemas import TemplateCreate, TemplateExerciseOut, TemplateOut
+from app.services import projection
 
 
 def _pack_weekdays(days: list[int] | None) -> str | None:
@@ -107,7 +108,7 @@ def _get(session: Session, template_id: int) -> Template:
         template_id,
         options=[selectinload(Template.exercises).selectinload(TemplateExercise.exercise)],
     )
-    if template is None:
+    if template is None or template.deleted_at is not None:
         raise NotFoundError()
     return template
 
@@ -121,6 +122,7 @@ def create_template(session: Session, data: TemplateCreate) -> TemplateOut:
         exercises=_build_items(data),
     )
     session.add(template)
+    projection.record_write(session, "template", template)
     session.commit()
     return _to_out(_get(session, template.id))
 
@@ -128,6 +130,7 @@ def create_template(session: Session, data: TemplateCreate) -> TemplateOut:
 def list_templates(session: Session) -> list[TemplateOut]:
     templates = session.scalars(
         select(Template)
+        .where(Template.deleted_at.is_(None))
         .options(selectinload(Template.exercises).selectinload(TemplateExercise.exercise))
         .order_by(Template.id)
     )
@@ -151,6 +154,7 @@ def update_template(session: Session, template_id: int, data: TemplateCreate) ->
     if "weekdays" in data.model_fields_set:
         template.weekdays = _pack_weekdays(data.weekdays)
     template.exercises = _build_items(data)
+    projection.record_write(session, "template", template)
     session.commit()
     return _to_out(_get(session, template_id))
 
@@ -174,7 +178,9 @@ def delete_template(session: Session, template_id: int) -> None:
     session.execute(
         update(Workout).where(Workout.template_id == template_id).values(template_id=None)
     )
-    session.delete(template)
+    # F154：改軟刪。硬刪的話另一台裝置永遠收不到「這份課表沒了」，下次同步又推回來。
+    # 上面解除 workouts 關聯的理由不變（SQLite 會重用 id），tombstone 不影響那件事。
+    projection.record_write(session, "template", template, deleted=True)
     session.commit()
 
 
@@ -182,5 +188,6 @@ def set_weekdays(session: Session, template_id: int, days: list[int] | None) -> 
     """只改排程。動作清單不動——課表列表上排星期時不必先讀出整份課表再整包送回。"""
     template = _get(session, template_id)
     template.weekdays = _pack_weekdays(days)
+    projection.record_write(session, "template", template)
     session.commit()
     return _to_out(_get(session, template_id))
