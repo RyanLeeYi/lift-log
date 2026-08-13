@@ -51,6 +51,39 @@ public class SyncPlugin extends Plugin {
         });
     }
 
+    @PluginMethod
+    public void conflicts(PluginCall call) {
+        try {
+            LocalStore store = LocalStore.getInstance(getContext());
+            store.ensureReady();
+            call.resolve(JSObject.fromJSONObject(store.conflicts()));
+        } catch (JSONException | RuntimeException error) {
+            call.reject("無法讀取衝突收件匣", "SYNC_CONFLICT_ERROR", error);
+        }
+    }
+
+    @PluginMethod
+    public void resolveConflict(PluginCall call) {
+        String conflictId = call.getString("conflictId");
+        String choice = call.getString("choice");
+        String mutationId = call.getString("mutationId");
+        if (conflictId == null || choice == null || mutationId == null) {
+            call.reject("缺少衝突解決參數", "SYNC_CONFLICT_ARGS");
+            return;
+        }
+        try {
+            LocalStore store = LocalStore.getInstance(getContext());
+            store.ensureReady();
+            call.resolve(JSObject.fromJSONObject(
+                store.resolveConflict(conflictId, choice, mutationId)
+            ));
+        } catch (IllegalArgumentException error) {
+            call.reject(error.getMessage(), "SYNC_CONFLICT_REJECTED", error);
+        } catch (JSONException | RuntimeException error) {
+            call.reject("無法解決衝突", "SYNC_CONFLICT_ERROR", error);
+        }
+    }
+
     private void resolveOnMain(PluginCall call, SyncClient.Result result, RuntimeException error) {
         if (getActivity() == null) {
             call.reject("同步畫面已關閉");

@@ -27,7 +27,9 @@ import { switchRow } from "./switch-row.js";
 import { apiBase, isNativeApp } from "./env.js";
 import {
   initializeNativeSync,
+  readNativeConflicts,
   readNativeSyncStatus,
+  resolveNativeConflict,
   runNativeSync,
 } from "./native-sync.js";
 import {
@@ -111,6 +113,8 @@ let nativeAuthenticated = false;
 let nativeSignInBusy = false;
 let nativeSyncStatus = null;
 let nativeSyncBusy = false;
+// F145：衝突收件匣。只在設定頁載入——它是「有事才處理」的東西，不該每次重繪都打 bridge
+let conflictItems = [];
 let nativeBootstrapRequired = false;
 let restTicker = null;
 let wakeLock = null; // R10：logger 畫面保持螢幕常亮，離開時釋放
@@ -768,10 +772,15 @@ export async function openSettings() {
   if (isNativeApp()) {
     try {
       applyNativeSyncStatus(await readNativeSyncStatus());
+      await loadConflicts();
     } catch {
       // 設定頁其他本機功能仍可用；同步狀態沿用最後一次成功讀值。
     }
   }
+}
+
+async function loadConflicts() {
+  conflictItems = nativeSyncStatus?.conflicts > 0 ? await readNativeConflicts() : [];
 }
 
 function applyNativeSyncStatus(status) {
@@ -843,6 +852,78 @@ function nativeSyncSettingsRow() {
         render();
       }),
     }, [nativeSyncBusy ? "同步中…" : "立即同步"]),
+  ])];
+}
+
+// F145：衝突收件匣。同一筆資料兩邊各改一次時，server 不做 last-write-wins，
+// 兩份值都留著讓人選——所以這裡一定要把兩邊的值都畫出來，不能只說「有衝突」。
+const CONFLICT_ENTITY_LABELS = {
+  exercise: "動作", template: "課表", workout: "訓練", set: "組",
+  body_metric: "體重體脂", daily_status: "當日狀態", setting: "設定",
+};
+
+const CONFLICT_FIELD_LABELS = {
+  date: "日期", name: "名稱", name_zh: "中文名", name_en: "英文名",
+  weight_kg: "重量", reps: "次數", rpe: "累度", rest_seconds: "休息秒",
+  set_number: "第幾組", note: "備註", energy: "精力", sleep_quality: "睡眠",
+  body_fat_pct: "體脂", value: "值",
+};
+
+function conflictFields(local, server) {
+  const remote = server?.payload ?? {};
+  const same = (a, b) => String(a ?? "") === String(b ?? "");
+  return Object.keys(CONFLICT_FIELD_LABELS)
+    .filter((key) => key in local && !same(local[key], remote[key]))
+    .map((key) => ({
+      label: CONFLICT_FIELD_LABELS[key],
+      local: local[key] ?? "—",
+      server: key in remote ? remote[key] ?? "—" : "（雲端沒有這筆）",
+    }));
+}
+
+function conflictCard(item) {
+  const tombstoned = item.server == null || item.server.deleted_at != null;
+  const fields = conflictFields(item.local ?? {}, item.server);
+  const resolve = (choice) => guard(async () => {
+    const status = await resolveNativeConflict({
+      conflictId: item.conflictId, choice, mutationId: crypto.randomUUID(),
+    });
+    applyNativeSyncStatus(status);
+    await loadConflicts();
+    render();
+  });
+  return el("div", { class: "conflict-card" }, [
+    el("div", { class: "conflict-title" }, [
+      `${CONFLICT_ENTITY_LABELS[item.entityType] ?? item.entityType}`,
+      el("span", { class: "conflict-reason" }, [
+        tombstoned ? "雲端已刪除" : "兩邊都改過",
+      ]),
+    ]),
+    ...fields.map((field) => el("div", { class: "conflict-field" }, [
+      el("span", { class: "conflict-field-label" }, [field.label]),
+      el("span", { class: "conflict-local" }, [`本機 ${field.local}`]),
+      el("span", { class: "conflict-server" }, [`雲端 ${field.server}`]),
+    ])),
+    el("div", { class: "conflict-actions" }, [
+      // 雲端已刪除時不給「保留本機」——那等於讓刪掉的資料復活（PRD R4 明文禁止）
+      ...(tombstoned ? [] : [el("button", {
+        class: "btn chip", onclick: () => resolve("local"),
+      }, ["保留本機"])]),
+      el("button", {
+        class: "btn chip", onclick: () => resolve("server"),
+      }, [tombstoned ? "採用雲端（刪除）" : "採用雲端"]),
+    ]),
+  ]);
+}
+
+function conflictInboxSection() {
+  if (!isNativeApp() || conflictItems.length === 0) return [];
+  return [el("section", { class: "card conflict-inbox" }, [
+    el("div", { class: "conflict-inbox-head" }, [
+      icon("warning", { size: 16 }),
+      ` 待處理衝突 ${conflictItems.length} 筆`,
+    ]),
+    ...conflictItems.map(conflictCard),
   ])];
 }
 
@@ -961,6 +1042,7 @@ function renderSettings() {
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...nativeSyncSettingsRow(),
+    ...conflictInboxSection(),
     ...weeklyTargetRow(),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
     // web 走 Web Push、app 走本機通知——同一顆按鈕，實作差異藏在 rest-notify.js

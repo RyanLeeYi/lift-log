@@ -501,13 +501,163 @@ public class LocalStore extends SQLiteOpenHelper {
         return count("sync_outbox", "acked_at IS NULL AND error_code IS NOT NULL", null);
     }
 
+    public int unresolvedConflictCount() {
+        return count("sync_conflicts", "resolved_at IS NULL", null);
+    }
+
+    /** 未解決的衝突收件匣：每筆都帶本機與雲端兩份值，讓使用者自己選。 */
+    public JSONObject conflicts() {
+        SQLiteDatabase db = writableDatabase();
+        JSONArray items = new JSONArray();
+        try (Cursor cursor = db.query(
+            "sync_conflicts",
+            new String[]{"conflict_id", "mutation_id", "entity_type", "entity_id", "reason",
+                "local_json", "server_json", "created_at"},
+            "resolved_at IS NULL", null, null, null, "created_at ASC"
+        )) {
+            while (cursor.moveToNext()) {
+                JSONObject item = jsonObject();
+                put(item, "conflictId", cursor.getString(0));
+                put(item, "mutationId", cursor.getString(1));
+                put(item, "entityType", cursor.getString(2));
+                put(item, "entityId", cursor.getString(3));
+                put(item, "reason", cursor.getString(4));
+                put(item, "local", parseObject(cursor.getString(5)));
+                put(item, "server", nullableObject(cursor.getString(6)));
+                put(item, "createdAt", cursor.getString(7));
+                items.put(item);
+            }
+        }
+        JSONObject result = jsonObject();
+        put(result, "items", items);
+        return result;
+    }
+
+    /**
+     * 解決一筆衝突。`local` 保留本機值並以 server version 重排成新的 mutation；
+     * `server` 直接採用雲端值並丟棄本機這次修改。兩者都不做 last-write-wins 自動判定。
+     */
+    public JSONObject resolveConflict(String conflictId, String choice, String mutationId) {
+        boolean keepLocal = "local".equals(choice);
+        if (!keepLocal && !"server".equals(choice)) {
+            throw new IllegalArgumentException("不支援的衝突解決方式");
+        }
+        return transaction(db -> {
+            try {
+                return applyResolution(db, conflictId, keepLocal, mutationId);
+            } catch (JSONException error) {
+                throw new IllegalStateException("衝突資料格式不合法", error);
+            }
+        });
+    }
+
+    private JSONObject applyResolution(
+        SQLiteDatabase db, String conflictId, boolean keepLocal, String mutationId
+    ) throws JSONException {
+        String[] row = unresolvedConflict(db, conflictId);
+        String entityType = row[0];
+        String entityId = row[1];
+        JSONObject local = parseObject(row[3]);
+        JSONObject server = nullableObject(row[4]);
+        String operation = pendingOperation(db, row[2]);
+        String table = tableForEntity(entityType);
+        boolean tombstoned = server != null && !server.isNull("deleted_at");
+        if (keepLocal && server == null) {
+            throw new IllegalArgumentException("雲端沒有這筆資料，無法保留本機版本");
+        }
+        if (keepLocal && tombstoned) {
+            throw new IllegalArgumentException("雲端已刪除這筆資料，只能採用雲端");
+        }
+
+        if (keepLocal) {
+            int serverVersion = server.getInt("version");
+            if ("delete".equals(operation)) {
+                applyRemoteUpsert(db, entityType, table, rebased(server, local, serverVersion));
+                markDeletedBySync(db, table, entityId);
+            } else {
+                applyRemoteUpsert(db, entityType, table, rebased(server, local, serverVersion));
+            }
+            insertOutbox(
+                db, mutationId, entityType, entityId, operation, serverVersion, null, local
+            );
+        } else if (tombstoned) {
+            applyRemoteDelete(db, table, server);
+        } else if (server != null) {
+            applyRemoteUpsert(db, entityType, table, server);
+        }
+
+        db.delete("sync_outbox", "mutation_id = ?", new String[]{row[2]});
+        db.execSQL(
+            "UPDATE sync_conflicts SET resolved_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                + "WHERE conflict_id = ?",
+            new Object[]{conflictId}
+        );
+        if (count("sync_outbox", "acked_at IS NULL AND error_code IS NOT NULL", null) == 0) {
+            putSyncState(db, "last_error_code", "");
+            putSyncState(db, "next_sync_at", "0");
+        }
+        return syncStatus(db);
+    }
+
+    /** 保留本機值時，欄位用本機的、版本與時間用 server 的——這樣重送才不會再撞版本。 */
+    private static JSONObject rebased(JSONObject server, JSONObject local, int serverVersion)
+        throws JSONException {
+        JSONObject change = jsonObject();
+        put(change, "entity_id", server.getString("entity_id"));
+        put(change, "version", serverVersion);
+        put(change, "updated_at", server.getString("updated_at"));
+        put(change, "deleted_at", null);
+        put(change, "payload", local);
+        return change;
+    }
+
+    private static String[] unresolvedConflict(SQLiteDatabase db, String conflictId) {
+        try (Cursor cursor = db.query(
+            "sync_conflicts",
+            new String[]{"entity_type", "entity_id", "mutation_id", "local_json", "server_json"},
+            "conflict_id = ? AND resolved_at IS NULL",
+            new String[]{conflictId}, null, null, null
+        )) {
+            if (!cursor.moveToFirst()) {
+                throw new IllegalArgumentException("找不到未解決的衝突");
+            }
+            return new String[]{
+                cursor.getString(0), cursor.getString(1), cursor.getString(2),
+                cursor.getString(3), cursor.getString(4)
+            };
+        }
+    }
+
+    private static String pendingOperation(SQLiteDatabase db, String mutationId) {
+        try (Cursor cursor = db.query(
+            "sync_outbox", new String[]{"operation"},
+            "mutation_id = ?", new String[]{mutationId}, null, null, null
+        )) {
+            if (!cursor.moveToFirst()) {
+                throw new IllegalStateException("衝突對應的 mutation 已不存在");
+            }
+            return cursor.getString(0);
+        }
+    }
+
+    private static void markDeletedBySync(SQLiteDatabase db, String table, String syncId) {
+        db.execSQL(
+            "UPDATE " + table + " SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                + "WHERE sync_id = ?",
+            new Object[]{syncId}
+        );
+    }
+
     public long nextSyncAt() {
         String value = syncState(writableDatabase(), "next_sync_at");
         return value == null || value.isEmpty() ? 0 : Long.parseLong(value);
     }
 
     public JSONObject syncStatus() {
-        SQLiteDatabase db = writableDatabase();
+        return syncStatus(writableDatabase());
+    }
+
+    private JSONObject syncStatus(SQLiteDatabase db) {
         int failed = count("sync_outbox", "acked_at IS NULL AND error_code IS NOT NULL", null);
         int pending = count("sync_outbox", "acked_at IS NULL AND error_code IS NULL", null);
         String errorCode = syncState(db, "last_error_code");
@@ -522,6 +672,7 @@ public class LocalStore extends SQLiteOpenHelper {
         put(result, "errorCode", errorCode);
         put(result, "nextSyncAt", nextSyncAt());
         put(result, "bootstrapComplete", "1".equals(syncState(db, "bootstrap_complete")));
+        put(result, "conflicts", count("sync_conflicts", "resolved_at IS NULL", null));
         return result;
     }
 
@@ -1044,6 +1195,11 @@ public class LocalStore extends SQLiteOpenHelper {
         } catch (JSONException error) {
             throw new IllegalStateException("LocalStore 週期資料損壞", error);
         }
+    }
+
+    /** server 端可能回 null（雲端根本沒有這筆），存進 sync_conflicts 時是字面 "null"。 */
+    private static JSONObject nullableObject(String value) {
+        return value == null || "null".equals(value) ? null : parseObject(value);
     }
 
     private static JSONObject parseObject(String value) {

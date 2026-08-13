@@ -553,6 +553,98 @@ public class LocalStoreTest {
             .put("payload", payload);
     }
 
+    @Test
+    public void keepLocalRebasesOntoServerVersionWithoutLosingTheLocalValue()
+        throws JSONException {
+        String syncId = pushConflictedBodyMetric(80, 75, 5, false);
+
+        JSONObject conflict = store.conflicts().getJSONArray("items").getJSONObject(0);
+        assertEquals("body_metric", conflict.getString("entityType"));
+        assertEquals(80, conflict.getJSONObject("local").getDouble("weight_kg"), 0.001);
+        assertEquals(75, conflict.getJSONObject("server").getJSONObject("payload")
+            .getDouble("weight_kg"), 0.001);
+
+        String retry = uuid();
+        JSONObject status = store.resolveConflict(
+            conflict.getString("conflictId"), "local", retry
+        );
+        assertEquals(0, status.getInt("conflicts"));
+        assertEquals(0, status.getInt("failed"));
+        // 本機值留著，但版本改吃 server 的——重送才不會再撞同一個 version_mismatch
+        assertEquals(80, store.snapshot().getJSONArray("body_metrics")
+            .getJSONObject(0).getDouble("weight_kg"), 0.001);
+        JSONObject next = store.pendingPushBody(uuid(), 10, 1024 * 1024, 2_000)
+            .getJSONArray("mutations").getJSONObject(0);
+        assertEquals(retry, next.getString("mutation_id"));
+        assertEquals(5, next.getInt("base_version"));
+        assertEquals(80, next.getJSONObject("payload").getDouble("weight_kg"), 0.001);
+        assertEquals(syncId, next.getString("entity_id"));
+    }
+
+    @Test
+    public void useServerAdoptsCloudValueAndDropsTheRejectedMutation() throws JSONException {
+        pushConflictedBodyMetric(80, 75, 5, false);
+        JSONObject conflict = store.conflicts().getJSONArray("items").getJSONObject(0);
+
+        JSONObject status = store.resolveConflict(
+            conflict.getString("conflictId"), "server", uuid()
+        );
+        assertEquals(0, status.getInt("conflicts"));
+        assertEquals(0, status.getInt("pending"));
+        assertEquals(75, store.snapshot().getJSONArray("body_metrics")
+            .getJSONObject(0).getDouble("weight_kg"), 0.001);
+        assertEquals(0, store.pendingMutationCount());
+    }
+
+    @Test
+    public void tombstonedConflictCannotBeResurrectedByKeepingLocal() throws JSONException {
+        pushConflictedBodyMetric(80, 75, 5, true);
+        JSONObject conflict = store.conflicts().getJSONArray("items").getJSONObject(0);
+        String conflictId = conflict.getString("conflictId");
+
+        try {
+            store.resolveConflict(conflictId, "local", uuid());
+            fail("雲端已刪除的資料不得由保留本機復活");
+        } catch (IllegalArgumentException expected) {
+            assertNotNull(expected.getMessage());
+        }
+        assertEquals(1, store.unresolvedConflictCount());
+
+        store.resolveConflict(conflictId, "server", uuid());
+        assertEquals(0, store.unresolvedConflictCount());
+        assertEquals(0, store.snapshot().getJSONArray("body_metrics").length());
+    }
+
+    /** 建一筆本機體重、推上去被 server 以 version_mismatch 擋掉，回傳 entity sync_id。 */
+    private String pushConflictedBodyMetric(
+        double localWeight, double serverWeight, int serverVersion, boolean serverDeleted
+    ) throws JSONException {
+        store.ensureReady();
+        String syncId = uuid();
+        String mutationId = uuid();
+        store.saveBodyMetric(syncId, "2026-08-13", localWeight, null, mutationId);
+        store.pendingPushBody(uuid(), 10, 1024 * 1024, 0);
+        store.applyPushResponse(new JSONObject()
+            .put("accepted", new JSONArray())
+            .put("conflicts", new JSONArray().put(new JSONObject()
+                .put("mutation_id", mutationId)
+                .put("reason", serverDeleted ? "tombstoned" : "version_mismatch")
+                .put("server", new JSONObject()
+                    .put("entity_type", "body_metric")
+                    .put("entity_id", syncId)
+                    .put("version", serverVersion)
+                    .put("updated_at", "2026-08-13T00:00:00Z")
+                    .put("deleted_at", serverDeleted
+                        ? "2026-08-13T00:00:00Z" : JSONObject.NULL)
+                    .put("payload", new JSONObject()
+                        .put("sync_id", syncId)
+                        .put("date", "2026-08-13")
+                        .put("weight_kg", serverWeight)
+                        .put("body_fat_pct", JSONObject.NULL))))), 1_000);
+        assertEquals(1, store.unresolvedConflictCount());
+        return syncId;
+    }
+
     private static String uuid() {
         return UUID.randomUUID().toString();
     }

@@ -1356,6 +1356,27 @@ body {
 .native-sync-row .chip { flex: none; min-height: 44px; }
 .settings-screen .settings-back { margin-top: auto; }
 
+/* ---------- F145：衝突收件匣 ---------- */
+/* 兩邊的值一定要同時看得見——只說「有衝突」等於逼人猜要保留哪個 */
+.conflict-inbox { display: flex; flex-direction: column; gap: 12px; }
+.conflict-inbox-head {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--over); font-size: 14px; font-weight: 600;
+}
+.conflict-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px; border: 1px solid var(--line); border-radius: 10px;
+}
+.conflict-title { display: flex; align-items: baseline; gap: 8px; font-weight: 600; }
+.conflict-reason { color: var(--text-mute); font-size: 12px; font-weight: 400; }
+.conflict-field {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+  font-family: var(--mono); font-size: 12px;
+}
+.conflict-field-label { color: var(--text-mute); min-width: 4em; }
+.conflict-actions { display: flex; gap: 8px; margin-top: 2px; }
+.conflict-actions .chip { flex: 1; min-height: 44px; }
+
 /* ---------- F82：挑今日課表 ---------- */
 /* 畫面標頭：返回鈕 ＋ 標題/副標。與首頁的問候列同一族，但這裡有返回 */
 .screen-head { display: flex; align-items: center; gap: 12px; padding: 4px 6px 2px; }

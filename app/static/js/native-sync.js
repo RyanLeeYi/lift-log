@@ -20,7 +20,23 @@ export function normalizeSyncStatus(value = {}) {
     errorCode: value.errorCode || null,
     nextSyncAt: Math.max(0, Number(value.nextSyncAt) || 0),
     bootstrapComplete: value.bootstrapComplete === true,
+    conflicts: Math.max(0, Number(value.conflicts) || 0),
   };
+}
+
+/** 未解決的衝突；每筆都帶本機與雲端兩份值，UI 只負責顯示與轉送選擇。 */
+export async function readNativeConflicts({ plugin = syncPlugin() } = {}) {
+  const value = await requirePlugin(plugin).conflicts();
+  return Array.isArray(value?.items) ? value.items : [];
+}
+
+export async function resolveNativeConflict(
+  { conflictId, choice, mutationId }, { plugin = syncPlugin() } = {},
+) {
+  if (choice !== "local" && choice !== "server") throw new Error("不支援的衝突解決方式");
+  return normalizeSyncStatus(
+    await requirePlugin(plugin).resolveConflict({ conflictId, choice, mutationId }),
+  );
 }
 
 export async function initializeNativeSync({ plugin = syncPlugin(), baseUrl = apiBase() } = {}) {
