@@ -4,10 +4,16 @@
 
 ## 下一步（最短入口）
 
-1. **等 Ryan 裁決 F145 的第 9 條讀法**（見下方）——那條決定 F145 現在能不能改 passing。
-2. **F146 未完**：server 端與前端 session client 已完成並 commit，**還缺**：
-   Google 登入 UI（網頁版）、登出按鈕、`verify_f146.py` Playwright 驗收。
-3. 之後依序 F147 → F148 → F149 → F153，再處理 10 條舊債。
+**兩條都卡在同一種東西上：凍結 acceptance 寫的驗證方式做不出來，需要 Ryan 裁決。**
+
+1. **F145 第 9 條讀法**（寬鬆＝雙端 schema contract test，嚴格＝真的 Android↔Web 端對端）。
+2. **F146 的 Playwright「CSRF 拒絕」與「兩帳號隔離」**：要嘛開一個測試用 Google verifier
+   注入點（＝在認證路徑上開後門），要嘛改 acceptance 讓 server 端測試負責。細節在
+   `docs/evidence/F146.md` 最後一節。
+3. 裁決前可以先做的：**native 模擬路徑的 e2e 是壞的**（`verify_f61`／`f81`／`f110` 都卡在
+   `wait_for_selector("input")`），且**在這場之前就壞了**（已用 worktree 比對 `62705ae` 確認）。
+   值得單獨開一條修。
+4. 之後依序 F147 → F148 → F149 → F153，再處理 10 條舊債。
 
 ## 這場做了什麼
 
@@ -18,6 +24,9 @@
 | `4edd796` `62705ae` | F145 證據歸檔（狀態仍 failing，理由見下） |
 | `906e367` | F146：web CSRF token 改由 session id 推導 |
 | `014b48d` | F146：網頁 cookie session client（`auth.js` ＋ `api.js`） |
+| `1365787` | F146：網頁 Google 登入畫面、登出、服務中斷提示、`verify_f146.py` |
+| `8d2dcaa` | F146：既有 e2e helper 改成指名點「連線」（setup 第一顆按鈕換成 Google 登入了） |
+| `20df34a` | F146 證據歸檔（狀態仍 failing） |
 
 ## ⚠ 要 Ryan 裁決：F145 的第 9 條
 
@@ -47,11 +56,15 @@ passing**。兩條路擇一：認寬鬆讀法就改 passing 並重簽 acceptance
 - `api.js` `authHeaders()`：有 web session 走 cookie＋`X-CSRF-Token`，沒有才退回舊的 Bearer。
   **兩條路併存是刻意的**——舊的單一 token 是 60+ 支既有 e2e 的入口，砍掉就是大規模回歸。
 
-**還沒做**
+- 網頁 setup：Google 登入為主要動作，API token 留作備援；設定頁有登出。
+- `verify_f146.py`：登入 `client=web`／請求帶 CSRF header 不帶 Authorization／
+  localStorage 沒有 token／登出帶 CSRF／服務中斷顯示專用訊息。**全過**。
+- 開站離線訊息**不能放 `state.error`**——頂層的 `guard(confirmActiveWorkout)` 會把它清掉。
 
-- 網頁 setup 畫面的 Google 登入（目前仍是手貼 API token）與登出按鈕
-- `tests/e2e/verify_f146.py`：登入／登出、CSRF 拒絕、兩帳號隔離、outage 顯示
-- 決定要不要保留 API token 輸入框當備援（我目前傾向保留，理由同上）
+**還沒做（就是要裁決的那兩件）**
+
+- Playwright 的「CSRF 拒絕」與「兩帳號隔離」：需要真 Google session，瀏覽器裡造不出來
+- 決定要不要保留 API token 輸入框當備援（我目前保留，理由同上）
 
 ## 驗收環境陷阱（沿用，別再踩）
 
