@@ -20,6 +20,7 @@ from app.schemas import (
     SyncTemplatePayload,
     SyncWorkoutPayload,
 )
+from app.services import projection
 from app.sync_models import MutationReceipt, SyncChange, SyncEntity, SyncState
 
 SCHEMA_VERSION = 1
@@ -184,6 +185,10 @@ def _apply_upsert(session: Session, mutation: SyncMutation, entity: SyncEntity |
     if entity and entity.version != mutation.base_version:
         return _conflict(str(mutation.mutation_id), "version_mismatch", entity)
 
+    # F154：先投影到 domain 表。它是唯一會因為自然鍵撞號而失敗的一步，
+    # 放在 SyncEntity 版本更新之前，失敗時才不會留下「版本加了但資料沒寫」的半套狀態。
+    row = projection.apply_payload(session, mutation.entity_type, payload)
+
     now = _now()
     if entity is None:
         entity = SyncEntity(
@@ -199,6 +204,8 @@ def _apply_upsert(session: Session, mutation: SyncMutation, entity: SyncEntity |
         entity.version += 1
         entity.updated_at = now
         entity.payload_json = _json(payload)
+    entity.deleted_at = None
+    row.version = entity.version
     server_seq = _record_change(session, entity, "upsert", payload)
     return {
         "mutation_id": str(mutation.mutation_id),
@@ -235,12 +242,27 @@ def _apply_delete(session: Session, mutation: SyncMutation, entity: SyncEntity |
     entity.version += 1
     entity.updated_at = _now()
     entity.deleted_at = entity.updated_at
+    # tombstone 同樣要落到 domain row，否則刪除只在同步層生效、REST 還查得到那筆
+    row = projection.row_for(session, entity.entity_type, entity.entity_id)
+    if row is not None:
+        row.deleted_at = entity.deleted_at
+        row.version = entity.version
     server_seq = _record_change(session, entity, "delete", payload)
     return {
         "mutation_id": str(mutation.mutation_id),
         "version": entity.version,
         "server_seq": server_seq,
     }
+
+
+def _entity_of(session: Session, entity_type: str, sync_id: str | None) -> SyncEntity | None:
+    if not sync_id:
+        return None
+    return session.scalar(
+        select(SyncEntity).where(
+            SyncEntity.entity_type == entity_type, SyncEntity.entity_id == sync_id
+        )
+    )
 
 
 def _process(session: Session, raw: dict[str, Any]) -> tuple[str, dict]:
@@ -269,8 +291,15 @@ def _process(session: Session, raw: dict[str, Any]) -> tuple[str, dict]:
     elif mutation.operation == "upsert":
         try:
             result = _apply_upsert(session, mutation, entity)
-        except MissingDependency:
+        except (MissingDependency, projection.MissingReference):
             result = _conflict(mutation_id, "dependency_missing")
+        except projection.NaturalKeyConflict as clash:
+            # 同一個自然鍵被兩個 sync_id 搶——退成衝突交給收件匣，不自動選邊
+            result = _conflict(
+                mutation_id,
+                "natural_key_conflict",
+                _entity_of(session, mutation.entity_type, clash.existing.sync_id),
+            )
         except (ValidationError, ValueError):
             result = _conflict(mutation_id, "validation_failed")
         kind = "accepted" if "server_seq" in result else "conflict"

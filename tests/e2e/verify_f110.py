@@ -30,6 +30,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
+    FAKE_PLUGIN,
     PHONE,
     reroute_public_host,
     safe_port,
@@ -50,7 +51,13 @@ def check(ok: bool, label: str) -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {label}")
 
 
-FAKE = """
+# F146 起 native setup 畫面沒有 token input（只有「使用 Google 登入」），且 F131 起
+# 開機會走 restoreNativeSession() → initializeNativeSync()——缺 AuthSession／LocalStore／
+# Sync 外掛會拋錯，卡在登入畫面或「正在準備本機資料」，永遠等不到這支腳本原本要驗的
+# 計時頁流程。改成先跑 verify_f67 共用的假 plugin（登入＋本機資料庫），
+# 再疊加這支腳本自己的 LocalNotifications／RestTimer／NotifyStatus——
+# 兩段合成一支 init script 才能保證同步執行順序（window.Capacitor 一定先存在）。
+EXTRA_PLUGINS = """
 window.__native = { visible: [], handler: null, stops: 0 };
 window.__emit = (action, seconds) => {
   const h = window.__native.handler;
@@ -58,48 +65,45 @@ window.__emit = (action, seconds) => {
   h(seconds === undefined ? { action } : { action, seconds });
   return true;
 };
-window.Capacitor = {
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {
-    LocalNotifications: {
-      schedule: async () => ({}), cancel: async () => ({}),
-      checkPermissions: async () => ({ display: 'granted' }),
-      requestPermissions: async () => ({ display: 'granted' }),
-      areEnabled: async () => ({ value: true }),
-      listChannels: async () => ({ channels: [
-        { id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },
-      ] }),
-    },
-    RestTimer: {
-      available: async () => ({ available: true }),
-      start: async () => ({}),
-      stop: async () => { window.__native.stops += 1; return {}; },
-      pause: async () => ({}), resume: async () => ({}),
-      overlayPermitted: async () => ({ granted: true }),
-      requestOverlayPermission: async () => {},
-      setRestCardVisible: async (o) => {
-        window.__native.visible.push(Boolean(o && o.visible));
-        return {};
-      },
-      addListener: async (name, cb) => {
-        if (name === 'restControl') window.__native.handler = cb;
-        return { remove: () => {} };
-      },
-    },
-    NotifyStatus: { openSettings: async () => {} },
+Object.assign(window.Capacitor.Plugins, {
+  LocalNotifications: {
+    schedule: async () => ({}), cancel: async () => ({}),
+    checkPermissions: async () => ({ display: 'granted' }),
+    requestPermissions: async () => ({ display: 'granted' }),
+    areEnabled: async () => ({ value: true }),
+    listChannels: async () => ({ channels: [
+      { id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },
+    ] }),
   },
-};
+  RestTimer: {
+    available: async () => ({ available: true }),
+    start: async () => ({}),
+    stop: async () => { window.__native.stops += 1; return {}; },
+    pause: async () => ({}), resume: async () => ({}),
+    overlayPermitted: async () => ({ granted: true }),
+    requestOverlayPermission: async () => {},
+    setRestCardVisible: async (o) => {
+      window.__native.visible.push(Boolean(o && o.visible));
+      return {};
+    },
+    addListener: async (name, cb) => {
+      if (name === 'restControl') window.__native.handler = cb;
+      return { remove: () => {} };
+    },
+  },
+  NotifyStatus: { openSettings: async () => {} },
+});
 """
 
 
 def open_app(browser, base: str):
     ctx = browser.new_context(viewport=PHONE)
     page = ctx.new_page()
-    page.add_init_script(FAKE)
+    plugin_script = FAKE_PLUGIN.strip().join(["(", ")(64, true);"])
+    page.add_init_script(plugin_script + "\n" + EXTRA_PLUGINS)
     reroute_public_host(page, base)
     page.goto(base, wait_until="domcontentloaded")
-    page.wait_for_selector("input", timeout=10_000)
+    page.wait_for_selector("input, .home-head", timeout=10_000)
     setup_and_home(page)
     page.evaluate(f"() => localStorage.setItem('{NOTIFY_FLAG}', '1')")
     page.evaluate(f"() => localStorage.setItem('{OVERLAY_FLAG}', '1')")

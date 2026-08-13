@@ -88,6 +88,16 @@ def _mutation(
     }
 
 
+def _body_metric_payload(day: int) -> dict:
+    entity_id = str(uuid4())
+    return {
+        "sync_id": entity_id,
+        "date": f"2026-08-{day:02d}",
+        "weight_kg": 80,
+        "body_fat_pct": 20,
+    }
+
+
 def _push(
     client: TestClient,
     headers: dict[str, str],
@@ -169,7 +179,13 @@ def test_version_conflict_tombstone_and_delete_idempotency(sync_client: TestClie
 def test_pull_paginates_without_gaps_or_duplicates(sync_client: TestClient) -> None:
     with sync_client as client:
         headers, device_id = _login(client, "pagination")
-        assert _push(client, headers, device_id, [_mutation() for _ in range(3)]).status_code == 200
+        # F154 起 domain 表是事實來源，而體重一天只有一筆——三筆同日的 metric 不再是三個
+        # 獨立 entity，而是自然鍵衝突。這裡要驗的是分頁，所以給三個不同日期。
+        payloads = [_body_metric_payload(day) for day in (11, 12, 13)]
+        mutations = [
+            _mutation(entity_id=payload["sync_id"], payload=payload) for payload in payloads
+        ]
+        assert _push(client, headers, device_id, mutations).status_code == 200
 
         first = client.get("/api/sync/pull?cursor=0&limit=2", headers=headers).json()
         second = client.get(

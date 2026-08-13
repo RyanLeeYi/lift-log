@@ -16,7 +16,17 @@ SET_NUMBER_UNIQUE_INDEX = "ix_sets_workout_exercise_set_number_active"
 IDEM_KEY_UNIQUE_INDEX = "ix_sets_idem_key_active"
 
 
-class Exercise(Base):
+# F154：可同步的 domain 表共用這三個欄位。domain 表是唯一事實來源，
+# `sync_entities` 只留版本簿與 change log——所以版本要跟著 domain row 走，不是反過來。
+# `sync_id` 對既有列是 NULL（回填是 F155 的事），新寫入一律帶值。
+class SyncColumns:
+    sync_id: Mapped[str | None] = mapped_column(String, unique=True, index=True, default=None)
+    version: Mapped[int] = mapped_column(default=1)
+    # tombstone：刪除一律軟刪，硬刪會讓另一台裝置永遠不知道這筆消失過（PRD R4）
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+class Exercise(Base, SyncColumns):
     __tablename__ = "exercises"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -27,7 +37,7 @@ class Exercise(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class Template(Base):
+class Template(Base, SyncColumns):
     """課表：動作清單＋順序＋預設組數。刪除不影響歷史 workout（workouts.template_id 無 FK）。"""
 
     __tablename__ = "templates"
@@ -60,7 +70,7 @@ class TemplateExercise(Base):
     exercise: Mapped[Exercise] = relationship()
 
 
-class Workout(Base):
+class Workout(Base, SyncColumns):
     __tablename__ = "workouts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -72,11 +82,15 @@ class Workout(Base):
     # 存在的理由是**跨裝置**：結束只清當下那台的快取，另一台的舊快取會把它接下去。
     # 刻意不擋 sets 寫入——離線佇列裡先記的組必須補得進去（見 docs/decisions/）。
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    # F154：同步 payload 帶著這兩個欄位（PRD R4 的 workout 接管）。接管本身在 D15 降 backlog，
+    # 但欄位要存下來——不存就等於 Android 推上來的值被投影吃掉，pull 回去變成另一個值。
+    owner_device_id: Mapped[str | None] = mapped_column(String, default=None)
+    lease_generation: Mapped[int] = mapped_column(default=1)
 
     sets: Mapped[list["WorkoutSet"]] = relationship(back_populates="workout")
 
 
-class BodyMetric(Base):
+class BodyMetric(Base, SyncColumns):
     """體重體脂 SSOT：一天一筆（date UNIQUE），同日重送為覆蓋更新。"""
 
     __tablename__ = "body_metrics"
@@ -88,7 +102,7 @@ class BodyMetric(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class DailyStatus(Base):
+class DailyStatus(Base, SyncColumns):
     """當日狀態：一天一筆（date UNIQUE），同日重送為覆蓋更新；休息日也可記，不依附 workout。"""
 
     __tablename__ = "daily_status"
@@ -101,7 +115,7 @@ class DailyStatus(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class WorkoutSet(Base):
+class WorkoutSet(Base, SyncColumns):
     """一組訓練，append-only：不做 update，記錯用軟刪除（deleted_at）。"""
 
     __tablename__ = "sets"
@@ -137,7 +151,6 @@ class WorkoutSet(Base):
     # F151：批次寫入冪等鍵＝sha256(date|exercise_id|set_number)。舊列一律 NULL、永不回填——
     # ponytail: 回填前要先確認舊資料沒有同日同動作同組號跨 workout 的重複，超出這次範圍。
     idem_key: Mapped[str | None] = mapped_column(String, default=None)
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     workout: Mapped[Workout] = relationship(back_populates="sets")
@@ -155,7 +168,7 @@ class PushSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class AppSetting(Base):
+class AppSetting(Base, SyncColumns):
     """F80 應用設定：單人系統的 key/value 小表。
 
     第一個 key 是 weekly_target_days（每週想練幾天）。用 key/value 而不是逐項加欄位，

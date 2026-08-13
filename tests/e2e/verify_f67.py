@@ -123,6 +123,20 @@ FAKE_PLUGIN = """
         },
         install: async (opts) => { window.__au.installs.push(opts); },
       },
+      // F131 起開機會呼叫 initializeNativeSync()／readNativeSyncStatus()——沒有這顆
+      // 外掛會拋錯，害 nativeBootstrapRequired 卡死在「正在準備本機資料」而永遠到不了首頁
+      // （F61/F81/F110 三支腳本 2026-08-13 之前就是卡在這裡，見 handoff）。
+      Sync: {
+        initialize: async () => ({ state: 'synced', pending: 0, failed: 0, cursor: 0,
+          lastSyncedAt: Date.now(), errorCode: null, nextSyncAt: 0,
+          bootstrapComplete: true, conflicts: 0 }),
+        status: async () => ({ state: 'synced', pending: 0, failed: 0, cursor: 0,
+          lastSyncedAt: Date.now(), errorCode: null, nextSyncAt: 0,
+          bootstrapComplete: true, conflicts: 0 }),
+        syncNow: async () => ({ state: 'synced', pending: 0, failed: 0, cursor: 0,
+          lastSyncedAt: Date.now(), errorCode: null, nextSyncAt: 0,
+          bootstrapComplete: true, conflicts: 0 }),
+      },
     },
   };
 }

@@ -9,7 +9,13 @@ from sqlalchemy.engine import Engine
 
 from app.models import IDEM_KEY_UNIQUE_INDEX, SET_NUMBER_UNIQUE_INDEX
 
-DOMAIN_SCHEMA_VERSION = 3
+DOMAIN_SCHEMA_VERSION = 4
+
+# F154：參與同步的 domain 表。順序無關，但 sets 依賴 workouts/exercises 先存在。
+SYNC_TABLES = (
+    "exercises", "templates", "workouts", "sets",
+    "body_metrics", "daily_status", "app_settings",
+)
 
 # (table, column, DDL)——新增欄位一律 nullable，舊資料自然為 NULL
 _COLUMN_MIGRATIONS = [
@@ -37,6 +43,64 @@ _COLUMN_MIGRATIONS = [
         "idem_key",
         "ALTER TABLE sets ADD COLUMN idem_key TEXT",
     ),
+
+# F154：可同步 domain 表的共用欄位。既有列的 sync_id 一律 NULL（回填是 F155），
+# version 從 1 起算——舊資料等同「第一版」，不是 0。
+    ("exercises", "sync_id", "ALTER TABLE exercises ADD COLUMN sync_id TEXT"),
+    (
+        "exercises",
+        "version",
+        "ALTER TABLE exercises ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("templates", "sync_id", "ALTER TABLE templates ADD COLUMN sync_id TEXT"),
+    (
+        "templates",
+        "version",
+        "ALTER TABLE templates ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("workouts", "sync_id", "ALTER TABLE workouts ADD COLUMN sync_id TEXT"),
+    (
+        "workouts",
+        "version",
+        "ALTER TABLE workouts ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("body_metrics", "sync_id", "ALTER TABLE body_metrics ADD COLUMN sync_id TEXT"),
+    (
+        "body_metrics",
+        "version",
+        "ALTER TABLE body_metrics ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("daily_status", "sync_id", "ALTER TABLE daily_status ADD COLUMN sync_id TEXT"),
+    (
+        "daily_status",
+        "version",
+        "ALTER TABLE daily_status ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("app_settings", "sync_id", "ALTER TABLE app_settings ADD COLUMN sync_id TEXT"),
+    (
+        "app_settings",
+        "version",
+        "ALTER TABLE app_settings ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("workouts", "owner_device_id", "ALTER TABLE workouts ADD COLUMN owner_device_id TEXT"),
+    (
+        "workouts",
+        "lease_generation",
+        "ALTER TABLE workouts ADD COLUMN lease_generation INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("sets", "sync_id", "ALTER TABLE sets ADD COLUMN sync_id TEXT"),
+    (
+        "sets",
+        "version",
+        "ALTER TABLE sets ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    ),
+    ("exercises", "deleted_at", "ALTER TABLE exercises ADD COLUMN deleted_at TIMESTAMP"),
+    ("templates", "deleted_at", "ALTER TABLE templates ADD COLUMN deleted_at TIMESTAMP"),
+    ("workouts", "deleted_at", "ALTER TABLE workouts ADD COLUMN deleted_at TIMESTAMP"),
+    ("body_metrics", "deleted_at", "ALTER TABLE body_metrics ADD COLUMN deleted_at TIMESTAMP"),
+    ("daily_status", "deleted_at", "ALTER TABLE daily_status ADD COLUMN deleted_at TIMESTAMP"),
+    ("app_settings", "deleted_at", "ALTER TABLE app_settings ADD COLUMN deleted_at TIMESTAMP"),
+
 ]
 
 
@@ -91,6 +155,17 @@ def migrate_schema(engine: Engine) -> None:
                     f"CREATE UNIQUE INDEX {IDEM_KEY_UNIQUE_INDEX} "
                     "ON sets (idem_key) "
                     "WHERE idem_key IS NOT NULL AND deleted_at IS NULL"
+                )
+            )
+        # F154：sync_id 唯一索引。SQLite 的 UNIQUE 容許多個 NULL，所以既有未回填的列不受影響。
+        for table in SYNC_TABLES:
+            columns = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            if "sync_id" not in columns:
+                continue
+            conn.execute(
+                text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table}_sync_id "
+                    f"ON {table} (sync_id)"
                 )
             )
         conn.execute(

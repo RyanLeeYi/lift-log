@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from playwright.sync_api import sync_playwright  # noqa: E402
-from verify_f67 import e2e_tmp  # noqa: E402
+from verify_f67 import e2e_tmp, native, setup_and_home  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 TOKEN = "e2e-f61-token"
@@ -139,43 +139,25 @@ def verify_web(page, base: str) -> None:
 
 
 def verify_native_sim(page, base: str) -> None:
-    """注入 window.Capacitor 後，API 前綴與 SW 行為都要換一條路。"""
-    page.add_init_script(
-        "window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'android' };"
-    )
+    """注入 window.Capacitor 後，API 前綴與 SW 行為都要換一條路。
 
+    F146 起 native 版 setup 畫面沒有 token input（只有「使用 Google 登入」），且
+    F131 起開機會走 restoreNativeSession() → initializeNativeSync()——沒有假的
+    AuthSession／LocalStore／Sync 外掛會卡在「正在準備本機資料」或乾脆停在登入畫面，
+    等不到這裡原本假造的裸 window.Capacitor 承諾的 input。改用 verify_f67 共用的
+    假 plugin（已含這三顆），直接以「已登入過的裝置」進首頁——F61 ③ 要驗的是
+    「app 版 API 打向公開站」這件事，登入手段本身不是這條 acceptance 的一部分。
+    """
     seen: list[str] = []
-
-    def reroute(route):
-        req = route.request
-        seen.append(req.url)
-        # 把打向公開站的請求轉回本機伺服器，讓流程能繼續（不碰真的正式站）。
-        # 不能用 continue_(url=...)——Playwright 不允許改協定（https→http），只能自己抓再 fulfill。
-        # 補上 ACAO 是為了讓模擬環境的流程走得下去：真機的 origin 是 https://localhost，
-        # 由後端 CAPACITOR_ORIGINS 放行（見 tests/test_cors.py），不靠這裡。
-        allow = {"access-control-allow-origin": base, "access-control-allow-headers": "*"}
-        if req.method == "OPTIONS":
-            route.fulfill(status=200, headers={**allow, "access-control-allow-methods": "*"})
-            return
-        resp = page.context.request.fetch(
-            req.url.replace(PUBLIC_HOST, base),
-            method=req.method,
-            headers=req.headers,
-            data=req.post_data,
-        )
-        route.fulfill(response=resp, headers={**resp.headers, **allow})
-
-    page.route(f"{PUBLIC_HOST}/**", reroute)
-
     other: list[str] = []
     page.on(
         "request",
-        lambda r: other.append(r.url)
-        if "/api/" in r.url and not r.url.startswith(PUBLIC_HOST)
-        else None,
+        lambda r: seen.append(r.url) if r.url.startswith(PUBLIC_HOST)
+        else (other.append(r.url) if "/api/" in r.url else None),
     )
 
-    setup_token(page, base)
+    page = native(page, base, current=64)
+    setup_and_home(page)
 
     count = round_trip(page)
     check(count > 0, f"③ app 版經公開站 base URL 往返成功（取回 {count} 筆動作）")
