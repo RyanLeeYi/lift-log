@@ -2742,7 +2742,7 @@
       "status": "failing",
       "outcome": "追加資料自動合併；同筆版本衝突由使用者選擇；進行中 workout 只有一台 owner 並可安全接管。",
       "acceptance": "**已簽核凍結（2026-08-13，Ryan；D15 縮範圍重簽）**。依 PRD R4：append-only entity 自動 merge；同筆 base_version 衝突進 inbox，顯示本機/雲端值並能保留任一方後重新送出；刪除/舊版編輯遵守 tombstone，不復活。衝突情境以 **Android ↔ Web** 為準，兩端 contract tests 全綠。【D15 降 backlog】雙 Android 裝置的 active workout owner/lease_generation 接管、舊 owner 離線組進 recovery workout——Ryan 實際只有手機＋網頁，無法自行驗證，無法驗證的 acceptance 是規格債。",
-      "evidence": "",
+      "evidence": "docs/evidence/F145.md",
       "prerequisites": [
         "F144"
       ],
