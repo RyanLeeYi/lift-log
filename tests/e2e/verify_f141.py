@@ -7,6 +7,9 @@ import sys
 
 from playwright.sync_api import Route, sync_playwright
 
+# 報告裡有 ≥、①、⚠ 這類字，Windows console 預設 CP950 編不出來會 UnicodeEncodeError exit 1
+# ——腳本自己釘 UTF-8，不依賴呼叫端帶 PYTHONUTF8／PYTHONIOENCODING（F138）。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 def main() -> int:
     base = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:28741"

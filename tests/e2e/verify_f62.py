@@ -21,7 +21,11 @@ from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from playwright.sync_api import sync_playwright
+# 報告裡有 ≥、①、⚠ 這類字，Windows console 預設 CP950 編不出來會 UnicodeEncodeError exit 1
+# ——腳本自己釘 UTF-8，不依賴呼叫端帶 PYTHONUTF8／PYTHONIOENCODING（F138）。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import e2e_tmp  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]

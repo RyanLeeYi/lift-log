@@ -1,7 +1,18 @@
 # session handoff
 
-最後更新：2026-08-13（第二場：D15 方向定案 + E1 重簽）。目前 **133/153 passing，20 failing**。
-下一條為 **F138**，尚未開始；`.harness/current_feature` 應在開始 F138 時才切換。
+最後更新：2026-08-13（第二場：D15 方向定案 + E1 重簽 + F138 收工）。目前 **134/153 passing，19 failing**。
+下一條為 **F150**，尚未開始；`.harness/current_feature` 應在開始 F150 時才切換。
+
+## F138 收工（2026-08-13 passing）
+
+`tests/e2e/` 54 支補上 `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`（原有 9 支已做，共 63 支）。
+證據 `docs/evidence/F138.md`；acceptance ⑤ 於簽核時修訂為 smoke 涵蓋，不再要求 54 支各跑完整 E2E。
+
+⚠ **給下一個 agent 的盲區警告**：`PYTHONIOENCODING=utf-8` 是 **Claude Code harness 注入的 process 層變數**
+（User／Machine 層皆空，系統 ACP=950）。**你在這個 harness 裡跑 E2E 永遠看不到 cp950 缺陷，Ryan 自己開
+PowerShell 跑就會踩到。** 要驗編碼相關問題，必須先
+`$env:PYTHONIOENCODING=$null; $env:PYTHONUTF8=$null; chcp 950`。
+回歸護欄：`uv run python tests/e2e/smoke_encoding.py`（63/63）。
 
 ## ⚠ 2026-08-13 方向定案（D15；本場未寫任何程式碼，只有決策與規格）
 

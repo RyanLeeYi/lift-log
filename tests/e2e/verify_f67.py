@@ -19,6 +19,11 @@ from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
 
+# 報告裡有 ≥、①、⚠ 這類字，Windows console 預設 CP950 編不出來會 UnicodeEncodeError exit 1
+# ——腳本自己釘 UTF-8，不依賴呼叫端帶 PYTHONUTF8／PYTHONIOENCODING（F138）。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 REPO = Path(__file__).resolve().parents[2]
 TOKEN = "e2e-f67-token"
 PHONE = {"width": 390, "height": 844}
