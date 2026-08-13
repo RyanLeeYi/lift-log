@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.errors import DomainError
 from app.models import AppSetting
+from app.services import projection
 
 WEEKLY_TARGET_DAYS = "weekly_target_days"
 
@@ -44,9 +45,12 @@ def set_setting(session: Session, key: str, value: str) -> str:
     cleaned = KNOWN[key][1](value)
     row = session.get(AppSetting, key)
     if row is None:
-        session.add(AppSetting(key=key, value=cleaned))
+        row = AppSetting(key=key, value=cleaned)
+        session.add(row)
     else:
         row.value = cleaned
+        row.deleted_at = None
+    projection.record_write(session, "setting", row)
     session.commit()
     return cleaned
 

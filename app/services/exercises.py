@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.errors import DomainError, NotFoundError
 from app.models import Exercise, Workout, WorkoutSet
+from app.services import projection
 from app.schemas import ExerciseCreate
 
 DEFAULT_MUSCLE_GROUP = "其他"  # F10：自訂動作未填部位時的歸類
@@ -29,6 +30,7 @@ def create_exercise(session: Session, data: ExerciseCreate) -> Exercise:
     )
     session.add(exercise)
     try:
+        projection.record_write(session, "exercise", exercise)
         session.commit()
     except IntegrityError as exc:  # DB unique 當後盾（並發或非正規化漏網）
         session.rollback()

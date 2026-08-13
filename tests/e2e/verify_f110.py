@@ -65,6 +65,14 @@ window.__emit = (action, seconds) => {
   h(seconds === undefined ? { action } : { action, seconds });
   return true;
 };
+// F67 假 LocalStore 只種了一顆動作——這支腳本要在兩個動作之間切換（②），補第二顆。
+// 包一層而不是整個重寫 LocalStore：createWorkout／addSet 等既有邏輯照舊可用。
+const __baseSnapshot = window.Capacitor.Plugins.LocalStore.snapshot;
+window.Capacitor.Plugins.LocalStore.snapshot = async () => {
+  const data = await __baseSnapshot();
+  return { ...data, exercises: [...data.exercises,
+    { id: 2, name_zh: '臥推', name_en: 'Bench Press', muscle_group: '胸', is_bodyweight: 0 }] };
+};
 Object.assign(window.Capacitor.Plugins, {
   LocalNotifications: {
     schedule: async () => ({}), cancel: async () => ({}),

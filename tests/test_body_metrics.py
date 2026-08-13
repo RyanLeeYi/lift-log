@@ -51,26 +51,27 @@ def test_upsert_race_on_first_insert_recovers_to_overwrite(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """併發同日首寫撞 date UNIQUE：不得裸拋 500，要復原為「同日覆蓋」語意。"""
-    from sqlalchemy.exc import IntegrityError
     from sqlalchemy.orm import Session as SASession
 
-    day = date(2026, 7, 10)
-    real_commit = db_session.commit
-    raced = {"done": False}
+    from app.services import projection
 
-    def racing_commit() -> None:
+    day = date(2026, 7, 10)
+    raced = {"done": False}
+    real_record_write = projection.record_write
+
+    def racing_record_write(session, entity_type, row, **kwargs):  # noqa: ANN001, ANN003
+        # F154 起 record_write 內含 flush，撞 UNIQUE 的時機從 commit 提前到 flush——
+        # 所以競爭對手要在**我們 flush 之前**寫進去，注入點跟著搬到這裡。
+        # 仍然走同一條生產路徑：IntegrityError → rollback → 復原為同日覆蓋。
         if not raced["done"]:
             raced["done"] = True
-            # 模擬輸掉競賽：另一請求先寫入同日列，自己的 INSERT 撞 UNIQUE
             other = SASession(bind=db_session.get_bind())
             other.add(BodyMetric(date=day, weight_kg=99.0))
             other.commit()
             other.close()
-            db_session.rollback()
-            raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
-        real_commit()
+        return real_record_write(session, entity_type, row, **kwargs)
 
-    monkeypatch.setattr(db_session, "commit", racing_commit)
+    monkeypatch.setattr(projection, "record_write", racing_record_write)
     row, created = upsert_body_metric(
         db_session, BodyMetricIn(date=day, weight_kg=100.0, body_fat_pct=24.0)
     )
