@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -176,7 +177,6 @@ def login_with_google(
 
             access_token = new_token()
             refresh_token = new_token() if data.client == "android" else None
-            csrf_token = new_token() if data.client == "web" else None
             expires_at = now + (ACCESS_TTL if data.client == "android" else WEB_SESSION_TTL)
             auth_session = AuthSession(
                 user_id=user.id,
@@ -185,12 +185,18 @@ def login_with_google(
                 access_token_hash=token_hash(access_token),
                 access_expires_at=expires_at,
                 web_session_hash=token_hash(access_token) if data.client == "web" else None,
-                csrf_token_hash=token_hash(csrf_token) if csrf_token else None,
                 created_at=now,
                 last_seen_at=now,
             )
             db.add(auth_session)
             db.flush()
+            csrf_token = (
+                csrf_for_session(settings.token, auth_session.id)
+                if data.client == "web"
+                else None
+            )
+            if csrf_token:
+                auth_session.csrf_token_hash = token_hash(csrf_token)
             if refresh_token:
                 db.add(
                     RefreshToken(
@@ -339,6 +345,16 @@ def csrf_matches(auth_session: AuthSession, raw_csrf: str | None) -> bool:
         and auth_session.csrf_token_hash
         and secrets.compare_digest(auth_session.csrf_token_hash, token_hash(raw_csrf))
     )
+
+
+def csrf_for_session(secret: str, session_id: str) -> str:
+    """CSRF token 由 session id 推導，不另外亂數產生。
+
+    server 只存 hash，隨機值一旦回應送出去就再也拿不回來——網頁重整後 cookie 還在、
+    token 卻沒了，所有寫入都會 403。推導值可以重算，重整與新分頁都拿得到同一顆，
+    也不必為此改 schema 或改成「每次讀就換一顆」（換一顆會讓其他分頁立刻失效）。
+    """
+    return hmac.new(secret.encode(), session_id.encode(), hashlib.sha256).hexdigest()
 
 
 def revoke_session(factory: sessionmaker[Session], session_id: str) -> None:

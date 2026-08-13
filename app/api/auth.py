@@ -182,11 +182,18 @@ def refresh(data: RefreshIn, request: Request) -> dict[str, object]:
 
 @router.get("/session")
 def current_session(request: Request) -> dict[str, object]:
-    _auth_session, user, device = _current(request)
-    return {
+    auth_session, user, device = _current(request)
+    body: dict[str, object] = {
         "user": {"id": user.id},
         "device": {"id": device.client_device_id, "name": device.name},
     }
+    # 重整頁面後 cookie 還在、CSRF token 卻只存在於前次登入的回應裡。這裡補發一顆，
+    # 否則網頁按 F5 之後所有寫入都會 403。
+    if auth_session.client == "web":
+        body["csrf_token"] = auth_service.csrf_for_session(
+            request.app.state.settings.token, auth_session.id
+        )
+    return body
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

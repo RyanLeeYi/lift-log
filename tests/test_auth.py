@@ -264,6 +264,30 @@ def test_web_login_sets_secure_cookie_and_requires_csrf_for_logout(tmp_path: Pat
         assert client.get("/api/auth/session").status_code == 401
 
 
+def test_web_session_returns_the_same_csrf_so_a_reload_can_still_write(tmp_path: Path) -> None:
+    """重整頁面後 cookie 還在、CSRF token 卻沒了——沒有這條，網頁按 F5 之後就不能寫入。"""
+    with make_client(tmp_path) as client:
+        login = client.post("/api/auth/google", json=login_payload(client="web")).json()
+        reloaded = client.get("/api/auth/session")
+        assert reloaded.status_code == 200
+        # 推導而非重新亂數：重整與新分頁拿到的是同一顆，彼此不會互相失效
+        assert reloaded.json()["csrf_token"] == login["csrf_token"]
+
+        assert client.post(
+            "/api/auth/logout", headers={"X-CSRF-Token": reloaded.json()["csrf_token"]}
+        ).status_code == 204
+
+
+def test_android_session_never_gets_a_csrf_token(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        login = client.post("/api/auth/google", json=login_payload()).json()
+        session = client.get(
+            "/api/auth/session", headers={"Authorization": f"Bearer {login['access_token']}"}
+        )
+        assert session.status_code == 200
+        assert "csrf_token" not in session.json()
+
+
 def test_web_cookie_cannot_be_replayed_as_bearer_to_bypass_csrf(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         assert client.post(
