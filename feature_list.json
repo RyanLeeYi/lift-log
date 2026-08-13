@@ -2900,7 +2900,7 @@
       "envelope": "E1",
       "status": "failing",
       "outcome": "寫入前看得到將發生什麼，人才有機會攔下 agent 的誤判。",
-      "acceptance": "**已簽核凍結（2026-08-13，Ryan）**。批次寫入支援 dry-run 模式：回傳將新增、將略過（冪等命中）、將衝突的筆數與前 N 筆預覽，且**不寫入任何資料、不產生 change log**。同一批以 dry-run 與實際寫入先後執行，實際結果需與 dry-run 摘要一致。",
+      "acceptance": "**已簽核凍結（2026-08-13，Ryan）**。批次寫入支援 dry-run 模式：回傳將新增、將略過（冪等命中）、將衝突的筆數與 `preview`（回傳 `min(len(sets), 5)` 筆，恰為原 payload 的 index `0..N-1`），且**不寫入任何資料、不產生 change log**。同一批以 dry-run 與實際寫入先後執行，實際結果需與 dry-run 摘要一致。 **N 值於 2026-08-13 由 Ryan 補簽核為 5**（原文只寫「前 N 筆」未定義 N，驗收者因此無法判定）。",
       "evidence": "",
       "prerequisites": [
         "F151"

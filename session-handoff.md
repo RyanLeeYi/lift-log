@@ -1,101 +1,70 @@
 # session handoff
 
-最後更新：2026-08-13（第三場：F150 收工）。目前 **135/153 passing，18 failing**。
-下一條為 **F151**；開始實作時才建立 `.harness/current_feature`。
+最後更新：2026-08-13（第四場）。目前 **136/153 passing，17 failing**。
+**F151 已 passing**（commit `bd75c8b`）；**F152 實作完成但仍 failing，只差一條重驗**。
 
-## F138 收工（2026-08-13 passing）
+## 下一步（最短入口）
 
-`tests/e2e/` 54 支補上 `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`（原有 9 支已做，共 63 支）。
-證據 `docs/evidence/F138.md`；acceptance ⑤ 於簽核時修訂為 smoke 涵蓋，不再要求 54 支各跑完整 E2E。
+1. **F152 收尾**：acceptance 的 N 值已補簽核為 5（見下），實作本來就是 5，**不用改 code**。
+   只要重跑一次跨模型驗收確認第 2 條（preview 筆數）由 `untestable` 轉 `pass`，就能改 passing。
+2. **跑驗收時不要跑 `init.sh`**——見下方「驗收環境陷阱」。
+3. 之後依序 F145 → F146 → F147 → F148 → F149 → F153，再處理 10 條舊債。
 
-⚠ **給下一個 agent 的盲區警告**：`PYTHONIOENCODING=utf-8` 是 **Claude Code harness 注入的 process 層變數**
-（User／Machine 層皆空，系統 ACP=950）。**你在這個 harness 裡跑 E2E 永遠看不到 cp950 缺陷，Ryan 自己開
-PowerShell 跑就會踩到。** 要驗編碼相關問題，必須先
-`$env:PYTHONIOENCODING=$null; $env:PYTHONUTF8=$null; chcp 950`。
-回歸護欄：`uv run python tests/e2e/smoke_encoding.py`（63/63）。
+## F151 收工（2026-08-13 passing，commit `bd75c8b`）
 
-## F150 收工（2026-08-13 passing）
+`sets` 新增 nullable `idem_key` = `sha256(date|exercise_id|set_number)` 配 partial unique index
+（`idem_key IS NOT NULL AND deleted_at IS NULL`）。整批命中時**連 `Workout` 列都不新建**；
+部分命中時新組併入既有鍵所屬的 workout（不另開孤兒 workout）。`LogWorkoutSummary` 加
+`created_count`／`skipped_count`。既有列不回填，`idem_key` 維持 NULL。
+`DOMAIN_SCHEMA_VERSION` 2 → 3。
 
-新增 `POST /api/workouts/batch`，以既有 `LogWorkoutIn`／`log_workout` 為唯一 domain path：
-單一 `BEGIN IMMEDIATE` transaction 寫入一場訓練的多筆 set，成功回 summary；schema、未知動作
-（含大小寫變體）、未知課表與空批次皆回 `{index, field, message}`，且整批零寫入。
+Codex 跨模型驗收 **6/6 pass**、驗收前後 `git status` 逐字相同。證據 `docs/evidence/F151.md`。
 
-Claude cross-model review 最終無 blocker、integrity valid；canonical acceptance verifier **5/5 pass**、
-integrity true。完整驗證：pytest **344 passed**、ruff clean、cp950 encoding smoke **63/63**。
-證據：`docs/evidence/F150.md`。後端-only，**不出 APK、不部署**。
+⚠ **已知規格上限**：鍵是 date-scoped，**同一天真的分兩次練同一動作，第二次的第 1 組會被誤判為
+重送**。凍結 acceptance 明定用 `date+exercise+set_index`，兩個模型獨立驗收都提出同一點。
+決定不改鍵，靠 F152 的 dry-run 當煞車。
 
-## ⚠ 2026-08-13 方向定案（D15；本場未寫任何程式碼，只有決策與規格）
+## F152 現況（實作完成，**尚未 passing**）
 
-**目標＝作品集優先，公開 repo 但不經營。** 完整決策在 vault
-`projects/2026-07-健身紀錄系統/DECISIONS.md` 的 **D15**。
-**D14 已被 D15 更正，不要照 D14 行動**——它的兩個前提查證後不成立。
+`POST /api/workouts/batch` 加 `dry_run: true` → 回 **200**（不是 201）與
+`will_create_count`／`will_skip_count`／`will_conflict_count`＋前 5 筆 `preview`。
 
-定位句：**「唯一不用把資料交給任何雲，就能讓 AI 讀寫的健身紀錄器」**。
-差異在 *self-host + **可寫入** MCP 的組合*，不是「有 MCP」：
+- F151 的判斷邏輯抽成 `_plan_batch`，dry-run 與實際寫入**共用同一份**，沒有第二套規則
+- `session.rollback()` 放 `try/finally`，`create_missing` 拋例外時也不留 Exercise 列
+- `conflict` ＝ idem_key 沒命中但目標 workout 已有同 `(exercise_id, set_number)` 未刪組
+  （來源是 F151 之前、`idem_key` 為 NULL 的舊資料）
+- 驗證：`uv run pytest` **362 passed**、ruff clean、encoding **63/63**
 
-- 健身 MCP 已有 `chrisdoc/hevy-mcp`、AthleteData、Shape、Arvo，**全部依附別人的雲**
-- 開源那派沒人做 MCP：wger 有 REST API 但無 MCP；`LiamMorrow/LiftLog` 純本機無 server，掛不了
-- **撞名已查證**：`LiamMorrow/LiftLog`（AGPL、455★）定位重疊八成。**決定不換名**——作品集靠貼連結
-- 護城河是**時間差不是技術**（wger 隨時可補 MCP）
-- **RAG 明確不用**：結構化資料走 SQL 聚合＋tool calling；自由描述量級太小，FTS5 即可
+**驗收結果 4/5 pass、1 untestable**（報告在 scratchpad `codex-verify-F152-retry.md`）：
+acceptance 原文只寫「前 N 筆預覽」未定義 N，驗收者無法判定筆數。**Ryan 已於 2026-08-13
+補簽核 N = 5**，`feature_list.json` 的 acceptance 已更新為
+「`preview` 回傳 `min(len(sets), 5)` 筆，恰為原 payload 的 index `0..N-1`」。
+實作本來就是 5，**不需要改任何程式碼**，只要重驗這一條。
 
-### 本場已完成（feature_list.json 已改，不要重做）
+已知邊界（不影響 acceptance，寫給下一個 agent）：dry-run 只看冪等鍵層，不看 `client_uuid`
+重放層。F151 之後的資料兩層結論一致；只有「F151 之前寫入、`idem_key` 為 NULL 又帶同一個
+client_uuid」的舊資料會出現 dry-run 說 create、實寫判定為重放的落差。
 
-1. **E1 envelope 重簽**（`signed_off: 2026-08-13`）：outcome 改作品集導向；constraints 加
-   「所有 agent 寫入路徑共用同一組 tools 與護欄，不得開第二條」與「不商用不投廣告」；
-   non_goals 加 RAG／經營社群／live demo 站與 APK 公開分發
-2. **F145 縮範圍重簽**：衝突情境以 Android ↔ Web 為準；雙 Android takeover 與 recovery 降 backlog
-3. **F149 新範圍重簽**：加 `docker compose up` 乾淨機器實測、MIT LICENSE、雙語 README；
-   移除 20 帳號 quota 與備份／restore drill（降 `docs/operations.md`）
-4. **新開 F150–F153**（批次寫入／冪等鍵／dry-run／app 內建對話）
-5. **evidence 歸檔**：133 條 passing 的 evidence 移到 `.harness/evidence/F<id>.md`，
-   `feature_list.json` 只留 `archived -> ` 指標，525KB → 333KB
+## ⚠ 驗收環境陷阱（這場踩到，燒掉一次 Codex 額度）
 
-### 發布門檻 20 條，執行順序（不要自行改順序）
+第一次 `/codex-verify` **整輪零產出**：`init.sh` 在 `playwright install chromium` 那步
+**無 stdout 卡死逾 5 分鐘**，Codex 依指示中止，逐條全部 `unverified`。
 
-1. **F138** — cp950 UnicodeEncodeError。先修，否則污染後面每一條的驗收證據
-2. **F150 ✅ → F151 → F152** — 護欄，F153 讀寫對等的共用前置
-3. **F145 → F146 → F147 → F148 → F149**
-4. **F153** — app 內建對話
-5. 其餘 10 條舊債：F86–F89、F95、F104、F105、F124、F128、F136
+**純後端 feature 的驗收 prompt 要明講**：
+- 不要跑 `init.sh`、不要執行任何會下載瀏覽器的指令（環境已就緒）
+- 直接用絕對路徑 `& "C:\Users\user\.local\bin\uv.exe" run pytest -q`
+- 單一指令 5 分鐘無輸出就中止、記為 blocked、繼續下一項，不要卡在同一個指令上
 
-⚠ **沒有煞車**：Ryan 明確選擇不設時間上限、不設範圍凍結。唯一的收斂機制是這 20 條清單本身——
-**不得再往門檻加條目**，新想到的一律標 failing 但排在 20 條之後。
+加上這三句後重試，三個指令 **45 秒內**全部跑完。
 
-### 交付物
+## 這場的流程變更（已落地，不用重做）
 
-GitHub repo（MIT、英文 `README.md` ＋ `README.zh-TW.md`）＋ **90 秒影片**：
-手機記一場 → Claude 查詢 → Claude 口述寫入 → 切內建對話做同一件事 → 結尾架構圖標
-「同一組 MCP tools」。不做 live demo 站、不做 APK 公開分發。
-
-## F144 收官
-
-- Android domain mutation 與 outbox 維持同 transaction；sync client 先 push 後 pull，支援 mutation response-loss 重送、transactional cursor apply、5 秒起跳的 exponential backoff＋jitter（上限 15 分鐘）。
-- 啟動、前景、網路恢復、JobScheduler 背景與設定頁「立即同步」都接到同一 native runner；UI 顯示已同步／待同步／離線／錯誤。
-- 新裝置 `bootstrapComplete=false` 時先停在 bootstrap gate，完整 pull transaction commit 後才開主要 UI，不顯示半份資料。
-- v2→v3 migration 會 backfill 全部既有 domain rows；date/key natural-key pull 可安全 reconcile；空 outbox 的 pull-only failure 以 `sync_state` 保存 retry 次數與時間。
-- Claude cross-model review 的唯一 HIGH（一般 RuntimeException 未保存 error/backoff）已修；targeted re-review **0 findings／integrity valid**。
-
-## 這場完成
-
-- F143 的 generic sync store 已完成 mutation receipt、version/tombstone、per-user `server_seq`、cursor pull 與 sequence regression 防護；共用 JSON fixtures 同時驗 server schema 與 Android JVM contract。
-- Codex review 修正 concurrent mutation lost update，以及 chunked request、`Content-Length` 與 CORS 邊界；每 user SQLite 寫入採 `BEGIN IMMEDIATE` single-writer，control DB 保存 `server_seq` high-water。
-- generic store 尚未接入既有 REST／MCP domain tables，這是明確 defer：REST 由 F146、MCP 由 F147 接入；sequence reset／backup restore operations 留給 F149。
-
-## F144 驗證證據
-
-- Claude canonical acceptance verifier：frozen acceptance **8/8 pass**、integrity **true**，允許改 passing。
-- `./init.sh` 通過；backend **338 passed**；ruff clean。
-- Android JVM/Robolectric **27 tests** 全綠；JS native-sync **2/2**；Playwright F144 bootstrap gate＋manual sync UI pass。
-- v151 release APK 已建置並放 `G:\我的雲端硬碟\lift-log-apk\lift-log-v151-F144.apk`（SHA-256 `E32874BC0EF8AE9E4AB2660542CC5B89E6241812F2B23D2FF3ECAD0EF6F35C6C`）；E1 尚未全通過，不發布正式站或正式 APK metadata。
-
-## 下一個 session 最短入口
-
-1. 讀本檔、F151 frozen acceptance 與 PRD；確認 `git status`。
-2. 開始實作時才把 `.harness/current_feature` 切為 F151；F151 的 `date+exercise+set_index` server-side hash 與 F143 mutation receipt 各自是不同層，不能互相取代。
-3. 不要提前把 generic sync store 接入既有 REST／MCP domain tables；F146／F147／F149 的 deferred boundary不變。
+委派規則加了執行上限與保溫機制，寫在 `~/.claude/rules/common/agents.md` 與 vault
+`templates/軟體開發/HARNESS.md`：50 分鐘上限（卡在主對話 1 小時 prompt cache TTL 之內）、
+委派同輪排 `ScheduleWakeup` 保溫、停止條件寫進派工單、涵蓋 `Agent` 派工與
+`/codex-verify` 等所有外包。細節見那兩份檔案。
 
 ## 工作區注意
 
-- `CLAUDE.md` 是使用者既有未提交變更；絕對不要 stage、restore 或覆寫。
-- F144 已通過驗收但 **E1 不得提前發布**：正式 Web／正式 APK metadata 均未發布；repo assets 與 Drive 測試 APK為 **v151**，完整 E1 release DoD 仍留到 F149。
+- E1 尚未全通過，**不得提前發布**正式站或正式 APK metadata；repo assets 與 Drive 測試 APK 為 v151
+- F151／F152 都是後端 only，未動 `app/static/`，依專案規則不必出 APK

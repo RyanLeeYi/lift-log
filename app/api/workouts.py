@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from app.api.deps import DbSession, require_domain_auth
 from app.errors import DomainError, UnknownExerciseError
 from app.schemas import (
+    BatchDryRunSummary,
     LogWorkoutIn,
     LogWorkoutSummary,
     SetCreate,
@@ -67,7 +68,7 @@ def create_workout(data: WorkoutCreate, session: DbSession) -> WorkoutOut:
 )
 def batch_log_workout(
     payload: dict[str, Any], session: DbSession
-) -> LogWorkoutSummary | JSONResponse:
+) -> LogWorkoutSummary | BatchDryRunSummary | JSONResponse:
     try:
         data = LogWorkoutIn.model_validate(payload)
     except ValidationError as exc:
@@ -76,6 +77,12 @@ def batch_log_workout(
             content={"error": "validation failed", "errors": _batch_validation_errors(exc)},
         )
     try:
+        if data.dry_run:
+            # F152：不寫入任何資料，回 200（不是 201——沒有東西被建立）
+            summary = svc.dry_run_log_workout(session, data)
+            return JSONResponse(
+                status_code=status.HTTP_200_OK, content=summary.model_dump(mode="json")
+            )
         return svc.log_workout(session, data)
     except UnknownExerciseError as exc:
         return JSONResponse(

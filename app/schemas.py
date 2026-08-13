@@ -238,6 +238,8 @@ class LogWorkoutIn(BaseModel):
     create_missing: bool = False
     client_uuid: str | None = Field(default=None, min_length=8)
     """呼叫端冪等鍵：timeout 重試帶同值不會重複寫入（每組落庫為 client_uuid:序號）。"""
+    # F152：只算將發生什麼、不寫入、不留任何新列。
+    dry_run: bool = False
 
 
 class LogWorkoutSummary(BaseModel):
@@ -248,6 +250,25 @@ class LogWorkoutSummary(BaseModel):
     # F151：這次呼叫實際新寫入 vs 因冪等鍵命中而略過的組數
     created_count: int
     skipped_count: int
+
+
+class BatchDryRunPreviewItem(BaseModel):
+    """F152：dry-run 預覽單筆；index 是原 payload 內的 0-based 位置。"""
+
+    index: int
+    exercise: str
+    weight_kg: float
+    reps: int
+    disposition: Literal["create", "skip", "conflict"]
+
+
+class BatchDryRunSummary(BaseModel):
+    """F152：批次寫入 dry-run 摘要——回傳前不寫入任何資料、不產生 change log。"""
+
+    will_create_count: int
+    will_skip_count: int
+    will_conflict_count: int
+    preview: list[BatchDryRunPreviewItem]
 
 
 class ExerciseName(BaseModel):

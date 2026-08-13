@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.errors import ConflictError, DomainError, NotFoundError, UnknownExerciseError
 from app.models import Exercise, Template, Workout, WorkoutSet
 from app.schemas import (
+    BatchDryRunPreviewItem,
+    BatchDryRunSummary,
     LogSetIn,
     LogWorkoutIn,
     LogWorkoutSummary,
@@ -87,6 +89,17 @@ class _PlannedSet(NamedTuple):
     idem_key: str
 
 
+class _BatchPlan(NamedTuple):
+    """F151 前半段的輸出：F152 dry-run 與實際寫入共用同一份判斷，不得各自算一套。"""
+
+    planned: list[_PlannedSet]
+    existing_by_key: dict[str, WorkoutSet]
+    to_write: list[_PlannedSet]
+    skipped_count: int
+    template_id: int | None
+    workout_date: date_type
+
+
 def _replayed_summary(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary | None:
     """同 client_uuid 重放（MCP timeout 後 LLM 重試）：回既有 workout 摘要，不重複寫入。"""
     if data.client_uuid is None:
@@ -132,17 +145,12 @@ def log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
         raise
 
 
-def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
-    """MCP 代記錄的單一交易入口（PRD R7b）。
+def _plan_batch(session: Session, data: LogWorkoutIn) -> _BatchPlan:
+    """算出這批要新建/略過的組（F151 冪等鍵比對）；`_log_workout` 與 dry-run 共用同一段。
 
-    整包寫入或整包拒絕（單一 commit，不留半套）；動作名雙語比對，
-    未命中且未帶 create_missing 時回未知清單＋相近建議；
-    同 client_uuid 重放冪等回既有摘要。
+    unknown 動作、create_missing 的 flush 都在這裡發生——dry-run 呼叫端算完要自己
+    rollback，不然 create_missing 建的 Exercise 會真的留在 DB 裡。
     """
-    replayed = _replayed_summary(session, data)
-    if replayed is not None:
-        return replayed
-
     template_id = _resolve_template_id(session, data.template) if data.template else None
 
     exercises = list(session.scalars(select(Exercise)))
@@ -198,12 +206,33 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
         )
     }
     to_write = [p for p in planned if p.idem_key not in existing_by_key]
-    skipped_count = len(planned) - len(to_write)
+    return _BatchPlan(
+        planned=planned,
+        existing_by_key=existing_by_key,
+        to_write=to_write,
+        skipped_count=len(planned) - len(to_write),
+        template_id=template_id,
+        workout_date=workout_date,
+    )
 
-    if not to_write:
+
+def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
+    """MCP 代記錄的單一交易入口（PRD R7b）。
+
+    整包寫入或整包拒絕（單一 commit，不留半套）；動作名雙語比對，
+    未命中且未帶 create_missing 時回未知清單＋相近建議；
+    同 client_uuid 重放冪等回既有摘要。
+    """
+    replayed = _replayed_summary(session, data)
+    if replayed is not None:
+        return replayed
+
+    plan = _plan_batch(session, data)
+
+    if not plan.to_write:
         # 整批都已寫過——連 Workout 列都不得新建，回既有那些組所屬的 workout
         existing_workout = get_workout(
-            session, next(iter(existing_by_key.values())).workout_id
+            session, next(iter(plan.existing_by_key.values())).workout_id
         )
         return LogWorkoutSummary(
             workout_id=existing_workout.id,
@@ -211,23 +240,23 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
             sets_count=0,
             tonnage_kg=0.0,
             created_count=0,
-            skipped_count=skipped_count,
+            skipped_count=plan.skipped_count,
         )
 
-    if existing_by_key:
+    if plan.existing_by_key:
         # 部分重送：新組併入舊組所屬的 workout，不得另開一場（否則同一天多出只含新組的
         # 孤兒 workout）。命中鍵理論上都屬同一 workout；真的橫跨多場（只可能是 F151 之前
         # 的舊資料）就取第一個，不特別處理。template/note 不套用到既有 workout——那是別人
         # 已經存在的資料，不得覆寫。
-        workout = get_workout(session, next(iter(existing_by_key.values())).workout_id)
+        workout = get_workout(session, next(iter(plan.existing_by_key.values())).workout_id)
     else:
-        workout = Workout(date=workout_date, template_id=template_id, note=data.note)
+        workout = Workout(date=plan.workout_date, template_id=plan.template_id, note=data.note)
         session.add(workout)
         session.flush()
 
     bodyweight_kg = latest_weight(session)
     tonnage = 0.0
-    for planned_set in to_write:
+    for planned_set in plan.to_write:
         session.add(
             WorkoutSet(
                 client_uuid=_set_uuid(data.client_uuid, planned_set.ordinal),
@@ -259,11 +288,73 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
     return LogWorkoutSummary(
         workout_id=workout.id,
         date=workout.date,
-        sets_count=len(to_write),
+        sets_count=len(plan.to_write),
         tonnage_kg=tonnage,
-        created_count=len(to_write),
-        skipped_count=skipped_count,
+        created_count=len(plan.to_write),
+        skipped_count=plan.skipped_count,
     )
+
+
+_DRY_RUN_PREVIEW_LIMIT = 5
+
+
+def dry_run_log_workout(session: Session, data: LogWorkoutIn) -> BatchDryRunSummary:
+    """F152：批次寫入 dry-run——只算 will_create/will_skip/will_conflict，零副作用。
+
+    重用 `_plan_batch` 同一套判斷（不複製第二套）；conflict＝idem_key 沒命中但目標
+    workout 已有同 (exercise_id, set_number) 的未軟刪組（典型是 F151 之前、idem_key
+    為 NULL 的舊資料）。目標 workout 的判定與實際寫入一致：有鍵命中就是那個既有
+    workout，否則是將新建的 workout＝不可能衝突。無論成功或例外都在 finally 裡
+    rollback，不依賴「沒呼叫 commit 所以沒事」——create_missing 可能已 flush 進去的
+    Exercise 也要一併丟掉。
+    """
+    try:
+        plan = _plan_batch(session, data)
+
+        conflict_keys: set[tuple[int, int]] = set()
+        if plan.existing_by_key:
+            target_workout_id = next(iter(plan.existing_by_key.values())).workout_id
+            conflict_keys = {
+                (row.exercise_id, row.set_number)
+                for row in session.scalars(
+                    select(WorkoutSet).where(
+                        WorkoutSet.workout_id == target_workout_id,
+                        WorkoutSet.deleted_at.is_(None),
+                    )
+                )
+            }
+
+        will_create = 0
+        will_conflict = 0
+        preview: list[BatchDryRunPreviewItem] = []
+        for planned_set in plan.planned:
+            if planned_set.idem_key in plan.existing_by_key:
+                disposition = "skip"
+            elif (planned_set.exercise.id, planned_set.set_number) in conflict_keys:
+                disposition = "conflict"
+                will_conflict += 1
+            else:
+                disposition = "create"
+                will_create += 1
+            if len(preview) < _DRY_RUN_PREVIEW_LIMIT:
+                preview.append(
+                    BatchDryRunPreviewItem(
+                        index=planned_set.ordinal - 1,
+                        exercise=planned_set.item.exercise,
+                        weight_kg=planned_set.item.weight_kg,
+                        reps=planned_set.item.reps,
+                        disposition=disposition,
+                    )
+                )
+
+        return BatchDryRunSummary(
+            will_create_count=will_create,
+            will_skip_count=plan.skipped_count,
+            will_conflict_count=will_conflict,
+            preview=preview,
+        )
+    finally:
+        session.rollback()
 
 
 def create_workout(session: Session, data: WorkoutCreate) -> Workout:
