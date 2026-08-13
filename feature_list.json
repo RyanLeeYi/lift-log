@@ -2763,7 +2763,7 @@
       "envelope": "E1",
       "status": "failing",
       "outcome": "Web 以 Google session 使用自己的雲端資料，未連線時明確不可用且不混用 Android local store。",
-      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R5：Web Google 登入使用 Secure HttpOnly SameSite cookie；所有 state-changing request 通過 CSRF。domain API 綁定 session user；登出清 session。server 不可用時顯示明確狀態，不寫本地假資料。Playwright 驗登入/登出、CSRF、兩帳號隔離與 outage；現有 Web 行為不回歸。",
+      "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R5：Web Google 登入使用 Secure HttpOnly SameSite cookie；所有 state-changing request 通過 CSRF。domain API 綁定 session user；登出清 session。server 不可用時顯示明確狀態，不寫本地假資料。Playwright 驗登入/登出、CSRF、兩帳號隔離與 outage；現有 Web 行為不回歸。 **2026-08-14 Ryan 重新簽核（Playwright 範圍）**：Playwright 驗登入／登出／服務中斷顯示／state-changing request 確實帶 CSRF header；**CSRF 拒絕與跨帳號隔離改由 server 端測試負責**（`tests/test_auth.py`、`tests/test_user_isolation.py`）。理由：兩者需要通過 Google 憑證驗證的真 session，瀏覽器測試無法造出，而唯一的造法是在認證路徑上開測試專用注入點——那個風險大於它換來的測試形式。",
       "evidence": "docs/evidence/F146.md",
       "prerequisites": [
         "F142"
