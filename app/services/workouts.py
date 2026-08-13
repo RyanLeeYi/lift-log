@@ -1,7 +1,9 @@
+import hashlib
 import uuid
 from datetime import date as date_type
 from datetime import datetime
 from difflib import SequenceMatcher
+from typing import NamedTuple
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -9,7 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.errors import ConflictError, DomainError, NotFoundError, UnknownExerciseError
 from app.models import Exercise, Template, Workout, WorkoutSet
-from app.schemas import LogWorkoutIn, LogWorkoutSummary, SetCreate, SetUpdate, WorkoutCreate
+from app.schemas import (
+    LogSetIn,
+    LogWorkoutIn,
+    LogWorkoutSummary,
+    SetCreate,
+    SetUpdate,
+    WorkoutCreate,
+)
 from app.services.body_metrics import latest_weight
 from app.services.exercises import exercise_label, normalize_name
 from app.services.stats import set_tonnage
@@ -63,6 +72,21 @@ def _set_uuid(client_uuid: str | None, ordinal: int) -> str:
     return f"{client_uuid}:{ordinal}" if client_uuid else str(uuid.uuid4())
 
 
+def _idem_key(workout_date: date_type, exercise_id: int, set_number: int) -> str:
+    """F151：date+exercise+set_index 的 server 端冪等鍵，不依賴 client 狀態。"""
+    return hashlib.sha256(f"{workout_date}|{exercise_id}|{set_number}".encode()).hexdigest()
+
+
+class _PlannedSet(NamedTuple):
+    """F151：寫入前先算好每一組的鍵，才知道哪些要跳過、workout 要不要新建。"""
+
+    ordinal: int  # data.sets 內的原始序號（1-based），決定 client_uuid 後綴
+    item: LogSetIn
+    exercise: Exercise
+    set_number: int
+    idem_key: str
+
+
 def _replayed_summary(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary | None:
     """同 client_uuid 重放（MCP timeout 後 LLM 重試）：回既有 workout 摘要，不重複寫入。"""
     if data.client_uuid is None:
@@ -89,6 +113,9 @@ def _replayed_summary(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary
         date=workout.date,
         sets_count=len(logged),
         tonnage_kg=tonnage,
+        # F143 層重放：整批視為已處理過，不算這次新建
+        created_count=0,
+        skipped_count=len(logged),
     )
 
 
@@ -142,38 +169,89 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
         index[name.lower()] = created
     session.flush()
 
-    workout = Workout(
-        # server 本地時區＝自家機台灣時間；異地（UTC）部署前要重新確認
-        date=data.date or date_type.today(),
-        template_id=template_id,
-        note=data.note,
-    )
-    session.add(workout)
-    session.flush()
-
-    bodyweight_kg = latest_weight(session)
+    # F151：每組先算出 date+exercise+set_index 的冪等鍵，才知道哪些是重送、workout 要不要新建。
+    # server 本地時區＝自家機台灣時間；異地（UTC）部署前要重新確認
+    workout_date = data.date or date_type.today()
     set_counts: dict[int, int] = {}
-    tonnage = 0.0
+    planned: list[_PlannedSet] = []
     for ordinal, item in enumerate(data.sets, start=1):
         exercise = index[item.exercise.lower()]
         set_counts[exercise.id] = set_counts.get(exercise.id, 0) + 1
-        session.add(
-            WorkoutSet(
-                client_uuid=_set_uuid(data.client_uuid, ordinal),
-                workout_id=workout.id,
-                exercise_id=exercise.id,
-                set_number=set_counts[exercise.id],
-                weight_kg=item.weight_kg,
-                reps=item.reps,
-                rpe=item.rpe,
+        set_number = set_counts[exercise.id]
+        planned.append(
+            _PlannedSet(
+                ordinal=ordinal,
+                item=item,
+                exercise=exercise,
+                set_number=set_number,
+                idem_key=_idem_key(workout_date, exercise.id, set_number),
             )
         )
-        tonnage += set_tonnage(item.weight_kg, item.reps, exercise.is_bodyweight, bodyweight_kg)
+
+    existing_by_key = {
+        row.idem_key: row
+        for row in session.scalars(
+            select(WorkoutSet).where(
+                WorkoutSet.idem_key.in_([p.idem_key for p in planned]),
+                WorkoutSet.deleted_at.is_(None),
+            )
+        )
+    }
+    to_write = [p for p in planned if p.idem_key not in existing_by_key]
+    skipped_count = len(planned) - len(to_write)
+
+    if not to_write:
+        # 整批都已寫過——連 Workout 列都不得新建，回既有那些組所屬的 workout
+        existing_workout = get_workout(
+            session, next(iter(existing_by_key.values())).workout_id
+        )
+        return LogWorkoutSummary(
+            workout_id=existing_workout.id,
+            date=existing_workout.date,
+            sets_count=0,
+            tonnage_kg=0.0,
+            created_count=0,
+            skipped_count=skipped_count,
+        )
+
+    if existing_by_key:
+        # 部分重送：新組併入舊組所屬的 workout，不得另開一場（否則同一天多出只含新組的
+        # 孤兒 workout）。命中鍵理論上都屬同一 workout；真的橫跨多場（只可能是 F151 之前
+        # 的舊資料）就取第一個，不特別處理。template/note 不套用到既有 workout——那是別人
+        # 已經存在的資料，不得覆寫。
+        workout = get_workout(session, next(iter(existing_by_key.values())).workout_id)
+    else:
+        workout = Workout(date=workout_date, template_id=template_id, note=data.note)
+        session.add(workout)
+        session.flush()
+
+    bodyweight_kg = latest_weight(session)
+    tonnage = 0.0
+    for planned_set in to_write:
+        session.add(
+            WorkoutSet(
+                client_uuid=_set_uuid(data.client_uuid, planned_set.ordinal),
+                workout_id=workout.id,
+                exercise_id=planned_set.exercise.id,
+                set_number=planned_set.set_number,
+                weight_kg=planned_set.item.weight_kg,
+                reps=planned_set.item.reps,
+                rpe=planned_set.item.rpe,
+                idem_key=planned_set.idem_key,
+            )
+        )
+        tonnage += set_tonnage(
+            planned_set.item.weight_kg,
+            planned_set.item.reps,
+            planned_set.exercise.is_bodyweight,
+            bodyweight_kg,
+        )
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        # 兩種撞法：同 client_uuid 併發重放（復原為冪等）、create_missing 同名競賽（明確錯誤）
+        # 三種撞法：同 client_uuid 併發重放、冪等鍵併發重放（復原為冪等）、
+        # create_missing 同名競賽（明確錯誤）；冪等鍵撞號不重試，循序重送才是 acceptance 範圍。
         raced = _replayed_summary(session, data)
         if raced is not None:
             return raced
@@ -181,8 +259,10 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
     return LogWorkoutSummary(
         workout_id=workout.id,
         date=workout.date,
-        sets_count=len(data.sets),
+        sets_count=len(to_write),
         tonnage_kg=tonnage,
+        created_count=len(to_write),
+        skipped_count=skipped_count,
     )
 
 

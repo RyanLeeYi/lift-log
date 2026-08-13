@@ -12,6 +12,9 @@ class Base(DeclarativeBase):
 # 名字（用 `PRAGMA index_list` 比對名稱才認得出「已經建過」），兩處共用常數避免打錯字彼此漂移。
 SET_NUMBER_UNIQUE_INDEX = "ix_sets_workout_exercise_set_number_active"
 
+# F151：批次寫入冪等鍵的唯一索引名，理由同上——app/migrations.py 補索引到既有 DB 要對得上名字。
+IDEM_KEY_UNIQUE_INDEX = "ix_sets_idem_key_active"
+
 
 class Exercise(Base):
     __tablename__ = "exercises"
@@ -113,6 +116,13 @@ class WorkoutSet(Base):
             unique=True,
             sqlite_where=text("deleted_at IS NULL"),
         ),
+        # F151：同 date+exercise+set_index 不得重複寫入，但只擋未軟刪列，語意同上。
+        Index(
+            IDEM_KEY_UNIQUE_INDEX,
+            "idem_key",
+            unique=True,
+            sqlite_where=text("idem_key IS NOT NULL AND deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -124,6 +134,9 @@ class WorkoutSet(Base):
     reps: Mapped[int] = mapped_column()
     rpe: Mapped[int | None] = mapped_column(default=None)
     rest_seconds: Mapped[int | None] = mapped_column(default=None)
+    # F151：批次寫入冪等鍵＝sha256(date|exercise_id|set_number)。舊列一律 NULL、永不回填——
+    # ponytail: 回填前要先確認舊資料沒有同日同動作同組號跨 workout 的重複，超出這次範圍。
+    idem_key: Mapped[str | None] = mapped_column(String, default=None)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

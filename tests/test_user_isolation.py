@@ -12,6 +12,7 @@ from app.config import Settings
 from app.control_models import User
 from app.db import make_engine
 from app.main import create_app
+from app.migrations import DOMAIN_SCHEMA_VERSION
 
 
 def _settings(tmp_path: Path, *, max_bytes: int = 100 * 1024 * 1024) -> Settings:
@@ -200,7 +201,7 @@ def test_user_db_enables_required_sqlite_pragmas_and_reruns_migration(tmp_path: 
             assert connection.execute(text("PRAGMA busy_timeout")).scalar_one() >= 5000
             assert connection.execute(
                 text("SELECT value FROM schema_metadata WHERE key='schema_version'")
-            ).scalar_one() == "2"
+            ).scalar_one() == str(DOMAIN_SCHEMA_VERSION)
     finally:
         engine.dispose()
 

@@ -245,6 +245,9 @@ class LogWorkoutSummary(BaseModel):
     date: date_type
     sets_count: int
     tonnage_kg: float
+    # F151：這次呼叫實際新寫入 vs 因冪等鍵命中而略過的組數
+    created_count: int
+    skipped_count: int
 
 
 class ExerciseName(BaseModel):

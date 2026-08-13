@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.db import make_engine
 from app.migrations import migrate_schema
-from app.models import Base
+from app.models import IDEM_KEY_UNIQUE_INDEX, Base
 
 
 def _legacy_engine(tmp_path: Path):
@@ -95,3 +95,50 @@ def test_legacy_workouts_are_not_backfilled_as_ended(tmp_path: Path) -> None:
     with engine.begin() as conn:
         row = conn.execute(text("SELECT id, note, ended_at FROM workouts")).one()
     assert tuple(row) == (1, "練腿日", None)
+
+
+def _legacy_sets_engine(tmp_path: Path):
+    """F151 之前的 sets 表：沒有 idem_key，且已有一組。"""
+    engine = make_engine(str(tmp_path / "legacy_sets.db"))
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE sets ("
+                "id INTEGER PRIMARY KEY, client_uuid VARCHAR NOT NULL, "
+                "workout_id INTEGER NOT NULL, exercise_id INTEGER NOT NULL, "
+                "set_number INTEGER NOT NULL, weight_kg FLOAT NOT NULL, "
+                "reps INTEGER NOT NULL, rpe INTEGER, rest_seconds INTEGER, "
+                "deleted_at DATETIME, created_at DATETIME)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO sets "
+                "(id, client_uuid, workout_id, exercise_id, set_number, weight_kg, reps) "
+                "VALUES (1, 'legacy-uuid', 1, 1, 1, 80.0, 8)"
+            )
+        )
+    return engine
+
+
+def test_adds_idem_key_column_to_legacy_sets(tmp_path: Path) -> None:
+    engine = _legacy_sets_engine(tmp_path)
+    migrate_schema(engine)
+    assert "idem_key" in _columns(engine, "sets")
+
+
+def test_legacy_sets_are_not_backfilled_with_idem_key(tmp_path: Path) -> None:
+    """舊組一律 NULL、不回填——回填前要先確認舊資料沒有同日同動作同組號跨 workout 的重複。"""
+    engine = _legacy_sets_engine(tmp_path)
+    migrate_schema(engine)
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT id, idem_key FROM sets")).one()
+    assert tuple(row) == (1, None)
+
+
+def test_idem_key_unique_index_created_on_legacy_sets(tmp_path: Path) -> None:
+    engine = _legacy_sets_engine(tmp_path)
+    migrate_schema(engine)
+    with engine.begin() as conn:
+        indexes = {row[1] for row in conn.execute(text("PRAGMA index_list(sets)"))}
+    assert IDEM_KEY_UNIQUE_INDEX in indexes

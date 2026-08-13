@@ -7,9 +7,9 @@ create_all 只建新表、不動既有表——升級上來的正式 DB 缺新�
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from app.models import SET_NUMBER_UNIQUE_INDEX
+from app.models import IDEM_KEY_UNIQUE_INDEX, SET_NUMBER_UNIQUE_INDEX
 
-DOMAIN_SCHEMA_VERSION = 2
+DOMAIN_SCHEMA_VERSION = 3
 
 # (table, column, DDL)——新增欄位一律 nullable，舊資料自然為 NULL
 _COLUMN_MIGRATIONS = [
@@ -29,6 +29,13 @@ _COLUMN_MIGRATIONS = [
         "workouts",
         "ended_at",
         "ALTER TABLE workouts ADD COLUMN ended_at DATETIME",
+    ),
+    # F151：批次寫入冪等鍵。舊列一律 NULL 且不回填——回填前要先確認舊資料沒有同日同動作
+    # 同組號跨 workout 的重複，超出這次範圍（見 app/models.py 的 idem_key 欄位註解）。
+    (
+        "sets",
+        "idem_key",
+        "ALTER TABLE sets ADD COLUMN idem_key TEXT",
     ),
 ]
 
@@ -74,6 +81,16 @@ def migrate_schema(engine: Engine) -> None:
                     f"CREATE UNIQUE INDEX {SET_NUMBER_UNIQUE_INDEX} "
                     "ON sets (workout_id, exercise_id, set_number) "
                     "WHERE deleted_at IS NULL"
+                )
+            )
+
+        # F151：idem_key 唯一約束。舊列全為 NULL，partial index 天然滿足唯一性，不必先查重複。
+        if sets_columns and IDEM_KEY_UNIQUE_INDEX not in existing_indexes:
+            conn.execute(
+                text(
+                    f"CREATE UNIQUE INDEX {IDEM_KEY_UNIQUE_INDEX} "
+                    "ON sets (idem_key) "
+                    "WHERE idem_key IS NOT NULL AND deleted_at IS NULL"
                 )
             )
         conn.execute(
