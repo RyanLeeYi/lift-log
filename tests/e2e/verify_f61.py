@@ -94,7 +94,8 @@ def setup_token(page, base: str) -> None:
     page.goto(base, wait_until="domcontentloaded")
     page.wait_for_selector("input", timeout=10_000)
     page.fill("input", TOKEN)
-    page.get_by_role("button").first.click()
+    # F146 起 setup 第一顆按鈕是 Google 登入，token 這條路要指名點「連線」
+    page.get_by_role("button", name="連線").click()
     page.wait_for_timeout(800)
 
 
