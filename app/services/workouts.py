@@ -93,6 +93,19 @@ def _replayed_summary(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary
 
 
 def log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
+    """MCP 與 batch endpoint 共用的單一 writer 入口。"""
+    session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+    try:
+        summary = _log_workout(session, data)
+        if session.in_transaction():
+            session.rollback()
+        return summary
+    except Exception:
+        session.rollback()
+        raise
+
+
+def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
     """MCP 代記錄的單一交易入口（PRD R7b）。
 
     整包寫入或整包拒絕（單一 commit，不留半套）；動作名雙語比對，

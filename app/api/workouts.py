@@ -1,9 +1,15 @@
 from datetime import date as date_type
+from typing import Any
 
 from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from app.api.deps import DbSession, require_domain_auth
+from app.errors import DomainError, UnknownExerciseError
 from app.schemas import (
+    LogWorkoutIn,
+    LogWorkoutSummary,
     SetCreate,
     SetOut,
     SetUpdate,
@@ -16,9 +22,75 @@ from app.services import workouts as svc
 router = APIRouter(prefix="/api", dependencies=[Depends(require_domain_auth)])
 
 
+def _batch_validation_errors(exc: ValidationError) -> list[dict[str, int | str | None]]:
+    errors: list[dict[str, int | str | None]] = []
+    for error in exc.errors():
+        location = error["loc"]
+        errors.append(
+            {
+                "index": next((part for part in location if isinstance(part, int)), None),
+                "field": next(
+                    (str(part) for part in reversed(location) if isinstance(part, str)), "body"
+                ),
+                "message": error["msg"],
+            }
+        )
+    return errors
+
+
+def _unknown_exercise_errors(
+    data: LogWorkoutIn, unknown: list[str]
+) -> list[dict[str, int | str | None]]:
+    unknown_names = {name.lower() for name in unknown}
+    return [
+        {"index": index, "field": "exercise", "message": "unknown exercise"}
+        for index, item in enumerate(data.sets)
+        if item.exercise.lower() in unknown_names
+    ]
+
+
+def _batch_domain_error(exc: DomainError) -> dict[str, str | int | None]:
+    return {
+        "index": None,
+        "field": "template" if exc.message.startswith("template") else "body",
+        "message": exc.message,
+    }
+
+
 @router.post("/workouts", status_code=status.HTTP_201_CREATED, response_model=WorkoutOut)
 def create_workout(data: WorkoutCreate, session: DbSession) -> WorkoutOut:
     return WorkoutOut.model_validate(svc.create_workout(session, data))
+
+
+@router.post(
+    "/workouts/batch", status_code=status.HTTP_201_CREATED, response_model=LogWorkoutSummary
+)
+def batch_log_workout(
+    payload: dict[str, Any], session: DbSession
+) -> LogWorkoutSummary | JSONResponse:
+    try:
+        data = LogWorkoutIn.model_validate(payload)
+    except ValidationError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "validation failed", "errors": _batch_validation_errors(exc)},
+        )
+    try:
+        return svc.log_workout(session, data)
+    except UnknownExerciseError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "error": "validation failed",
+                "errors": _unknown_exercise_errors(data, exc.unknown),
+                "suggestions": exc.suggestions,
+            },
+        )
+    except DomainError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "validation failed", "errors": [_batch_domain_error(exc)]},
+        )
 
 
 @router.get("/workouts", response_model=list[WorkoutOut])

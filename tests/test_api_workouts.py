@@ -56,6 +56,112 @@ class TestCreateWorkout:
         assert resp.json()["date"]  # 有日期即可，具體值依 server 當天
 
 
+class TestBatchLogWorkout:
+    """F150：agent 一次記完整場訓練，失敗時不留半套資料。"""
+
+    def test_batch_writes_all_sets_in_one_request(self, client, exercise_id):
+        resp = client.post(
+            "/api/workouts/batch",
+            json={
+                "date": "2026-08-13",
+                "sets": [
+                    {"exercise": "深蹲", "weight_kg": 80, "reps": 8},
+                    {"exercise": "深蹲", "weight_kg": 85, "reps": 6},
+                ],
+            },
+        )
+
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["sets_count"] == 2
+        detail = client.get(f"/api/workouts/{body['workout_id']}")
+        assert detail.status_code == 200
+        assert [(item["weight_kg"], item["reps"]) for item in detail.json()["sets"]] == [
+            (80, 8),
+            (85, 6),
+        ]
+
+    def test_batch_invalid_item_returns_indexed_error_and_writes_nothing(self, client):
+        resp = client.post(
+            "/api/workouts/batch",
+            json={
+                "sets": [
+                    {"exercise": "深蹲", "weight_kg": 80, "reps": 8},
+                    {"exercise": "深蹲", "weight_kg": 85, "reps": 0},
+                ]
+            },
+        )
+
+        assert resp.status_code == 400
+        error = resp.json()
+        assert error["error"] == "validation failed"
+        assert error["errors"][0]["index"] == 1
+        assert error["errors"][0]["field"] == "reps"
+        assert client.get("/api/workouts").json() == []
+
+    def test_batch_unknown_exercise_returns_indexed_error_and_writes_nothing(
+        self, client, exercise_id
+    ):
+        resp = client.post(
+            "/api/workouts/batch",
+            json={
+                "sets": [
+                    {"exercise": "深蹲", "weight_kg": 80, "reps": 8},
+                    {"exercise": "不存在", "weight_kg": 85, "reps": 6},
+                ]
+            },
+        )
+
+        assert resp.status_code == 400
+        error = resp.json()
+        assert error["error"] == "validation failed"
+        assert error["errors"][0]["index"] == 1
+        assert error["errors"][0]["field"] == "exercise"
+        assert client.get("/api/workouts").json() == []
+
+    def test_batch_case_variants_of_unknown_exercise_report_every_index(self, client):
+        resp = client.post(
+            "/api/workouts/batch",
+            json={
+                "sets": [
+                    {"exercise": "Legpress", "weight_kg": 80, "reps": 8},
+                    {"exercise": "legpress", "weight_kg": 85, "reps": 6},
+                ]
+            },
+        )
+
+        assert resp.status_code == 400
+        assert [item["index"] for item in resp.json()["errors"]] == [0, 1]
+        assert client.get("/api/workouts").json() == []
+
+    def test_batch_unknown_template_returns_batch_level_error_and_writes_nothing(self, client):
+        resp = client.post(
+            "/api/workouts/batch",
+            json={
+                "template": "不存在的課表",
+                "sets": [{"exercise": "深蹲", "weight_kg": 80, "reps": 8}],
+            },
+        )
+
+        assert resp.status_code == 400
+        error = resp.json()
+        assert error["error"] == "validation failed"
+        assert error["errors"] == [
+            {"index": None, "field": "template", "message": "template not found"}
+        ]
+        assert client.get("/api/workouts").json() == []
+
+    def test_batch_rejects_empty_request(self, client):
+        resp = client.post("/api/workouts/batch", json={"sets": []})
+
+        assert resp.status_code == 400
+        error = resp.json()
+        assert error["error"] == "validation failed"
+        assert error["errors"][0]["index"] is None
+        assert error["errors"][0]["field"] == "sets"
+        assert client.get("/api/workouts").json() == []
+
+
 class TestLogSet:
     def test_log_set_returns_201_and_is_queryable(self, client, exercise_id):
         workout_id = client.post("/api/workouts", json={}).json()["id"]

@@ -2856,10 +2856,10 @@
       "id": "F150",
       "name": "批次寫入 endpoint",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "agent 可在單次請求寫入整場訓練，失敗時不留半套資料。",
       "acceptance": "**已簽核凍結（2026-08-13，Ryan）**。單次請求可寫入多筆 set/workout，全成功或全失敗（單一 transaction，沿用 F143 的 BEGIN IMMEDIATE single-writer）；部分資料無效時整批不寫入，並回傳可定位到第幾筆、哪個欄位的錯誤清單。既有單筆寫入路徑行為不變。contract tests 涵蓋全成功、單筆無效、空批次三種情形。",
-      "evidence": "",
+      "evidence": "docs/evidence/F150.md — Claude cross-model acceptance verifier 5/5 pass, integrity true; pytest 344 passed; ruff clean; cp950 encoding smoke 63/63 (2026-08-13).",
       "prerequisites": [
         "F144"
       ],

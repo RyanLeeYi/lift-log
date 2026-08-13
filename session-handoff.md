@@ -1,7 +1,7 @@
 # session handoff
 
-最後更新：2026-08-13（第二場：D15 方向定案 + E1 重簽 + F138 收工）。目前 **134/153 passing，19 failing**。
-下一條為 **F150**，尚未開始；`.harness/current_feature` 應在開始 F150 時才切換。
+最後更新：2026-08-13（第三場：F150 收工）。目前 **135/153 passing，18 failing**。
+下一條為 **F151**；開始實作時才建立 `.harness/current_feature`。
 
 ## F138 收工（2026-08-13 passing）
 
@@ -13,6 +13,16 @@
 PowerShell 跑就會踩到。** 要驗編碼相關問題，必須先
 `$env:PYTHONIOENCODING=$null; $env:PYTHONUTF8=$null; chcp 950`。
 回歸護欄：`uv run python tests/e2e/smoke_encoding.py`（63/63）。
+
+## F150 收工（2026-08-13 passing）
+
+新增 `POST /api/workouts/batch`，以既有 `LogWorkoutIn`／`log_workout` 為唯一 domain path：
+單一 `BEGIN IMMEDIATE` transaction 寫入一場訓練的多筆 set，成功回 summary；schema、未知動作
+（含大小寫變體）、未知課表與空批次皆回 `{index, field, message}`，且整批零寫入。
+
+Claude cross-model review 最終無 blocker、integrity valid；canonical acceptance verifier **5/5 pass**、
+integrity true。完整驗證：pytest **344 passed**、ruff clean、cp950 encoding smoke **63/63**。
+證據：`docs/evidence/F150.md`。後端-only，**不出 APK、不部署**。
 
 ## ⚠ 2026-08-13 方向定案（D15；本場未寫任何程式碼，只有決策與規格）
 
@@ -44,7 +54,7 @@ PowerShell 跑就會踩到。** 要驗編碼相關問題，必須先
 ### 發布門檻 20 條，執行順序（不要自行改順序）
 
 1. **F138** — cp950 UnicodeEncodeError。先修，否則污染後面每一條的驗收證據
-2. **F150 → F151 → F152** — 護欄，F153 讀寫對等的共用前置
+2. **F150 ✅ → F151 → F152** — 護欄，F153 讀寫對等的共用前置
 3. **F145 → F146 → F147 → F148 → F149**
 4. **F153** — app 內建對話
 5. 其餘 10 條舊債：F86–F89、F95、F104、F105、F124、F128、F136
@@ -81,8 +91,8 @@ GitHub repo（MIT、英文 `README.md` ＋ `README.zh-TW.md`）＋ **90 秒影�
 
 ## 下一個 session 最短入口
 
-1. 讀本檔、F145 frozen acceptance 與 PRD；確認 `git status`。
-2. 開始實作時才把 `.harness/current_feature` 切為 F145；先以兩裝置 contract／instrumentation tests 固定 conflict inbox、takeover 與 recovery workout 行為。
+1. 讀本檔、F151 frozen acceptance 與 PRD；確認 `git status`。
+2. 開始實作時才把 `.harness/current_feature` 切為 F151；F151 的 `date+exercise+set_index` server-side hash 與 F143 mutation receipt 各自是不同層，不能互相取代。
 3. 不要提前把 generic sync store 接入既有 REST／MCP domain tables；F146／F147／F149 的 deferred boundary不變。
 
 ## 工作區注意
