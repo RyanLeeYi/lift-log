@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { restoreNativeSession, signInNative } from "../../app/static/js/auth.js";
+import {
+  getWebCsrfToken,
+  restoreNativeSession,
+  restoreWebSession,
+  signInNative,
+  signInWeb,
+  signOutWeb,
+} from "../../app/static/js/auth.js";
+import { authHeaders } from "../../app/static/js/api.js";
 
 const response = (status, body) => ({
   ok: status >= 200 && status < 300,
@@ -119,4 +127,69 @@ test("Google nonce is identical in Credential Manager and server request", async
   assert.ok(credentialNonce.length >= 32);
   assert.equal(loginBody.client, "android");
   assert.equal(saved.refreshToken, "refresh");
+});
+
+// ---------- F146：Web session ----------
+
+test("web sign-in posts client=web with credentials and keeps only the csrf token", async () => {
+  let init = null;
+  await signInWeb(
+    { idToken: "google-id-token", nonce: "n1", deviceId: "web-device" },
+    {
+      fetchImpl: async (_url, options) => {
+        init = options;
+        return response(200, { csrf_token: "csrf-1", user: { id: "u1" } });
+      },
+    },
+  );
+  const body = JSON.parse(init.body);
+  assert.equal(body.client, "web");
+  assert.equal(init.credentials, "include");
+  assert.equal(getWebCsrfToken(), "csrf-1");
+  // access/refresh token 不該出現在網頁這邊——session 全靠 HttpOnly cookie
+  assert.equal(body.access_token, undefined);
+});
+
+test("restoring a web session recovers the csrf token, and 401 means signed out", async () => {
+  const restored = await restoreWebSession({
+    fetchImpl: async () => response(200, { csrf_token: "csrf-2", user: { id: "u1" } }),
+  });
+  assert.equal(restored.authenticated, true);
+  assert.equal(getWebCsrfToken(), "csrf-2");
+
+  const signedOut = await restoreWebSession({ fetchImpl: async () => response(401, {}) });
+  assert.equal(signedOut.authenticated, false);
+  assert.equal(getWebCsrfToken(), "");
+});
+
+test("server outage while restoring is not reported as signed out", async () => {
+  await restoreWebSession({
+    fetchImpl: async () => response(200, { csrf_token: "csrf-3", user: { id: "u1" } }),
+  });
+  await assert.rejects(
+    () => restoreWebSession({ fetchImpl: async () => response(503, {}) }),
+  );
+  assert.equal(getWebCsrfToken(), "csrf-3"); // 仍視為已登入，不把離線畫成請重新登入
+});
+
+test("sign-out clears the local csrf token even when the server call fails", async () => {
+  await restoreWebSession({
+    fetchImpl: async () => response(200, { csrf_token: "csrf-4", user: { id: "u1" } }),
+  });
+  await assert.rejects(() => signOutWeb({ fetchImpl: async () => response(500, {}) }));
+  assert.equal(getWebCsrfToken(), "");
+});
+
+test("api requests use cookie plus csrf header when a web session exists", async () => {
+  await restoreWebSession({
+    fetchImpl: async () => response(200, { csrf_token: "csrf-5", user: { id: "u1" } }),
+  });
+  const web = authHeaders({ any: true });
+  assert.equal(web.headers["X-CSRF-Token"], "csrf-5");
+  assert.equal(web.credentials, "include");
+  assert.equal(web.headers.Authorization, undefined);
+
+  const legacy = authHeaders(null, { csrf: "", token: "legacy-token" });
+  assert.equal(legacy.headers.Authorization, "Bearer legacy-token");
+  assert.equal(legacy.credentials, undefined);
 });

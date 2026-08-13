@@ -1,7 +1,7 @@
 // Web 版走 REST；Android 核心 domain 走原生 LocalStore，網路只留給更新與推播等非 domain 功能。
 
 import { apiBase, isNativeApp } from "./env.js";
-import { getNativeAccessToken, restoreNativeSession } from "./auth.js";
+import { getNativeAccessToken, getWebCsrfToken, restoreNativeSession } from "./auth.js";
 
 const TOKEN_KEY = "liftlog.token";
 
@@ -20,15 +20,25 @@ export function setToken(token) {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+/**
+ * F146：有 web session 就走 cookie＋CSRF header，沒有才退回舊的 Bearer token。
+ * 兩條路併存是刻意的——舊的單一 token 仍是既有 e2e 與尚未改用 Google 登入的入口。
+ */
+export function authHeaders(body, { csrf = getWebCsrfToken(), token } = {}) {
+  const contentType = body ? { "Content-Type": "application/json" } : {};
+  // 有 web session 就不必碰 localStorage——順帶讓這個函式在沒有 DOM 的地方也能測
+  if (csrf) {
+    return { headers: { "X-CSRF-Token": csrf, ...contentType }, credentials: "include" };
+  }
+  return { headers: { Authorization: `Bearer ${token ?? getToken()}`, ...contentType } };
+}
+
 async function request(method, path, body, bearerToken = getToken()) {
   let resp;
   try {
     resp = await fetch(apiBase() + path, {
       method,
-      headers: {
-        Authorization: `Bearer ${bearerToken}`,
-        ...(body ? { "Content-Type": "application/json" } : {}),
-      },
+      ...authHeaders(body, { token: bearerToken }),
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {

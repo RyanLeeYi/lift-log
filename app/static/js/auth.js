@@ -78,6 +78,68 @@ export async function restoreNativeSession({
   }
 }
 
+// ---------- Web session（F146）----------
+//
+// 網頁不存 access token：session 走 Secure HttpOnly cookie，JS 讀不到也就偷不走。
+// 手上只留 CSRF token，而它由 server 從 session id 推導，重整後再問一次就好。
+
+let webCsrfToken = "";
+
+export function getWebCsrfToken() {
+  return webCsrfToken;
+}
+
+/** 開站時問一次：cookie 還有效就拿回 CSRF token，失效就是未登入。 */
+export async function restoreWebSession({ fetchImpl = fetch } = {}) {
+  try {
+    const session = await jsonRequest(fetchImpl, "/api/auth/session", {
+      credentials: "include",
+    });
+    webCsrfToken = session.csrf_token || "";
+    return { authenticated: Boolean(webCsrfToken), user: session.user };
+  } catch (error) {
+    if (error.status === 401) {
+      webCsrfToken = "";
+      return { authenticated: false };
+    }
+    throw error; // 503／連不上不等於未登入——不能把離線畫成「請重新登入」
+  }
+}
+
+export async function signInWeb(credential, { fetchImpl = fetch } = {}) {
+  if (!credential?.idToken) throw new AuthError("沒有拿到 Google 憑證");
+  const issued = await jsonRequest(fetchImpl, "/api/auth/google", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id_token: credential.idToken,
+      nonce: credential.nonce,
+      device_id: credential.deviceId,
+      device_name: credential.deviceName ?? "Web",
+      client: "web",
+    }),
+  });
+  webCsrfToken = issued.csrf_token || "";
+  return issued;
+}
+
+export async function signOutWeb({ fetchImpl = fetch } = {}) {
+  try {
+    await jsonRequest(fetchImpl, "/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-CSRF-Token": webCsrfToken },
+    });
+  } finally {
+    webCsrfToken = ""; // 伺服器沒回應也要把本機這半邊清掉，不留一個看似已登入的畫面
+  }
+}
+
+export function webSignInNonce() {
+  return nonce();
+}
+
 export async function signInNative({
   plugin = authPlugin(),
   fetchImpl = fetch,
