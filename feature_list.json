@@ -2744,7 +2744,8 @@
       "acceptance": "**已簽核凍結（2026-08-13，Ryan；D15 縮範圍重簽）**。依 PRD R4：append-only entity 自動 merge；同筆 base_version 衝突進 inbox，顯示本機/雲端值並能保留任一方後重新送出；刪除/舊版編輯遵守 tombstone，不復活。衝突情境以 **Android ↔ Web** 為準，兩端 contract tests 全綠。【D15 降 backlog】雙 Android 裝置的 active workout owner/lease_generation 接管、舊 owner 離線組進 recovery workout——Ryan 實際只有手機＋網頁，無法自行驗證，無法驗證的 acceptance 是規格債。",
       "evidence": "docs/evidence/F145.md",
       "prerequisites": [
-        "F144"
+        "F144",
+        "F154"
       ],
       "touches": [
         "app/services/sync.py",
@@ -2766,7 +2767,8 @@
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R5：Web Google 登入使用 Secure HttpOnly SameSite cookie；所有 state-changing request 通過 CSRF。domain API 綁定 session user；登出清 session。server 不可用時顯示明確狀態，不寫本地假資料。Playwright 驗登入/登出、CSRF、兩帳號隔離與 outage；現有 Web 行為不回歸。 **2026-08-14 Ryan 重新簽核（Playwright 範圍）**：Playwright 驗登入／登出／服務中斷顯示／state-changing request 確實帶 CSRF header；**CSRF 拒絕與跨帳號隔離改由 server 端測試負責**（`tests/test_auth.py`、`tests/test_user_isolation.py`）。理由：兩者需要通過 Google 憑證驗證的真 session，瀏覽器測試無法造出，而唯一的造法是在認證路徑上開測試專用注入點——那個風險大於它換來的測試形式。",
       "evidence": "docs/evidence/F146.md",
       "prerequisites": [
-        "F142"
+        "F142",
+        "F154"
       ],
       "touches": [
         "app/main.py",
@@ -2788,7 +2790,8 @@
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R6、R9：MCP token 僅建立時顯示明文，control DB 只存 hash，可命名、列出、撤銷；驗證後只 route 到該 user data DB。所有 MCP mutation 經 app/services 並寫 change log。錯 token 401、跨 user IDOR 不洩漏；token 不進 log。MCP 查寫、撤銷與 Android pull tests 全綠。",
       "evidence": "",
       "prerequisites": [
-        "F143"
+        "F143",
+        "F154"
       ],
       "touches": [
         "app/mcp.py",
@@ -2936,6 +2939,49 @@
         "不做串流輸出、多輪記憶、對話持久化、模型選擇 UI",
         "不為內建對話另建一套 prompt 層或第二條寫入路徑",
         "key 不寫進 repo、不隨 APK 打包"
+      ]
+    },
+    {
+      "id": "F154",
+      "name": "domain 表與同步層合一",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "手機記的組網頁查得到、網頁記的組手機同步得到——一份資料，不是兩個平行世界。",
+      "acceptance": "**已簽核凍結（2026-08-14，Ryan；grill 十題裁決 Q1／Q6／Q8／Q9／Q10）**。依 PRD R4、R5、R6：① 每張可同步 domain 表（exercises／templates／workouts／sets／body_metrics／daily_status／app_settings）具備 immutable `sync_id`(UUID)、integer `version` 與 nullable `deleted_at` tombstone；`DOMAIN_SCHEMA_VERSION` 升版，既有 DB 可冪等 migrate 且不遺失既有列。② **domain 表是唯一事實來源**：sync push 接受的 mutation 在同一 transaction 內投影成 domain row；pull 產生的 change 內容與 domain row 一致。③ REST／Web 的 domain 寫入一律經 `app/services/`，並在同一 transaction 寫入同一份 change log（`sync_entities` 版本 ＋ `sync_changes`）；**不得存在繞過同步版本的第二條 server 寫入路徑**。④ 來源不影響結論：同一筆資料由 Web／REST 寫入後 Android pull 取得得到；由 Android push 寫入後 REST 查詢查得到；兩條路徑寫同一筆時版本單調遞增、不互相覆蓋。⑤ 既有資料回填**不在本條範圍**（另條處理）；legacy 單機 DB（shared token 路徑）不參與同步，行為不變。完成定義：`uv run pytest` 全綠（含新增的跨路徑一致性測試）、`uv run ruff check .` 乾淨、Android `:app:testDevDebugUnitTest` 全綠。",
+      "evidence": "",
+      "prerequisites": [
+        "F143"
+      ],
+      "touches": [
+        "app/models.py",
+        "app/migrations.py",
+        "app/services/",
+        "tests/"
+      ],
+      "non_goals": [
+        "不回填既有資料（另條 feature）",
+        "不改 legacy 單機 token 路徑的行為",
+        "不改 sync wire protocol（push/pull 契約維持 F143 的形狀）"
+      ]
+    },
+    {
+      "id": "F155",
+      "name": "既有資料回填進同步層",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "合一之前就存在的紀錄也看得到，不是只有新寫入才同步。",
+      "acceptance": "**待簽核**（2026-08-14 由 F154 的裁決 Q10 衍生）。F154 完成後，把既有資料補齊：① user data DB 內既有 domain 列補上 `sync_id` 與對應 sync entity／change，Android pull 取得得到；② 既有只存在於 `sync_entities` 的資料投影成 domain row，REST 查詢查得到；③ 回填腳本冪等可重跑，執行前備份該 user DB，並輸出「補了幾列、跳過幾列」的摘要；④ 兩邊都有同一筆資料時的取捨規則要在此條簽核時定義，不得靜默覆蓋。",
+      "evidence": "",
+      "prerequisites": [
+        "F154"
+      ],
+      "touches": [
+        "app/migrations.py",
+        "scripts/",
+        "tests/"
+      ],
+      "non_goals": [
+        "不動 legacy 單機 DB"
       ]
     }
   ]
