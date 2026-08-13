@@ -2,7 +2,14 @@
 // 課表管理（templates / templateEdit）在 templates.js。
 
 import { api, ApiError, getToken, setToken } from "./api.js";
-import { getNativeAccessToken, restoreNativeSession, signInNative } from "./auth.js";
+import {
+  getNativeAccessToken,
+  restoreNativeSession,
+  restoreWebSession,
+  signInNative,
+  signInWithGoogleWeb,
+  signOutWeb,
+} from "./auth.js";
 import { captureBodyScroll, openBody, renderBody } from "./body.js";
 import { openCalendar, renderCalendar } from "./calendar.js";
 import { customExerciseModal } from "./custom-exercise.js";
@@ -113,6 +120,11 @@ let nativeAuthenticated = false;
 let nativeSignInBusy = false;
 let nativeSyncStatus = null;
 let nativeSyncBusy = false;
+// F146：網頁 Google session（cookie）。與舊的 API token 併存，兩者任一成立就進得去
+let webAuthenticated = false;
+let webSignInBusy = false;
+// 開站時登入服務不可用。刻意不用 state.error——頂層的 guard() 會把它清掉
+let webOutageMessage = "";
 // F145：衝突收件匣。只在設定頁載入——它是「有事才處理」的東西，不該每次重繪都打 bridge
 let conflictItems = [];
 let nativeBootstrapRequired = false;
@@ -484,13 +496,36 @@ function renderSetup() {
     // 組的佇列同理，所以整支 syncQueue 都跑。
     guard(syncQueue);
   };
+  // F146：網頁改以 Google 帳號登入（session 走 HttpOnly cookie，JS 讀不到）。
+  // 下面的 API token 欄位刻意留著——它仍是既有 e2e 與單一 token 部署的入口，
+  // 拿掉等於一次砍掉所有既有 Web 回歸驗證。
+  const googleSignIn = async () => {
+    webSignInBusy = true;
+    render();
+    try {
+      await signInWithGoogleWeb();
+      location.reload(); // 與 Android 同一條路：登入後整頁重來，狀態不必手動拼回去
+    } catch (error) {
+      webSignInBusy = false;
+      throw error;
+    }
+  };
   return el("section", { class: "screen setup" }, [
     el("div", { class: "mark" }, [icon("dumbbell", { size: 44, label: "lift-log" })]),
     el("h1", {}, ["lift-log"]),
-    el("p", {}, ["輸入 API token 開始使用（存在這支手機上）"]),
-    ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
+    el("p", {}, ["使用 Google 帳號登入；資料只留在你自己的伺服器。"]),
+    ...(state.error || webOutageMessage
+      ? [el("div", { class: "error-banner" }, [state.error || webOutageMessage])]
+      : []),
+    el("button", {
+      class: "btn btn-primary",
+      "data-testid": "web-google-signin",
+      ...(webSignInBusy ? { disabled: "" } : {}),
+      onclick: () => guard(googleSignIn),
+    }, [webSignInBusy ? "登入中…" : "使用 Google 登入"]),
+    el("p", { class: "setup-alt" }, ["或用 API token（單機部署）"]),
     input,
-    el("button", { class: "btn btn-primary", onclick: () => guard(save) }, ["連線"]),
+    el("button", { class: "btn btn-ghost", onclick: () => guard(save) }, ["連線"]),
     versionTag(),
     ...envTag(),
   ]);
@@ -927,6 +962,21 @@ function conflictInboxSection() {
   ])];
 }
 
+// F146：網頁登出。只有 Google session 才畫——API token 那條路沒有 server 端 session 可撤。
+function webSignOutRow() {
+  if (isNativeApp() || !webAuthenticated) return [];
+  const signOut = () => guard(async () => {
+    await signOutWeb();
+    location.reload();
+  });
+  return [el("div", { class: "set-row" }, [
+    el("span", { class: "set-row-label" }, ["Google 帳號"]),
+    el("button", {
+      class: "btn chip", "data-testid": "web-signout", onclick: signOut,
+    }, ["登出"]),
+  ])];
+}
+
 function weeklyTargetRow() {
   if (weeklyTargetDraft === null) return [];
   const change = (delta) =>
@@ -1042,6 +1092,7 @@ function renderSettings() {
     ]),
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...nativeSyncSettingsRow(),
+    ...webSignOutRow(),
     ...conflictInboxSection(),
     ...weeklyTargetRow(),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
@@ -3099,6 +3150,15 @@ if (isNativeApp()) {
   }
   if (nativeAuthenticated) state.screen = restoredScreen;
 }
+if (!isNativeApp()) {
+  try {
+    webAuthenticated = (await restoreWebSession()).authenticated;
+  } catch (error) {
+    // 伺服器暫時不可用不等於「請重新登入」。講清楚是服務端的問題，
+    // 也不拿空資料冒充真實結果（PRD R5）。
+    webOutageMessage = "無法連上登入服務——不確定你是否已登入，稍後再試；資料沒有遺失。";
+  }
+}
 if (!isNativeApp() || nativeAuthenticated) restoreActiveWorkout();
 if (!isNativeApp()) resumeRestAfterRestore();
 
@@ -3112,7 +3172,7 @@ async function resumeRestAfterRestore() {
   // 沒有 token 就停在 setup 畫面——那個 app 連不進去，卻讓碼表跑著、鬧鐘照排，
   // 幾分鐘後在一個進不去的畫面上響（review LOW-5）。401 那條路有 guard 的
   // stopRestTimer() 擋著，開機這條原本沒有。
-  if (!getToken() && !isNativeApp()) return;
+  if (!getToken() && !webAuthenticated && !isNativeApp()) return;
   // ④ 存過休息但還原不了（過舊或壞資料）→ 旗標留著，由 logger 在「倒數本來該在的位置」
   // 講出來。**不要**用 state.error：那個一換畫面就被清掉，而還原後人是先落在首頁的，
   // 等他走回 logger 時提示早就沒了——那還是靜默沒有倒數。
@@ -3379,9 +3439,9 @@ subscribeRestControl((action, seconds, draft, startedAt) => {
 });
 // F67：查有沒有新版（見上方 runUpdateCheck 的說明）。只在已有 token 時查——
 // setup 畫面查一定 401，而且那次失敗會讓首次設定的人到下次開 app 才看得到更新。
-if (getToken() || getNativeAccessToken()) runUpdateCheck();
+if (getToken() || getNativeAccessToken() || webAuthenticated) runUpdateCheck();
 if ((isNativeApp() && (!nativeAuthenticated || nativeBootstrapRequired))
-  || (!isNativeApp() && !getToken())) {
+  || (!isNativeApp() && !getToken() && !webAuthenticated)) {
   state.screen = "setup";
   render();
 } else {

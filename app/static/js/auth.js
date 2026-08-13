@@ -140,6 +140,75 @@ export function webSignInNonce() {
   return nonce();
 }
 
+const GSI_SRC = "https://accounts.google.com/gsi/client";
+const WEB_DEVICE_KEY = "liftlog.web_device_id";
+
+/** 每個瀏覽器一個固定 device id——換一顆就會在帳號底下長出一台新裝置。 */
+export function webDeviceId(storage = localStorage) {
+  let id = storage.getItem(WEB_DEVICE_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    storage.setItem(WEB_DEVICE_KEY, id);
+  }
+  return id;
+}
+
+/** GSI 只在網頁真的要登入時才載入——不放進 index.html，APK 就不會多一個外部相依。 */
+export function loadGoogleIdentity({ doc = document } = {}) {
+  if (globalThis.google?.accounts?.id) return Promise.resolve(globalThis.google.accounts.id);
+  return new Promise((resolve, reject) => {
+    const existing = doc.querySelector(`script[src="${GSI_SRC}"]`);
+    const script = existing ?? doc.createElement("script");
+    const done = () => {
+      if (globalThis.google?.accounts?.id) resolve(globalThis.google.accounts.id);
+      else reject(new AuthError("載入 Google 登入失敗——檢查網路後再試一次"));
+    };
+    script.addEventListener("load", done, { once: true });
+    script.addEventListener(
+      "error",
+      () => reject(new AuthError("載入 Google 登入失敗——檢查網路後再試一次")),
+      { once: true },
+    );
+    if (!existing) {
+      script.src = GSI_SRC;
+      script.async = true;
+      doc.head.appendChild(script);
+    }
+  });
+}
+
+/**
+ * 網頁版 Google 登入：GSI 拿 id_token → 換成 HttpOnly cookie session。
+ * nonce 由這裡產生並隨 id_token 一起送回 server 比對，擋掉重放別處拿到的憑證。
+ */
+export async function signInWithGoogleWeb({
+  fetchImpl = fetch,
+  identity = null,
+  timeoutMs = 60_000,
+} = {}) {
+  const config = await jsonRequest(fetchImpl, "/api/auth/config");
+  if (!config.google_client_id) throw new AuthError("伺服器尚未設定 Google 登入");
+  const gsi = identity ?? (await loadGoogleIdentity());
+  const challenge = nonce();
+  const credential = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new AuthError("登入逾時，請再試一次")), timeoutMs);
+    gsi.initialize({
+      client_id: config.google_client_id,
+      nonce: challenge,
+      callback: (value) => {
+        clearTimeout(timer);
+        resolve(value?.credential);
+      },
+    });
+    gsi.prompt();
+  });
+  if (!credential) throw new AuthError("沒有拿到 Google 憑證");
+  return signInWeb(
+    { idToken: credential, nonce: challenge, deviceId: webDeviceId(), deviceName: "Web" },
+    { fetchImpl },
+  );
+}
+
 export async function signInNative({
   plugin = authPlugin(),
   fetchImpl = fetch,

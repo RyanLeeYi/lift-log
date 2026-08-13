@@ -1702,3 +1702,8 @@ body {
   background: transparent; border: 1px solid var(--line);
   border-radius: var(--r-pill); color: var(--text-mid); min-height: 44px;
 }
+
+/* F146：網頁 setup 的次要入口（API token）。主要動作是 Google 登入，這條要看得出是備援 */
+.setup .setup-alt {
+  margin-top: 18px; color: var(--text-mute); font-size: 12px;
+}
