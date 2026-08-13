@@ -2764,7 +2764,7 @@
       "status": "failing",
       "outcome": "Web 以 Google session 使用自己的雲端資料，未連線時明確不可用且不混用 Android local store。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R1、R5：Web Google 登入使用 Secure HttpOnly SameSite cookie；所有 state-changing request 通過 CSRF。domain API 綁定 session user；登出清 session。server 不可用時顯示明確狀態，不寫本地假資料。Playwright 驗登入/登出、CSRF、兩帳號隔離與 outage；現有 Web 行為不回歸。",
-      "evidence": "",
+      "evidence": "docs/evidence/F146.md",
       "prerequisites": [
         "F142"
       ],
