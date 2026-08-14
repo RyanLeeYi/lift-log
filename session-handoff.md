@@ -19,7 +19,8 @@
 
 ## 環境與邊界
 
-- `acceptance-verifier` 已固定為 `gpt-5.6-sol` / high；舊的 `gpt-5.6` alias 會被 ChatGPT 帳號拒絕。
+- `acceptance-verifier` 走本機 agent（fresh context，同模型，**不是**跨模型獨立）；
+  Codex 整條路徑已於 2026-08-14 移除，舊的 `gpt-5.6-sol` 說法作廢。
 - Android JVM task：`:app:testDevDebugUnitTest`；本機 SDK：`C:\Users\user\AppData\Local\Android\Sdk`。
 - 純後端驗收用 `C:\Users\user\.local\bin\uv.exe`；pytest summary 若被 cp950 吞掉，以 exit code 為準。
 - E1 未全通過：不得部署正式站或正式 APK metadata。
