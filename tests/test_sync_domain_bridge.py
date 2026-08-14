@@ -256,6 +256,54 @@ def test_stale_base_version_from_sync_does_not_silently_overwrite_rest_write(
         assert api.get("/api/body-metrics", headers=headers).json()[0]["weight_kg"] == 80
 
 
+def test_rest_tombstone_rejects_stale_sync_resurrection(client: TestClient) -> None:
+    with client as api:
+        headers, device_id = _login(api)
+        api.post(
+            "/api/body-metrics",
+            headers=headers,
+            json={"date": "2026-08-14", "weight_kg": 80},
+        )
+        before_delete = _changes_of(_pull(api, headers), "body_metric")[-1]
+        assert api.delete(
+            "/api/body-metrics/2026-08-14", headers=headers
+        ).status_code == 204
+
+        stale_push = api.post(
+            "/api/sync/push",
+            headers=headers,
+            json={
+                "schema_version": 1,
+                "device_id": device_id,
+                "mutations": [
+                    {
+                        "mutation_id": str(uuid4()),
+                        "entity_type": "body_metric",
+                        "entity_id": before_delete["entity_id"],
+                        "operation": "upsert",
+                        "base_version": before_delete["version"],
+                        "lease_generation": None,
+                        "payload": {
+                            "sync_id": before_delete["entity_id"],
+                            "date": "2026-08-14",
+                            "weight_kg": 60,
+                            "body_fat_pct": None,
+                        },
+                    }
+                ],
+            },
+        ).json()
+
+        assert stale_push["conflicts"][0]["reason"] == "tombstoned"
+        assert api.get("/api/body-metrics", headers=headers).json() == []
+        latest = [
+            change
+            for change in _changes_of(_pull(api, headers), "body_metric")
+            if change["entity_id"] == before_delete["entity_id"]
+        ][-1]
+        assert latest["operation"] == "delete"
+
+
 def test_seeded_exercise_library_reaches_the_first_sync(client: TestClient) -> None:
     """新帳號的種子動作庫也要進 change log。
 

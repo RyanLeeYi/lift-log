@@ -2739,7 +2739,7 @@
       "id": "F145",
       "name": "多裝置衝突、workout 接管與復原",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "追加資料自動合併；同筆版本衝突由使用者選擇；進行中 workout 只有一台 owner 並可安全接管。",
       "acceptance": "**已簽核凍結（2026-08-13，Ryan；D15 縮範圍重簽）**。依 PRD R4：append-only entity 自動 merge；同筆 base_version 衝突進 inbox，顯示本機/雲端值並能保留任一方後重新送出；刪除/舊版編輯遵守 tombstone，不復活。衝突情境以 **Android ↔ Web** 為準，兩端 contract tests 全綠。【D15 降 backlog】雙 Android 裝置的 active workout owner/lease_generation 接管、舊 owner 離線組進 recovery workout——Ryan 實際只有手機＋網頁，無法自行驗證，無法驗證的 acceptance 是規格債。",
       "evidence": "docs/evidence/F145.md",
@@ -2945,10 +2945,10 @@
       "id": "F154",
       "name": "domain 表與同步層合一",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "手機記的組網頁查得到、網頁記的組手機同步得到——一份資料，不是兩個平行世界。",
       "acceptance": "**已簽核凍結（2026-08-14，Ryan；grill 十題裁決 Q1／Q6／Q8／Q9／Q10）**。依 PRD R4、R5、R6：① 每張可同步 domain 表（exercises／templates／workouts／sets／body_metrics／daily_status／app_settings）具備 immutable `sync_id`(UUID)、integer `version` 與 nullable `deleted_at` tombstone；`DOMAIN_SCHEMA_VERSION` 升版，既有 DB 可冪等 migrate 且不遺失既有列。② **domain 表是唯一事實來源**：sync push 接受的 mutation 在同一 transaction 內投影成 domain row；pull 產生的 change 內容與 domain row 一致。③ REST／Web 的 domain 寫入一律經 `app/services/`，並在同一 transaction 寫入同一份 change log（`sync_entities` 版本 ＋ `sync_changes`）；**不得存在繞過同步版本的第二條 server 寫入路徑**。④ 來源不影響結論：同一筆資料由 Web／REST 寫入後 Android pull 取得得到；由 Android push 寫入後 REST 查詢查得到；兩條路徑寫同一筆時版本單調遞增、不互相覆蓋。⑤ 既有資料回填**不在本條範圍**（另條處理）；legacy 單機 DB（shared token 路徑）不參與同步，行為不變。完成定義：`uv run pytest` 全綠（含新增的跨路徑一致性測試）、`uv run ruff check .` 乾淨、Android `:app:testDevDebugUnitTest` 全綠。",
-      "evidence": "",
+      "evidence": "docs/evidence/F154.md",
       "prerequisites": [
         "F143"
       ],
