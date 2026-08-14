@@ -2809,10 +2809,10 @@
       "id": "F148",
       "name": "資料生命週期、匯出、登出與刪帳",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "使用者可完整匯出資料、安全登出，並在重新驗證後刪除帳號與所有可用副本。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R7、R9：匯出為具 schema version 的完整 JSON。Android 有 pending mutation/conflict 時，登出前必須同步、匯出或明確丟棄；登出後清 token 與帳號綁定本地 DB。刪帳需近期 Google reauth，撤銷 session/device/MCP，刪 active data DB 與裝置本地資料；backup 中殘留最長 30 天且不可恢復為 active。匯出/刪除 rate limit 3/hour；失敗不回假成功。",
-      "evidence": "",
+      "evidence": "docs/evidence/F148.md；獨立驗收原 8 項 ACCEPT，R1 完整匯出重驗 ACCEPT，strict lifecycle 增補 A/B ACCEPT。pytest 396、Node 22、ruff、Android unit、F148 E2E 全綠；v154 APK 已驗內含 APP_VERSION。",
       "prerequisites": [
         "F145",
         "F146",

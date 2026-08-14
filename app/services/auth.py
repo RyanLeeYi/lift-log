@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
-from app.control_models import AuthSession, Device, RefreshToken, User, new_uuid
+from app.control_models import AccountTombstone, AuthSession, Device, RefreshToken, User, new_uuid
 from app.db import canonical_user_db_path, initialize_data_db
 from app.schemas import GoogleLoginIn
 
@@ -133,6 +133,10 @@ def verify_recent_google_identity(
         raise InvalidGoogleToken
 
 
+def _user_is_active(db: Session, user: User) -> bool:
+    return user.status == "active" and db.get(AccountTombstone, user.id) is None
+
+
 def login_with_google(
     factory: sessionmaker[Session],
     settings: Settings,
@@ -163,7 +167,7 @@ def login_with_google(
                 db.add(user)
                 db.flush()
             else:
-                if user.status != "active":
+                if not _user_is_active(db, user):
                     raise InvalidGoogleToken
                 expected_path = canonical_user_db_path(
                     settings.user_data_dir, user.id, user.data_db_name
@@ -280,7 +284,7 @@ def refresh_android_session(
         user = db.get(User, auth_session.user_id)
         if device is None or user is None or device.client_device_id != client_device_id:
             raise InvalidSession
-        if user.status != "active":
+        if not _user_is_active(db, user):
             _revoke_family(db, auth_session.family_id, now)
             db.commit()
             raise InvalidSession
@@ -349,7 +353,7 @@ def resolve_session(
             raise InvalidSession
         user = db.get(User, auth_session.user_id)
         device = db.get(Device, auth_session.device_id)
-        if user is None or device is None or user.status != "active":
+        if user is None or device is None or not _user_is_active(db, user):
             raise InvalidSession
         auth_session.last_seen_at = now
         device.last_seen_at = now

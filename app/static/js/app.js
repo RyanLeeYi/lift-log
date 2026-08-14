@@ -1,7 +1,7 @@
 // lift-log 記錄頁：setup → home →（templateSelect）→ picker → logger，全部由 render() 重繪；
 // 課表管理（templates / templateEdit）在 templates.js。
 
-import { accountSettingsSection } from "./account.js";
+import { accountSettingsSection, completePendingAccountWipe } from "./account.js";
 import { api, ApiError, getToken, setToken } from "./api.js";
 import {
   getNativeAccessToken,
@@ -458,6 +458,7 @@ function renderSetup() {
       nativeSignInBusy = true;
       render();
       try {
+        await completePendingAccountWipe();
         await signInNative();
         location.reload();
       } catch (error) {
@@ -3127,6 +3128,7 @@ if (isNativeApp()) {
   nativeSignInBusy = true;
   render();
   try {
+    await completePendingAccountWipe();
     nativeAuthenticated = (await restoreNativeSession()).authenticated;
     if (nativeAuthenticated) {
       const initialStatus = applyNativeSyncStatus(await initializeNativeSync());

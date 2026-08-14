@@ -20,6 +20,21 @@ const acct = {
   deleteOpen: false,
   deleteConfirmText: "",
 };
+const PENDING_ACCOUNT_WIPE = "liftlog.pending-account-wipe";
+
+export function markPendingAccountWipe(storage = localStorage) {
+  storage.setItem(PENDING_ACCOUNT_WIPE, "1");
+}
+
+export async function completePendingAccountWipe({
+  storage = localStorage,
+  wipe = api.wipeLocalData,
+} = {}) {
+  if (storage.getItem(PENDING_ACCOUNT_WIPE) !== "1") return false;
+  await wipe();
+  storage.removeItem(PENDING_ACCOUNT_WIPE);
+  return true;
+}
 
 function reauth() {
   return isNativeApp() ? promptGoogleReauthNative() : promptGoogleReauth();
@@ -62,11 +77,16 @@ function exportRow(rerender, guard) {
 
 // ---------- Android 登出（web 登出在 app.js 的 webSignOutRow） ----------
 
-async function finishNativeSignOut() {
-  await signOutNative();
-  await api.wipeLocalData();
+export async function finishNativeSignOut({
+  wipe = api.wipeLocalData,
+  signOut = signOutNative,
+  reload = () => location.reload(),
+} = {}) {
+  // 先清資料再撤銷 session：wipe 若失敗，帳號仍留著讓使用者重試，不會留下無主資料給下個帳號。
+  await wipe();
+  await signOut();
   acct.logoutBlock = null;
-  location.reload();
+  reload();
 }
 
 function nativeSignOutRow(rerender, guard) {
@@ -148,9 +168,16 @@ function deleteAccountRow(rerender) {
 }
 
 async function finishDeleteAccount() {
+  if (isNativeApp() && await completePendingAccountWipe()) {
+    location.reload();
+    return;
+  }
   const { idToken, nonce } = await reauth();
   await api.deleteAccount(idToken, nonce, "DELETE");
-  if (isNativeApp()) await api.wipeLocalData();
+  if (isNativeApp()) {
+    markPendingAccountWipe();
+    await completePendingAccountWipe();
+  }
   location.reload();
 }
 

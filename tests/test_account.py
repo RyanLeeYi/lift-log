@@ -142,8 +142,20 @@ def test_export_covers_every_domain_table(tmp_path: Path) -> None:
         issued = client.post("/api/auth/google", json=login_payload()).json()
         headers = {"Authorization": f"Bearer {issued['access_token']}"}
 
+        subscribed = client.post(
+            "/api/push/subscribe",
+            json={
+                "endpoint": "https://push.example/f148",
+                "keys": {"p256dh": "p256", "auth": "authsecret"},
+            },
+            headers=headers,
+        )
+        assert subscribed.status_code == 204
+
         body = client.post("/api/account/export", json=reauth_payload(), headers=headers).json()
-        assert "push_subscriptions" in body
+        assert [row["endpoint"] for row in body["push_subscriptions"]] == [
+            "https://push.example/f148"
+        ]
 
 
 def test_export_never_contains_tokens_or_secrets(tmp_path: Path) -> None:
@@ -412,6 +424,8 @@ def test_tombstone_blocks_recovery_even_if_control_row_looks_active_again(
 
     app2 = create_app_again(settings, google_token_verifier=verifier)
     assert user_id in app2.state.unavailable_user_ids
+    with TestClient(app2, base_url="https://testserver") as client2:
+        assert client2.post("/api/auth/google", json=login_payload()).status_code == 401
 
 
 def test_is_tombstoned_service_function(tmp_path: Path) -> None:
