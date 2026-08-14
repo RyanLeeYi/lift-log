@@ -178,10 +178,11 @@ export function loadGoogleIdentity({ doc = document } = {}) {
 }
 
 /**
- * 網頁版 Google 登入：GSI 拿 id_token → 換成 HttpOnly cookie session。
- * nonce 由這裡產生並隨 id_token 一起送回 server 比對，擋掉重放別處拿到的憑證。
+ * F148：只拿一顆新鮮的 Google id_token＋nonce，不建 session。
+ * `signInWithGoogleWeb`（登入）與匯出／刪帳的近期身分重驗共用這一段——
+ * 差別只在拿到憑證後要不要接著換 session，不是憑證本身怎麼拿。
  */
-export async function signInWithGoogleWeb({
+export async function promptGoogleReauth({
   fetchImpl = fetch,
   identity = null,
   timeoutMs = 60_000,
@@ -191,7 +192,7 @@ export async function signInWithGoogleWeb({
   const gsi = identity ?? (await loadGoogleIdentity());
   const challenge = nonce();
   const credential = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new AuthError("登入逾時，請再試一次")), timeoutMs);
+    const timer = setTimeout(() => reject(new AuthError("驗證逾時，請再試一次")), timeoutMs);
     gsi.initialize({
       client_id: config.google_client_id,
       nonce: challenge,
@@ -203,17 +204,29 @@ export async function signInWithGoogleWeb({
     gsi.prompt();
   });
   if (!credential) throw new AuthError("沒有拿到 Google 憑證");
+  return { idToken: credential, nonce: challenge };
+}
+
+/**
+ * 網頁版 Google 登入：GSI 拿 id_token → 換成 HttpOnly cookie session。
+ * nonce 由 `promptGoogleReauth` 產生並隨 id_token 一起送回 server 比對，擋掉重放別處拿到的憑證。
+ */
+export async function signInWithGoogleWeb({
+  fetchImpl = fetch,
+  identity = null,
+  timeoutMs = 60_000,
+} = {}) {
+  const { idToken, nonce: challenge } = await promptGoogleReauth({
+    fetchImpl, identity, timeoutMs,
+  });
   return signInWeb(
-    { idToken: credential, nonce: challenge, deviceId: webDeviceId(), deviceName: "Web" },
+    { idToken, nonce: challenge, deviceId: webDeviceId(), deviceName: "Web" },
     { fetchImpl },
   );
 }
 
-export async function signInNative({
-  plugin = authPlugin(),
-  fetchImpl = fetch,
-  now = Date.now(),
-} = {}) {
+/** F148：原生版對應 `promptGoogleReauth`——同一顆 Credential Manager 憑證也帶回 deviceId/deviceName。 */
+async function promptGoogleCredentialNative({ plugin = authPlugin(), fetchImpl = fetch } = {}) {
   if (!plugin) throw new AuthError("這個 APK 不支援 Google 登入，請更新 App");
   const config = await jsonRequest(fetchImpl, "/api/auth/config");
   if (!config.google_client_id) throw new AuthError("伺服器尚未設定 Google 登入");
@@ -222,14 +235,35 @@ export async function signInNative({
     clientId: config.google_client_id,
     nonce: challenge,
   });
+  return {
+    idToken: google.idToken,
+    nonce: challenge,
+    deviceId: google.deviceId,
+    deviceName: google.deviceName,
+  };
+}
+
+export async function promptGoogleReauthNative(options = {}) {
+  const { idToken, nonce: challenge } = await promptGoogleCredentialNative(options);
+  return { idToken, nonce: challenge };
+}
+
+export async function signInNative({
+  plugin = authPlugin(),
+  fetchImpl = fetch,
+  now = Date.now(),
+} = {}) {
+  const { idToken, nonce: challenge, deviceId, deviceName } = await promptGoogleCredentialNative({
+    plugin, fetchImpl,
+  });
   const issued = await jsonRequest(fetchImpl, "/api/auth/google", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      id_token: google.idToken,
+      id_token: idToken,
       nonce: challenge,
-      device_id: google.deviceId,
-      device_name: google.deviceName,
+      device_id: deviceId,
+      device_name: deviceName,
       client: "android",
     }),
   });
@@ -239,4 +273,22 @@ export async function signInNative({
     accessExpiresAt: now + issued.expires_in * 1000,
   });
   nativeAccessToken = issued.access_token;
+}
+
+/**
+ * F148：原生登出。`/api/auth/logout` 本來就只憑 Bearer／cookie 解析 session，不分
+ * android/web——不必另開一支端點。清 token（記憶體＋加密儲存）這步無論伺服器端撤銷
+ * 成不成功都要做（理由同 `signOutWeb`：伺服器沒回應也不能留著一個看似仍登入的裝置，
+ * 更不能讓 SecureStore 裡的 refresh token 活著、下次啟動又悄悄復原 session）。
+ */
+export async function signOutNative({ plugin = authPlugin(), fetchImpl = fetch } = {}) {
+  try {
+    await jsonRequest(fetchImpl, "/api/auth/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${nativeAccessToken}` },
+    });
+  } finally {
+    nativeAccessToken = "";
+    await plugin?.clearSession();
+  }
 }

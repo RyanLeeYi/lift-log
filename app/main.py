@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app.api import (
+    account,
     app_release,
     auth,
     body_metrics,
@@ -32,6 +33,7 @@ from app.mcp import create_mcp
 from app.migrations import migrate_schema
 from app.models import Base
 from app.seed import seed_exercises
+from app.services import account as account_service
 from app.services.auth import GoogleTokenVerifier, google_verifier
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -59,19 +61,23 @@ def create_app(
     migrate_schema(engine)
     session_factory = sessionmaker(bind=engine)
     control_session_factory = make_control_session_factory(settings.control_db_path)
+    unavailable_user_ids: set[str] = set()
     with control_session_factory() as control:
         users = list(control.scalars(select(User).where(User.status != "closed")))
-    unavailable_user_ids: set[str] = set()
-    for user in users:
-        try:
-            path = canonical_user_db_path(
-                settings.user_data_dir, user.id, user.data_db_name
-            )
-            if not path.is_file():
-                raise RuntimeError
-            initialize_data_db(path)
-        except Exception:
-            unavailable_user_ids.add(user.id)
+        for user in users:
+            try:
+                # F148：即使 control DB 這一列的 status 不是 closed（例如舊備份被局部還原），
+                # tombstone 仍是獨立的第二道關卡——刪過的帳號不會因為這樣就被復原為 active。
+                if account_service.is_tombstoned(control, user.id):
+                    raise RuntimeError
+                path = canonical_user_db_path(
+                    settings.user_data_dir, user.id, user.data_db_name
+                )
+                if not path.is_file():
+                    raise RuntimeError
+                initialize_data_db(path)
+            except Exception:
+                unavailable_user_ids.add(user.id)
 
     # MCP 先建：FastAPI 必須接 mcp_app.lifespan，session manager 才會初始化
     mcp_app = create_mcp(
@@ -91,6 +97,9 @@ def create_app(
     )
     app.state.auth_rate_limiter = auth.AuthRateLimiter()
     app.state.domain_rate_limiter = auth.AuthRateLimiter(limit=120)
+    # F148／PRD R9：匯出、刪帳各自每帳號每小時 3 次——用同一顆限流器類別，只是 key 換成 user_id。
+    app.state.export_rate_limiter = auth.AuthRateLimiter(limit=3, window_seconds=3600)
+    app.state.account_delete_rate_limiter = auth.AuthRateLimiter(limit=3, window_seconds=3600)
 
     app.add_middleware(sync.SyncBodyLimitMiddleware)
     app.add_middleware(
@@ -138,6 +147,7 @@ def create_app(
     app.include_router(settings_api.router)  # F80：每週目標天數等設定
     app.include_router(sync.router)
     app.include_router(mcp_tokens.router)
+    app.include_router(account.router)  # F148：匯出／刪帳
     app.include_router(app_release.router)  # F67：app 版自我更新的版本查詢與 APK 供檔
     app.mount(MCP_MOUNT, mcp_app)
     # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/* 與 /mcp

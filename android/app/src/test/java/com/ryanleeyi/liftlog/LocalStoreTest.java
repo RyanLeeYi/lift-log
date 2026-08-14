@@ -300,6 +300,49 @@ public class LocalStoreTest {
     }
 
     @Test
+    public void wipeAllLocalDataClearsEveryDomainTableOutboxConflictAndCursor()
+        throws JSONException {
+        store.ensureReady();
+        store.seedExercises();
+        JSONObject exercise = store.createExercise(uuid(), "F148測試動作", "", null, false, uuid());
+        int exerciseId = exercise.getInt("id");
+        JSONObject template = store.saveTemplate(
+            null, uuid(), "F148課表", templateExercises(exerciseId, 3, 90),
+            new JSONArray().put(1), uuid()
+        );
+        String workoutSyncId = uuid();
+        store.createWorkout(workoutSyncId, "2026-08-14", template.getInt("id"), null, null, uuid());
+        int workoutId = store.workout(workoutSyncId).getInt("id");
+        store.addSet(uuid(), uuid(), workoutId, exerciseId, null, 100, 5, null, null, 1, uuid());
+        store.saveBodyMetric(uuid(), "2026-08-14", 80, 18.0, uuid());
+        store.saveDailyStatus(uuid(), "2026-08-14", 4, 3, "還行", uuid());
+        store.putSetting("default_rest", "90", uuid(), uuid());
+        pushConflictedBodyMetric(81, 76, 5, false);
+        store.markPushFailure(store.pendingPushBody(uuid(), 500, 1024 * 1024, 0), "offline", 5_000);
+
+        assertTrue(store.pendingMutationCount() > 0);
+        assertEquals(1, store.unresolvedConflictCount());
+
+        store.wipeAllLocalData();
+
+        assertEquals(0, store.count("exercises", null, null));
+        assertEquals(0, store.count("templates", null, null));
+        assertEquals(0, store.count("template_exercises", null, null));
+        assertEquals(0, store.count("workouts", null, null));
+        assertEquals(0, store.count("sets", null, null));
+        assertEquals(0, store.count("body_metrics", null, null));
+        assertEquals(0, store.count("daily_status", null, null));
+        assertEquals(0, store.count("app_settings", null, null));
+        assertEquals(0, store.pendingMutationCount());
+        assertEquals(0, store.failedMutationCount());
+        assertEquals(0, store.unresolvedConflictCount());
+        JSONObject status = store.syncStatus();
+        assertEquals(0, status.getLong("cursor"));
+        assertFalse(status.getBoolean("bootstrapComplete"));
+        assertEquals("synced", status.getString("state"));
+    }
+
+    @Test
     public void persistedRowsSurviveReopenAndRepeatedMutationRollsBack() throws JSONException {
         store.ensureReady();
         String firstMutation = uuid();

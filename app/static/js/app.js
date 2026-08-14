@@ -1,6 +1,7 @@
 // lift-log 記錄頁：setup → home →（templateSelect）→ picker → logger，全部由 render() 重繪；
 // 課表管理（templates / templateEdit）在 templates.js。
 
+import { accountSettingsSection } from "./account.js";
 import { api, ApiError, getToken, setToken } from "./api.js";
 import {
   getNativeAccessToken,
@@ -1093,6 +1094,9 @@ function renderSettings() {
     ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
     ...nativeSyncSettingsRow(),
     ...webSignOutRow(),
+    ...accountSettingsSection(
+      { webAuthenticated, nativeAuthenticated }, render, guard,
+    ),
     ...conflictInboxSection(),
     ...weeklyTargetRow(),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。

@@ -75,6 +75,20 @@ class McpToken(ControlBase):
     user: Mapped[User] = relationship()
 
 
+class AccountTombstone(ControlBase):
+    """F148：刪帳留痕——backup 保留期內，任何啟動／復原流程遇到這筆一律拒絕把資料當 active 復原。
+
+    只留存在，不比對 `purge_after`：帳號刪除是永久的，這個欄位只是給未來的 backup 清除
+    排程知道「幾時可以真的把備份檔丟掉」，不是「幾時可以恢復」。
+    """
+
+    __tablename__ = "account_tombstones"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    purge_after: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class RefreshToken(ControlBase):
     __tablename__ = "refresh_tokens"
 

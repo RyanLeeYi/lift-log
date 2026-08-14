@@ -631,6 +631,12 @@ body {
 .modal-actions .btn { flex: 1; }
 /* F27 離開確認視窗 */
 .confirm-text { color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+/* F148：刪帳二次確認的文字輸入（樣式同 .picker input[type="search"]，範圍只到這顆視窗）。 */
+.acct-confirm-input {
+  background: var(--card-hi); border: none; border-radius: var(--r-input);
+  color: var(--text); font-size: 16px; padding: 12px 14px; width: 100%;
+}
+.acct-confirm-input:focus-visible { outline: 2px solid var(--accent); }
 /* F106：設定頁開關列（取代 F31→F81 的藥丸按鈕 .push-toggle）。
    F89 ⑥ 的凍結條文講的是 switch 的「軌道」與「鈕」，藥丸沒有這兩個零件、條文無從照字面驗；
    Ryan 2026-07-31 裁決改實作。顏色照該條文：OFF 軌道 --card-hi、鈕 --text-faint；ON 軌道 --accent。 */

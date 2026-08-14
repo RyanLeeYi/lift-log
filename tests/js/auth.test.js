@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  getNativeAccessToken,
   getWebCsrfToken,
+  promptGoogleReauth,
+  promptGoogleReauthNative,
   restoreNativeSession,
   restoreWebSession,
   signInNative,
   signInWeb,
+  signOutNative,
   signOutWeb,
 } from "../../app/static/js/auth.js";
 import { authHeaders } from "../../app/static/js/api.js";
@@ -192,4 +196,106 @@ test("api requests use cookie plus csrf header when a web session exists", async
   const legacy = authHeaders(null, { csrf: "", token: "legacy-token" });
   assert.equal(legacy.headers.Authorization, "Bearer legacy-token");
   assert.equal(legacy.credentials, undefined);
+});
+
+// ---------- F148：匯出／刪帳前的近期 Google 身分重驗 ----------
+
+function fakeGsi(credential) {
+  return {
+    initialize: ({ callback }) => {
+      fakeGsi.lastCallback = callback;
+    },
+    prompt: () => fakeGsi.lastCallback({ credential }),
+  };
+}
+
+test("promptGoogleReauth returns a fresh id_token and nonce without creating a session", async () => {
+  let call = 0;
+  const result = await promptGoogleReauth({
+    identity: fakeGsi("fresh-id-token"),
+    fetchImpl: async () => {
+      call += 1;
+      return response(200, { google_client_id: "client-id" });
+    },
+  });
+  assert.equal(result.idToken, "fresh-id-token");
+  assert.ok(result.nonce.length >= 32);
+  assert.equal(call, 1); // 只打了 /api/auth/config，沒有任何登入或帳號動作的請求
+});
+
+test("promptGoogleReauth rejects when the server has no Google client configured", async () => {
+  await assert.rejects(
+    () => promptGoogleReauth({
+      identity: fakeGsi("id-token"),
+      fetchImpl: async () => response(200, { google_client_id: "" }),
+    }),
+  );
+});
+
+test("promptGoogleReauthNative returns id_token/nonce and never calls saveSession", async () => {
+  let saveSessionCalled = false;
+  const plugin = {
+    googleSignIn: async ({ nonce: challenge }) => ({
+      idToken: "native-fresh-token",
+      deviceId: "11111111-1111-4111-8111-111111111111",
+      deviceName: "Pixel",
+    }),
+    saveSession: async () => { saveSessionCalled = true; },
+  };
+  const result = await promptGoogleReauthNative({
+    plugin,
+    fetchImpl: async () => response(200, { google_client_id: "client-id" }),
+  });
+  assert.equal(result.idToken, "native-fresh-token");
+  assert.ok(result.nonce.length >= 32);
+  assert.equal(saveSessionCalled, false);
+});
+
+test("signOutNative posts the current access token and always clears secure storage", async () => {
+  // 先真的登入一次，讓 nativeAccessToken 落在已知值——避免和同檔案其他測試共用的
+  // module 級狀態互相影響（node:test 同檔案內的測試依序共用同一個 import 實例）。
+  let clearSessionCalled = false;
+  const plugin = {
+    googleSignIn: async () => ({
+      idToken: "id-token",
+      deviceId: "11111111-1111-4111-8111-111111111111",
+      deviceName: "Pixel",
+    }),
+    saveSession: async () => {},
+    clearSession: async () => { clearSessionCalled = true; },
+  };
+  let loginCall = 0;
+  await signInNative({
+    plugin,
+    fetchImpl: async () => {
+      loginCall += 1;
+      return loginCall === 1
+        ? response(200, { google_client_id: "client-id" })
+        : response(200, {
+          access_token: "known-access-token", refresh_token: "r", expires_in: 900,
+        });
+    },
+  });
+  assert.equal(getNativeAccessToken(), "known-access-token");
+
+  let authorizationHeader;
+  await signOutNative({
+    plugin,
+    fetchImpl: async (_url, options) => {
+      authorizationHeader = options.headers.Authorization;
+      return response(204, {});
+    },
+  });
+  assert.equal(authorizationHeader, "Bearer known-access-token");
+  assert.equal(clearSessionCalled, true);
+  assert.equal(getNativeAccessToken(), "");
+});
+
+test("signOutNative clears secure storage even when the server call fails", async () => {
+  let clearSessionCalled = false;
+  const plugin = { clearSession: async () => { clearSessionCalled = true; } };
+  await assert.rejects(
+    () => signOutNative({ plugin, fetchImpl: async () => response(500, {}) }),
+  );
+  assert.equal(clearSessionCalled, true);
 });

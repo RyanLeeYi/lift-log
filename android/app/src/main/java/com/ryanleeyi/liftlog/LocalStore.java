@@ -505,6 +505,34 @@ public class LocalStore extends SQLiteOpenHelper {
         return count("sync_conflicts", "resolved_at IS NULL", null);
     }
 
+    /**
+     * F148：登出／刪帳後清空本機——outbox、衝突收件匣、全部 domain 表、sync 游標全部歸零。
+     *
+     * <p>刪除順序照 FK 方向：先刪會參照別人的子表（sets／template_exercises），
+     * 才刪被參照的父表（exercises／workouts／templates），否則會撞外鍵約束。
+     */
+    public void wipeAllLocalData() {
+        transaction(db -> {
+            db.delete("sync_outbox", null, null);
+            db.delete("sync_conflicts", null, null);
+            db.delete("sets", null, null);
+            db.delete("template_exercises", null, null);
+            db.delete("workouts", null, null);
+            db.delete("templates", null, null);
+            db.delete("exercises", null, null);
+            db.delete("body_metrics", null, null);
+            db.delete("daily_status", null, null);
+            db.delete("app_settings", null, null);
+            putSyncState(db, "server_cursor", "0");
+            putSyncState(db, "bootstrap_complete", "0");
+            putSyncState(db, "last_synced_at", "");
+            putSyncState(db, "last_error_code", "");
+            putSyncState(db, "next_sync_at", "0");
+            putSyncState(db, "sync_attempt_count", "0");
+            return null;
+        });
+    }
+
     /** 未解決的衝突收件匣：每筆都帶本機與雲端兩份值，讓使用者自己選。 */
     public JSONObject conflicts() {
         SQLiteDatabase db = writableDatabase();

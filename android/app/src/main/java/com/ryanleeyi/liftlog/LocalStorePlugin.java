@@ -280,6 +280,17 @@ public class LocalStorePlugin extends Plugin {
         }
     }
 
+    /** F148：登出／刪帳後把本機清空——WebView 端只能整包觸發，不能挑表清。 */
+    @PluginMethod
+    public void wipe(PluginCall call) {
+        try {
+            store().wipeAllLocalData();
+            call.resolve();
+        } catch (RuntimeException error) {
+            rejectStore(call, error);
+        }
+    }
+
     @PluginMethod
     public void status(PluginCall call) {
         try {

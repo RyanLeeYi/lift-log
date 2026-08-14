@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.db import canonical_user_db_path, initialize_data_db
 from app.schemas import GoogleLoginIn, RefreshIn
+from app.services import account as account_service
 from app.services import auth as auth_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -98,6 +99,10 @@ def _recover_user_data_if_available(
     if issued.user.id not in unavailable:
         return
     try:
+        # F148：刪過的帳號即使 status 或 control DB 列被局部還原也不得復原——tombstone 是獨立關卡
+        with request.app.state.control_session_factory() as control:
+            if account_service.is_tombstoned(control, issued.user.id):
+                return
         path = canonical_user_db_path(
             request.app.state.settings.user_data_dir,
             issued.user.id,

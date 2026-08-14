@@ -47,6 +47,19 @@ class AuthSessionOut(BaseModel):
     device: AuthDeviceOut
 
 
+class ReauthIn(BaseModel):
+    """F148／PRD R7：匯出／刪帳前的近期 Google 身分重驗——欄位形狀同登入的 id_token+nonce。"""
+
+    id_token: str = Field(min_length=1, max_length=8192)
+    nonce: str = Field(min_length=16, max_length=512)
+
+
+class AccountDeleteIn(ReauthIn):
+    """二次確認：前端要求使用者輸入 DELETE 才會帶上這個值。"""
+
+    confirm: Literal["DELETE"]
+
+
 class McpTokenCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 

@@ -115,6 +115,24 @@ def validate_claims(claims: dict[str, Any], settings: Settings, nonce: str) -> t
     return claims["sub"], claims["email"]
 
 
+def verify_recent_google_identity(
+    settings: Settings,
+    verifier: GoogleTokenVerifier,
+    user: User,
+    id_token: str,
+    nonce: str,
+) -> None:
+    """F148／PRD R7：匯出／刪帳前的近期身分重驗。
+
+    重用登入的 claims 驗證（exp／nonce／email_verified 全套照舊），多一條：
+    驗出來的 sub 必須對得上「目前這個已登入的 user」，不能拿別人的有效 id_token 幫你重驗。
+    """
+    claims = verifier(id_token)
+    sub, _email = validate_claims(claims, settings, nonce)
+    if sub != user.google_sub:
+        raise InvalidGoogleToken
+
+
 def login_with_google(
     factory: sessionmaker[Session],
     settings: Settings,

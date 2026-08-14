@@ -443,4 +443,21 @@ export const api = {
   pushSubscribe: (sub) => request("POST", "/api/push/subscribe", sub),
   scheduleRest: (seconds) => request("POST", "/api/push/rest-timer", { seconds }),
   cancelRest: () => request("POST", "/api/push/rest-timer/cancel"),
+  // F148：匯出／刪帳一律真的打 server（不分 native/web，兩邊都是同一組 Google 帳號 API）。
+  exportAccount: async (idToken, nonceValue) => {
+    if (isNativeApp()) await restoreNativeSession();
+    return request(
+      "POST", "/api/account/export", { id_token: idToken, nonce: nonceValue },
+      isNativeApp() ? getNativeAccessToken() : getToken(),
+    );
+  },
+  deleteAccount: async (idToken, nonceValue, confirm) => {
+    if (isNativeApp()) await restoreNativeSession();
+    return request(
+      "POST", "/api/account/delete", { id_token: idToken, nonce: nonceValue, confirm },
+      isNativeApp() ? getNativeAccessToken() : getToken(),
+    );
+  },
+  // F148：只有原生有本機 domain DB 需要清；web 沒有對應本機副本可清。
+  wipeLocalData: () => localCall("wipe"),
 };
