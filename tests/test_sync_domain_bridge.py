@@ -322,3 +322,43 @@ def test_batch_and_mcp_writes_reach_the_change_log(client: TestClient) -> None:
             change["payload"]["workout_sync_id"] and change["payload"]["exercise_sync_id"]
             for change in set_changes
         )
+
+
+def test_deleting_a_template_syncs_the_workouts_it_detaches(client: TestClient) -> None:
+    """刪課表會清掉引用它的 workout 的 `template_id`——那也是 domain 寫入，要進 change log。
+
+    第一版用一句 bulk `UPDATE workouts SET template_id=NULL` 繞過 ORM，於是那些 workout
+    在同步層停在「課表還在」的舊版本、版本也沒往上；另一台裝置永遠看不到這次變更。
+    這種 raw SQL 是「grep session.add(」抓不到的死角（2026-08-14 驗收第三次抓到同款漏洞）。
+    """
+    with client as api:
+        headers, _device = _login(api)
+        exercise_id = api.get("/api/exercises", headers=headers).json()[0]["id"]
+        template = api.post(
+            "/api/templates",
+            headers=headers,
+            json={
+                "name": "會被刪掉的課表",
+                "exercises": [{"exercise_id": exercise_id, "default_sets": 3}],
+            },
+        ).json()
+        workout = api.post(
+            "/api/workouts",
+            headers=headers,
+            json={"date": "2026-08-14", "template_id": template["id"]},
+        ).json()
+
+        before = _changes_of(_pull(api, headers), "workout")[-1]
+        assert before["payload"]["template_sync_id"] is not None
+
+        api.delete(f"/api/templates/{template['id']}", headers=headers)
+
+        after = [
+            change for change in _changes_of(_pull(api, headers), "workout")
+            if change["entity_id"] == before["entity_id"]
+        ][-1]
+        assert after["version"] > before["version"], "被解除關聯的 workout 版本沒有往上"
+        assert after["payload"]["template_sync_id"] is None, "change log 還停在課表沒被刪的舊狀態"
+        assert api.get(f"/api/workouts/{workout['id']}", headers=headers).json()[
+            "template_id"
+        ] is None

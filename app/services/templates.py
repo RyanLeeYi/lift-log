@@ -1,4 +1,4 @@
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import DomainError, NotFoundError
@@ -175,11 +175,18 @@ def delete_template(session: Session, template_id: int) -> None:
     )
     if template is None:
         raise NotFoundError()
-    session.execute(
-        update(Workout).where(Workout.template_id == template_id).values(template_id=None)
+    # F154：**逐筆改、逐筆記**。原本這裡是一句 bulk `UPDATE workouts SET template_id=NULL`，
+    # 它繞過 ORM，也就繞過了 change log——被清掉關聯的那些 workout 在同步層永遠停在
+    # 「課表還在」的舊版本，版本也沒往上（2026-08-14 驗收抓到的第三處同款漏洞）。
+    # 這類 raw SQL 是「grep session.add(」抓不到的死角。
+    affected = list(
+        session.scalars(select(Workout).where(Workout.template_id == template_id))
     )
-    # F154：改軟刪。硬刪的話另一台裝置永遠收不到「這份課表沒了」，下次同步又推回來。
-    # 上面解除 workouts 關聯的理由不變（SQLite 會重用 id），tombstone 不影響那件事。
+    for workout in affected:
+        workout.template_id = None
+        projection.record_write(session, "workout", workout)
+    # 硬刪的話另一台裝置永遠收不到「這份課表沒了」，下次同步又推回來。
+    # 解除 workouts 關聯的理由不變（SQLite 會重用 id），tombstone 不影響那件事。
     projection.record_write(session, "template", template, deleted=True)
     session.commit()
 
