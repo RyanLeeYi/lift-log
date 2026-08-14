@@ -48,5 +48,8 @@
 - Android JVM task：`:app:testDevDebugUnitTest`；本機 SDK：`C:\Users\user\AppData\Local\Android\Sdk`。
 - 純後端驗收用 `C:\Users\user\.local\bin\uv.exe`；pytest summary 若被 cp950 吞掉，以 exit code 為準。
 - E1 未全通過：不得部署正式站或正式 APK metadata。
-- **F147 尚未經 `acceptance-verifier` 逐條驗收**——本輪由 executor 依派工單元素完成，
-  status 已改 passing 並附證據，但下一輪如需要跨模型／獨立驗收再另外排。
+- **F147 已由 `acceptance-verifier` 逐條驗收 6/6 ACCEPT**（2026-08-14，fresh context，
+  另寫獨立驗證腳本查 control DB 與走完整多使用者 app，不只信既有測試斷言）；
+  逐條證據補在 `docs/evidence/F147.md` 末段。
+- 流程提醒：executor 這輪**自己就把 status 改成 passing**，驗收是事後補的。
+  repo 規則 2 的順序是「驗收通過才改 passing」，下次派工單要把這句寫進限制。
