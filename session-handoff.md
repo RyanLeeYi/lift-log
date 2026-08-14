@@ -1,11 +1,11 @@
 # session handoff
 
-最後更新：2026-08-14（第二輪）。仍是 **142/155 passing、13 failing**——F149 進行中，尚未改 passing。
+最後更新：2026-08-14（第三輪）。仍是 **142/155 passing、13 failing**——F149 進行中，尚未改 passing。
 
 ## 接手第一件事
 
 **先看下面「等待裁決」那一節，那是 F149 的阻塞點，不解掉不要往下做遷移。**
-其餘 F149 子項已完成三塊，證據見本檔「本輪完成」。`.harness/current_feature` 已設為 F149。
+其餘 F149 子項已完成四塊，證據見本檔「本輪完成」。`.harness/current_feature` 已設為 F149。
 
 ## 等待裁決（阻塞 F149 最大的一塊）
 
@@ -25,7 +25,7 @@ baseline」，**但那正是 F155 的範圍，而 F155 的 acceptance 還標「�
 主 session 對第 ④ 條的建議：照 D17「domain 表當唯一事實來源」，domain 版本勝出，
 被覆蓋的 sync 層那筆列進摘要給人看，不靜默丟棄。
 
-## 本輪完成（F149 的三塊，均未 commit 前已全綠）
+## 本輪完成（F149 的四塊，均未 commit 前已全綠）
 
 1. **每日 mutation 配額**（PRD R9 唯一沒實作的 quota）
    - 新表 `user_daily_mutations`（control DB）＋ `app/services/quota.py`
@@ -51,6 +51,11 @@ baseline」，**但那正是 F155 的範圍，而 F155 的 acceptance 還標「�
      **刻意不給 repo 內建預設 token**：公開 repo 的預設密鑰等於人人可讀訓練資料。
      代價是乾淨機器要多一步 `cp .env.example .env` 並填 token——這是對 acceptance
      「可跑」的解釋而非原文，驗收時可能被挑，需要時再跟 Ryan 確認。
+4. **英文／繁中公開 README**（第三輪）
+   - `README.md` 改為英文主頁，新增 `README.zh-TW.md`；兩邊都有 Local-first／MCP 定位、
+     Mermaid 架構圖、Docker quick start 與「為什麼不用 RAG」。
+   - 明確標示 pre-release／F149 尚未完成，未把尚未通過的正式發布寫成已完成。
+   - README 本地連結與 `docker compose config --quiet` 全綠。
 
 Gates：`uv run pytest` 全綠（備份 worker 實測 404 passed）、`uv run ruff check .` 全綠。
 
@@ -59,10 +64,11 @@ Gates：`uv run pytest` 全綠（備份 worker 實測 404 passed）、`uv run ru
 1. 既有資料遷移命令（dry-run／備份／回滾／row count 比對）— **被上面的裁決卡住**
 2. 舊單一 Bearer token 作廢：`Settings.token` 目前必填且 `app/api/deps.py:_is_legacy_request`
    仍會放行。正式切換後要讓它失效，但 docker demo 模式正好靠這條路徑——兩者要一起設計
-3. 英文 `README.md` ＋ `README.zh-TW.md`（含架構圖與「為何不用 RAG」選型說明）
-   ——**主 session 自己寫，不要外包**：這是對外文稿，寫前要讀 vault `identity/voice-and-tone.md`
-4. 20 帳號×2 裝置壓測驗 quota、release-signed APK 全流程冒煙、Web/APK/MCP/schema 版本一致
-5. 全部完成後派獨立 review 與 acceptance-verifier 逐條驗收，才可改 passing
+3. release-signed APK 全流程冒煙、Web/APK/MCP/schema 版本一致，以及其餘 frozen gates
+4. 全部完成後派獨立 review 與 acceptance-verifier 逐條驗收，才可改 passing
+
+`20 帳號×2 裝置隔離／quota` 與每日備份已由 D15 從 F149 release acceptance 降到
+`docs/operations.md`，不是剩餘 release blocker；不要再依舊 handoff 把它補回 scope。
 
 ## 其他未結項（沿用上一輪）
 

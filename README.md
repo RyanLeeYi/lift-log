@@ -1,55 +1,103 @@
 # lift-log
 
-自家部署的健身紀錄系統：手機單手快記、日曆 heatmap、課表選單、體重體脂記錄，
-並以 remote MCP 讓 Claude／ChatGPT／Gemini 直接查詢訓練資料。
+[繁體中文](README.zh-TW.md)
 
-- 規格：`docs/prd/mvp-lift-log.md`
-- 範圍與進度：`feature_list.json`
-- 開發約定：`CLAUDE.md`
+**A self-hosted, local-first workout log that lets AI agents read and write your data through MCP.**
 
-> 此 README 目前只記必要的操作與限制，完整版留到 MVP 收官時補。
+Most fitness apps keep your history inside their cloud. lift-log keeps the Android app usable without
+the server, synchronizes through a server you control, and exposes the same domain operations to Web
+and AI clients.
 
-## 執行
+> Pre-release: the core product is implemented, but the F149 production migration and release drill are
+> still in progress. See [`feature_list.json`](feature_list.json) for the source-of-truth status.
 
-```bash
-./init.sh                                                   # 環境恢復
-uv run uvicorn app.main:app_factory --factory --reload      # 啟動
-uv run pytest && uv run ruff check .                        # 測試與 lint
+## What it does
+
+- Records workouts, sets, templates, body metrics, daily status, PRs, and calendar heatmaps.
+- Runs the full core workflow offline on Android using a local SQLite store and transactional outbox.
+- Synchronizes multiple devices with version conflicts, workout ownership, and a conflict inbox.
+- Gives each Google account an isolated data database and independently revocable MCP tokens.
+- Lets MCP clients query progress and log workouts through the same services used by REST and Web.
+- Supports versioned JSON export, account deletion, encrypted backups, and restore drills.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Android UI] -->|local transaction| L[(Local SQLite)]
+    L --> O[Transactional outbox]
+    O <-->|push / pull| S[FastAPI sync API]
+    W[Web app] --> S
+    M[AI client via MCP] --> S
+    S --> C[(Control DB)]
+    S --> U[(One SQLite DB per user)]
 ```
 
-## 兩種前端執行環境
+Android treats a local transaction as success; the network is not on the critical path for a workout.
+Web and MCP are online clients. REST, Web, MCP, and sync mutations converge on the same service and
+change-log path, so an AI-written workout can be pulled by the phone.
 
-同一份 `app/static/` 同時服務兩邊，差異由 `js/env.js` 偵測 `window.Capacitor` 決定：
+## Why this does not use RAG
 
-| | web（PWA） | Android app（Capacitor 殼） |
-|---|---|---|
-| 資產來源 | FastAPI 直接供檔 | 打包在 APK 內 |
-| API | 同源相對路徑 | 打向公開站（後端 CORS 白名單放行） |
-| Service Worker | 註冊，負責殼快取與更新鏈 | **不註冊** |
-| 更新方式 | 部署後自動到位（F13/F14/F24） | 重新 build＋重裝 APK |
+Workout history is structured data. Questions such as “How much has my squat improved?” need exact SQL
+filters and aggregates, not retrieval-augmented generation over text chunks. MCP tools provide typed,
+auditable operations with deterministic results and fewer moving parts. If free-form daily notes grow
+large enough to need search, SQLite FTS5 is sufficient before a vector database becomes justified.
 
-Android 建置與簽章步驟見 `docs/android-build-setup.md`。
+## Quick start with Docker
 
-## 已知限制（Android app 版）
+Requirements: Git and a recent Docker Compose. Python and Node are not required.
 
-- **沒有自動更新**：前端改版後必須 `npx cap sync android` → `gradlew -p android assembleRelease` → 重裝 APK。
-  web 版的 sw.js 換版更新鏈對 app 版不成立。後端改版不受影響，不需重出 APK。
-- **休息通知在 app 版走本機通知**（F62）：F31 的 Web Push 依賴 Service Worker，而 app 版不註冊 SW，
-  因此改由 `@capacitor/local-notifications` 在**手機端**排程——伺服器關掉或沒網路時照樣會響。
-  兩個 Android 系統限制：
-  - **精確鬧鐘**：Android 12 起需要 `SCHEDULE_EXACT_ALARM`（已宣告）。使用者若在系統設定關閉「精確通知」，
-    倒數會被系統延後，且**關閉的當下 app 會被重啟、已排定的通知被清掉**。app 內的開關會顯示「開（可能延遲）」提醒。
-    **版本差異**（2026-07-28 Android 16 模擬器實測）：Android 12 安裝即自動授予，開關顯示「開」；
-    Android 13+ **不再自動授予**，使用者要到「設定 → 應用程式 → lift-log → 鬧鐘與提醒」手動開，
-    否則開關會一直顯示「開（可能延遲）」——那是誠實標示，不是 bug。
-  - **Doze 模式**：`allowWhileIdle` 的通知每 9 分鐘只能觸發一次。休息間隔通常 60–180 秒遠短於此，
-    但若手機長時間閒置進入深度 Doze，連續兩次提醒之間仍可能被系統壓下。
-- **浮動計時視窗需手動授權**（F64）：休息倒數可以浮在其他 app 之上（`SYSTEM_ALERT_WINDOW`），
-  但這是 Android 的「特殊權限」——manifest 宣告了也不會自動取得，使用者要到
-  「設定 → 應用程式 → lift-log → 顯示在其他應用程式上層」自己開；app 內開關按下去會直接送到那一頁。
-  沒授權時開關維持「關」，休息倒數仍在通知列（F63），功能不會消失。
-  另：**Play Store 對此權限審查嚴格**，本專案採 sideload 不受影響；
-  部分 OEM（Samsung 等）會在系統授權之外再加一層限制，實機行為以裝置為準。
-- **開啟需要網路**：資產雖然打包在本機，但資料一律來自公開站。離線時已記錄的組會進 IndexedDB
-  佇列（與 SW 無關，照常運作），恢復連線後自動補傳。
-- **sideload 安裝**：不上架 Play Store，靠 `adb install`。簽章金鑰遺失就無法對同一顆 app 發更新。
+```bash
+git clone https://github.com/RyanLeeYi/lift-log.git
+cd lift-log
+cp .env.example .env
+# Set LIFTLOG_TOKEN in .env to a long random value.
+docker compose up --build
+```
+
+Open <http://localhost:8000>. The default self-hosted demo mode uses
+`Authorization: Bearer <LIFTLOG_TOKEN>`. Docker stores databases in the `lift-log-data` named volume.
+
+To enable multi-user sign-in, configure `LIFTLOG_GOOGLE_CLIENT_ID`. Each signed-in user can then create
+personal MCP tokens; plaintext tokens are shown once and only their hashes are stored.
+
+## Connect an MCP client
+
+Use the Streamable HTTP endpoint:
+
+```text
+URL: http://localhost:8000/mcp
+Authorization: Bearer <token>
+```
+
+Demo mode accepts `LIFTLOG_TOKEN`. Multi-user mode uses a personal MCP token. Available tools cover
+workout logging, progress, templates, body metrics, daily status, and other domain operations.
+
+## Local development
+
+Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+cp .env.example .env
+uv sync
+uv run uvicorn app.main:app_factory --factory --reload
+uv run pytest
+uv run ruff check .
+```
+
+The frontend is native JavaScript and CSS served by FastAPI and packaged in a Capacitor Android shell;
+there is no frontend build step. Android build and signing instructions are in
+[`docs/android-build-setup.md`](docs/android-build-setup.md). Backup and recovery procedures are in
+[`docs/operations.md`](docs/operations.md).
+
+## Project docs
+
+- Local-first and multi-user PRD: [`docs/prd/local-first-cloud-sync.md`](docs/prd/local-first-cloud-sync.md)
+- Original MVP PRD: [`docs/prd/mvp-lift-log.md`](docs/prd/mvp-lift-log.md)
+- Feature status and frozen acceptance: [`feature_list.json`](feature_list.json)
+- Development workflow: [`CLAUDE.md`](CLAUDE.md)
+
+## License
+
+[MIT](LICENSE) © 2026 Ryan Lee
