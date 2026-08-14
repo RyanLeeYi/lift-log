@@ -28,11 +28,17 @@
 6. **feature 改 passing 後出一顆 APK 丟 Google Drive**（Ryan 用來隨時裝新版）：
 
    ```powershell
+   # 先把 app/static/js/state.js 的 APP_VERSION 升版（它是 versionCode 的唯一來源，見 F67）
    npx cap sync android                                   # 漏掉這步 APK 內還是舊畫面
    .\android\gradlew.bat -p android assembleRelease
-   Copy-Item android\app\build\outputs\apk\release\app-release.apk `
+   Copy-Item android\app\build\outputs\apk\prod\release\app-prod-release.apk `
      "G:\我的雲端硬碟\lift-log-apk\lift-log-<版號>-<feature id>.apk"
    ```
+
+   - ⚠ **路徑是 `apk\prod\release\app-prod-release.apk`**。`apk\release\app-release.apk` 是
+     加 product flavor 之前留下的**殭屍檔**（2026-07-30 的 v95），還在磁碟上、不會被新 build 覆蓋，
+     照舊路徑複製會出一顆看起來成功的舊版 APK。複製後用
+     `unzip -p <apk> assets/public/js/state.js | grep APP_VERSION` 確認版號再交付
 
    - 目的地是 **`G:\我的雲端硬碟`**（真正的 Google Drive）。**不要**用 `OneDrive\Desktop\GoogleDrive`
      ——那個資料夾在 OneDrive 裡面，只是名字叫 GoogleDrive，丟進去不會上 Google Drive
