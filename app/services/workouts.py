@@ -175,6 +175,8 @@ def _plan_batch(session: Session, data: LogWorkoutIn) -> _BatchPlan:
     for name in unknown:
         created = Exercise(name_zh=name, name_en=name, muscle_group=DEFAULT_MUSCLE_GROUP)
         session.add(created)
+        # F154：自動補建的動作也是 domain 寫入，一樣要進 change log
+        projection.record_write(session, "exercise", created)
         index[name.lower()] = created
     session.flush()
 
@@ -257,19 +259,23 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
 
     bodyweight_kg = latest_weight(session)
     tonnage = 0.0
+    # 明確收集這一批寫了哪些組。**不要**事後用 `session.new` 反查——
+    # 任何一次 flush 都會把它們移出那個集合，於是 change log 靜默漏掉整批
+    #（驗收在 2026-08-14 抓到：MCP 記的組完全同步不出去）。
+    written_sets: list[WorkoutSet] = []
     for planned_set in plan.to_write:
-        session.add(
-            WorkoutSet(
-                client_uuid=_set_uuid(data.client_uuid, planned_set.ordinal),
-                workout_id=workout.id,
-                exercise_id=planned_set.exercise.id,
-                set_number=planned_set.set_number,
-                weight_kg=planned_set.item.weight_kg,
-                reps=planned_set.item.reps,
-                rpe=planned_set.item.rpe,
-                idem_key=planned_set.idem_key,
-            )
+        written = WorkoutSet(
+            client_uuid=_set_uuid(data.client_uuid, planned_set.ordinal),
+            workout_id=workout.id,
+            exercise_id=planned_set.exercise.id,
+            set_number=planned_set.set_number,
+            weight_kg=planned_set.item.weight_kg,
+            reps=planned_set.item.reps,
+            rpe=planned_set.item.rpe,
+            idem_key=planned_set.idem_key,
         )
+        session.add(written)
+        written_sets.append(written)
         tonnage += set_tonnage(
             planned_set.item.weight_kg,
             planned_set.item.reps,
@@ -278,11 +284,9 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
         )
     try:
         # F154：整批寫入的每一列都要進 change log，否則 agent 批次記的組手機同步不到
-        session.flush()
         projection.record_write(session, "workout", workout)
-        for written in session.new | session.dirty:
-            if isinstance(written, WorkoutSet) and written.workout_id == workout.id:
-                projection.record_write(session, "set", written)
+        for written in written_sets:
+            projection.record_write(session, "set", written)
         session.commit()
     except IntegrityError as exc:
         session.rollback()

@@ -276,3 +276,49 @@ def test_seeded_exercise_library_reaches_the_first_sync(client: TestClient) -> N
         }
         # 每一筆都要有 sync_id 與 version，否則另一台裝置沒有東西可以對版本
         assert all(change["entity_id"] and change["version"] >= 1 for change in seeded_changes)
+
+
+def test_batch_and_mcp_writes_reach_the_change_log(client: TestClient) -> None:
+    """批次寫入（`/api/workouts/batch`，也是 MCP `log_workout` 的唯一入口）要進 change log。
+
+    F154 第一版用 `session.new` 反查剛寫的組，但**任何一次 flush 都會把它們移出那個集合**，
+    於是整批組靜默漏掉——透過 AI 對話記的訓練完全同步不到手機，而這正是這個專案的主打功能。
+    `create_missing` 自動補建的動作也一樣會漏。
+    """
+    with client as api:
+        headers, _device = _login(api)
+        before = len(_changes_of(_pull(api, headers), "set"))
+
+        response = api.post(
+            "/api/workouts/batch",
+            headers=headers,
+            json={
+                "date": "2026-08-14",
+                "client_uuid": str(uuid4()),
+                "create_missing": True,
+                "sets": [
+                    {"exercise": "深蹲", "weight_kg": 100, "reps": 5},
+                    {"exercise": "深蹲", "weight_kg": 100, "reps": 5},
+                    {"exercise": "只有這批才有的動作", "weight_kg": 40, "reps": 12},
+                ],
+            },
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["created_count"] == 3
+
+        changes = _pull(api, headers)
+        set_changes = _changes_of(changes, "set")
+        assert len(set_changes) - before == 3, "批次寫入的組沒有全部進 change log"
+
+        # create_missing 自動建的動作也要進去，否則手機收到的組指向一個它沒有的動作
+        auto_created = [
+            change for change in _changes_of(changes, "exercise")
+            if change["payload"]["name_zh"] == "只有這批才有的動作"
+        ]
+        assert auto_created, "create_missing 自動建的動作沒有進 change log"
+
+        # 組的 payload 要指得到動作與訓練，不能是空殼
+        assert all(
+            change["payload"]["workout_sync_id"] and change["payload"]["exercise_sync_id"]
+            for change in set_changes
+        )
