@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     control_db_path: str = "./control.db"
     user_data_dir: str = "./users"
     data_db_max_bytes: int = 100 * 1024 * 1024
+    # F149／PRD R9：每 user 每天最多接受的 mutation 筆數（容量之外的第二道配額）。
+    daily_mutation_limit: int = 20_000
     # OAuth client ID 是公開識別值，不是 secret；Android 與 Web 都把它當 audience。
     google_client_id: str = ""
     # F67 app 自我更新：release APK 的存放目錄。build 完把 lift-log-v<N>.apk 放進來，

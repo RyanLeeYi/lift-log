@@ -270,3 +270,20 @@ def test_domain_rate_limit_is_per_user_and_device(tmp_path: Path) -> None:
         assert blocked.status_code == 429
         assert int(blocked.headers["Retry-After"]) > 0
         assert client.get("/api/workouts", headers=bob).status_code == 200
+
+
+def test_daily_mutation_quota_blocks_domain_writes_but_not_reads(tmp_path: Path) -> None:
+    """F149／PRD R9：每日配額只擋寫入——查詢歷史不該因為寫滿額度而失效。"""
+    with _client(tmp_path) as client:
+        headers = _bearer(_login(client, "quota-web"))
+        client.app.state.settings.daily_mutation_limit = 1
+
+        first = client.post("/api/workouts", headers=headers, json={"date": "2026-08-10"})
+        assert first.status_code == 201
+
+        blocked = client.post("/api/workouts", headers=headers, json={"date": "2026-08-11"})
+        assert blocked.status_code == 429
+        assert blocked.json() == {"error": "mutation_quota_exceeded"}
+        assert int(blocked.headers["Retry-After"]) > 0
+
+        assert client.get("/api/workouts", headers=headers).status_code == 200

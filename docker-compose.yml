@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      # 乾淨機器 clone 下來沒有 .env（它是 gitignored），必要檔會讓 compose 直接失敗。
+      - path: .env
+        required: false
+    environment:
+      # token 必填但**不給 repo 內建預設值**——公開 repo 的預設 token 等於人人可讀
+      # 這台機器上的訓練資料。缺少時讓 compose 報一句看得懂的錯，而不是啟動到一半才死。
+      LIFTLOG_TOKEN: ${LIFTLOG_TOKEN:?請先 cp .env.example .env 並填入 LIFTLOG_TOKEN}
+      # demo 模式走單一 Bearer token（.env 的 LIFTLOG_TOKEN）；不接 Google OAuth，
+      # LIFTLOG_GOOGLE_CLIENT_ID 留空即可。這裡把資料路徑固定指到 volume，
+      # 蓋掉 .env 裡本機開發用的相對／絕對路徑（那些路徑在容器內不存在）。
+      LIFTLOG_DB: /data/liftlog.db
+      LIFTLOG_CONTROL_DB_PATH: /data/control.db
+      LIFTLOG_USER_DATA_DIR: /data/users
+      LIFTLOG_RELEASE_DIR: /data/release
+    volumes:
+      - lift-log-data:/data
+    restart: unless-stopped
+
+volumes:
+  lift-log-data:

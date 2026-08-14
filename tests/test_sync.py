@@ -458,3 +458,33 @@ def test_concurrent_same_base_version_accepts_only_one_update(tmp_path: Path) ->
         for result in results
         if result["conflicts"]
     ) == 1
+
+
+def test_daily_mutation_quota_rejects_whole_batch_without_writing(
+    sync_client: TestClient,
+) -> None:
+    """F149／PRD R9：超額整批擋下，且 client 端資料保留（429 在 Android 側是 retryable）。"""
+    with sync_client as client:
+        headers, device_id = _login(client, "quota-batch")
+        client.app.state.settings.daily_mutation_limit = 2
+        baseline = _baseline(client, headers)
+
+        blocked = _push(client, headers, device_id, [_mutation(), _mutation(), _mutation()])
+        assert blocked.status_code == 429
+        assert blocked.json() == {"error": "mutation_quota_exceeded"}
+        assert int(blocked.headers["Retry-After"]) > 0
+        assert _baseline(client, headers) == baseline
+
+        assert _push(client, headers, device_id, [_mutation(), _mutation()]).status_code == 200
+        assert _push(client, headers, device_id, [_mutation()]).status_code == 429
+
+
+def test_daily_mutation_quota_is_per_user(sync_client: TestClient) -> None:
+    with sync_client as client:
+        alice_headers, alice_device = _login(client, "quota-alice")
+        bob_headers, bob_device = _login(client, "quota-bob")
+        client.app.state.settings.daily_mutation_limit = 1
+
+        assert _push(client, alice_headers, alice_device, [_mutation()]).status_code == 200
+        assert _push(client, alice_headers, alice_device, [_mutation()]).status_code == 429
+        assert _push(client, bob_headers, bob_device, [_mutation()]).status_code == 200

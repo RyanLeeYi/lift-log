@@ -1,28 +1,71 @@
 # session handoff
 
-最後更新：2026-08-14。現在 **142/155 passing、13 failing**；F148 已完成並通過獨立驗收。
+最後更新：2026-08-14（第二輪）。仍是 **142/155 passing、13 failing**——F149 進行中，尚未改 passing。
 
 ## 接手第一件事
 
-依 Harness preflight 進入下一個已簽核功能 **F149：既有資料遷移、營運與完整正式發布**。
-先讀 `feature_list.json` F149 與 `docs/prd/local-first-cloud-sync.md` R8，再設定
-`.harness/current_feature`；F149 是 strict risk，完成後需要獨立 review 與 acceptance。
+**先看下面「等待裁決」那一節，那是 F149 的阻塞點，不解掉不要往下做遷移。**
+其餘 F149 子項已完成三塊，證據見本檔「本輪完成」。`.harness/current_feature` 已設為 F149。
 
-## 本輪完成
+## 等待裁決（阻塞 F149 最大的一塊）
 
-- F148 匯出／登出／刪帳改為 `passing`；完整證據在 `docs/evidence/F148.md`。
-- R1 漏掉 `push_subscriptions` 已修；同一 user access token 的 subscribe → export
-  端對端測試通過。先前空陣列是測試混用 legacy bearer 與 user session DB。
-- Strict review 修正兩個資料生命週期缺口：tombstone 現在守住 login／refresh／resolve；
-  native 登出先 wipe 再撤銷 session，刪帳後 wipe 失敗會以 marker 在啟動／登入前重試。
-- Gates：pytest 396、Node 22、ruff、Android unit、F148 E2E、F48 E2E 全綠；
-  fresh-context 驗收 R1 與 lifecycle A/B 全部 ACCEPT。
-- 本機 release：`release/lift-log-v154.apk`，解包確認 `APP_VERSION="v154"`；
-  SHA-256 `181DAB537E375A46778D3B0031CAE22CC21EA8B55BFFE8D3D03F99C45AF3AE8B`。
+F149 的 PRD R8 要求遷移時「替需要同步的既有 entity 補 `sync_id`、version 與 change-log
+baseline」，**但那正是 F155 的範圍，而 F155 的 acceptance 還標「待簽核」**。
 
-## 尚未完成
+- `app/models.py:21` 與 `app/migrations.py:47` 都註明「`sync_id` 對既有列是 NULL，回填是 F155 的事」
+- F155 acceptance 第 ④ 條「兩邊都有同一筆資料時的取捨規則要在此條簽核時定義，不得靜默覆蓋」
+  目前是空的——F149 要做的回填，其行為規則要等這條簽核才存在
 
-1. `G:\我的雲端硬碟\lift-log-apk` 未掛載，v154 尚未複製到 Google Drive。
-2. F149 後續還有 F153、F155 與既有 failing feature；以 `feature_list.json` 為準。
-3. `docs/evidence/F146.md` 末段兩個規格裁決仍未處理：legacy token 是否收掉、Web
-   IndexedDB 離線佇列與 envelope 字面差異；不阻擋 F148。
+已向 Ryan 提三個選項，等他回覆，**不要自行選一條做下去**：
+
+1. F149 遷移只做綁定＋備份＋row count 驗證＋legacy token 作廢，回填留 F155（需重簽 F149）
+2. 先簽核並做掉 F155，F149 遷移站在它上面（推薦：prereq F154 已 passing，工作量不變只是順序倒過來）
+3. 自行定取捨規則做進 F149（已建議不要——F155 明文說該規則要簽核）
+
+主 session 對第 ④ 條的建議：照 D17「domain 表當唯一事實來源」，domain 版本勝出，
+被覆蓋的 sync 層那筆列進摘要給人看，不靜默丟棄。
+
+## 本輪完成（F149 的三塊，均未 commit 前已全綠）
+
+1. **每日 mutation 配額**（PRD R9 唯一沒實作的 quota）
+   - 新表 `user_daily_mutations`（control DB）＋ `app/services/quota.py`
+   - domain API 每次寫入扣 1、`/api/sync/push` 按批次筆數扣；超額整批擋下回
+     **429 `mutation_quota_exceeded` + `Retry-After`**（Android `SyncHttpTransport.java`
+     已把 429 列為 retryable，outbox 不會被丟）
+   - 計數存 control DB 而非記憶體：記憶體版會讓「重開服務」變成清空配額的手段
+   - 用單一 upsert 帶 WHERE 守衛，避免併發各讀舊值而雙雙放行
+   - 上限走 `Settings.daily_mutation_limit`（預設 20000），測試可直接覆寫
+2. **加密備份與 restore drill**（delegated）
+   - `scripts/backup.py`：`VACUUM INTO` 一致快照 → Fernet 加密 → daily/weekly 兩池，
+     保留 7／4 份；目的地與來源同盤時警告但不中止
+   - `scripts/restore_drill.py`：一律先還原到隔離目錄驗 schema 與逐表 row count；
+     只有 `--promote-to-active` 才寫回，且先查 `account_tombstones`，命中拒絕（exit 2）
+   - `tests/test_backup.py` 5 條；`docs/operations.md` 營運手冊
+3. **容器化與授權**（delegated ＋ 主 session 補洞）
+   - `Dockerfile`（python:3.12-slim + uv，只裝 runtime 依賴）、`docker-compose.yml`、
+     `.dockerignore`、`LICENSE`（MIT / Ryan Lee / 2026）
+   - image 594MB，`up` 到可用約 5 秒，`down` → `up` 資料仍在（具名 volume）
+   - **主 session 修正**：worker 版 `env_file: .env` 是必要檔，而 `.env` 是 gitignored
+     ——乾淨機器 clone 下來 `docker compose up` 會直接失敗，正好打在 acceptance 情境上。
+     改成 `required: false`＋`LIFTLOG_TOKEN: ${LIFTLOG_TOKEN:?...}`。
+     **刻意不給 repo 內建預設 token**：公開 repo 的預設密鑰等於人人可讀訓練資料。
+     代價是乾淨機器要多一步 `cp .env.example .env` 並填 token——這是對 acceptance
+     「可跑」的解釋而非原文，驗收時可能被挑，需要時再跟 Ryan 確認。
+
+Gates：`uv run pytest` 全綠（備份 worker 實測 404 passed）、`uv run ruff check .` 全綠。
+
+## 尚未完成（F149 剩餘）
+
+1. 既有資料遷移命令（dry-run／備份／回滾／row count 比對）— **被上面的裁決卡住**
+2. 舊單一 Bearer token 作廢：`Settings.token` 目前必填且 `app/api/deps.py:_is_legacy_request`
+   仍會放行。正式切換後要讓它失效，但 docker demo 模式正好靠這條路徑——兩者要一起設計
+3. 英文 `README.md` ＋ `README.zh-TW.md`（含架構圖與「為何不用 RAG」選型說明）
+   ——**主 session 自己寫，不要外包**：這是對外文稿，寫前要讀 vault `identity/voice-and-tone.md`
+4. 20 帳號×2 裝置壓測驗 quota、release-signed APK 全流程冒煙、Web/APK/MCP/schema 版本一致
+5. 全部完成後派獨立 review 與 acceptance-verifier 逐條驗收，才可改 passing
+
+## 其他未結項（沿用上一輪）
+
+- `G:\我的雲端硬碟\lift-log-apk` 未掛載，v154 尚未複製到 Google Drive
+- `docs/evidence/F146.md` 末段兩個規格裁決（legacy token 是否收掉、Web IndexedDB
+  離線佇列與 envelope 字面差異）仍未處理

@@ -13,6 +13,7 @@ from app.db import (
     make_engine,
 )
 from app.services import auth as auth_service
+from app.services import quota as quota_service
 
 WEB_SESSION_COOKIE = "liftlog_session"
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -124,6 +125,21 @@ def require_domain_auth(request: Request) -> Iterator[None]:
             status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
             detail="data_db_quota_exceeded",
         )
+
+    # sync push 自己按批次筆數扣（一次請求可能帶多筆 mutation），這裡只算 domain API。
+    if request.method in MUTATING_METHODS and not request.url.path.startswith("/api/sync/"):
+        try:
+            quota_service.consume_mutations(
+                request.app.state.control_session_factory,
+                user.id,
+                request.app.state.settings.daily_mutation_limit,
+            )
+        except quota_service.DailyMutationQuotaExceeded as exc:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="mutation_quota_exceeded",
+                headers={"Retry-After": str(exc.retry_after)},
+            ) from exc
 
     engine = make_engine(str(path))
     request.state.domain_session_factory = sessionmaker(bind=engine)

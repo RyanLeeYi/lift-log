@@ -89,6 +89,20 @@ class AccountTombstone(ControlBase):
     purge_after: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+class UserDailyMutation(ControlBase):
+    """F149／PRD R9：每 user 每日已接受的 mutation 筆數。
+
+    存在 control DB 而不是記憶體，是因為配額要跨重啟成立——記憶體版本會讓
+    「重開服務」變成清空配額的手段。
+    """
+
+    __tablename__ = "user_daily_mutations"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)  # UTC 日期 ISO 字串
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
 class RefreshToken(ControlBase):
     __tablename__ = "refresh_tokens"
 

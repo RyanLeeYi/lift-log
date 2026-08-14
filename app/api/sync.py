@@ -9,6 +9,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.api.deps import DbSession, SyncIdentity, get_sync_identity
 from app.control_models import User
 from app.schemas import SyncPullOut, SyncPushIn, SyncPushOut
+from app.services import quota as quota_service
 from app.services import sync as sync_service
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -103,6 +104,20 @@ def push(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="unsupported_schema")
     if str(data.device_id) != identity.device_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device_mismatch")
+    # 先扣再寫：批次太大時寧可整批擋下，也不要先落地才發現超額。
+    try:
+        quota_service.consume_mutations(
+            request.app.state.control_session_factory,
+            identity.user_id,
+            request.app.state.settings.daily_mutation_limit,
+            len(data.mutations),
+        )
+    except quota_service.DailyMutationQuotaExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="mutation_quota_exceeded",
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
     try:
         sequence_floor = _sequence_floor(request, identity.user_id)
         try:
