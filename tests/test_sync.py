@@ -88,6 +88,17 @@ def _mutation(
     }
 
 
+def _baseline(client: TestClient, headers: dict[str, str]) -> int:
+    """登入後的基準游標。
+
+    F154 起種子動作庫也會進 change log（不進的話新帳號的手機永遠拿不到預設動作），
+    所以 server_seq 不再從 1 起算。測試改成驗「相對於基準的增量」，那才是真正要釘的東西。
+    """
+    page = client.get("/api/sync/pull?cursor=0&limit=1000", headers=headers)
+    assert page.status_code == 200
+    return int(page.json()["next_cursor"])
+
+
 def _body_metric_payload(day: int) -> dict:
     entity_id = str(uuid4())
     return {
@@ -120,6 +131,7 @@ def _push(
 def test_push_is_idempotent_and_pull_cursor_is_stable(sync_client: TestClient) -> None:
     with sync_client as client:
         headers, device_id = _login(client, "idempotent")
+        base = _baseline(client, headers)
         mutation = _mutation()
 
         first = _push(client, headers, device_id, [mutation])
@@ -129,14 +141,14 @@ def test_push_is_idempotent_and_pull_cursor_is_stable(sync_client: TestClient) -
         assert repeated.json() == first.json()
         accepted = first.json()["accepted"]
         assert accepted[0]["version"] == 1
-        assert accepted[0]["server_seq"] == 1
+        assert accepted[0]["server_seq"] == base + 1
 
-        page = client.get("/api/sync/pull?cursor=0&limit=1000", headers=headers)
-        repeated_page = client.get("/api/sync/pull?cursor=0&limit=1000", headers=headers)
+        page = client.get(f"/api/sync/pull?cursor={base}&limit=1000", headers=headers)
+        repeated_page = client.get(f"/api/sync/pull?cursor={base}&limit=1000", headers=headers)
         assert page.status_code == 200
         assert repeated_page.json() == page.json()
-        assert [change["server_seq"] for change in page.json()["changes"]] == [1]
-        assert page.json()["next_cursor"] == 1
+        assert [change["server_seq"] for change in page.json()["changes"]] == [base + 1]
+        assert page.json()["next_cursor"] == base + 1
         assert page.json()["has_more"] is False
 
 
@@ -179,6 +191,7 @@ def test_version_conflict_tombstone_and_delete_idempotency(sync_client: TestClie
 def test_pull_paginates_without_gaps_or_duplicates(sync_client: TestClient) -> None:
     with sync_client as client:
         headers, device_id = _login(client, "pagination")
+        base = _baseline(client, headers)
         # F154 起 domain 表是事實來源，而體重一天只有一筆——三筆同日的 metric 不再是三個
         # 獨立 entity，而是自然鍵衝突。這裡要驗的是分頁，所以給三個不同日期。
         payloads = [_body_metric_payload(day) for day in (11, 12, 13)]
@@ -187,14 +200,14 @@ def test_pull_paginates_without_gaps_or_duplicates(sync_client: TestClient) -> N
         ]
         assert _push(client, headers, device_id, mutations).status_code == 200
 
-        first = client.get("/api/sync/pull?cursor=0&limit=2", headers=headers).json()
+        first = client.get(f"/api/sync/pull?cursor={base}&limit=2", headers=headers).json()
         second = client.get(
             f"/api/sync/pull?cursor={first['next_cursor']}&limit=2", headers=headers
         ).json()
 
-        assert [row["server_seq"] for row in first["changes"]] == [1, 2]
+        assert [row["server_seq"] for row in first["changes"]] == [base + 1, base + 2]
         assert first["has_more"] is True
-        assert [row["server_seq"] for row in second["changes"]] == [3]
+        assert [row["server_seq"] for row in second["changes"]] == [base + 3]
         assert second["has_more"] is False
 
 
@@ -203,6 +216,7 @@ def test_invalid_mutation_does_not_block_valid_sibling_or_advance_for_it(
 ) -> None:
     with sync_client as client:
         headers, device_id = _login(client, "partial")
+        base = _baseline(client, headers)
         invalid = _mutation(entity_type="unknown")
         valid = _mutation()
 
@@ -210,8 +224,10 @@ def test_invalid_mutation_does_not_block_valid_sibling_or_advance_for_it(
 
         assert result.status_code == 200
         assert result.json()["conflicts"][0]["reason"] == "unsupported_entity"
-        assert result.json()["accepted"][0]["server_seq"] == 1
-        changes = client.get("/api/sync/pull?cursor=0", headers=headers).json()["changes"]
+        assert result.json()["accepted"][0]["server_seq"] == base + 1
+        changes = client.get(
+            f"/api/sync/pull?cursor={base}", headers=headers
+        ).json()["changes"]
         assert len(changes) == 1
         assert changes[0]["entity_id"] == valid["entity_id"]
 
@@ -219,6 +235,7 @@ def test_invalid_mutation_does_not_block_valid_sibling_or_advance_for_it(
 def test_missing_dependency_can_retry_after_parent_arrives(sync_client: TestClient) -> None:
     with sync_client as client:
         headers, device_id = _login(client, "dependency")
+        base = _baseline(client, headers)
         workout_id = str(uuid4())
         exercise_id = str(uuid4())
         set_id = str(uuid4())
@@ -258,15 +275,16 @@ def test_missing_dependency_can_retry_after_parent_arrives(sync_client: TestClie
             entity_id=exercise_id,
             payload={
                 "sync_id": exercise_id,
-                "name_zh": "深蹲",
-                "name_en": "Squat",
+                # 不能用種子動作庫裡有的名字——F154 起會撞自然鍵，變成衝突而不是新增
+                "name_zh": "測試專用動作",
+                "name_en": "Dependency Test Lift",
                 "muscle_group": "腿",
                 "is_bodyweight": False,
             },
         )
         assert len(_push(client, headers, device_id, [workout, exercise]).json()["accepted"]) == 2
         retried = _push(client, headers, device_id, [set_mutation]).json()
-        assert retried["accepted"][0]["server_seq"] == 3
+        assert retried["accepted"][0]["server_seq"] == base + 3
 
 
 def test_push_enforces_schema_device_count_and_byte_boundaries(sync_client: TestClient) -> None:
@@ -342,11 +360,15 @@ def test_sync_is_user_scoped(sync_client: TestClient) -> None:
         bob_headers, _bob_device = _login(client, "sync-bob")
         assert _push(client, alice_headers, alice_device, [_mutation()]).status_code == 200
 
-        assert client.get("/api/sync/pull?cursor=0", headers=bob_headers).json()["changes"] == []
+        # F154 起兩人各自都有種子動作的 change，所以比的是「基準之後有沒有對方的東西」
+        bob_base = _baseline(client, bob_headers)
+        assert client.get(
+            f"/api/sync/pull?cursor={bob_base}", headers=bob_headers
+        ).json()["changes"] == []
         alice_changes = client.get(
             "/api/sync/pull?cursor=0", headers=alice_headers
         ).json()["changes"]
-        assert len(alice_changes) == 1
+        assert len([c for c in alice_changes if c["entity_type"] == "body_metric"]) == 1
 
 
 def test_locked_database_returns_stable_503(
@@ -408,7 +430,7 @@ def test_concurrent_same_base_version_accepts_only_one_update(tmp_path: Path) ->
     entity_id = str(uuid4())
     with factory() as session:
         created = sync.push(session, [_mutation(entity_id=entity_id)])
-        assert created["accepted"][0]["server_seq"] == 1
+        assert created["accepted"][0]["server_seq"] == 1  # 這支不經 HTTP，沒有種子動作
 
     start = Barrier(2)
 

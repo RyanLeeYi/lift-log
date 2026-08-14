@@ -254,3 +254,25 @@ def test_stale_base_version_from_sync_does_not_silently_overwrite_rest_write(
         )
         assert push.json()["conflicts"], "過期版本必須退成衝突，不能默默覆蓋"
         assert api.get("/api/body-metrics", headers=headers).json()[0]["weight_kg"] == 80
+
+
+def test_seeded_exercise_library_reaches_the_first_sync(client: TestClient) -> None:
+    """新帳號的種子動作庫也要進 change log。
+
+    F154 第一版漏了這條：`app/seed.py` 直接寫 domain 表、不經 `record_write`，
+    於是新帳號的 35 筆預設動作只存在於伺服器，**手機永遠 pull 不到**——
+    而 `tests/test_seed_and_static.py` 與其他跨路徑測試都是綠的，因為沒人交叉看這條路徑。
+    """
+    with client as api:
+        headers, _device = _login(api)
+
+        listed = api.get("/api/exercises", headers=headers).json()
+        assert len(listed) >= 30, "種子動作庫沒建起來，這條測試就失去意義"
+
+        seeded_changes = _changes_of(_pull(api, headers), "exercise")
+        assert len(seeded_changes) == len(listed), "種子動作沒有全部進 change log"
+        assert {change["payload"]["name_zh"] for change in seeded_changes} == {
+            row["name_zh"] for row in listed
+        }
+        # 每一筆都要有 sync_id 與 version，否則另一台裝置沒有東西可以對版本
+        assert all(change["entity_id"] and change["version"] >= 1 for change in seeded_changes)

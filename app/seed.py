@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Exercise
+from app.services import projection
 
 # (name_zh, name_en, muscle_group, is_bodyweight)
 DEFAULT_EXERCISES: list[tuple[str, str, str, bool]] = [
@@ -52,21 +53,26 @@ DEFAULT_EXERCISES: list[tuple[str, str, str, bool]] = [
 
 
 def seed_exercises(session: Session) -> int:
-    """寫入預載動作，回傳新增筆數；已存在（任一語言名稱重複）跳過。"""
+    """寫入預載動作，回傳新增筆數；已存在（任一語言名稱重複）跳過。
+
+    F154：**種子動作也必須進 change log**。它是新帳號建 data DB 時寫進去的，
+    漏掉的話那 35 筆只存在於伺服器的 domain 表，使用者的手機永遠 pull 不到預設動作庫
+    ——正是 PRD R6 禁止的「繞過同步版本的第二條 server 寫入路徑」。
+    """
     existing_zh = set(session.scalars(select(Exercise.name_zh)))
     existing_en = {n.lower() for n in session.scalars(select(Exercise.name_en))}
     created = 0
     for name_zh, name_en, muscle_group, is_bodyweight in DEFAULT_EXERCISES:
         if name_zh in existing_zh or name_en.lower() in existing_en:
             continue
-        session.add(
-            Exercise(
-                name_zh=name_zh,
-                name_en=name_en,
-                muscle_group=muscle_group,
-                is_bodyweight=is_bodyweight,
-            )
+        exercise = Exercise(
+            name_zh=name_zh,
+            name_en=name_en,
+            muscle_group=muscle_group,
+            is_bodyweight=is_bodyweight,
         )
+        session.add(exercise)
+        projection.record_write(session, "exercise", exercise)
         created += 1
     session.commit()
     return created
