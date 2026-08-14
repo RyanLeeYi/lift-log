@@ -2785,10 +2785,10 @@
       "id": "F147",
       "name": "User-scoped MCP token",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "每位使用者可管理只作用於自己資料的 MCP token，MCP 寫入可被其他裝置同步。",
       "acceptance": "**已簽核凍結（2026-08-09，Ryan）**。依 PRD R6、R9：MCP token 僅建立時顯示明文，control DB 只存 hash，可命名、列出、撤銷；驗證後只 route 到該 user data DB。所有 MCP mutation 經 app/services 並寫 change log。錯 token 401、跨 user IDOR 不洩漏；token 不進 log。MCP 查寫、撤銷與 Android pull tests 全綠。",
-      "evidence": "",
+      "evidence": "docs/evidence/F147.md",
       "prerequisites": [
         "F143",
         "F154"

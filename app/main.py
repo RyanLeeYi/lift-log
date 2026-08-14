@@ -12,6 +12,7 @@ from app.api import (
     body_metrics,
     daily_status,
     exercises,
+    mcp_tokens,
     push,
     schedule,
     stats,
@@ -73,7 +74,12 @@ def create_app(
             unavailable_user_ids.add(user.id)
 
     # MCP 先建：FastAPI 必須接 mcp_app.lifespan，session manager 才會初始化
-    mcp_app = create_mcp(session_factory, settings.token).http_app(path="/")
+    mcp_app = create_mcp(
+        session_factory,
+        settings.token,
+        control_session_factory=control_session_factory,
+        settings=settings,
+    ).http_app(path="/")
 
     app = FastAPI(title="lift-log", lifespan=mcp_app.lifespan)
     app.state.settings = settings
@@ -131,6 +137,7 @@ def create_app(
     app.include_router(schedule.router)  # F80：今天排到什麼＋本週進度
     app.include_router(settings_api.router)  # F80：每週目標天數等設定
     app.include_router(sync.router)
+    app.include_router(mcp_tokens.router)
     app.include_router(app_release.router)  # F67：app 版自我更新的版本查詢與 APK 供檔
     app.mount(MCP_MOUNT, mcp_app)
     # 靜態 PWA 不擋 token（資料靠 API token 保護）；最後掛載避免吃掉 /api/* 與 /mcp

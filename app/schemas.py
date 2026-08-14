@@ -47,6 +47,27 @@ class AuthSessionOut(BaseModel):
     device: AuthDeviceOut
 
 
+class McpTokenCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class McpTokenCreateOut(BaseModel):
+    id: str
+    name: str
+    token: str
+    created_at: datetime_type
+
+
+class McpTokenOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    created_at: datetime_type
+    last_used_at: datetime_type | None
+    revoked_at: datetime_type | None
+
+
 class ExerciseCreate(BaseModel):
     # F10 自訂動作：中文名必填；英文名、部位選填（留空由 service 補齊：en 鏡射 zh、部位預設其他）
     name_zh: str = Field(min_length=1)

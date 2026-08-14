@@ -59,6 +59,22 @@ class AuthSession(ControlBase):
     device: Mapped[Device] = relationship()
 
 
+class McpToken(ControlBase):
+    """F147：使用者自建的 MCP token，只存 hash——明文只在建立當下回傳一次。"""
+
+    __tablename__ = "mcp_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    user: Mapped[User] = relationship()
+
+
 class RefreshToken(ControlBase):
     __tablename__ = "refresh_tokens"
 

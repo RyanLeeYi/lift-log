@@ -1,13 +1,21 @@
-"""MCP server（PRD R7/R7b）：tools 重用 services；/mcp 掛載與 auth 走 HTTP 驗證。"""
+"""MCP server（PRD R7/R7b、F147）：tools 重用 services；/mcp 掛載與 auth 走 HTTP 驗證。"""
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from fastmcp import Client, FastMCP
+from fastmcp.client.transports import StreamableHttpTransport
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from app.config import Settings
+from app.control_models import McpToken
+from app.main import create_app
 from app.mcp import create_mcp
 from app.models import BodyMetric, Exercise, Workout, WorkoutSet
 from app.schemas import BodyMetricIn, LogSetIn, LogWorkoutIn, TemplateCreate, TemplateExerciseIn
@@ -266,3 +274,250 @@ def test_http_mcp_without_trailing_slash_reaches_mcp(client: TestClient) -> None
         },
     )
     assert bad_token.status_code == 401
+
+
+# ---------- F147: User-scoped MCP token ----------
+
+
+def _multi_user_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        token="legacy-token",
+        db_path=str(tmp_path / "legacy.db"),
+        control_db_path=str(tmp_path / "control.db"),
+        user_data_dir=str(tmp_path / "users"),
+        google_client_id="test-google-client",
+    )
+
+
+def _google_claims(raw_token: str) -> dict[str, object]:
+    return {
+        "sub": f"google-{raw_token}",
+        "aud": "test-google-client",
+        "iss": "https://accounts.google.com",
+        "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
+        "nonce": f"nonce-{raw_token}-long-enough",
+        "email": f"{raw_token}@example.com",
+        "email_verified": True,
+    }
+
+
+def _rest_client(app) -> httpx.AsyncClient:
+    """走真的 ASGI 呼叫鏈（含 lifespan、middleware），不必開真連線。"""
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="https://testserver"
+    )
+
+
+async def _login_android(hc: httpx.AsyncClient, name: str) -> dict:
+    resp = await hc.post(
+        "/api/auth/google",
+        json={
+            "id_token": name,
+            "nonce": f"nonce-{name}-long-enough",
+            "device_id": str(uuid4()),
+            "device_name": name,
+            "client": "android",
+        },
+    )
+    assert resp.status_code == 200
+    return resp.json()
+
+
+def _mcp_client(app, plaintext_token: str) -> Client:
+    """真正打進 /mcp/ HTTP 層（bearer 驗證、per-user DB routing 都會生效）。"""
+
+    def httpx_factory(*, headers=None, auth=None, follow_redirects=True, timeout=None, **_kw):
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://testserver",
+            headers=headers,
+            auth=auth,
+            follow_redirects=follow_redirects,
+            timeout=timeout or httpx.Timeout(30),
+        )
+
+    return Client(
+        StreamableHttpTransport(
+            url="https://testserver/mcp/",
+            auth=plaintext_token,
+            httpx_client_factory=httpx_factory,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_mcp_token_create_list_revoke_and_hash_only_storage(tmp_path: Path) -> None:
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+
+            created = await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            assert created.status_code == 201
+            body = created.json()
+            plaintext = body["token"]
+            assert plaintext and body["name"] == "claude"
+
+            listed = await hc.get("/api/mcp-tokens/", headers=headers)
+            assert listed.status_code == 200
+            rows = listed.json()
+            assert len(rows) == 1
+            assert "token" not in rows[0] and "token_hash" not in rows[0]
+            assert rows[0]["revoked_at"] is None
+
+            revoke = await hc.delete(f"/api/mcp-tokens/{body['id']}", headers=headers)
+            assert revoke.status_code == 204
+            # 已撤銷再撤銷一次仍是 204（冪等），不得變 404
+            again = await hc.delete(f"/api/mcp-tokens/{body['id']}", headers=headers)
+            assert again.status_code == 204
+
+            after = (await hc.get("/api/mcp-tokens/", headers=headers)).json()
+            assert after[0]["revoked_at"] is not None
+
+        with app.state.control_session_factory() as control:
+            row = control.scalar(select(McpToken).where(McpToken.id == body["id"]))
+            assert row.token_hash != plaintext
+            assert plaintext not in row.token_hash
+            assert len(row.token_hash) == 64  # sha256 hex digest，看不出明文長度或內容
+
+
+@pytest.mark.asyncio
+async def test_mcp_token_endpoints_reject_legacy_scope(tmp_path: Path) -> None:
+    """legacy 單一 token 沒有 user 身分，不能管理 MCP token（F147）。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            resp = await hc.post(
+                "/api/mcp-tokens/",
+                headers={"Authorization": "Bearer legacy-token"},
+                json={"name": "x"},
+            )
+            assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mcp_wrong_token_over_http_401(tmp_path: Path) -> None:
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            resp = await hc.post(
+                "/mcp/", json={}, headers={"Authorization": "Bearer not-a-real-token"}
+            )
+            assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mcp_revoked_user_token_rejected_immediately(tmp_path: Path) -> None:
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+            created = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()
+            plaintext = created["token"]
+
+            async with _mcp_client(app, plaintext) as mcp_client:
+                tools = await mcp_client.list_tools()
+                assert {t.name for t in tools}  # 撤銷前握手正常
+
+            await hc.delete(f"/api/mcp-tokens/{created['id']}", headers=headers)
+
+            resp = await hc.post(
+                "/mcp/", json={}, headers={"Authorization": f"Bearer {plaintext}"}
+            )
+            assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mcp_user_token_only_reads_and_writes_own_data(tmp_path: Path) -> None:
+    """F147／PRD R6：user A 的 MCP token 讀不到也寫不到 user B 的資料（跨 user IDOR）。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+            bob = await _login_android(hc, "bob")
+            bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}
+
+            # bob 先在自己的資料庫留一筆，之後確認 alice 的 token 看不到
+            bob_metric = await hc.post(
+                "/api/body-metrics",
+                headers=bob_headers,
+                json={"weight_kg": 70, "date": "2026-08-01"},
+            )
+            assert bob_metric.status_code == 201
+
+            alice_token = (
+                await hc.post(
+                    "/api/mcp-tokens/",
+                    headers={"Authorization": f"Bearer {alice['access_token']}"},
+                    json={"name": "claude"},
+                )
+            ).json()["token"]
+
+        async with _mcp_client(app, alice_token) as mcp_client:
+            metrics_before = _structured(await mcp_client.call_tool("get_body_metrics", {}))
+            assert metrics_before["metrics"] == []  # 讀不到 bob 的資料
+
+            written = _structured(
+                await mcp_client.call_tool(
+                    "log_body_metrics", {"weight_kg": 88.8, "date": "2026-08-10"}
+                )
+            )
+            assert written["weight_kg"] == 88.8
+
+        async with _rest_client(app) as hc:
+            bob_metrics = await hc.get("/api/body-metrics", headers=bob_headers)
+            bob_dates = {row["date"] for row in bob_metrics.json()}
+            assert bob_dates == {"2026-08-01"}  # 寫不進 bob 的資料庫，仍只有自己那筆
+
+
+@pytest.mark.asyncio
+async def test_mcp_revoke_other_users_token_returns_404(tmp_path: Path) -> None:
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+            bob = await _login_android(hc, "bob")
+            alice_headers = {"Authorization": f"Bearer {alice['access_token']}"}
+            bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}
+
+            alice_token = (
+                await hc.post("/api/mcp-tokens/", headers=alice_headers, json={"name": "claude"})
+            ).json()
+
+            resp = await hc.delete(f"/api/mcp-tokens/{alice_token['id']}", headers=bob_headers)
+            assert resp.status_code == 404
+
+            still_active = (await hc.get("/api/mcp-tokens/", headers=alice_headers)).json()
+            assert still_active[0]["revoked_at"] is None
+
+            missing = await hc.delete("/api/mcp-tokens/does-not-exist", headers=alice_headers)
+            assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_mcp_write_reaches_android_sync_pull(tmp_path: Path) -> None:
+    """F147／PRD R9：MCP mutation 經 services 寫 change log，Android pull 拿得到。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+            plaintext = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()["token"]
+
+        async with _mcp_client(app, plaintext) as mcp_client:
+            await mcp_client.call_tool(
+                "log_body_metrics", {"weight_kg": 91.2, "date": "2026-08-11"}
+            )
+
+        async with _rest_client(app) as hc:
+            pulled = await hc.get("/api/sync/pull", headers=headers, params={"cursor": 0})
+            assert pulled.status_code == 200
+            changes = pulled.json()["changes"]
+            body_metric_changes = [c for c in changes if c["entity_type"] == "body_metric"]
+            assert any(c["payload"]["weight_kg"] == 91.2 for c in body_metric_changes)
