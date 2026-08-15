@@ -8,8 +8,9 @@ services:
       - path: .env
         required: false
     environment:
-      # token 必填但**不給 repo 內建預設值**——公開 repo 的預設 token 等於人人可讀
-      # 這台機器上的訓練資料。缺少時讓 compose 報一句看得懂的錯，而不是啟動到一半才死。
+      # 這份 compose 就是 demo 模式，所以 token 在這裡必填——但**不給 repo 內建預設值**，
+      # 公開 repo 的預設 token 等於人人可讀這台機器上的訓練資料。缺少時讓 compose 報一句
+      # 看得懂的錯，而不是啟動到一半才死。（server 本身已不要求它：F149 起留空＝只能 Google 登入。）
       LIFTLOG_TOKEN: ${LIFTLOG_TOKEN:?請先 cp .env.example .env 並填入 LIFTLOG_TOKEN}
       # demo 模式走單一 Bearer token（.env 的 LIFTLOG_TOKEN）；不接 Google OAuth，
       # LIFTLOG_GOOGLE_CLIENT_ID 留空即可。這裡把資料路徑固定指到 volume，

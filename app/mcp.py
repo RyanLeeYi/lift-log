@@ -88,7 +88,9 @@ class DomainTokenVerifier(TokenVerifier):
         self._control_session_factory = control_session_factory
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        if secrets.compare_digest(token.encode(), self._expected):
+        # F149：token 未設＝demo 模式關閉。少了這道，空字串會比中空的 _expected，
+        # 送一顆空 token 就換到 LEGACY_CLIENT_ID 的全庫存取。
+        if self._expected and secrets.compare_digest(token.encode(), self._expected):
             return AccessToken(token=token, client_id=LEGACY_CLIENT_ID, scopes=[])
         if self._control_session_factory is None:
             return None

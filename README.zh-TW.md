@@ -55,9 +55,10 @@ cp .env.example .env
 docker compose up --build
 ```
 
-開啟 <http://localhost:8000>。預設 self-hosted demo 模式使用
+開啟 <http://localhost:8000>。這份 Compose 跑的是 demo 模式，使用
 `Authorization: Bearer <LIFTLOG_TOKEN>`；資料會保存在 `lift-log-data` named volume。
 
+對 server 本身而言 `LIFTLOG_TOKEN` 是選填的：留空即整條共用 token 路徑關閉，只能用 Google 登入。
 若要啟用多帳號登入，設定 `LIFTLOG_GOOGLE_CLIENT_ID`。登入後每位使用者可建立自己的 MCP token；
 明文只顯示一次，server 僅保存 hash。
 

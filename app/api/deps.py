@@ -22,8 +22,7 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 def require_app_download_auth(request: Request) -> None:
     """F67 legacy token 或 F141 Android access token 都可下載全域 APK。"""
     provided = request.headers.get("Authorization") or ""
-    expected = f"Bearer {request.app.state.settings.token}"
-    if secrets.compare_digest(provided.encode(), expected.encode()):
+    if _is_legacy_request(request):
         return
     scheme, separator, token = provided.partition(" ")
     if not separator or scheme.lower() != "bearer" or not token:
@@ -46,8 +45,16 @@ def _bearer(request: Request) -> str | None:
 
 
 def _is_legacy_request(request: Request) -> bool:
+    """F149：`LIFTLOG_TOKEN` 未設＝demo 模式關閉，legacy 路徑整條不存在。
+
+    這個提前 return 不是最佳化——沒有它，未設 token 時 expected 會是 `"Bearer "`，
+    任何人送一個空 token 就繞過 CSRF、rate limit、每日配額與 user 隔離。
+    """
+    configured = request.app.state.settings.token
+    if not configured:
+        return False
     provided = request.headers.get("Authorization") or ""
-    expected = f"Bearer {request.app.state.settings.token}"
+    expected = f"Bearer {configured}"
     return secrets.compare_digest(provided.encode(), expected.encode())
 
 

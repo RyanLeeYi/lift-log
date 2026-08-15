@@ -25,7 +25,7 @@ from app.api import (
     settings as settings_api,
 )
 from app.config import Settings
-from app.control_db import make_control_session_factory
+from app.control_db import ensure_web_csrf_secret, make_control_session_factory
 from app.control_models import User
 from app.db import canonical_user_db_path, initialize_data_db, make_engine
 from app.errors import register_error_handlers
@@ -53,9 +53,6 @@ def create_app(
     settings: Settings,
     google_token_verifier: GoogleTokenVerifier | None = None,
 ) -> FastAPI:
-    if not settings.token:
-        raise ValueError("LIFTLOG_TOKEN is required")
-
     engine = make_engine(settings.db_path)
     Base.metadata.create_all(engine)
     migrate_schema(engine)
@@ -91,6 +88,10 @@ def create_app(
     app.state.settings = settings
     app.state.session_factory = session_factory
     app.state.control_session_factory = control_session_factory
+    # 明示設定優先；沒設就用 control DB 持久化的那顆，自架者零設定也有真金鑰。
+    app.state.web_csrf_secret = settings.secret_key or ensure_web_csrf_secret(
+        control_session_factory
+    )
     app.state.unavailable_user_ids = unavailable_user_ids
     app.state.google_token_verifier = google_token_verifier or google_verifier(
         settings.google_client_id

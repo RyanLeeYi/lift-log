@@ -3,16 +3,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """服務設定：token 必填，缺少時 create_app 拒絕啟動。
-
-    環境變數名以 `.env.example` 為準：LIFTLOG_TOKEN、LIFTLOG_DB。
-    """
+    """服務設定。環境變數名以 `.env.example` 為準：LIFTLOG_TOKEN、LIFTLOG_DB。"""
 
     model_config = SettingsConfigDict(
         env_prefix="LIFTLOG_", env_file=".env", extra="ignore", populate_by_name=True
     )
 
+    # F149：demo 模式的單一共用 Bearer token。**選填，未設就整條 legacy 路徑關閉**
+    # （公開版預設只能 Google 登入，見 PRD 非目標）。docker demo profile 才設它。
+    # 曾經它同時兼任 CSRF HMAC 金鑰——那讓「改成選填」等於架空 CSRF，已拆給 secret_key。
     token: str = ""
+    # web session 的 CSRF token 由 HMAC(secret_key, session_id) 推導，所以這把金鑰
+    # 換掉等於讓所有既有 web session 的 CSRF 失效。未設時由 control DB 產一顆並持久化
+    # （見 control_db.ensure_web_csrf_secret），自架者不必手動設定，重啟也不會被登出。
+    secret_key: str = ""
     db_path: str = Field(
         default="./liftlog.db",
         validation_alias=AliasChoices("LIFTLOG_DB", "db_path"),

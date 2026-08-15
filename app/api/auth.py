@@ -130,6 +130,7 @@ def google_login(data: GoogleLoginIn, request: Request, response: Response) -> d
             request.app.state.settings,
             request.app.state.google_token_verifier,
             data,
+            csrf_secret=request.app.state.web_csrf_secret,
         )
     except auth_service.InvalidGoogleToken as exc:
         raise HTTPException(
@@ -196,7 +197,7 @@ def current_session(request: Request) -> dict[str, object]:
     # 否則網頁按 F5 之後所有寫入都會 403。
     if auth_session.client == "web":
         body["csrf_token"] = auth_service.csrf_for_session(
-            request.app.state.settings.token, auth_session.id
+            request.app.state.web_csrf_secret, auth_session.id
         )
     return body
 

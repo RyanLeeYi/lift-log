@@ -1,6 +1,7 @@
 """F1 記錄 API 驗收測試（PRD R1）：CRUD、client_uuid 冪等、401/400/404、數值範圍。"""
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
@@ -20,9 +21,48 @@ class TestAuth:
         assert resp.status_code == 401
         assert resp.json() == {"error": "unauthorized"}
 
-    def test_missing_token_setting_refuses_startup(self, tmp_path):
-        with pytest.raises(ValueError, match="LIFTLOG_TOKEN"):
-            create_app(Settings(token="", db_path=str(tmp_path / "t.db")))
+    def test_missing_token_setting_disables_legacy_path(self, tmp_path):
+        """F149：未設 LIFTLOG_TOKEN 不再拒絕啟動，而是把 demo 模式整條關掉。
+
+        比 401 更要緊的是那顆空 token——沒有守衛時 expected 會是 `"Bearer "`，
+        送空 token 就繞過 CSRF、rate limit、配額與 user 隔離拿到 legacy 全庫存取。
+        """
+        app = create_app(
+            Settings(
+                token="",
+                db_path=str(tmp_path / "t.db"),
+                control_db_path=str(tmp_path / "control.db"),
+                user_data_dir=str(tmp_path / "users"),
+            )
+        )
+        with TestClient(app) as client:
+            for headers in ({}, {"Authorization": "Bearer "}, {"Authorization": "Bearer"}):
+                resp = client.post("/api/workouts", json={}, headers=headers)
+                assert resp.status_code == 401, headers
+
+    def test_csrf_secret_is_generated_and_stable_across_restarts(self, tmp_path):
+        """CSRF 金鑰從 token 拆出來後要能持久化——每次啟動換一顆等於重啟就登出所有人。"""
+        settings = Settings(
+            token="",
+            db_path=str(tmp_path / "t.db"),
+            control_db_path=str(tmp_path / "control.db"),
+            user_data_dir=str(tmp_path / "users"),
+        )
+        first = create_app(settings).state.web_csrf_secret
+        assert first, "未設 LIFTLOG_SECRET_KEY 時要自動產生一顆，不能是空字串"
+        assert create_app(settings).state.web_csrf_secret == first
+
+    def test_explicit_secret_key_wins(self, tmp_path):
+        app = create_app(
+            Settings(
+                token="",
+                secret_key="explicit-secret",
+                db_path=str(tmp_path / "t.db"),
+                control_db_path=str(tmp_path / "control.db"),
+                user_data_dir=str(tmp_path / "users"),
+            )
+        )
+        assert app.state.web_csrf_secret == "explicit-secret"
 
     def test_app_factory_builds_app_from_env(self, tmp_path, monkeypatch):
         """uvicorn 官方入口：app.main:app_factory --factory 必須可用（讀環境變數）。"""

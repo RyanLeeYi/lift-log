@@ -62,6 +62,10 @@
 
 ## 專案特有約束
 
-- 單人系統：全站單一 Bearer token（`.env` 的 `LIFTLOG_TOKEN`），缺少即拒絕啟動
+- `LIFTLOG_TOKEN`（`.env`）是 **demo／單人模式的開關，F149 起選填**：留空＝legacy 單一 Bearer
+  路徑整條關閉，只能 Google 登入。它曾經同時兼任 CSRF HMAC 金鑰，已拆給 `LIFTLOG_SECRET_KEY`
+  （未設就由 control DB 產一顆持久化）——**動這兩個設定前先看 `app/api/deps.py::_is_legacy_request`
+  與 `app/services/auth.py::csrf_for_session`**，legacy 分支一旦誤放行就繞過 CSRF、rate limit、
+  每日配額與 user 隔離
 - `sets` 刪除用軟刪（`deleted_at`，查詢一律濾掉）；編輯用 `PATCH /api/sets/{id}` 原位修改量測欄位（weight/reps/rpe/rest_seconds），set_number/exercise/client_uuid 不動（F16 起放寬原本的 append-only「不做 update」）
 - 動作名稱雙語（name_zh/name_en），查詢與 MCP 參數兩者皆匹配

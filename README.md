@@ -56,11 +56,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open <http://localhost:8000>. The default self-hosted demo mode uses
+Open <http://localhost:8000>. This Compose file runs demo mode, which uses
 `Authorization: Bearer <LIFTLOG_TOKEN>`. Docker stores databases in the `lift-log-data` named volume.
 
-To enable multi-user sign-in, configure `LIFTLOG_GOOGLE_CLIENT_ID`. Each signed-in user can then create
-personal MCP tokens; plaintext tokens are shown once and only their hashes are stored.
+`LIFTLOG_TOKEN` is optional for the server itself: leave it unset and the shared-token path is disabled
+entirely, so Google sign-in is the only way in. To enable multi-user sign-in, configure
+`LIFTLOG_GOOGLE_CLIENT_ID`. Each signed-in user can then create personal MCP tokens; plaintext tokens
+are shown once and only their hashes are stored.
 
 ## Connect an MCP client
 

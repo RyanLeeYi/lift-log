@@ -142,6 +142,8 @@ def login_with_google(
     settings: Settings,
     verifier: GoogleTokenVerifier,
     data: GoogleLoginIn,
+    *,
+    csrf_secret: str,
 ) -> IssuedAuth:
     claims = verifier(data.id_token)
     google_sub, email = validate_claims(claims, settings, data.nonce)
@@ -213,7 +215,7 @@ def login_with_google(
             db.add(auth_session)
             db.flush()
             csrf_token = (
-                csrf_for_session(settings.token, auth_session.id)
+                csrf_for_session(csrf_secret, auth_session.id)
                 if data.client == "web"
                 else None
             )
