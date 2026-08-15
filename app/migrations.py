@@ -44,8 +44,8 @@ _COLUMN_MIGRATIONS = [
         "ALTER TABLE sets ADD COLUMN idem_key TEXT",
     ),
 
-# F154：可同步 domain 表的共用欄位。既有列的 sync_id 一律 NULL（回填是 F155），
-# version 從 1 起算——舊資料等同「第一版」，不是 0。
+# F154：可同步 domain 表的共用欄位。ALTER TABLE 當下既有列的 sync_id 一律 NULL，
+# 由 `scripts/backfill_sync.py`（F155）事後補上；version 從 1 起算——舊資料等同「第一版」，不是 0。
     ("exercises", "sync_id", "ALTER TABLE exercises ADD COLUMN sync_id TEXT"),
     (
         "exercises",

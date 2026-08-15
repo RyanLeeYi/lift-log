@@ -2968,10 +2968,10 @@
       "id": "F155",
       "name": "既有資料回填進同步層",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "合一之前就存在的紀錄也看得到，不是只有新寫入才同步。",
-      "acceptance": "**待簽核**（2026-08-14 由 F154 的裁決 Q10 衍生）。F154 完成後，把既有資料補齊：① user data DB 內既有 domain 列補上 `sync_id` 與對應 sync entity／change，Android pull 取得得到；② 既有只存在於 `sync_entities` 的資料投影成 domain row，REST 查詢查得到；③ 回填腳本冪等可重跑，執行前備份該 user DB，並輸出「補了幾列、跳過幾列」的摘要；④ 兩邊都有同一筆資料時的取捨規則要在此條簽核時定義，不得靜默覆蓋。",
-      "evidence": "",
+      "acceptance": "**已簽核**（2026-08-15，Ryan 裁決第 ④ 條；同日獨立驗收抓到 ② 為無條件敘述與 domain UNIQUE 約束衝突，Ryan 重簽 ② 補自然鍵佔用例外；原由 F154 的裁決 Q10 衍生）。F154 完成後，把既有資料補齊：① user data DB 內既有 domain 列補上 `sync_id` 與對應 sync entity／change，Android pull 取得得到；② 既有只存在於 `sync_entities` 的資料投影成 domain row，REST 查詢查得到；自然鍵已被另一個 sync_id 佔用的孤兒不投影（domain 表的 UNIQUE 約束讓兩筆並存在結構上不可能），但必須逐筆列進摘要的 `unresolved` 明細並附兩邊 payload，不得併入通用 skipped 計數；③ 回填腳本冪等可重跑，執行前備份該 user DB，並輸出「補了幾列、跳過幾列、覆蓋幾列」的摘要；④ 兩邊都有同一筆資料（同 sync_id 而 payload 不同）時，依 D17「domain 表為唯一事實來源」由 domain 版本勝出：重寫該 sync entity 的 payload 並發一筆 upsert change，被覆蓋的 sync 層舊 payload 逐筆列進摘要的 overridden 清單，不得靜默丟棄。",
+      "evidence": "docs/evidence/F155.md；獨立驗收第一輪 ①③④ ACCEPT／② REJECT（自然鍵雙孤兒靜默丟棄），Ryan 重簽 ② 補例外後針對性重驗 ②③ 皆 ACCEPT。pytest 411、ruff 全綠。純後端腳本未動 app/static，不需出 APK。",
       "prerequisites": [
         "F154"
       ],

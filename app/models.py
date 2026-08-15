@@ -18,7 +18,8 @@ IDEM_KEY_UNIQUE_INDEX = "ix_sets_idem_key_active"
 
 # F154：可同步的 domain 表共用這三個欄位。domain 表是唯一事實來源，
 # `sync_entities` 只留版本簿與 change log——所以版本要跟著 domain row 走，不是反過來。
-# `sync_id` 對既有列是 NULL（回填是 F155 的事），新寫入一律帶值。
+# `sync_id` 對既有列一開始是 NULL；F154 之後才建的 DB 一律有值，F154 之前留下的既有列
+# 由 `scripts/backfill_sync.py`（F155）補上。
 class SyncColumns:
     sync_id: Mapped[str | None] = mapped_column(String, unique=True, index=True, default=None)
     version: Mapped[int] = mapped_column(default=1)
