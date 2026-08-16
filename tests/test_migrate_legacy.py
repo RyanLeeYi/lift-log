@@ -21,6 +21,7 @@ from app.control_models import User
 from app.db import make_engine
 from app.migrations import migrate_schema
 from app.models import (
+    AppSetting,
     Base,
     BodyMetric,
     DailyStatus,
@@ -381,3 +382,46 @@ def test_missing_target_db_returns_error(tmp_path: Path) -> None:
         ]
     )
     assert exit_code != 0
+
+
+def test_app_settings_migrate_and_never_overwrite_target(tmp_path: Path, capsys) -> None:
+    """使用者調過的設定要跟著搬；target 已經有同一個 key 時仍然是 target 勝出。"""
+    legacy_path = _build_legacy_db(tmp_path)
+    engine, session = _open_session(legacy_path)
+    session.add_all(
+        [
+            AppSetting(key="weekly_target_days", value="4", updated_at=datetime(2026, 1, 5)),
+            AppSetting(key="default_rest_seconds", value="90", updated_at=datetime(2026, 1, 5)),
+        ]
+    )
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    control_path, user_data_dir, user_id = _build_control_and_user(tmp_path)
+    target_path = _build_target_db(user_data_dir, user_id)
+    engine, session = _open_session(target_path)
+    session.add(AppSetting(key="weekly_target_days", value="3", updated_at=datetime(2026, 2, 1)))
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    exit_code = main(
+        [
+            "--legacy-db", str(legacy_path),
+            "--google-sub", "sub-1",
+            "--control-db", str(control_path),
+            "--user-data-dir", str(user_data_dir),
+        ]
+    )
+    assert exit_code == 0
+
+    report = _parse_summary(capsys.readouterr().out)["app_settings"]
+    assert report["migrated"] == 1
+    assert report["conflicts"] == 1
+
+    engine, session = _open_session(target_path)
+    assert session.get(AppSetting, "weekly_target_days").value == "3", "target 既有值不得被覆寫"
+    assert session.get(AppSetting, "default_rest_seconds").value == "90"
+    session.close()
+    engine.dispose()

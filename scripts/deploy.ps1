@@ -129,10 +129,22 @@ if (-not $serviceStopped) {
 }
 
 Invoke-MissionControl -Name "lift-log" -Action "start"
-Start-Sleep -Seconds 4
+
+# ⚠ 這裡原本是「睡 4 秒，打一次」——2026-08-16 部署 v154 時連兩次假失敗並自動回退，
+# 服務其實好好的，只是 F147 之後開機多了 control DB 與各 user data DB 的初始化，
+# 要 5~6 秒才聽得到 port。一次性檢查把「還沒起來」當成「起不來」，回退掉一個沒問題的版本。
+# 改成輪詢：成功就往下走，真的死了才在 30 秒後回退。
 try {
-    $health = Invoke-WebRequest -Uri "http://127.0.0.1:8137/health" -TimeoutSec 10 -UseBasicParsing
-    if ($health.StatusCode -ne 200) { throw "health 回 $($health.StatusCode)" }
+    $deadline = (Get-Date).AddSeconds(30)
+    $ok = $false
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 2
+        try {
+            $health = Invoke-WebRequest -Uri "http://127.0.0.1:8137/health" -TimeoutSec 5 -UseBasicParsing
+            if ($health.StatusCode -eq 200) { $ok = $true; break }
+        } catch { }   # 還沒聽 port＝連線被拒，屬預期，繼續等
+    }
+    if (-not $ok) { throw "30 秒內 health 沒有回 200" }
     Write-Host "正式站健康檢查 200，部署完成。" -ForegroundColor Green
 } catch {
     Write-Host "部署後起不來：$_" -ForegroundColor Red

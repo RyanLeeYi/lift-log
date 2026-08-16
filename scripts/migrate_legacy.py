@@ -40,6 +40,7 @@ from app.control_db import make_control_session_factory  # noqa: E402
 from app.control_models import User  # noqa: E402
 from app.db import UserDataUnavailable, canonical_user_db_path, make_engine  # noqa: E402
 from app.models import (  # noqa: E402
+    AppSetting,
     BodyMetric,
     DailyStatus,
     Exercise,
@@ -58,6 +59,7 @@ TABLE_MODELS: dict[str, type] = {
     "sets": WorkoutSet,
     "body_metrics": BodyMetric,
     "daily_status": DailyStatus,
+    "app_settings": AppSetting,
 }
 
 
@@ -393,6 +395,34 @@ def _migrate_dated_table(
     return report
 
 
+def _migrate_settings(legacy: Session, target: Session) -> TableReport:
+    """app_settings：自然鍵就是主鍵 key，所以不必經 projection 的自然鍵規則。
+
+    這張表看起來很小（目前只有 weekly_target_days），但它是使用者調過的設定——
+    不搬的話遷移後每週目標會默默退回預設值，而畫面上不會有任何地方說「你的設定掉了」。
+    """
+    report = TableReport(
+        before_target=_count(target, AppSetting), legacy_total=_count(legacy, AppSetting)
+    )
+    for row in legacy.scalars(select(AppSetting)):
+        match = target.get(AppSetting, row.key)
+        if match is None:
+            target.add(AppSetting(key=row.key, value=row.value, updated_at=row.updated_at))
+            report.migrated += 1
+        elif match.value == row.value:
+            report.skipped += 1
+        else:
+            report.conflicts.append(
+                {
+                    "natural_key": {"key": row.key},
+                    "legacy": {"value": row.value},
+                    "target": {"value": match.value},
+                }
+            )
+    report.after_target = _count(target, AppSetting)
+    return report
+
+
 def run_migration(legacy: Session, target: Session) -> dict[str, TableReport]:
     """依外鍵相依順序跑完六張表，回傳依 TABLE_MODELS 順序排列的報表。"""
     exercise_report, exercise_id_map = _migrate_exercises(legacy, target)
@@ -405,6 +435,7 @@ def run_migration(legacy: Session, target: Session) -> dict[str, TableReport]:
     daily_status_report = _migrate_dated_table(
         legacy, target, DailyStatus, "daily_status", ("energy", "sleep_quality", "note")
     )
+    settings_report = _migrate_settings(legacy, target)
     target.flush()
 
     reports = {
@@ -414,6 +445,7 @@ def run_migration(legacy: Session, target: Session) -> dict[str, TableReport]:
         "sets": set_report,
         "body_metrics": body_metric_report,
         "daily_status": daily_status_report,
+        "app_settings": settings_report,
     }
     for name, report in reports.items():
         expected = report.before_target + report.migrated
