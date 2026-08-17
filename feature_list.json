@@ -3033,20 +3033,20 @@
       "id": "F157",
       "name": "web session 到期不再是硬斷線",
       "envelope": "E1",
-      "status": "failing",
+      "status": "passing",
       "outcome": "在網頁上持續使用的人不會被固定 12 小時的到期時間趕出去。",
       "acceptance": "**問題**：`WEB_SESSION_TTL = timedelta(hours=12)`（`app/services/auth.py`），而網頁登入不發 refresh token（`issue_session` 只有 android 發）。所以 web session 是**固定 12 小時硬到期、不隨使用延長、也沒有續期途徑**——不管使用者中間有沒有在用，時間到就被登出重新走 Google 登入。\n\n**驗收條件**：\n1. web session 改為**滑動到期**：每次帶著有效 session cookie 的請求都把到期時間往後推（沿用既有的 `last_seen_at` 更新點，不要新增一條寫入路徑）。\n2. 仍有**絕對上限**：從登入起算超過上限（沿用 `REFRESH_ABSOLUTE_TTL` 的 90 天或另訂並在 code 註明理由）就必須重新登入，滑動不得無限展延。\n3. 閒置超過滑動窗口後，session 失效並回 401，前端照既有 guard 導回登入畫面。\n4. 不引入 web 端的 refresh token，不把 access token 交給 JS——session 仍走 Secure HttpOnly cookie（維持 F146 的決定）。\n5. CSRF token 與 session 的綁定關係不變（`csrf_for_session` 由 session id 推導）。\n6. 既有 web 登入／登出／CSRF 測試全綠；新增覆蓋 1–3 的回歸測試。`uv run pytest` 與 `uv run ruff check .` 全綠。",
-      "evidence": "",
+      "evidence": "docs/evidence/F157.md",
       "prerequisites": [
         "F156"
       ],
       "touches": [
         "app/services/auth.py",
         "app/api/deps.py",
-        "app/api/account.py",
         "app/api/auth.py",
+        "app/api/account.py",
         "app/main.py",
-        "tests/test_auth.py"
+        "tests/"
       ],
       "non_goals": [
         "不改 Android 的 access／refresh 機制（F156 已處理）",
