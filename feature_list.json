@@ -1855,7 +1855,10 @@
       "name": "前景服務的 rest-timer channel 被單獨關閉時也要擋下",
       "status": "failing",
       "evidence": "",
-      "touches": [],
+      "touches": [
+        "app/static/js/native-notify.js",
+        "tests/e2e/verify_f95.py"
+      ],
       "requires": [
         "android-device"
       ],
@@ -2017,7 +2020,11 @@
       "touches": [
         "app/models.py",
         "app/schemas.py",
-        "app/services/",
+        "app/services/workouts.py",
+        "app/services/stats.py",
+        "app/services/history.py",
+        "app/services/exercises.py",
+        "app/services/projection.py",
         "app/mcp.py",
         "app/static/js/app.js",
         "app/static/js/calendar.js",
@@ -2319,6 +2326,10 @@
       "prerequisites": [
         "F66",
         "F123"
+      ],
+      "touches": [
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerPlugin.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/MainActivity.java"
       ]
     },
     {
@@ -2355,6 +2366,11 @@
         "F116",
         "F125",
         "F127"
+      ],
+      "touches": [
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerService.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerPlugin.java"
       ]
     },
     {
@@ -2842,11 +2858,21 @@
         "F148"
       ],
       "touches": [
-        "scripts/",
-        "docs/",
-        "app/",
-        "android/",
-        "tests/",
+        "scripts/migrate_legacy.py",
+        "tests/test_migrate_legacy.py",
+        "tests/test_backfill_sync.py",
+        "tests/test_sync_contract.py",
+        "app/api/deps.py",
+        "app/services/auth.py",
+        "app/config.py",
+        "android/app/build.gradle",
+        "docs/prd/local-first-cloud-sync.md",
+        "docs/operations.md",
+        "LICENSE",
+        "README.md",
+        "README.zh-TW.md",
+        "docker-compose.yml",
+        "Dockerfile",
         "session-handoff.md",
         "feature_list.json"
       ],
@@ -2930,10 +2956,7 @@
         "F152"
       ],
       "touches": [
-        "app/static/",
-        "app/routers/",
-        "app/services/",
-        "tests/"
+        "app/mcp.py"
       ],
       "non_goals": [
         "不做串流輸出、多輪記憶、對話持久化、模型選擇 UI",
@@ -3019,7 +3042,10 @@
       "touches": [
         "app/services/auth.py",
         "app/api/deps.py",
-        "tests/"
+        "app/api/account.py",
+        "app/api/auth.py",
+        "app/main.py",
+        "tests/test_auth.py"
       ],
       "non_goals": [
         "不改 Android 的 access／refresh 機制（F156 已處理）",
@@ -3039,12 +3065,13 @@
         "F147"
       ],
       "touches": [
-        "app/static/",
+        "app/static/js/account.js",
+        "app/static/js/app.js",
         "app/api/mcp_tokens.py",
         "app/services/mcp_tokens.py",
         "app/control_models.py",
         "app/mcp.py",
-        "tests/"
+        "tests/test_mcp.py"
       ],
       "non_goals": [
         "不做 OAuth 授權流程（MCP 仍走 bearer token）",
