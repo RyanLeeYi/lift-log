@@ -1,9 +1,10 @@
 import secrets
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import (
@@ -17,6 +18,59 @@ from app.services import quota as quota_service
 
 WEB_SESSION_COOKIE = "liftlog_session"
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+SLIDING_COOKIE_STATE = "web_session_sliding_cookie"
+
+
+def issue_web_session_cookie(response: Response, token: str, expires_at: datetime) -> None:
+    """F157：把 cookie 的 Max-Age 對齊 DB 的 `access_expires_at`。
+
+    cookie 有它**自己**的到期機制，而且是瀏覽器單方面執行的——Max-Age 一到就直接丟掉，
+    不會再送出來，伺服器端的 session 還有多久有效它根本不知道。所以光在 DB 裡把到期
+    時間往後推是看不見的：使用者仍會在登入後精確 12 小時被登出。滑動到期必須兩邊
+    一起推。
+
+    以 `access_expires_at` 反推 Max-Age（而不是直接用 WEB_SESSION_TTL），是為了讓
+    絕對上限自動生效——`resolve_session` 已經用 min() 把它夾在 90 天內了。
+    """
+    max_age = int((expires_at - auth_service.utcnow()).total_seconds())
+    response.set_cookie(
+        WEB_SESSION_COOKIE,
+        token,
+        max_age=max(max_age, 0),
+        secure=True,
+        httponly=True,
+        samesite="lax",
+        path="/api",
+    )
+
+
+def resolve_request_session(request: Request):  # type: ignore[no-untyped-def]
+    """解析這個請求的 session，並登記 web 端該續發的 cookie。
+
+    F157：**所有** `resolve_session` 的呼叫點都要走這裡。第一版把 cookie 重發寫在
+    各個呼叫點上，結果第四個呼叫點（`api/account.py`）漏掉了——只要往後再多一條
+    直接呼叫 `resolve_session` 的路由，同一個洞就會複製一份。這裡把「延長 DB」與
+    「延長瀏覽器」綁成同一個動作，由 middleware 統一寫進回應，漏不掉。
+    """
+    try:
+        auth_session, user, device = auth_service.resolve_session(
+            request.app.state.control_session_factory,
+            access_token=_bearer(request),
+            web_cookie=request.cookies.get(WEB_SESSION_COOKIE),
+        )
+    except auth_service.InvalidSession as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
+        ) from exc
+    if auth_session.client == "web":
+        setattr(
+            request.state,
+            SLIDING_COOKIE_STATE,
+            (request.cookies[WEB_SESSION_COOKIE], auth_session.access_expires_at),
+        )
+    return auth_session, user, device
 
 
 def require_app_download_auth(request: Request) -> None:
@@ -68,16 +122,7 @@ def require_domain_auth(request: Request) -> Iterator[None]:
         yield
         return
 
-    try:
-        auth_session, user, device = auth_service.resolve_session(
-            request.app.state.control_session_factory,
-            access_token=_bearer(request),
-            web_cookie=request.cookies.get(WEB_SESSION_COOKIE),
-        )
-    except auth_service.InvalidSession as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
-        ) from exc
+    auth_session, user, device = resolve_request_session(request)
     if user.id in request.app.state.unavailable_user_ids:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

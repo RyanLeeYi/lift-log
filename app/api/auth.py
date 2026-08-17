@@ -7,6 +7,7 @@ from threading import Lock
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
+from app.api.deps import issue_web_session_cookie, resolve_request_session
 from app.db import canonical_user_db_path, initialize_data_db
 from app.schemas import GoogleLoginIn, RefreshIn
 from app.services import account as account_service
@@ -66,23 +67,8 @@ def _rate_limit(request: Request) -> None:
         )
 
 
-def _bearer(request: Request) -> str | None:
-    header = request.headers.get("Authorization") or ""
-    scheme, separator, token = header.partition(" ")
-    return token if separator and scheme.lower() == "bearer" and token else None
-
-
 def _current(request: Request):  # type: ignore[no-untyped-def]
-    try:
-        return auth_service.resolve_session(
-            request.app.state.control_session_factory,
-            access_token=_bearer(request),
-            web_cookie=request.cookies.get(WEB_SESSION_COOKIE),
-        )
-    except auth_service.InvalidSession as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
-        ) from exc
+    return resolve_request_session(request)
 
 
 def _out(issued: auth_service.IssuedAuth) -> dict[str, object]:
@@ -145,14 +131,8 @@ def google_login(data: GoogleLoginIn, request: Request, response: Response) -> d
     request.app.state.unavailable_user_ids.discard(issued.user.id)
     body = _out(issued)
     if data.client == "web":
-        response.set_cookie(
-            WEB_SESSION_COOKIE,
-            issued.access_token,
-            max_age=int(auth_service.WEB_SESSION_TTL.total_seconds()),
-            secure=True,
-            httponly=True,
-            samesite="lax",
-            path="/api",
+        issue_web_session_cookie(
+            response, issued.access_token, issued.session.access_expires_at
         )
         body["csrf_token"] = issued.csrf_token
         return body

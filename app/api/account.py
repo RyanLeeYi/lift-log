@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy.orm import sessionmaker
 
 from app.api.auth import AuthRateLimiter
+from app.api.deps import resolve_request_session
 from app.db import UserDataUnavailable, canonical_user_db_path, make_engine
 from app.schemas import AccountDeleteIn, ReauthIn
 from app.services import account as account_service
@@ -19,24 +20,9 @@ router = APIRouter(prefix="/api/account", tags=["account"])
 WEB_SESSION_COOKIE = "liftlog_session"
 
 
-def _bearer(request: Request) -> str | None:
-    header = request.headers.get("Authorization") or ""
-    scheme, separator, token = header.partition(" ")
-    return token if separator and scheme.lower() == "bearer" and token else None
-
-
 def _current(request: Request):  # type: ignore[no-untyped-def]
     """已登入的 Google user（android／web 皆可）；legacy 單一 token 沒有對應 session，一律 401。"""
-    try:
-        return auth_service.resolve_session(
-            request.app.state.control_session_factory,
-            access_token=_bearer(request),
-            web_cookie=request.cookies.get(WEB_SESSION_COOKIE),
-        )
-    except auth_service.InvalidSession as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized"
-        ) from exc
+    return resolve_request_session(request)
 
 
 def _check_csrf(request: Request, auth_session) -> None:  # type: ignore[no-untyped-def]

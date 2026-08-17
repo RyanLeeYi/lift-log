@@ -368,12 +368,25 @@ def resolve_session(
             or (access_token is not None and auth_session.client != "android")
             or auth_session.revoked_at is not None
             or auth_session.access_expires_at <= now
+            # F157：web 沒有 refresh token 可續期，滑動視窗本身沒有絕對上限——這裡擋住
+            # 「一直有請求進來」讓 session 永遠展延下去。90 天沿用 REFRESH_ABSOLUTE_TTL，
+            # 跟 Android refresh token 家族同一個「多久不重新驗證身分就得重新登入」的政策。
+            or (
+                auth_session.client == "web"
+                and auth_session.created_at + REFRESH_ABSOLUTE_TTL <= now
+            )
         ):
             raise InvalidSession
         user = db.get(User, auth_session.user_id)
         device = db.get(Device, auth_session.device_id)
         if user is None or device is None or not _user_is_active(db, user):
             raise InvalidSession
+        if auth_session.client == "web":
+            # 滑動到期：每次帶有效 cookie 的請求都把到期往後推 WEB_SESSION_TTL，
+            # 但不超過登入起算的絕對上限。
+            auth_session.access_expires_at = min(
+                now + WEB_SESSION_TTL, auth_session.created_at + REFRESH_ABSOLUTE_TTL
+            )
         auth_session.last_seen_at = now
         device.last_seen_at = now
         db.commit()

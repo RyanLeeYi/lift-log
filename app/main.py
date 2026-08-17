@@ -12,6 +12,7 @@ from app.api import (
     auth,
     body_metrics,
     daily_status,
+    deps,
     exercises,
     mcp_tokens,
     push,
@@ -116,6 +117,20 @@ def create_app(
         if request.scope["path"] == MCP_MOUNT:
             request.scope["path"] = f"{MCP_MOUNT}/"
         return await call_next(request)
+
+    @app.middleware("http")
+    async def slide_web_session_cookie(request, call_next):  # type: ignore[no-untyped-def]
+        # F157：`resolve_request_session` 只登記「這個 web session 續發到什麼時候」，
+        # 真正寫進回應在這裡——所有路由必經，新增路由不必記得補一行。
+        #
+        # 放在 response 產生之後而不是綁在某個 dependency 上，是為了涵蓋錯誤回應：
+        # CSRF 403 與 rate limit 429 拒絕的是「這一次請求」，不是「這個 session」，
+        # 沒有理由因為打錯一次就讓登入狀態提早死掉。
+        response = await call_next(request)
+        pending = getattr(request.state, deps.SLIDING_COOKIE_STATE, None)
+        if pending is not None:
+            deps.issue_web_session_cookie(response, *pending)
+        return response
 
     @app.middleware("http")
     async def sw_no_edge_cache(request, call_next):  # type: ignore[no-untyped-def]
