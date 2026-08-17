@@ -1909,7 +1909,8 @@
         "tests/e2e/verify_f88.py",
         "tests/e2e/verify_f97.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F97"
       ]
     },
@@ -1977,10 +1978,11 @@
         "app/static/js/app.js",
         "app/static/js/rest-notify.js"
       ],
-      "requires": [
+      "requires": [],
+      "superseded_by": "F108（僅 ② 的可見性條件）：② 訂的是「人在計時頁面就藏」，但休息其實綁在發起它的動作上——切到別的動作的計時頁時視窗不該消失，那一頁也不該顯示休息卡。條件收緊成「人在**這輪休息所屬動作**的計時頁」。F103 其餘條文全部有效。；F116（僅 ③④ 的「再開始」）：視窗改成與計時頁同構的兩態之後，「停止」直接回就緒態、「完成這組」跟著回來，「再開始」沒有位置了，Ryan 2026-08-01 拍板拿掉。F103 其餘條文（①② 回 app 不結束這輪／視窗在所屬計時頁消失、⑤⑥ 秒數同步與 ±15s）全部有效。",
+      "prerequisites": [
         "F100"
-      ],
-      "superseded_by": "F108（僅 ② 的可見性條件）：② 訂的是「人在計時頁面就藏」，但休息其實綁在發起它的動作上——切到別的動作的計時頁時視窗不該消失，那一頁也不該顯示休息卡。條件收緊成「人在**這輪休息所屬動作**的計時頁」。F103 其餘條文全部有效。；F116（僅 ③④ 的「再開始」）：視窗改成與計時頁同構的兩態之後，「停止」直接回就緒態、「完成這組」跟著回來，「再開始」沒有位置了，Ryan 2026-08-01 拍板拿掉。F103 其餘條文（①② 回 app 不結束這輪／視窗在所屬計時頁消失、⑤⑥ 秒數同步與 ±15s）全部有效。"
+      ]
     },
     {
       "id": "F104",
@@ -1995,9 +1997,7 @@
         "app/static/js/rest-notify.js",
         "docs/prd/f104-overlay-logging.md"
       ],
-      "requires": [
-        "F103"
-      ],
+      "requires": [],
       "superseded_by": "F125（僅背景情境下的 3 秒回報行為）；F131（僅 ④「原生不得自己打 API」一句）",
       "prerequisites": [
         "F32",
@@ -2049,7 +2049,8 @@
         "app/static/css/app.css",
         "tests/e2e/verify_f106.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F62",
         "F64",
         "F81",
@@ -2068,7 +2069,8 @@
         "app/static/js/app.js",
         "tests/e2e/verify_f107.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F62",
         "F63",
         "F106"
@@ -2085,7 +2087,8 @@
         "app/static/js/state.js",
         "tests/e2e/verify_f108.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F69",
         "F70",
         "F103"
@@ -2101,7 +2104,8 @@
         "app/static/css/app.css",
         "tests/e2e/verify_f84.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F84",
         "F102"
       ]
@@ -2117,7 +2121,8 @@
         "app/static/js/app.js",
         "tests/e2e/verify_f110.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F89",
         "F103",
         "F108"
@@ -2133,7 +2138,8 @@
         "app/static/css/app.css",
         "tests/e2e/verify_f99.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F20",
         "F99"
       ]
@@ -2150,7 +2156,8 @@
         "app/static/css/app.css",
         "tests/e2e/verify_f112.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F15",
         "F84",
         "F102"
@@ -2168,7 +2175,8 @@
         "tests/e2e/verify_f113.py",
         "tests/e2e/verify_f99.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F16",
         "F19",
         "F99",
@@ -2187,7 +2195,8 @@
         "app/static/css/app.css",
         "tests/e2e/verify_f114.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F19",
         "F34",
         "F41",
@@ -2203,7 +2212,8 @@
       "touches": [
         "tests/e2e/verify_f85.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F85"
       ]
     },
@@ -2217,7 +2227,8 @@
         "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java",
         "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerService.java"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F15",
         "F100",
         "F103",
@@ -2234,7 +2245,8 @@
         "app/static/css/app.css",
         "tests/e2e/verify_f52.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F52"
       ]
     },
@@ -2248,7 +2260,8 @@
         "app/static/js/body.js",
         "tests/e2e/verify_f54.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F8",
         "F11",
         "F54",
@@ -2266,7 +2279,8 @@
         "app/static/js/range.js",
         "tests/e2e/verify_f56.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F56",
         "F87"
       ]
@@ -2282,7 +2296,8 @@
         "app/static/js/range.js",
         "tests/e2e/verify_f58.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F58",
         "F87"
       ]
@@ -2297,7 +2312,8 @@
         "app/static/js/exercise-detail.js",
         "tests/e2e/verify_f59.py"
       ],
-      "requires": [
+      "requires": [],
+      "prerequisites": [
         "F59",
         "F86"
       ]
@@ -2399,10 +2415,7 @@
       "status": "passing",
       "acceptance": "**已簽核凍結（2026-08-04，Ryan）**。A/B 兩點與 ⑥-1 觸發點於討論中拍板並回填後簽核。\n**本條取代 F104 ④「原生不得自己打 API」與 F125 ①②（背景排入→回 app 才寫）。**\n簽核通過後 F104 ④／F125 ①② 標為 superseded_by F131，條文本身不刪。\n\n起因：F125 的「排入→回 app 才寫」有兩個結構性代價，即時寫入把兩個一起解掉：\n  - `RestTimerService.java:177`：按 ✕／停止走 ACTION_STOP → `PendingLog.clear()`，\n    那組從沒進 DB 就被清掉，而視窗前一秒才說「已排入，回 app 後記錄」。\n  - `PendingLog.enqueue()`（PendingLog.java:53）只有一格，舊的還在就回舊 uuid、丟掉新資料。\n\n① **背景按「完成這組」→ 原生當場打 API 寫入**，不等回 app。\n   休息中 `RestTimerService` 是前景服務，Doze／背景網路限制不擋它。\n   成功後視窗才切休息態（F128 若要做，樂觀倒數的兩難因此消失）。\n\n② **前景行為完全不變**（JS 活著，本來就沒這個問題）。\n   ⚠ 不要為了統一而把前景也改走原生——那是多一條沒必要的分歧路徑（同 F128 ⑤ 的理由）。\n\n③ **`set_number` 由 server 算，不由 client 帶**（2026-08-04 Ryan 拍板 A：搬 server）。\n   現在是前端算好塞進 `SetCreate`（`app/services/workouts.py:289` 直接 `**data.model_dump()`）。\n   改為：`log_set()` 在 server 端以「該 workout 該動作目前最大 set_number + 1」決定（F32 語意不變）。\n   理由：這是本條唯一會被複製到第二個語言的業務規則，搬到 server 就只剩一份、由 pytest 蓋著。\n   相容性：`set_number` 改為選填，client 有帶就沿用（F16 原位編輯、既有匯入路徑不受影響）。\n\n④ **去重靠 `client_uuid`，由原生在按下的那一刻生成**（F125 ④ 不變）。\n   `services/workouts.py:285` 已對 client_uuid 冪等 → 原生寫過、JS 之後又補送同一顆 uuid\n   也不會變成兩列。**這是本條敢開第二條寫入路徑的前提。**\n\n⑤ **原生側要有 token 與 base URL。**\n   - token 由 JS 在啟動與換 token 時經 plugin 推一份給原生，存 **EncryptedSharedPreferences**\n     （androidx.security-crypto），不得用一般 SharedPreferences 明文存。\n   - base URL 沿用 build 時決定的站別（與 env.js 的 SITE 同源，dev/prod 不得混）。\n   - token 失效（401）→ 原生不得自行處理，標記後留給 JS，回 app 時由既有 guard() 導回 setup。\n\n⑥ **送不出去時的退路（笨 outbox，不做狀態機）。**\n   網路失敗（逾時／status 0／5xx）→ 留在原生 outbox，下次有網或回 app 時重送。\n   **outbox 必須支援多筆**（解掉 PendingLog 單格吞資料的問題）。\n   永久性 4xx（404 workout 已刪／400）→ 停止重試，標記為失敗待回報（見 ⑧）。\n   ⚠ **outbox 不得被 ✕／停止／結束訓練清空**——那是現行 F125 ⑤ 的資料遺失來源。\n   清除時機只有兩個：寫入成功、使用者在 app 內明確捨棄。\n\n⑥-1 **重送的觸發點只有三個，不做背景排程**：\n   1. `ConnectivityManager.NetworkCallback` 的 `onAvailable`，註冊在已經在跑的\n      `RestTimerService` 裡（休息期間服務本來就活著，等於免費）。\n   2. 下次按「完成這組」時順帶重送（訓練中每幾分鐘一次，等於高頻重試）。\n   3. 回 app 時由 JS 經 plugin 讀原生 outbox，併進既有的 `syncQueue()`（`app.js:327`）一起送。\n   ⚠ **已知缺口，接受**：休息結束→服務停掉→app 也沒開，此時沒有任何觸發點，\n   那些組會躺在 outbox 直到下次開 app。不做 WorkManager——資料沒有時效性，\n   為幾分鐘的延遲養一個背景任務不划算（2026-08-04 Ryan 確認接受）。\n   對照：JS 側現行的 `window.addEventListener(\"online\", ...)`（`app.js:2772`）也只在 app 開著時有效。\n\n⑦ **回 app 的對帳：直接重抓這場的 sets 覆蓋畫面**，不做增量合併。\n   理由同 ③——合併邏輯是第二份會走鐘的東西；重抓一次的成本可忽略。\n\n⑧ **失敗要明確，但不做新 UI**（2026-08-04 Ryan 質疑後收斂）。\n   即時寫入讓失敗變少，**不會消滅**兩類真正的失敗：\n   永久性 4xx（workout 已被「結束訓練」作廢、動作 id 走鐘 → 404/400，重試無用）與 401（token 失效）。\n   這兩類若靜默吞掉，就是「人以為記完、資料卻缺一筆」，正是 F104 ⑤ 要擋的事。\n   分兩態，**沿用既有元件，不新增頁面或元件**：\n   - **離線待送**（網路失敗）→ 視窗顯示「離線，已排隊」，**不是失敗態**。\n   - **永久失敗**（4xx／401）→ 視窗顯示明確失敗態；回 app 後併入既有的\n     `同步失敗 N 組（點此捨棄）` 橫幅（`app.js:372`）與逐組狀態（`app.js:2328`\n     的 `pending | failed`）。原生 outbox 的計數餵進同一個 `state.queue` 即可。\n   實作工作量是「原生把 outbox 狀態回報給 JS」，不是做一套回報系統。\n\n⑨ **不得回歸**：F32（組號語意）、F16（原位編輯不動 set_number）、F125 ③④（跨行程保全、uuid 來源）、\n   F127、F129、F71 ④、F116 ②、F104 ⑤⑦（失敗態、rpe 留 null）、F93（雙站別不得混）。\n\n⑩ **驗收（真機，逐條）**：\n   1. 背景按「完成這組」→ **不回 app**、直接查 API/DB → 那組已經在，且 `set_number` 正確\n   2. 承上，之後回 app → 清單裡**只有一筆**（冪等生效）\n   3. 背景按下 → 立刻按 ✕／停止 → 查 DB → **那組仍在**（現行版本會消失，這是本條的核心價值）\n   4. 飛航模式下背景按兩組 → 開網路 → 兩組**都**進 DB、順序與組號正確（多筆 outbox）\n   5. 背景按下 → `am force-stop` 殺行程 → 重開 → 不重複寫入\n   6. 前景行為與 v139 完全相同（②）\n   7. token 於裝置上不得以明文存在（EncryptedSharedPreferences；⑤）\n\n---\n\n**動工前 Ryan 要拍板的兩點**：\n(A) `set_number` 搬 server —— **已拍板：搬**（2026-08-04）。\n(B) 失敗回報範圍 —— **已拍板：沿用既有同步失敗橫幅，不新增 UI**（2026-08-04）。\n兩點皆已於簽核前決定並回填，動工後不得再改本條 acceptance。\n\n---\n\n## 附錄 A：可判定化補充（**2026-08-06 Ryan 簽核**）\n\n起因：`/codex-verify` 2026-08-06 該輪回報零 fail，但 9 條判 unverified／untestable。其中 ②、⑩-6、⑨ 用了「完全不變／完全相同／不得回歸」——**任何有限次操作都證不完**，驗收者不肯把代表性操作升格為 pass 是正確的。本附錄只把「怎麼算驗過」講死，**不改上方任何條文的要求本身**。\n\n**A-1 ②／⑩-6「前景行為完全不變」的有限比對清單**——與 v139 dev build 並排，下列 5 項一致即判 pass：\n   1. 記一組：DB 落一列、UI 立刻出現該組、標題跳下一組、倒數以該動作的休息秒數起算\n   2. 原位編輯：只有量測欄位改變，`set_number`／`exercise_id`／`client_uuid` 不動\n   3. 刪一組：清單消失、DB `deleted_at` 有值\n   4. 離線記一組：顯示排隊，恢復網路後落地\n   5. 結束訓練：`ended_at` 有值、回首頁\n   已簽核的唯一差異：組號來源（client 自算 → server 指派），見 spec_feedback ②。\n   **清單以外的前景行為不納入本條判定。**\n\n**A-2 ⑨「不得回歸」的判定方式**：`uv run pytest` 全綠 ＋ A-1 五項。不另要求逐一手動重驗 ⑨ 列舉的每個 feature。\n\n**A-3 ⑤／⑩-7 的取證程序**：release 版 `run-as` 被系統擋（`package not debuggable`），故允許以 `assembleDevDebug` 產 debuggable build 取證、取證後還原 release 版。判定條件：`shared_prefs/liftlog_secure.xml` 內明文 token 出現 **0** 次。**取證者不得是本條的實作者。**\n\n**A-4 可控失敗的製造方式**（給 ⑥-b／⑧-b 用）：\n   - status 0／逾時 → 停掉 dev server 後在背景按「完成這組」\n   - 永久 4xx → 從 dev DB 移除該 workout 後在背景按「完成這組」（`POST /api/workouts/{id}/sets` 回 404）\n   - **401 不適用**——`SetUploader.java:101` 刻意把 401 歸為可重試（review 時的決定），永久失敗態只有真正的 4xx 走得到\n\n**A-5 ⑥-c「outbox 不得被清空」的具體操作**：在 outbox 有待送組時依序按 ✕、停止、結束訓練，**每次操作後 outbox 筆數不得減少**。\n\n**A-6 ⑦ 的可觀測契約**：回 app 後 server log 應出現一次該 workout 的 sets 全量 GET。**不要求證明「不存在增量合併程式碼」。**",
       "evidence": "archived -> docs/evidence/F131.md",
-      "requires": [
-        "F125",
-        "F130"
-      ],
+      "requires": [],
       "spec_feedback": "① 字面寫「成功後視窗才切休息態」，實作為「進 outbox 後就切」。理由：照字面等 HTTP 成功，離線時倒數永遠不會開始，而離線是健身房常態；進 outbox 已是不可遺失的落地（跨行程存活、停止不清、失敗會回報）。**2026-08-04 Ryan 認可此讀法**（「可以 沒有問題」），acceptance 文字不改。\n\n③ 兩條寫入路徑的 set_number 算式不同：前景（JS 帶值）＝可見 sets 的 max+1，背景（server 算）＝含軟刪 sets 的 max+1。最高幾組被軟刪時會分叉（實測 workout 76 出現 #1 與 #10 並排）。兩者都符合 ③ 的字面（「client 有帶就沿用」）。**2026-08-05 Ryan 先拍板 (a) 維持現狀**：跳號只是顯示，撞號才是資料問題。\n\n③-續 **(a) 已被實測推翻，2026-08-05 晚改判 (b)**：驗收者在 workout 77 量到兩列同為 `set_number=7`（id 430 背景寫入、id 433 前景寫入）。撞號的成因不是軟刪，是**兩個寫入者各算各的**——JS 算的是它畫面上的 max+1，而畫面上還沒有剛由原生寫進去的那組。只要保留兩套算式就有這個 race。改判內容：`logCurrentSet()` 不再帶 `set_number`（離線分支只在本機那份補號給畫面用），一律 server 算；並把配號＋寫入包進 `_SET_NUMBER_LOCK`（真正的根因是 SELECT MAX 再 INSERT 不是原子操作）。commit `f829f85`，回歸測試 `tests/test_set_number_race.py`。\n\n② 的例外（隨 (b) 一併認可）：② 寫「前景行為完全不變」，但 (b) 動到了前景的 `logCurrentSet()`——**改的只有組號來源（client 自算 → server 指派）**，使用者可見行為（按下即寫、離線排隊、編輯、倒數）不變。⑩-6 的比對以此為準。acceptance 文字不改。",
       "prerequisites": [
         "F16",
@@ -2425,9 +2438,7 @@
       "status": "passing",
       "acceptance": "**已簽核凍結（2026-08-06，Ryan）**。F131 (b) 只清掉「當場記組」那條自算組號的路，日曆補記還留著一條，而且算法更糟。\n\n現況：`calendar.js:432`（單筆補記）與 `calendar.js:504`（F47 批次補記）自己算 `set_number`，算的是**該動作既有未軟刪組數**（`existing + 1` / `existing + i + 1`），不是最大值。\n一場有 #1–#5、#3 被軟刪 → `existing = 4` → 送出 `5`，**直接撞既有的 #5**。比 F131 修掉的前景那條更容易撞。\n\n① 兩處都不再送 `set_number`，一律由 server 的 `_next_set_number()` 指派（同 F131 ③）。\n② **撞號重現與修復**：造一場某動作有 #1–#5、軟刪 #3，用日曆補記加一組 → 新組號為 **6**，且該 `(workout_id, exercise_id)` 未軟刪組號無重複。修改前跑同一步驟必須重現撞號（會紅的回歸測試）。\n③ **批次補記（F47）組號連續**：一次補同一動作 3 組 → 得到連續三個號碼、無重複。\n④ 離線／佇列路徑不得把顯示用組號送出去（同 F131 修掉 `saveEditDoneSet()` 的那個坑）。\n⑤ **不得回歸**：F32（組號語意）、F16（原位編輯不動 set_number）、F47（批次補記）、F131 ③。\n⑥ **完成定義**：`uv run pytest` 全綠、`uv run ruff check .` 乾淨、②的回歸測試存在且移除修法會 fail；動到 `app/static/` → 升版號（`state.js` ＋ `sw.js`）並出 APK。",
       "evidence": "archived -> docs/evidence/F132.md",
-      "requires": [
-        "F131"
-      ],
+      "requires": [],
       "touches": [
         "app/static/js/calendar.js"
       ],
@@ -2446,10 +2457,7 @@
       "status": "passing",
       "acceptance": "**已簽核凍結（2026-08-06，Ryan）**。F131 的 `_SET_NUMBER_LOCK` 是行程內鎖，兩個前提會破：多 uvicorn worker，以及**client 自己帶號時鎖根本擋不住**（server 照單全收）。DB 約束是唯一擋得住兩者的防線。\n\n**前置**：上線前 dev 與 prod DB 不得存在重複組號（prod workout 33／exercise 30 已於 2026-08-06 重編為 1..5）。migration 必須先驗資料、有重複就中止而不是靜默略過。\n\n① `sets` 加 `(workout_id, exercise_id, set_number)` 唯一約束，**只約束未軟刪列**（SQLite partial unique index `WHERE deleted_at IS NULL`）——軟刪後重用組號不得被擋。\n② server 配號撞到約束 → 重試（上限固定、寫在常數），重試耗盡回 409 並帶明確訊息，不得靜默吞掉。\n③ **client 帶號撞既有號 → 回 409**，不再靜默寫成重複列。\n④ 約束上線後 `_SET_NUMBER_LOCK` 可移除，但②的重試必須留；`tests/test_set_number_race.py` 改為驗「兩執行緒同時進場 → 兩列組號不同、都寫入成功」，移除重試會 fail。\n⑤ **不得回歸**：F32、F16（原位編輯不動 set_number）、軟刪語意（刪掉的組號可被後來的組重用）、F131 ③④。\n⑥ **完成定義**：`uv run pytest` 全綠、`uv run ruff check .` 乾淨、migration 在 `liftlog-dev.db` 實跑成功並貼出前後 schema，prod 套用前先備份。",
       "evidence": "archived -> docs/evidence/F133.md",
-      "requires": [
-        "F131",
-        "F132"
-      ],
+      "requires": [],
       "touches": [
         "app/models.py",
         "app/services/workouts.py",
@@ -2470,10 +2478,7 @@
       "status": "passing",
       "acceptance": "**已簽核凍結（2026-08-07，Ryan）**。詳見 docs/prd/f134-performance-line-chart.md。\nRyan 實際使用後回報：長條圖看不出趨勢，折線圖比較好懂；而且要知道某根是哪一天，得往下滑到歷史清單對照，太費事。\n\n① 折線圖取代長條圖：N ≥ 2 次紀錄時出現一條折線、N 個資料點依日期左舊右新相連，y ＝該次最佳組重量（沿用 bestSet().weight_kg，值的定義不變）；最大值那一點不得被容器上緣裁切（點的半徑完整可見）。\n② PR 標記保留：累進最佳判定（現行 running 邏輯）不變，PR 那幾次的資料點有獎盃 icon，非 PR 的沒有。\n③ 既有資訊不得消失：圖右上的區間最大值（現 .bars-max）與下緣首末月份（現 .bars-foot）。\n④ 點資料點顯示三項齊全：日期（M/D）、該次組數（n 組）、最佳組（{weight}kg × {reps}）；內容必須與歷史清單裡同一天那張卡一致（同一份 sessions 資料，不重新查詢 API）。\n⑤ 選中狀態：被選中的點有視覺區別（放大或換色），其他點不變；點另一個點 → 內容換成那點且不累積出第二個框；再點同一個已選中的點 → 關閉；點圖表區空白處 → 關閉；切換區間藥丸 → 浮動資訊與選中狀態清除。\n⑥ 命中判定用「x 軸距離最近的點」，不要求手指精準落在點上；在 320px 寬下每個點的可命中寬度 ≥ 44px 或 ≥ 圖寬÷N（取較小者），相鄰命中區不重疊。\n⑦ 浮動框不被容器裁切：最左與最右的點被選中時，整個框仍完整在畫面內（靠邊對齊或位移）。\n⑧ 邊界：0 筆沿用現行文字「這個區間內沒有紀錄」，不畫圖也無可點區；1 筆畫點不畫線且點擊照常可用；所有點 y 值相同時不得除以 0（畫在圖高中線或固定基線，仍可點）；同一天兩場照序位均分、不重疊到同一像素；50 點時不省略資料點、不放大點半徑、不做橫向捲動；某次算不出最佳組時該點跳過不畫、其餘點照常相連。\n⑨ 不引入圖表庫（CLAUDE.md 硬約束）：inline SVG（polyline + circle）或 CSS 自繪，package.json 的依賴數量不變。\n⑩ **F86 ⑤ 標 superseded_by: F134**（F86 ⑤ 的條文原文保留、不抹掉歷史，F86 其餘條文與 status 不動）；verify_f86.py:207-236 改為驗折線圖，但**必須保留 .bars-max 與 .bars-foot 的斷言**（③ 要求那兩處資訊留著）。\n⑪ 不得回歸：F35、F86 其餘條文、F59／F58（區間藥丸與退檔行為）、F113（44px 觸控目標）。\n⑫ **完成定義**：uv run pytest（純前端改動，可只跑相關子集；後端未動）全綠、uv run ruff check . 乾淨、uv run python tests/e2e/verify_f134.py 全過且移除修法會 fail（會紅的回歸測試）、verify_f86／verify_f87／verify_f59／verify_f58 不回歸、APP_VERSION（state.js）與 CACHE_NAME（sw.js）同步升號、dev APK 出一顆並在真機確認 320px 寬的觸控命中。",
       "evidence": "archived -> docs/evidence/F134.md",
-      "requires": [
-        "F35",
-        "F86"
-      ],
+      "requires": [],
       "touches": [
         "app/static/js/exercise-detail.js",
         "app/static/css/app.css",
@@ -2505,9 +2510,7 @@
       "status": "passing",
       "acceptance": "**已簽核凍結（2026-08-07，Ryan；方向 ① 拍板）**。由 F134 的 code review P2 開出。\n\nF134 的折線圖是序位等距全寬佈局。練了很多次的動作切到「全部」時點會擠在一起：320px 寬、圖寬 252px、N=50 →\n點間距 5.1px，而 `.line-pt` 直徑 8px（選中放大到 13px ＋ 4px 光暈）——點與點視覺上黏成一條粗線，\n使用者無法可靠看出「有幾次、哪一次」。\n\n⚠ 這不是 F134 的實作缺陷：F134 ⑥ 的命中寬門檻 `min(44px, 圖寬÷N)` 在等距佈局下對內部點恆成立（`W/(N-1) > W/N`），\n擋不住這件事；而 F134 ⑧ 明文禁止「省略資料點、放大點半徑、橫向捲動」。\n**Ryan 2026-08-07 裁示不改 F134 ⑥ 的條文**（門檻只是下限，不是可用性保證），高 N 的可用性由本條處理。\n\n**拍板方向 ①：依 N 分級縮小未選中點的尺寸。**（F134 ⑧ 禁的是「放大」點半徑，縮小不在禁止範圍內。）\n否決的兩個替代方案與理由一併記錄：② 改成依實際天數比例佈局 → 會撞 F134 ⑧ 的「同一天兩場照序位均分、不重疊到同一像素」；\n③ 另做「只看最近 N 次」的視圖 → 與既有區間藥丸（F119／F120）的職責重疊。\n\n① 未選中點的直徑依區間內點數 N 分級：N ≤ 20 → 8px（現行不變）；20 < N ≤ 40 → 6px；N > 40 → 4px。\n② **相鄰未選中點不得重疊**：320px 寬、N=50 的情境下，相鄰兩點的圓緣間距 ≥ 1px（可量測；這是本條真正要達成的結果，① 只是達成它的手段）。\n③ 選中點的尺寸與樣式不變（維持 F134 現行的放大 ＋ 光暈），選中狀態在任何 N 下都必須看得出來。\n④ PR 獎盃（`.line-flag`）在高 N 下不得互相重疊或蓋住鄰點；重疊無法避免時可縮小 icon，但**不得省略任何 PR 標記**。\n⑤ 命中判定不得因此變差：維持 F134 ⑥ 的命中寬（≥ min(44px, 圖寬÷N)），且**頭尾點與內部點一致**。\n⑥ 不得回歸：F134 ①–⑪（尤其 ⑧ 的「不省略資料點、不放大點半徑、不橫向捲動」）、F35、F86 其餘條、F113。\n⑦ **完成定義**：`uv run pytest` 相關子集全綠、`uv run ruff check .` 乾淨、`verify_f134.py` 不回歸、\n   `verify_f135.py` 新增 N=50 與 N=21 兩個情境把直徑與相鄰圓緣間距的實測數字釘出來且移除修法會 fail、\n   `APP_VERSION` 與 `CACHE_NAME` 同步升號、dev APK 出一顆並真機 320px 確認。",
       "evidence": "archived -> docs/evidence/F135.md",
-      "requires": [
-        "F134"
-      ],
+      "requires": [],
       "touches": [
         "app/static/js/exercise-detail.js",
         "app/static/css/app.css",
@@ -2534,9 +2537,7 @@
       "status": "failing",
       "acceptance": "**已簽核凍結（2026-08-07，Ryan）**。由 F134 的 code review P3 開出。\n\nF134 的折線圖浮動資訊只能用指標裝置打開：`.line-pt` 是沒有 `role`／`tabindex` 的 `div`，點擊事件掛在 `.bars-card` 上做代理，\n所以鍵盤使用者與開啟 TalkBack 的使用者**完全打不開浮動框**（沒有可聚焦節點、沒有 Enter/Space 路徑）；\n`.line-tip` 也沒有 `aria-live`，即使用滑鼠選中也不會被朗讀。\n\n⚠ **這不是無障礙回歸**：長條圖時代每根長條的 `aria-label`（`{date} 最佳組 {weight}kg × {reps}`）在 F134 已等價保留在 `.line-pt` 上，\n資訊沒有只存在於視覺上。缺的是**新互動（點選 → 浮動資訊）沒有非指標裝置的入口**。\n\n① `.line-pt` 加 `role=\"button\"` ＋ `tabindex=\"0\"`；keydown 的 Enter 與 Space 走**與點擊同一個**選中分支（不複製第二套邏輯）。\n② `.line-tip` 加 `role=\"status\"`（或 `aria-live=\"polite\"`），選中內容變更時會被朗讀。\n③ 焦點順序與視覺順序一致（依日期左舊右新）；Esc 關閉浮動資訊並保留焦點在該點上。\n④ 不得回歸：F134 ⑤（四種關閉／切換路徑）、F134 ⑥（指標裝置的最近點命中行為完全不變）、F113。\n⑤ **完成定義**：`uv run pytest` 相關子集全綠、`uv run ruff check .` 乾淨、`verify_f134.py` 不回歸、\n   `verify_f136.py` 新增鍵盤路徑（Tab 走到資料點 → Enter 開啟 → Esc 關閉 → Space 亦可開啟）且移除修法會 fail、\n   `APP_VERSION` 與 `CACHE_NAME` 同步升號、出 APK。\n   真機 TalkBack 若成本過高，明確標成 **unverified 並說明**，不得寫成 pass。",
       "evidence": "",
-      "requires": [
-        "F134"
-      ],
+      "requires": [],
       "touches": [
         "app/static/js/exercise-detail.js",
         "app/static/css/app.css",
