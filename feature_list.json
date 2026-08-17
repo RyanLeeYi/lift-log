@@ -3026,6 +3026,31 @@
         "不做 remember-me 之類的使用者可選到期時間",
         "不改 cookie 的 Secure／HttpOnly／SameSite 設定"
       ]
+    },
+    {
+      "id": "F158",
+      "name": "MCP token 管理介面與到期／唯讀",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "使用者能自己在 app 裡發、看、撤 MCP token，而且外洩的那顆不會永久有效、也不必然能寫。",
+      "acceptance": "**問題**：F147 做完了後端（`app/api/mcp_tokens.py` 有 create／list／revoke），但 `app/static/` 完全沒有對應 UI——要發一顆 token 只能自己打 API。同時 `McpToken` 沒有到期欄位（發出去永久有效直到手動撤銷），也不分讀寫權限（拿到的人可以刪訓練紀錄），而明文會躺在 Claude／ChatGPT 的設定檔裡。\n\n**驗收條件**：\n1. 設定頁有一塊 MCP token 管理：列出現有 token 的名稱、建立時間、最後使用時間、到期時間、是否唯讀、是否已撤銷。\n2. 可新增 token：填名稱、選到期（預設有限期，不是永久）、選唯讀或可寫。**明文只顯示一次**，附複製按鈕，並明講關掉就看不到了。\n3. 可撤銷 token，撤銷後列表即時反映，且該 token 立刻無法再用。\n4. `McpToken` 新增 `expires_at` 與 `read_only` 欄位；`resolve_token` 對已到期 token 回 None（與已撤銷同路徑，不洩漏差異）。\n5. `read_only` 的 token 只能跑查詢類 MCP tools，寫入類一律拒絕並回可讀錯誤。\n6. 既有 token（無到期、可寫）在 migration 後行為不變，不因為新欄位而失效。\n7. 舊的 legacy `LIFTLOG_TOKEN` 仍然不能管理 MCP token（維持 `app/api/mcp_tokens.py::_user_id` 的既有拒絕）。\n8. 有 pytest 覆蓋 4–7；UI 有 Playwright E2E 覆蓋 1–3。`uv run pytest` 與 `uv run ruff check .` 全綠。\n9. 動到 `app/static/`，完成後依 CLAUDE.md 規則 6 出一顆新 APK。",
+      "evidence": "",
+      "prerequisites": [
+        "F147"
+      ],
+      "touches": [
+        "app/static/",
+        "app/api/mcp_tokens.py",
+        "app/services/mcp_tokens.py",
+        "app/control_models.py",
+        "app/mcp.py",
+        "tests/"
+      ],
+      "non_goals": [
+        "不做 OAuth 授權流程（MCP 仍走 bearer token）",
+        "不做細到單一 tool 的權限矩陣，只分唯讀／可寫兩級",
+        "不做 token 使用量統計或稽核日誌"
+      ]
     }
   ]
 }
