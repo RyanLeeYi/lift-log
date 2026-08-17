@@ -27,6 +27,19 @@ def make_control_session_factory(db_path: str) -> sessionmaker[Session]:
                     "INTEGER NOT NULL DEFAULT 0"
                 )
             )
+        # F158：既有 token 補上到期與唯讀欄位。`create_all` 只建缺席的表，
+        # 已存在的 mcp_tokens 不會長出新欄位——少了這段，舊庫一查就 OperationalError。
+        # 預設值刻意等於「F158 之前的行為」：expires_at NULL＝不過期、read_only 0＝可寫，
+        # 所以既有 token 不會因為升級而突然失效或被降權。
+        mcp_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(mcp_tokens)"))
+        }
+        if mcp_columns and "expires_at" not in mcp_columns:
+            connection.execute(text("ALTER TABLE mcp_tokens ADD COLUMN expires_at DATETIME"))
+        if mcp_columns and "read_only" not in mcp_columns:
+            connection.execute(
+                text("ALTER TABLE mcp_tokens ADD COLUMN read_only BOOLEAN NOT NULL DEFAULT 0")
+            )
         connection.execute(
             text(
                 "CREATE TABLE IF NOT EXISTS schema_metadata ("

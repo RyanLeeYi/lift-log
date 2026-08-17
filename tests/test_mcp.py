@@ -15,11 +15,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings
 from app.control_models import McpToken
+from app.db import make_engine
 from app.main import create_app
 from app.mcp import create_mcp
 from app.models import BodyMetric, Exercise, Workout, WorkoutSet
 from app.schemas import BodyMetricIn, LogSetIn, LogWorkoutIn, TemplateCreate, TemplateExerciseIn
 from app.services.body_metrics import upsert_body_metric
+from app.services.mcp_tokens import DEFAULT_EXPIRY_DAYS
 from app.services.templates import create_template
 from app.services.workouts import log_workout
 
@@ -521,3 +523,106 @@ async def test_mcp_write_reaches_android_sync_pull(tmp_path: Path) -> None:
             changes = pulled.json()["changes"]
             body_metric_changes = [c for c in changes if c["entity_type"] == "body_metric"]
             assert any(c["payload"]["weight_kg"] == 91.2 for c in body_metric_changes)
+
+
+@pytest.mark.asyncio
+async def test_mcp_token_defaults_to_expiring_and_writable(tmp_path: Path) -> None:
+    """F158①：預設**有**期限。明文要貼進第三方設定檔，永久有效不該是預設值。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+            created = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()
+
+        with app.state.control_session_factory() as control:
+            row = control.scalar(select(McpToken).where(McpToken.id == created["id"]))
+            assert row.expires_at is not None
+            assert row.read_only is False  # 預設可寫，維持 F147 既有行為
+            lifetime = row.expires_at - row.created_at
+            assert lifetime == timedelta(days=DEFAULT_EXPIRY_DAYS)
+
+
+@pytest.mark.asyncio
+async def test_expired_mcp_token_rejected_like_a_revoked_one(tmp_path: Path) -> None:
+    """F158②：到期即失效，且與已撤銷走同一條 401——分不出是哪一種。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+            created = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()
+            plaintext = created["token"]
+
+            async with _mcp_client(app, plaintext) as mcp_client:
+                assert {t.name for t in await mcp_client.list_tools()}  # 到期前握手正常
+
+            with app.state.control_session_factory() as control:
+                row = control.scalar(select(McpToken).where(McpToken.id == created["id"]))
+                row.expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1)
+                control.commit()
+
+            resp = await hc.post(
+                "/mcp/", json={}, headers={"Authorization": f"Bearer {plaintext}"}
+            )
+            assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mcp_token_issued_before_f158_keeps_working(tmp_path: Path) -> None:
+    """F158⑥：升級不得讓既有 token 失效。expires_at NULL＝不過期、read_only 0＝可寫。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+            created = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()
+            plaintext = created["token"]
+
+            # 把它改回 F158 之前的樣子：沒有到期時間
+            with app.state.control_session_factory() as control:
+                row = control.scalar(select(McpToken).where(McpToken.id == created["id"]))
+                row.expires_at = None
+                control.commit()
+
+            async with _mcp_client(app, plaintext) as mcp_client:
+                assert {t.name for t in await mcp_client.list_tools()}
+
+
+def test_control_db_adds_f158_columns_to_existing_mcp_tokens_table(tmp_path: Path) -> None:
+    """F158⑥：`create_all` 只建缺席的表，既有 mcp_tokens 得靠 ALTER 補欄位。
+
+    少了那段，升級後的舊庫第一次查 mcp_tokens 就是 OperationalError。
+    """
+    from sqlalchemy import text
+
+    from app.control_db import make_control_session_factory
+
+    db_path = tmp_path / "control.db"
+    # 先造一顆 F158 之前的表：只有舊欄位
+    pre_f158 = make_engine(str(db_path))
+    with pre_f158.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS mcp_tokens"))
+        connection.execute(
+            text(
+                "CREATE TABLE mcp_tokens ("
+                "id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, "
+                "token_hash TEXT NOT NULL UNIQUE, created_at DATETIME NOT NULL, "
+                "last_used_at DATETIME, revoked_at DATETIME)"
+            )
+        )
+    pre_f158.dispose()
+
+    factory = make_control_session_factory(str(db_path))
+    with factory() as control:
+        columns = {
+            row[1] for row in control.execute(text("PRAGMA table_info(mcp_tokens)"))
+        }
+    assert "expires_at" in columns
+    assert "read_only" in columns

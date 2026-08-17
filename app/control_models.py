@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -71,6 +71,13 @@ class McpToken(ControlBase):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # F158：明文會躺在 Claude／ChatGPT 的設定檔裡——那是我們控制不到的地方，
+    # 所以外洩的那顆必須自己會過期，不能等人想起來撤。
+    # NULL＝不過期，保留給 F158 之前發出的 token（見 control_db 的欄位補寫）。
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # F158：MCP tools 能寫入，所以一顆外洩的 token 可以刪掉訓練紀錄。
+    # 只分唯讀／可寫兩級，不做逐 tool 的權限矩陣（non-goal）。
+    read_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     user: Mapped[User] = relationship()
 
