@@ -73,6 +73,9 @@ class TableReport:
     legacy_total: int
     migrated: int = 0
     skipped: int = 0
+    # 軟刪列刻意不遷（見 _migrate_sets）。獨立計數而不併進 skipped——
+    # 「因為重複所以跳過」與「因為是墓碑所以不搬」是兩件事，混在一個數字裡就查不出來了。
+    skipped_deleted: int = 0
     conflicts: list[dict[str, Any]] = field(default_factory=list)
     after_target: int = 0
 
@@ -82,6 +85,7 @@ class TableReport:
             "legacy_total": self.legacy_total,
             "migrated": self.migrated,
             "skipped": self.skipped,
+            "skipped_deleted": self.skipped_deleted,
             "conflicts": len(self.conflicts),
             "conflict_detail": self.conflicts,
             "after_target": self.after_target,
@@ -313,11 +317,29 @@ def _migrate_sets(
         before_target=_count(target, WorkoutSet), legacy_total=_count(legacy, WorkoutSet)
     )
     for row in legacy.scalars(select(WorkoutSet)):
+        # 軟刪列不遷：墓碑的用途是告訴其他裝置「這筆被刪了」，而 target 從來沒看過這些列，
+        # 沒有要通知的對象。搬進去只是把已刪資料複製一份到新庫。
+        if row.deleted_at is not None:
+            report.skipped_deleted += 1
+            continue
+        mapped_workout_id = workout_id_map[row.workout_id]
+        mapped_exercise_id = exercise_id_map[row.exercise_id]
         match = projection._natural_key_match(  # noqa: SLF001
             target, "set", {"client_uuid": row.client_uuid}
         )
-        mapped_workout_id = workout_id_map[row.workout_id]
-        mapped_exercise_id = exercise_id_map[row.exercise_id]
+        if match is None:
+            # client_uuid 沒撞不代表能寫進去——DB 真正的唯一約束是
+            # partial unique index(workout, exercise, set_number) WHERE deleted_at IS NULL。
+            # 同一天開兩場訓練時 workout 自然鍵會把它們併成一場，兩場各自記的同一組就在這裡撞。
+            # 少了這道，遷移會在 flush 時炸 IntegrityError 而不是產出可讀的衝突報表。
+            match = target.scalars(
+                select(WorkoutSet).where(
+                    WorkoutSet.workout_id == mapped_workout_id,
+                    WorkoutSet.exercise_id == mapped_exercise_id,
+                    WorkoutSet.set_number == row.set_number,
+                    WorkoutSet.deleted_at.is_(None),
+                )
+            ).first()
         legacy_values = {
             "workout_id": mapped_workout_id,
             "exercise_id": mapped_exercise_id,
@@ -352,7 +374,12 @@ def _migrate_sets(
         else:
             report.conflicts.append(
                 {
-                    "natural_key": {"client_uuid": row.client_uuid},
+                    "natural_key": {
+                        "client_uuid": row.client_uuid,
+                        "matched_by": "client_uuid"
+                        if match.client_uuid == row.client_uuid
+                        else "workout+exercise+set_number",
+                    },
                     "legacy": legacy_values,
                     "target": target_values,
                 }

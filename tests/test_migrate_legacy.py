@@ -249,6 +249,71 @@ def test_natural_key_conflict_recorded_and_not_overwritten(tmp_path: Path, capsy
     engine.dispose()
 
 
+def test_same_day_workouts_merge_without_integrity_error(tmp_path: Path, capsys) -> None:
+    """Ryan 的真實 legacy 庫：同一天開了第二場又記同一組，加上被軟刪的舊組。
+
+    兩場 workout 的自然鍵 (date, note, template_id) 相同 → 合併成 target 的同一場，
+    於是兩場各自的第 1 組會撞 partial unique index(workout, exercise, set_number)。
+    client_uuid 不同，所以只靠 client_uuid 比對抓不到，會在 flush 時炸 IntegrityError。
+    """
+    legacy_path = _build_legacy_db(tmp_path)
+    engine, session = _open_session(legacy_path)
+    bench = Exercise(name_zh="臥推", name_en="BenchPress", muscle_group="胸", is_bodyweight=False)
+    session.add(bench)
+    session.flush()
+    first = Workout(date=date(2026, 1, 5), template_id=None, note=None)
+    second = Workout(date=date(2026, 1, 5), template_id=None, note=None)
+    session.add_all([first, second])
+    session.flush()
+    session.add_all(
+        [
+            WorkoutSet(
+                client_uuid=str(uuid4()), workout_id=first.id, exercise_id=bench.id,
+                set_number=1, weight_kg=50.0, reps=10, rpe=6,
+            ),
+            # 同一組內容，但是另一場記的、另一顆 client_uuid
+            WorkoutSet(
+                client_uuid=str(uuid4()), workout_id=second.id, exercise_id=bench.id,
+                set_number=1, weight_kg=50.0, reps=10, rpe=6,
+            ),
+            # 軟刪列：組號與活列相同，partial index 不擋，但依規定不遷
+            WorkoutSet(
+                client_uuid=str(uuid4()), workout_id=first.id, exercise_id=bench.id,
+                set_number=1, weight_kg=45.0, reps=10,
+                deleted_at=datetime(2026, 1, 5, 8, 0, 0),
+            ),
+        ]
+    )
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    control_path, user_data_dir, user_id = _build_control_and_user(tmp_path)
+    target_path = _build_target_db(user_data_dir, user_id)
+
+    exit_code = main(
+        [
+            "--legacy-db", str(legacy_path),
+            "--google-sub", "sub-1",
+            "--control-db", str(control_path),
+            "--user-data-dir", str(user_data_dir),
+        ]
+    )
+    assert exit_code == 0
+
+    sets_report = _parse_summary(capsys.readouterr().out)["sets"]
+    assert sets_report["migrated"] == 1, "兩場合併後只該留一組"
+    assert sets_report["skipped"] == 1, "內容相同的重複組是 skip，不是 conflict"
+    assert sets_report["skipped_deleted"] == 1, "軟刪列要單獨計數，不能靜默消失"
+    assert sets_report["conflicts"] == 0
+
+    engine, session = _open_session(target_path)
+    assert session.scalar(select(func.count()).select_from(WorkoutSet)) == 1
+    assert session.scalar(select(func.count()).select_from(Workout)) == 1
+    session.close()
+    engine.dispose()
+
+
 def test_dry_run_creates_no_files(tmp_path: Path, capsys) -> None:
     legacy_path = _build_legacy_db(tmp_path)
     engine, session = _open_session(legacy_path)
