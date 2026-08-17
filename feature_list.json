@@ -2983,6 +2983,49 @@
       "non_goals": [
         "不動 legacy 單機 DB"
       ]
+    },
+    {
+      "id": "F156",
+      "name": "refresh token 併發輪替不再誤判盜用",
+      "envelope": "E1",
+      "status": "passing",
+      "outcome": "手機 app 不會在開啟時被自己的背景同步擠掉登入狀態。",
+      "acceptance": "**問題**：refresh token 是單次使用輪替，舊 token 被用第二次即判定盜用並吊銷整個 family（`app/services/auth.py::refresh_session`）。但 Android 上有兩個互不知情的刷新者共用同一顆 SecureStore refresh token——背景同步（`NativeAuthSession.java`）與 webview JS（`auth.js::restoreNativeSession`），開 app 時可能同時觸發，慢的那個被當成盜用，使用者被登出。網路重試造成的重送也踩同一顆地雷。\n\n**驗收條件**：\n1. 同一顆 refresh token 在**首次使用後 60 秒內**再次呈遞時，視為併發／重送，照常輪替發新 token，**不吊銷 family**。\n2. 超過 60 秒後再呈遞，維持既有盜用偵測：吊銷整個 family 並回 401。\n3. 寬限期不可被重播延長——重播不更新 `used_at`，所以連續重播不會無限展延窗口。\n4. 已 revoked 的 token（family 被吊銷後）不因寬限期而放行。\n5. session 本身的 idle／absolute 到期、user 停用、device 不符等既有拒絕條件不受影響。\n6. pytest 有覆蓋 1–4 的回歸測試；`uv run pytest` 與 `uv run ruff check .` 全綠。",
+      "evidence": "docs/evidence/F156.md",
+      "prerequisites": [
+        "F149"
+      ],
+      "touches": [
+        "app/services/auth.py",
+        "tests/"
+      ],
+      "non_goals": [
+        "不改 web session 的 12 小時固定到期（另案）",
+        "不改 Android 端的刷新架構（不合併成單一刷新者）",
+        "不調整 access／refresh 的 TTL 長度"
+      ]
+    },
+    {
+      "id": "F157",
+      "name": "web session 到期不再是硬斷線",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "在網頁上持續使用的人不會被固定 12 小時的到期時間趕出去。",
+      "acceptance": "**問題**：`WEB_SESSION_TTL = timedelta(hours=12)`（`app/services/auth.py`），而網頁登入不發 refresh token（`issue_session` 只有 android 發）。所以 web session 是**固定 12 小時硬到期、不隨使用延長、也沒有續期途徑**——不管使用者中間有沒有在用，時間到就被登出重新走 Google 登入。\n\n**驗收條件**：\n1. web session 改為**滑動到期**：每次帶著有效 session cookie 的請求都把到期時間往後推（沿用既有的 `last_seen_at` 更新點，不要新增一條寫入路徑）。\n2. 仍有**絕對上限**：從登入起算超過上限（沿用 `REFRESH_ABSOLUTE_TTL` 的 90 天或另訂並在 code 註明理由）就必須重新登入，滑動不得無限展延。\n3. 閒置超過滑動窗口後，session 失效並回 401，前端照既有 guard 導回登入畫面。\n4. 不引入 web 端的 refresh token，不把 access token 交給 JS——session 仍走 Secure HttpOnly cookie（維持 F146 的決定）。\n5. CSRF token 與 session 的綁定關係不變（`csrf_for_session` 由 session id 推導）。\n6. 既有 web 登入／登出／CSRF 測試全綠；新增覆蓋 1–3 的回歸測試。`uv run pytest` 與 `uv run ruff check .` 全綠。",
+      "evidence": "",
+      "prerequisites": [
+        "F156"
+      ],
+      "touches": [
+        "app/services/auth.py",
+        "app/api/deps.py",
+        "tests/"
+      ],
+      "non_goals": [
+        "不改 Android 的 access／refresh 機制（F156 已處理）",
+        "不做 remember-me 之類的使用者可選到期時間",
+        "不改 cookie 的 Secure／HttpOnly／SameSite 設定"
+      ]
     }
   ]
 }

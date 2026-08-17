@@ -175,7 +175,8 @@ def test_data_db_failure_rolls_back_user_device_and_session(
             assert session.scalar(select(func.count()).select_from(AuthSession)) == 0
 
 
-def test_refresh_rotates_and_replay_revokes_only_that_family(tmp_path: Path) -> None:
+def test_refresh_replay_after_grace_period_revokes_only_that_family(tmp_path: Path) -> None:
+    """F156驗收2：超過 60 秒寬限期後重播，維持盜用偵測——吊銷整個 family 並回 401。"""
     payload = login_payload()
     with make_client(tmp_path) as client:
         login = client.post("/api/auth/google", json=payload).json()
@@ -185,6 +186,20 @@ def test_refresh_rotates_and_replay_revokes_only_that_family(tmp_path: Path) -> 
         )
         assert rotated.status_code == 200
         assert rotated.json()["refresh_token"] != login["refresh_token"]
+
+        from app.control_models import RefreshToken
+        from app.services.auth import REFRESH_REPLAY_GRACE, token_hash
+
+        with client.app.state.control_session_factory() as session:
+            used = session.scalar(
+                select(RefreshToken).where(
+                    RefreshToken.token_hash == token_hash(login["refresh_token"])
+                )
+            )
+            used.used_at = datetime.now(UTC).replace(tzinfo=None) - (
+                REFRESH_REPLAY_GRACE + timedelta(seconds=1)
+            )
+            session.commit()
 
         replay = client.post(
             "/api/auth/refresh",
@@ -200,6 +215,121 @@ def test_refresh_rotates_and_replay_revokes_only_that_family(tmp_path: Path) -> 
             },
         )
         assert revoked_new_token.status_code == 401
+
+
+def test_refresh_replay_within_grace_period_rotates_without_revoking_family(
+    tmp_path: Path,
+) -> None:
+    """F156驗收1：60 秒寬限內重播照常輪替發新 token，不吊銷 family；
+
+    先前輪替出的新 token 仍可用（Android 背景同步與 webview 併發重送同一顆 token 的情境）。
+    """
+    payload = login_payload()
+    with make_client(tmp_path) as client:
+        login = client.post("/api/auth/google", json=payload).json()
+        rotated = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": login["refresh_token"], "device_id": payload["device_id"]},
+        ).json()
+
+        from app.control_models import RefreshToken
+        from app.services.auth import REFRESH_REPLAY_GRACE, token_hash
+
+        with client.app.state.control_session_factory() as session:
+            used = session.scalar(
+                select(RefreshToken).where(
+                    RefreshToken.token_hash == token_hash(login["refresh_token"])
+                )
+            )
+            used.used_at = datetime.now(UTC).replace(tzinfo=None) - (
+                REFRESH_REPLAY_GRACE - timedelta(seconds=10)
+            )
+            session.commit()
+
+        replay = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": login["refresh_token"], "device_id": payload["device_id"]},
+        )
+        assert replay.status_code == 200
+        assert replay.json()["refresh_token"] != login["refresh_token"]
+
+        still_usable = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": rotated["refresh_token"], "device_id": payload["device_id"]},
+        )
+        assert still_usable.status_code == 200
+
+
+def test_refresh_replay_grace_window_anchored_to_first_use_not_extended(
+    tmp_path: Path,
+) -> None:
+    """F156驗收3：重播不更新 used_at，連續重播不會把寬限窗口往後展延。"""
+    payload = login_payload()
+    with make_client(tmp_path) as client:
+        login = client.post("/api/auth/google", json=payload).json()
+        client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": login["refresh_token"], "device_id": payload["device_id"]},
+        )
+
+        from app.control_models import RefreshToken
+        from app.services.auth import REFRESH_REPLAY_GRACE, token_hash
+
+        def load_original(session):
+            return session.scalar(
+                select(RefreshToken).where(
+                    RefreshToken.token_hash == token_hash(login["refresh_token"])
+                )
+            )
+
+        backdated_used_at = datetime.now(UTC).replace(tzinfo=None) - (
+            REFRESH_REPLAY_GRACE - timedelta(seconds=10)
+        )
+        with client.app.state.control_session_factory() as session:
+            load_original(session).used_at = backdated_used_at
+            session.commit()
+
+        within_grace_replay = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": login["refresh_token"], "device_id": payload["device_id"]},
+        )
+        assert within_grace_replay.status_code == 200
+
+        with client.app.state.control_session_factory() as session:
+            reloaded_used_at = load_original(session).used_at
+            # 重播沒有把 used_at 推到「現在」——寬限窗口的錨點沒有被展延
+            assert abs((reloaded_used_at - backdated_used_at).total_seconds()) < 1
+            load_original(session).used_at = datetime.now(UTC).replace(tzinfo=None) - (
+                REFRESH_REPLAY_GRACE + timedelta(seconds=1)
+            )
+            session.commit()
+
+        past_grace_replay = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": login["refresh_token"], "device_id": payload["device_id"]},
+        )
+        assert past_grace_replay.status_code == 401
+
+
+def test_revoked_refresh_token_rejected_even_within_replay_grace(tmp_path: Path) -> None:
+    """F156驗收4：family 已吊銷的 revoked token，即使時間上落在寬限期內也不放行。"""
+    payload = login_payload()
+    with make_client(tmp_path) as client:
+        login = client.post("/api/auth/google", json=payload).json()
+
+        from app.control_models import RefreshToken
+
+        with client.app.state.control_session_factory() as session:
+            token = session.scalar(select(RefreshToken))
+            token.status = "revoked"
+            token.used_at = datetime.now(UTC).replace(tzinfo=None)
+            session.commit()
+
+        response = client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": login["refresh_token"], "device_id": payload["device_id"]},
+        )
+        assert response.status_code == 401
 
 
 def test_expired_refresh_token_is_rejected(tmp_path: Path) -> None:

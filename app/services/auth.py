@@ -21,6 +21,11 @@ ACCESS_TTL = timedelta(minutes=15)
 WEB_SESSION_TTL = timedelta(hours=12)
 REFRESH_IDLE_TTL = timedelta(days=30)
 REFRESH_ABSOLUTE_TTL = timedelta(days=90)
+# F156：Android 上有兩個互不知情的刷新者共用同一顆 refresh token（背景 sync 的
+# NativeAuthSession 與 webview 的 restoreNativeSession），開 app 時會同時呈遞同一顆。
+# 少了這道寬限，慢的那個會被盜用偵測判死並吊銷整個 family——使用者就這樣被自己的
+# 背景同步登出。真正的盜用是「事後很久才重播」，60 秒內的重複視為併發或網路重送。
+REFRESH_REPLAY_GRACE = timedelta(seconds=60)
 
 GoogleTokenVerifier = Callable[[str], dict[str, Any]]
 
@@ -269,6 +274,16 @@ def _revoke_family(db: Session, family_id: str, now: datetime) -> None:
         )
 
 
+def _within_replay_grace(refresh: RefreshToken, now: datetime) -> bool:
+    """併發重送（同一顆 token 短時間內被呈遞兩次）而非盜用時為真。
+
+    只放行 `used`——family 被吊銷後的 `revoked` 不因寬限期復活。
+    """
+    if refresh.status != "used" or refresh.used_at is None:
+        return False
+    return now - refresh.used_at <= REFRESH_REPLAY_GRACE
+
+
 def refresh_android_session(
     factory: sessionmaker[Session], raw_refresh_token: str, client_device_id: str
 ) -> IssuedAuth:
@@ -290,7 +305,7 @@ def refresh_android_session(
             _revoke_family(db, auth_session.family_id, now)
             db.commit()
             raise InvalidSession
-        if refresh.status != "active":
+        if refresh.status != "active" and not _within_replay_grace(refresh, now):
             _revoke_family(db, auth_session.family_id, now)
             db.commit()
             raise InvalidSession
@@ -304,7 +319,9 @@ def refresh_android_session(
             raise InvalidSession
 
         refresh.status = "used"
-        refresh.used_at = now
+        # used_at 只寫第一次：寬限窗口從「首次使用」起算，重播不能把它一路往後推。
+        if refresh.used_at is None:
+            refresh.used_at = now
         access_token = new_token()
         next_refresh_token = new_token()
         auth_session.access_token_hash = token_hash(access_token)
