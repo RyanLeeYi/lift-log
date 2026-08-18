@@ -1,6 +1,7 @@
 # lift-log 健身紀錄系統
 
-自家部署的健身紀錄 web：手機單手快記、日曆 heatmap、課表選單、體重體脂 SSOT，並以 remote MCP 讓 Claude／ChatGPT／Gemini 查詢訓練資料。規格見 `docs/prd/mvp-lift-log.md`，範圍與進度以 `feature_list.json` 為準。
+自家部署的健身紀錄 web：手機單手快記、日曆 heatmap、課表選單、體重體脂 SSOT，並以 remote MCP 讓 Claude／ChatGPT／Gemini 查詢訓練資料。規格與進度以 `feature_list.json` 的 `acceptance` 為準（唯一權威）。歷史設計文件與已歸檔的
+passing acceptance 在 `docs/archive/`，僅供閱讀，**不作為驗收依據**。
 
 ## 啟動與驗證
 
@@ -24,8 +25,9 @@
    是平行度最低的地方。能不能平行只看三個條件同時成立：不互為 `prerequisites`、`touches` 無交集、
    `requires` 無交集（跑 `harness-plan.py . --dsm` 判定）。可平行時各自 worktree。
    **驗收一律逐條、依 `prerequisites` 順序、各自 evidence**——上游改動會讓已通過的下游驗收失效
-   - ⚠ **不要整份 `Read` `feature_list.json`**（334KB，多數是 142 條 passing 的 acceptance 原文，
-     整讀約 8 萬 token 且每輪重送）。要哪幾條就挑哪幾條：
+   - ⚠ **不要整份 `Read` `feature_list.json`**（145KB；2026-08-18 把 145 條 passing 的
+     acceptance 移進 `docs/archive/acceptance.jsonl` 後從 337KB 降下來，但整讀仍然貴）。
+     要哪幾條就挑哪幾條：
      `uv run python -c "import json;fs=json.load(open('feature_list.json',encoding='utf-8'))['features'];print([f['id'] for f in fs if f['status']=='failing'])"`
      ——長證據早已搬進 `docs/evidence/F<id>.md`，`evidence` 欄位只剩 pointer
 2. feature 狀態只能 failing → passing，且必須附驗證證據（測試輸出/截圖）

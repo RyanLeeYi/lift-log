@@ -103,3 +103,16 @@ there is no frontend build step. Android build and signing instructions are in
 ## License
 
 [MIT](LICENSE) © 2026 Ryan Lee
+
+## docs/archive/
+
+Historical material, kept for context and never used to judge anything.
+
+- `acceptance.jsonl` — one line per feature whose acceptance was frozen, verified
+  and archived after it passed. Read one back with:
+  `python -c "import json;print([json.loads(l) for l in open('docs/archive/acceptance.jsonl',encoding='utf-8') if '\"F35\"' in l])"`
+- `*.md` — design documents written before a feature was signed off.
+
+The only spec is the `acceptance` field in `feature_list.json`. A feature being
+reopened gets its acceptance restored there; nothing in this directory is
+authoritative.
