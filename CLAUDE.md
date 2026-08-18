@@ -19,7 +19,10 @@
 ## 工作規則
 
 1. 一次只推進一個 envelope（沒有 envelope 就是一條 feature，看 `feature_list.json` 挑第一個 failing）。
-   同 envelope 內的 slice 可同批實作，序列或平行皆可；平行需 `touches` 無交集且各自 worktree。
+   同 envelope 內的 slice 可同批實作。
+   **envelope 跟平行無關**——它是共用約束的凍結層，而同 envelope 的 slice 通常共用同一批檔案，
+   是平行度最低的地方。能不能平行只看三個條件同時成立：不互為 `prerequisites`、`touches` 無交集、
+   `requires` 無交集（跑 `harness-plan.py . --dsm` 判定）。可平行時各自 worktree。
    **驗收一律逐條、依 `prerequisites` 順序、各自 evidence**——上游改動會讓已通過的下游驗收失效
    - ⚠ **不要整份 `Read` `feature_list.json`**（334KB，多數是 142 條 passing 的 acceptance 原文，
      整讀約 8 萬 token 且每輪重送）。要哪幾條就挑哪幾條：
