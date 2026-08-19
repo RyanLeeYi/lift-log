@@ -75,8 +75,10 @@ def revoke_token(control_session: Session, user_id: str, token_id: str) -> None:
         control_session.commit()
 
 
-def resolve_token(control_session: Session, plaintext: str) -> User | None:
-    """MCP verifier 用：明文 → 有效 user，或 None（查無／已撤銷／已到期／user 非 active）。"""
+def resolve_token(control_session: Session, plaintext: str) -> McpToken | None:
+    """MCP verifier 用：明文 → 有效 token 列（`.user` 為 active user、`.read_only` 為權限），
+    或 None（查無／已撤銷／已到期／user 非 active）。F158：回整列而非只回 user，讓 verifier
+    能把唯讀旗標帶進 access token 的 scopes。"""
     now = utcnow()
     token = control_session.scalar(
         select(McpToken).where(McpToken.token_hash == _hash(plaintext))
@@ -91,4 +93,4 @@ def resolve_token(control_session: Session, plaintext: str) -> User | None:
         return None
     token.last_used_at = now
     control_session.commit()
-    return user
+    return token

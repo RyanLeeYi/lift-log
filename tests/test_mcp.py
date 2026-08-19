@@ -573,6 +573,63 @@ async def test_expired_mcp_token_rejected_like_a_revoked_one(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_read_only_mcp_token_can_query_but_not_write(tmp_path: Path) -> None:
+    """F158⑤：唯讀 token 只能跑查詢類 tool；三個寫入類 tool 一律拒絕並回可讀錯誤，
+    而且拒絕發生在寫入之前（拒絕後 body metrics 仍為空）。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+            created = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()
+            plaintext = created["token"]
+
+        with app.state.control_session_factory() as control:
+            row = control.scalar(select(McpToken).where(McpToken.id == created["id"]))
+            row.read_only = True
+            control.commit()
+
+        async with _mcp_client(app, plaintext) as mcp_client:
+            listed = await mcp_client.call_tool("get_body_metrics", {})
+            assert "error" not in _structured(listed)
+
+            for tool, args in (
+                ("log_body_metrics", {"weight_kg": 91.2, "date": "2026-08-11"}),
+                ("log_daily_status", {"energy": 3, "date": "2026-08-11"}),
+                (
+                    "log_workout",
+                    {"sets": [{"exercise": "深蹲", "weight_kg": 60, "reps": 5}]},
+                ),
+            ):
+                denied = _structured(await mcp_client.call_tool(tool, args))
+                assert denied.get("error"), (tool, denied)
+                assert "read-only" in denied["error"], (tool, denied)
+
+            after = _structured(await mcp_client.call_tool("get_body_metrics", {}))
+            assert not after.get("metrics"), after  # 拒絕發生在寫入之前
+
+
+@pytest.mark.asyncio
+async def test_writable_mcp_token_still_writes_after_f158_scopes(tmp_path: Path) -> None:
+    """F158⑤ 對照組：預設可寫的 token 不受 scopes 引入影響。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            issued = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {issued['access_token']}"}
+            plaintext = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()["token"]
+        async with _mcp_client(app, plaintext) as mcp_client:
+            out = _structured(
+                await mcp_client.call_tool("log_body_metrics", {"weight_kg": 91.2})
+            )
+            assert "error" not in out, out
+
+
+@pytest.mark.asyncio
 async def test_mcp_token_issued_before_f158_keeps_working(tmp_path: Path) -> None:
     """F158⑥：升級不得讓既有 token 失效。expires_at NULL＝不過期、read_only 0＝可寫。"""
     app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)

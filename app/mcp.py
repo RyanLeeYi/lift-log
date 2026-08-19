@@ -73,6 +73,20 @@ def _status_out(row: DailyStatus) -> dict:
     return DailyStatusOut.model_validate(row).model_dump(mode="json", exclude={"id"})
 
 
+READ_SCOPE = "read"
+WRITE_SCOPE = "write"
+READ_ONLY_ERROR = {"error": "this MCP token is read-only; ask the owner for a writable token"}
+
+
+def _write_denied() -> dict | None:
+    """F158⑤：唯讀 token 呼叫寫入類 tool 時回可讀錯誤。in-process 測試與 legacy 路徑
+    沒有 access token（None）或帶 WRITE_SCOPE，皆放行。"""
+    access_token = get_access_token()
+    if access_token is None or WRITE_SCOPE in access_token.scopes:
+        return None
+    return READ_ONLY_ERROR
+
+
 class DomainTokenVerifier(TokenVerifier):
     """legacy 共用 token 或 F147 user MCP token 皆可通過；成功時 client_id 帶身分。
 
@@ -91,14 +105,20 @@ class DomainTokenVerifier(TokenVerifier):
         # F149：token 未設＝demo 模式關閉。少了這道，空字串會比中空的 _expected，
         # 送一顆空 token 就換到 LEGACY_CLIENT_ID 的全庫存取。
         if self._expected and secrets.compare_digest(token.encode(), self._expected):
-            return AccessToken(token=token, client_id=LEGACY_CLIENT_ID, scopes=[])
+            return AccessToken(
+                token=token, client_id=LEGACY_CLIENT_ID, scopes=[READ_SCOPE, WRITE_SCOPE]
+            )
         if self._control_session_factory is None:
             return None
         with self._control_session_factory() as control:
-            user = mcp_tokens_svc.resolve_token(control, token)
-        if user is None:
-            return None
-        return AccessToken(token=token, client_id=user.id, scopes=[])
+            row = mcp_tokens_svc.resolve_token(control, token)
+            if row is None:
+                return None
+            user_id, read_only = row.user.id, row.read_only
+        # F158⑤：權限跟著 token 走。scopes 是 AccessToken 現成的位置；唯讀 token 拿不到
+        # WRITE_SCOPE，寫入類 tool 在入口就拒絕。legacy 共用 token 維持可寫（見上）。
+        scopes = [READ_SCOPE] if read_only else [READ_SCOPE, WRITE_SCOPE]
+        return AccessToken(token=token, client_id=user_id, scopes=scopes)
 
 
 def create_mcp(
@@ -256,6 +276,8 @@ def create_mcp(
         每次記錄請自產一個 client_uuid（≥8 字元）；timeout 重試帶同值
         即冪等，不會重複寫入。
         """
+        if denied := _write_denied():
+            return denied
         try:
             with domain_session() as session:
                 try:
@@ -289,6 +311,8 @@ def create_mcp(
         weight_kg: float, body_fat_pct: float | None = None, date: date_type | None = None
     ) -> dict:
         """代主人記錄體重（kg）與體脂（%）；同日重送為覆蓋更新。"""
+        if denied := _write_denied():
+            return denied
         try:
             with domain_session() as session:
                 try:
@@ -325,6 +349,8 @@ def create_mcp(
 
         休息日也可記，不依附訓練；同日重送為覆蓋更新。
         """
+        if denied := _write_denied():
+            return denied
         try:
             with domain_session() as session:
                 try:
