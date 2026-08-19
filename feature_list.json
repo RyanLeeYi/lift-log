@@ -160,30 +160,6 @@
       ]
     },
     {
-      "id": "F136",
-      "name": "折線圖浮動資訊要能用鍵盤與螢幕閱讀器打開",
-      "status": "failing",
-      "acceptance": "**已簽核凍結（2026-08-07，Ryan）**。由 F134 的 code review P3 開出。\n\nF134 的折線圖浮動資訊只能用指標裝置打開：`.line-pt` 是沒有 `role`／`tabindex` 的 `div`，點擊事件掛在 `.bars-card` 上做代理，\n所以鍵盤使用者與開啟 TalkBack 的使用者**完全打不開浮動框**（沒有可聚焦節點、沒有 Enter/Space 路徑）；\n`.line-tip` 也沒有 `aria-live`，即使用滑鼠選中也不會被朗讀。\n\n⚠ **這不是無障礙回歸**：長條圖時代每根長條的 `aria-label`（`{date} 最佳組 {weight}kg × {reps}`）在 F134 已等價保留在 `.line-pt` 上，\n資訊沒有只存在於視覺上。缺的是**新互動（點選 → 浮動資訊）沒有非指標裝置的入口**。\n\n① `.line-pt` 加 `role=\"button\"` ＋ `tabindex=\"0\"`；keydown 的 Enter 與 Space 走**與點擊同一個**選中分支（不複製第二套邏輯）。\n② `.line-tip` 加 `role=\"status\"`（或 `aria-live=\"polite\"`），選中內容變更時會被朗讀。\n③ 焦點順序與視覺順序一致（依日期左舊右新）；Esc 關閉浮動資訊並保留焦點在該點上。\n④ 不得回歸：F134 ⑤（四種關閉／切換路徑）、F134 ⑥（指標裝置的最近點命中行為完全不變）、F113。\n⑤ **完成定義**：`uv run pytest` 相關子集全綠、`uv run ruff check .` 乾淨、`verify_f134.py` 不回歸、\n   `verify_f136.py` 新增鍵盤路徑（Tab 走到資料點 → Enter 開啟 → Esc 關閉 → Space 亦可開啟）且移除修法會 fail、\n   `APP_VERSION` 與 `CACHE_NAME` 同步升號、出 APK。\n   真機 TalkBack 若成本過高，明確標成 **unverified 並說明**，不得寫成 pass。",
-      "evidence": "",
-      "requires": [],
-      "touches": [
-        "app/static/js/exercise-detail.js",
-        "app/static/css/app.css",
-        "app/static/js/state.js",
-        "app/static/sw.js",
-        "tests/e2e/verify_f136.py"
-      ],
-      "prerequisites": [
-        "F134"
-      ],
-      "non_goals": [
-        "不改指標裝置的最近點命中行為（F134 ⑥）",
-        "不做全站無障礙稽核——範圍只有折線圖的點選互動",
-        "不做桌機 hover 預覽"
-      ],
-      "signed_off": true
-    },
-    {
       "id": "F149",
       "name": "既有資料遷移、營運與完整正式發布",
       "envelope": "E1",
