@@ -460,4 +460,26 @@ export const api = {
   },
   // F148：只有原生有本機 domain DB 需要清；web 沒有對應本機副本可清。
   wipeLocalData: () => localCall("wipe"),
+  // F158：MCP token 是控制庫資料，不分 native／web 都是走真的 REST（沒有本機副本要同步）。
+  // 同 exportAccount／deleteAccount：native 要帶 Google access token，不能落回 request() 預設的
+  // getToken()（legacy 單一 token）——legacy scope 連 _user_id() 那關都過不了，會 401 把人踢回登入頁。
+  listMcpTokens: async () => {
+    if (isNativeApp()) await restoreNativeSession();
+    return request(
+      "GET", "/api/mcp-tokens/", undefined, isNativeApp() ? getNativeAccessToken() : getToken(),
+    );
+  },
+  createMcpToken: async (payload) => {
+    if (isNativeApp()) await restoreNativeSession();
+    return request(
+      "POST", "/api/mcp-tokens/", payload, isNativeApp() ? getNativeAccessToken() : getToken(),
+    );
+  },
+  revokeMcpToken: async (id) => {
+    if (isNativeApp()) await restoreNativeSession();
+    return request(
+      "DELETE", `/api/mcp-tokens/${id}`, undefined,
+      isNativeApp() ? getNativeAccessToken() : getToken(),
+    );
+  },
 };

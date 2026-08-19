@@ -1383,6 +1383,24 @@ body {
 .conflict-actions { display: flex; gap: 8px; margin-top: 2px; }
 .conflict-actions .chip { flex: 1; min-height: 44px; }
 
+/* ---------- F158：MCP token 管理 ---------- */
+.mcp-token-card { gap: 12px; }
+.mcp-token-empty { color: var(--text-dim); font-size: 14px; }
+.mcp-token-row {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--card-hi); border-radius: var(--r-input); padding: 12px 14px;
+}
+.mcp-token-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mcp-token-name { font-size: 15px; font-weight: 600; }
+.mcp-token-flags { color: var(--text-mute); font-size: 12px; }
+.mcp-token-flags.revoked { color: var(--over); }
+.mcp-token-meta {
+  color: var(--text-mute); font-family: var(--mono); font-size: 11px; line-height: 1.5;
+}
+.mcp-field-label { color: var(--text-mute); font-size: 12px; margin-top: 4px; }
+.mcp-token-value { font-family: var(--mono); font-size: 13px; }
+.mcp-copy-feedback { color: var(--accent); }
+
 /* ---------- F82：挑今日課表 ---------- */
 /* 畫面標頭：返回鈕 ＋ 標題/副標。與首頁的問候列同一族，但這裡有返回 */
 .screen-head { display: flex; align-items: center; gap: 12px; padding: 4px 6px 2px; }
