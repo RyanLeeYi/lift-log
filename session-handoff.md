@@ -42,6 +42,6 @@ executor 12–40 分、verifier 7–28 分；一次 API 521 中斷 worker（work
   **這是一條沒查完的線索**，可能只是「安裝未知應用」權限沒開
 - `scripts/backfill_sync.py` 的快照目錄用秒級時間戳，同一秒重跑會撞 VACUUM INTO 目的檔已存在
 - `docs/evidence/F146.md` 末段第 2 項仍未處理
-- `G:\我的雲端硬碟\lift-log-apk` 未掛載，v154 尚未複製到 Google Drive
+- v154 從未複製到 Google Drive；v155 已在（2026-08-19）
 - **不要整份 `Read` `feature_list.json`**（334KB）。理由與挑欄位指令見 `CLAUDE.md` 工作規則 #1
 - 正式站目前跑 `e8ff575`（F157）。前端版號仍是 v154——F156/F157 都只動後端，不需要新 APK
