@@ -995,6 +995,8 @@ body {
   border-radius: 50%; background: var(--line);
 }
 .line-pt.pr { background: var(--accent); }
+/* F136 ①：鍵盤焦點可見——沿用全站 :focus-visible 的 outline token */
+.line-pt:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 /* F135 ①②：未選中點依區間內點數 N 分級縮小，N 高時點間距會小於 8px 直徑、視覺黏成一條線。
    縮小（不是放大）不牴觸 F134 ⑧ 的「不放大點半徑」；.sel 寫在後面，同 specificity 下靠
    cascade 順序覆蓋掉分級尺寸，選中狀態不受影響（③）。 */

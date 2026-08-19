@@ -286,11 +286,14 @@ function nearestPointIndex(points, xPct) {
   return best;
 }
 
+// F136 ②：role="status" 隱含 aria-live="polite"——選中內容變更（換點／關閉再開）
+// 時會被朗讀，不需要額外掛 aria-live 屬性。
 function lineTip(point) {
   // 選中的點落在最左/最右 30% 就靠邊貼齊，否則置中——避免框被容器裁切（F134 ⑦）。
   const align = point.x <= 30 ? "left" : point.x >= 70 ? "right" : "center";
   return el("div", {
     class: `line-tip align-${align}`,
+    role: "status",
     ...(align === "center" ? { style: `left:${point.x}%` } : {}),
   }, [
     // 日期沿用 sessionCard() 同一段算式（slice(5)+replace），確保與歷史清單同一天那張卡文字一致。
@@ -298,6 +301,21 @@ function lineTip(point) {
     el("span", { class: "line-tip-sets" }, [`${point.session.sets.length} 組`]),
     el("span", { class: "line-tip-best" }, [`${fmtNum(point.best.weight_kg)}kg × ${point.best.reps}`]),
   ]);
+}
+
+// F136 ①：滑鼠點擊（經 .bars-card 代理）與鍵盤 Enter/Space（掛在各自的 .line-pt）
+// 走同一個選中分支，不各自維護一份 toggle 邏輯。
+function selectChartPoint(idx, rerender) {
+  detail.chartSelected = detail.chartSelected === idx ? null : idx;
+  rerender();
+}
+
+// rerender() 是整棵子樹重繪（root.replaceChildren），舊的 .line-pt 節點連同焦點一起被拆掉。
+// 鍵盤操作後要把焦點找回「同一序位」的新節點——每次重繪 chartPoints() 的陣列順序不變
+// （同一份 sessions、同一個排序），用索引對應即可，不需要額外記住是哪一天。
+function focusChartPoint(idx) {
+  const pts = document.querySelectorAll(".line-pt");
+  if (pts[idx]) pts[idx].focus();
 }
 
 function barChart(rerender) {
@@ -339,8 +357,7 @@ function barChart(rerender) {
     const rect = chartEl.getBoundingClientRect();
     const frac = rect.width > 0 ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
     const idx = nearestPointIndex(points, frac * 100);
-    detail.chartSelected = detail.chartSelected === idx ? null : idx;
-    rerender();
+    selectChartPoint(idx, rerender);
   };
 
   return el("div", { class: "bars-card", onclick: onCardClick }, [
@@ -350,11 +367,28 @@ function barChart(rerender) {
     ]),
     el("div", { class: "line-chart" }, [
       svg,
-      ...points.map((point) =>
+      // F136 ①③：role="button"＋tabindex="0" 給鍵盤與螢幕閱讀器一個非指標裝置的入口；
+      // DOM 順序＝points 陣列順序＝日期左舊右新，Tab 順序天然等於視覺順序，不必另外處理。
+      ...points.map((point, i) =>
         el("div", {
           class: `line-pt${sizeClass}${point.isPr ? " pr" : ""}${point === selected ? " sel" : ""}`,
           style: `left:${point.x}%;top:${point.y}px`,
+          role: "button",
+          tabindex: "0",
           "aria-label": `${point.date} 最佳組 ${point.best.weight_kg}kg × ${point.best.reps}`,
+          onkeydown: (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              // Space 的預設行為是捲動頁面（沿用 dom.js stepper 同一套 preventDefault）
+              e.preventDefault();
+              selectChartPoint(i, rerender);
+              focusChartPoint(i);
+            } else if (e.key === "Escape" && detail.chartSelected !== null) {
+              e.preventDefault();
+              detail.chartSelected = null;
+              rerender();
+              focusChartPoint(i);
+            }
+          },
         }, []),
       ),
       // 獎盃只在 PR 那幾點才畫（不像長條圖需要每欄都保留節點來撐版面——
