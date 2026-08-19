@@ -276,6 +276,37 @@ def main() -> int:
             no_hscroll = "() => document.documentElement.scrollWidth <= window.innerWidth + 1"
             check(page.evaluate(no_hscroll), "設定頁無水平捲動（390 寬）")
 
+            # 回歸（code review #1）：GET /api/mcp-tokens/ 持續失敗不該讓 render() 一直重打——
+            # 舊版每次 render 都因 mcp.tokens 仍是 null 而再發一次請求，形成緊迴圈。
+            fail_context = browser.new_context(
+                viewport=PHONE, timezone_id="Asia/Taipei",
+            )
+            fail_page = fail_context.new_page()
+            fail_calls: list[dict] = []
+
+            def fail_api_stub(route: Route) -> None:
+                request = route.request
+                path = request.url.split("?", 1)[0].removeprefix(base)
+                if path == "/api/mcp-tokens/" and request.method == "GET":
+                    fail_calls.append({"method": request.method})
+                    route.fulfill(status=500, content_type="application/json",
+                                  body='{"error":"boom"}')
+                    return
+                api_stub(route)
+
+            fail_page.route(f"{base}/api/**", fail_api_stub)
+            # `signed_in` 沿用主流程已登入的狀態（/api/auth/session 已回 200）——
+            # 新 context 開頁會直接落在首頁，不必重跑一次 GSI 流程。
+            fail_page.goto(base, wait_until="networkidle")
+            fail_page.locator(".home-head").wait_for(timeout=15_000)
+            open_settings(fail_page)
+            fail_page.wait_for_timeout(2000)
+            check(len(fail_calls) <= 2,
+                  f"① 列表載入持續失敗不緊迴圈重試（請求次數 {len(fail_calls)}）")
+            check(fail_page.locator(".mcp-token-card").count() == 1,
+                  "① 列表載入失敗時畫面仍渲染出 MCP token 區塊")
+            fail_context.close()
+
             browser.close()
     finally:
         server.terminate()

@@ -120,6 +120,22 @@ def test_create_rejects_non_positive_expiry(tmp_path: Path) -> None:
         assert "expires_in_days" in resp.json()["error"]
 
 
+def test_create_rejects_absurdly_large_expiry(tmp_path: Path) -> None:
+    """code review #2：`expires_in_days` 只有下限（`gt=0`）時，超大值讓 `timedelta` 在
+    service 層 OverflowError → 500。加 `le=3650` 後應在 schema 這層就被拒絕，同一顆
+    RequestValidationError 400（見 `test_create_rejects_non_positive_expiry` 的說明）。
+    """
+    with _make_client(tmp_path) as client:
+        headers = {"Authorization": f"Bearer {_login(client)}"}
+        resp = client.post(
+            "/api/mcp-tokens/",
+            headers=headers,
+            json={"name": "bad", "expires_in_days": 3000000},
+        )
+        assert resp.status_code == 400
+        assert "expires_in_days" in resp.json()["error"]
+
+
 def test_list_includes_expiry_and_read_only_but_not_secret(tmp_path: Path) -> None:
     with _make_client(tmp_path) as client:
         headers = {"Authorization": f"Bearer {_login(client)}"}
