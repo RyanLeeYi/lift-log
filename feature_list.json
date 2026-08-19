@@ -117,7 +117,14 @@
         "app/mcp.py",
         "app/static/js/app.js",
         "app/static/js/calendar.js",
-        "app/static/js/exercise-detail.js"
+        "app/static/js/exercise-detail.js",
+        "app/migrations.py",
+        "app/errors.py",
+        "app/api/stats.py",
+        "app/api/exercises.py",
+        "app/static/js/api.js",
+        "app/static/css/app.css",
+        "tests/test_time_mode.py"
       ],
       "requires": [],
       "prerequisites": [
