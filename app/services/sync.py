@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.errors import UnprocessableError
 from app.schemas import (
     SyncBodyMetricPayload,
     SyncDailyStatusPayload,
@@ -300,13 +301,25 @@ def _process(session: Session, raw: dict[str, Any]) -> tuple[str, dict]:
                 "natural_key_conflict",
                 _entity_of(session, mutation.entity_type, clash.existing.sync_id),
             )
-        except (ValidationError, ValueError):
+        except (ValidationError, ValueError, UnprocessableError):
+            # UnprocessableError 是 F105 的 mode 互斥驗證。它不是 ValueError 家族，
+            # 漏接的話會一路穿到 FastAPI 全域 handler：整個 request 變成 422，
+            # push() 的 commit 跑不到，**同一批裡完全合法的 mutation 一起被 rollback**。
+            # 更糟的是 Android 把 422 當不可重試，會對整個 mutations 陣列逐筆
+            # markMutationFailed——佇列裡無關的體重與次數型組全部永久失敗、不再重試。
+            # 同步層的規則是「壞的那筆退成 conflict」，不是「整批報廢」。
             result = _conflict(mutation_id, "validation_failed")
         kind = "accepted" if "server_seq" in result else "conflict"
     elif mutation.operation == "delete":
         try:
             result = _apply_delete(session, mutation, entity)
-        except (ValidationError, ValueError):
+        except (ValidationError, ValueError, UnprocessableError):
+            # UnprocessableError 是 F105 的 mode 互斥驗證。它不是 ValueError 家族，
+            # 漏接的話會一路穿到 FastAPI 全域 handler：整個 request 變成 422，
+            # push() 的 commit 跑不到，**同一批裡完全合法的 mutation 一起被 rollback**。
+            # 更糟的是 Android 把 422 當不可重試，會對整個 mutations 陣列逐筆
+            # markMutationFailed——佇列裡無關的體重與次數型組全部永久失敗、不再重試。
+            # 同步層的規則是「壞的那筆退成 conflict」，不是「整批報廢」。
             result = _conflict(mutation_id, "validation_failed")
         kind = "accepted" if "server_seq" in result else "conflict"
     else:

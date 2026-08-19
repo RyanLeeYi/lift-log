@@ -410,3 +410,104 @@ def test_deleting_a_template_syncs_the_workouts_it_detaches(client: TestClient) 
         assert api.get(f"/api/workouts/{workout['id']}", headers=headers).json()[
             "template_id"
         ] is None
+
+
+def test_bad_set_mode_does_not_wreck_the_rest_of_the_push_batch(client: TestClient) -> None:
+    """F105 回歸：一筆壞掉的組不得讓整批 push 報廢。
+
+    `assert_set_matches_mode` 拋的是 UnprocessableError，而 `_process()` 原本只攔
+    (ValidationError, ValueError)——例外一路穿到 FastAPI 全域 handler，整個 request 變成 422，
+    `push()` 的 commit 永遠跑不到，同一批裡完全合法的 mutation 一起被 rollback。
+    Android 端把 422 當成不可重試，會對**整個 mutations 陣列**逐筆 markMutationFailed，
+    於是佇列裡無關的體重、狀態、次數型組全部被判永久失敗、不再自動重試。
+    """
+    with client as api:
+        headers, device_id = _login(api)
+
+        plank = api.post(
+            "/api/exercises",
+            headers=headers,
+            json={
+                "name_zh": "同步棒式",
+                "name_en": "SyncPlank",
+                "muscle_group": "核心",
+                "mode": "time",
+            },
+        )
+        assert plank.status_code == 201
+
+        # 先把 exercise/workout 推上同步層，壞的那筆才會走到 mode 驗證而不是 dependency_missing
+        exercise_sync_id = str(uuid4())
+        workout_sync_id = str(uuid4())
+        metric_id = str(uuid4())
+        bad_set_id = str(uuid4())
+
+        def mutation(entity_type: str, entity_id: str, payload: dict) -> dict:
+            return {
+                "mutation_id": str(uuid4()),
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "operation": "upsert",
+                "base_version": 0,
+                "lease_generation": None,
+                "payload": payload,
+            }
+
+        setup = api.post(
+            "/api/sync/push",
+            headers=headers,
+            json={
+                "schema_version": 1,
+                "device_id": device_id,
+                "mutations": [
+                    mutation("exercise", exercise_sync_id, {
+                        "sync_id": exercise_sync_id,
+                        "name_zh": "同步棒式二",
+                        "name_en": "SyncPlank2",
+                        "muscle_group": "核心",
+                        "is_bodyweight": True,
+                        "mode": "time",
+                    }),
+                    mutation("workout", workout_sync_id, {
+                        "sync_id": workout_sync_id,
+                        "date": "2026-08-20",
+                    }),
+                ],
+            },
+        )
+        assert setup.status_code == 200, setup.text
+
+        # 一批兩筆：合法的體重 ＋ 對時間型動作誤填 reps 的組
+        response = api.post(
+            "/api/sync/push",
+            headers=headers,
+            json={
+                "schema_version": 1,
+                "device_id": device_id,
+                "mutations": [
+                    mutation("body_metric", metric_id, {
+                        "sync_id": metric_id,
+                        "date": "2026-08-20",
+                        "weight_kg": 80.0,
+                    }),
+                    mutation("set", bad_set_id, {
+                        "sync_id": bad_set_id,
+                        "client_uuid": "sync-bad-mode-0001",
+                        "workout_sync_id": workout_sync_id,
+                        "exercise_sync_id": exercise_sync_id,
+                        "set_number": 1,
+                        "weight_kg": 0,
+                        "reps": 10,  # 時間型動作不接受 reps
+                    }),
+                ],
+            },
+        )
+
+        # 整批不得因為一筆壞資料變成 422——壞的那筆退成 conflict，其餘照常寫入
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert len(body["conflicts"]) == 1, body
+        assert len(body["accepted"]) == 1, body
+
+        listed = api.get("/api/body-metrics", headers=headers).json()
+        assert [m["weight_kg"] for m in listed] == [80.0], "合法的 mutation 被同批的壞資料連坐"
