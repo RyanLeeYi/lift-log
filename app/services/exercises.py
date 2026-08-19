@@ -2,12 +2,41 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.errors import DomainError, NotFoundError
-from app.models import Exercise, Workout, WorkoutSet
+from app.errors import DomainError, NotFoundError, UnprocessableError
+from app.models import EXERCISE_MODE_TIME, Exercise, Workout, WorkoutSet
 from app.schemas import ExerciseCreate
 from app.services import projection
 
 DEFAULT_MUSCLE_GROUP = "其他"  # F10：自訂動作未填部位時的歸類
+
+
+def assert_set_matches_mode(
+    exercise: Exercise, reps: int | None, duration_seconds: int | None
+) -> None:
+    """F105 ②：一組的量測欄位必須與動作的 mode 相符，否則 422。
+
+    四種寫法都要擋，不是只擋「帶錯欄位」：
+      次數型：reps 必填、duration_seconds 必須為空
+      時間型：duration_seconds 必填、reps 必須為空
+    兩個都帶或兩個都不帶同樣是 422——放行任一種都會產生「這筆到底算哪種」無解的列。
+
+    共用給 REST（log_set／update_set）、MCP（log_workout）與同步 push 三條寫入路徑；
+    三條各寫一份必然漂移，而漂移的那一份會把壞資料寫進最底層。
+    """
+    if exercise.mode == EXERCISE_MODE_TIME:
+        if duration_seconds is None:
+            raise UnprocessableError(
+                f"「{exercise.name_zh}」是時間型動作，必須提供 duration_seconds"
+            )
+        if reps is not None:
+            raise UnprocessableError(f"「{exercise.name_zh}」是時間型動作，不接受 reps")
+        return
+    if reps is None:
+        raise UnprocessableError(f"「{exercise.name_zh}」是次數型動作，必須提供 reps")
+    if duration_seconds is not None:
+        raise UnprocessableError(
+            f"「{exercise.name_zh}」是次數型動作，不接受 duration_seconds"
+        )
 
 
 def create_exercise(session: Session, data: ExerciseCreate) -> Exercise:
@@ -27,6 +56,7 @@ def create_exercise(session: Session, data: ExerciseCreate) -> Exercise:
         name_en=name_en,
         muscle_group=muscle_group,
         is_bodyweight=data.is_bodyweight,
+        mode=data.mode,
     )
     session.add(exercise)
     try:
@@ -125,11 +155,12 @@ def last_sets(
 
 def last_set_values(
     session: Session, exercise_ids: list[int], exclude_workout_id: int | None = None
-) -> dict[int, tuple[float, int]]:
+) -> dict[int, tuple[float, int | None, int | None]]:
     """一次取多個動作「上次」的代表數值（該動作最近一次訓練的最後一組）。
 
     今日菜單一次列出整份課表，逐個動作打 last-sets 會是 N 次往返；這裡一次查完。
-    回傳 {exercise_id: (weight_kg, reps)}，查不到的動作不會出現在字典裡。
+    回傳 {exercise_id: (weight_kg, reps, duration_seconds)}；查不到的動作不會出現在字典裡。
+    F105：時間型動作的 reps 為 None、duration_seconds 有值，呼叫端依此分流顯示。
     """
     if not exercise_ids:
         return {}
@@ -140,10 +171,15 @@ def last_set_values(
     if exclude_workout_id is not None:
         filters.append(WorkoutSet.workout_id != exclude_workout_id)
     rows = session.execute(
-        select(WorkoutSet.exercise_id, WorkoutSet.weight_kg, WorkoutSet.reps)
+        select(
+            WorkoutSet.exercise_id,
+            WorkoutSet.weight_kg,
+            WorkoutSet.reps,
+            WorkoutSet.duration_seconds,
+        )
         .join(Workout, Workout.id == WorkoutSet.workout_id)
         .where(*filters)
         # 由舊到新掃過去，後面的覆蓋前面的＝每個動作留下最新那次的最後一組
         .order_by(Workout.date, WorkoutSet.workout_id, WorkoutSet.set_number)
     ).all()
-    return {exercise_id: (weight, reps) for exercise_id, weight, reps in rows}
+    return {row[0]: (row[1], row[2], row[3]) for row in rows}

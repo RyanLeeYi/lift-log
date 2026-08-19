@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
-from app.models import Exercise, Workout, WorkoutSet
+from app.models import EXERCISE_MODE_TIME, Exercise, Workout, WorkoutSet
 from app.schemas import ExerciseHistoryOut, HistorySession, HistorySet, PrEntry, PrSummary
 
 
@@ -24,32 +24,70 @@ def months_ago(d: date, n: int) -> date:
     return date(year, month, day)
 
 
-def _all_time_prs(session: Session, exercise_id: int) -> PrSummary:
+def _all_time_prs(session: Session, exercise: Exercise) -> PrSummary:
     """全期（不限日期）的個人紀錄。無資料時各欄位為 None。
 
-    F86 ② 起共四項：單組最重、單組最大量、推估 1RM、單次訓練總量。
+    F86 ② 次數型共四項：單組最重、單組最大量、推估 1RM、單次訓練總量。
+    F105 ⑤ 時間型只有兩項：最長單組秒數、單次訓練總秒數——推估 1RM 對「撐幾秒」
+    沒有意義，所以留 None 讓前端**整格不出現**（不是顯示 —）。
     四項都刻意不看 from/to——PR 卡講的是「歷來最好」，用區間值填會是靜默的謊。
     """
     rows = session.execute(
-        select(WorkoutSet.workout_id, WorkoutSet.weight_kg, WorkoutSet.reps).where(
-            WorkoutSet.exercise_id == exercise_id,
+        select(
+            WorkoutSet.workout_id,
+            WorkoutSet.weight_kg,
+            WorkoutSet.reps,
+            WorkoutSet.duration_seconds,
+        ).where(
+            WorkoutSet.exercise_id == exercise.id,
             WorkoutSet.deleted_at.is_(None),
         )
     ).all()
     if not rows:
         return PrSummary(top_weight=None, top_set_volume=None)
-    top_weight = max(rows, key=lambda r: r.weight_kg)
-    top_volume = max(rows, key=lambda r: r.weight_kg * r.reps)
+
+    if exercise.mode == EXERCISE_MODE_TIME:
+        return _time_prs(rows)
+    return _reps_prs(rows)
+
+
+def _time_prs(rows) -> PrSummary:  # noqa: ANN001 - SQLAlchemy Row 序列
+    """F105 ⑤：最長單組秒數 ＋ 單次訓練總秒數。次數型欄位一律 None。"""
+    timed = [r for r in rows if r.duration_seconds is not None]
+    if not timed:
+        return PrSummary(top_weight=None, top_set_volume=None)
+    longest = max(timed, key=lambda r: r.duration_seconds)
+
+    per_workout: dict[int, int] = {}
+    for r in timed:
+        per_workout[r.workout_id] = per_workout.get(r.workout_id, 0) + r.duration_seconds
+
+    return PrSummary(
+        top_weight=None,
+        top_set_volume=None,
+        top_set_duration=PrEntry(
+            weight_kg=longest.weight_kg, duration_seconds=longest.duration_seconds
+        ),
+        top_session_duration_seconds=max(per_workout.values()),
+    )
+
+
+def _reps_prs(rows) -> PrSummary:  # noqa: ANN001 - SQLAlchemy Row 序列
+    counted = [r for r in rows if r.reps is not None]
+    if not counted:
+        return PrSummary(top_weight=None, top_set_volume=None)
+    top_weight = max(counted, key=lambda r: r.weight_kg)
+    top_volume = max(counted, key=lambda r: r.weight_kg * r.reps)
 
     # Epley：w × (1 + reps/30)。勝出的不一定是最重那組——這正是這張卡的用處
     # （100×12 推估 140，勝過 120×2 的 128）。
-    top_est_1rm = max(r.weight_kg * (1 + r.reps / 30) for r in rows)
+    top_est_1rm = max(r.weight_kg * (1 + r.reps / 30) for r in counted)
 
     # 單次量＝一次訓練的總量，不是單組量。⚠ 這裡是**原始** weight×reps：
     # 自體重動作的「有效重量」要加上當下體重，而體重是前端才知道的資料
     # （日曆與歷來紀錄卡的噸位都在前端加）。兩邊因此會有落差，是已知的。
     per_workout: dict[int, float] = {}
-    for r in rows:
+    for r in counted:
         per_workout[r.workout_id] = per_workout.get(r.workout_id, 0.0) + r.weight_kg * r.reps
 
     return PrSummary(
@@ -64,7 +102,8 @@ def exercise_history(
     session: Session, exercise_id: int, from_date: date, to_date: date
 ) -> ExerciseHistoryOut:
     """動作 id 不存在 → 404。sessions 依日期升冪，只含未軟刪、日期落在 [from, to] 的組。"""
-    if session.get(Exercise, exercise_id) is None:
+    exercise = session.get(Exercise, exercise_id)
+    if exercise is None:
         raise NotFoundError()
 
     # 一次查回 set 與其 workout 日期（避免逐筆 s.workout.date 的 N+1）
@@ -98,7 +137,7 @@ def exercise_history(
         .where(WorkoutSet.exercise_id == exercise_id, WorkoutSet.deleted_at.is_(None))
     )
     return ExerciseHistoryOut(
-        prs=_all_time_prs(session, exercise_id),
+        prs=_all_time_prs(session, exercise),
         sessions=sessions,
         first_session_date=first_session_date,
     )

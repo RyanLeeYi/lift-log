@@ -20,8 +20,10 @@ def calendar(
     month: int = Query(ge=1, le=12),
 ) -> dict:
     # F8：自體重噸位以最新體重計（與 MCP log_workout 同一規則，PRD R6）
+    # F105 ④：days 的值從單一噸位數字改成 {tonnage_kg, duration_seconds, sets_count}
+    # ——熱力圖分級改吃 sets_count，噸位與秒數並列供明細顯示。
     return {
         "year": year,
         "month": month,
-        "days": svc.calendar_tonnage(session, year, month, latest_weight(session)),
+        "days": svc.calendar_days(session, year, month, latest_weight(session)),
     }

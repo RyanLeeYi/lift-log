@@ -126,8 +126,13 @@ def test_api_history_returns_prs_and_sessions(client: TestClient, exercise_id: i
     assert body["sessions"][0]["date"] == "2026-07-10"
     got = {(s["weight_kg"], s["reps"]) for s in body["sessions"][0]["sets"]}
     assert got == {(80.0, 8), (100.0, 3)}
-    assert body["prs"]["top_weight"] == {"weight_kg": 100.0, "reps": 3}
-    assert body["prs"]["top_set_volume"] == {"weight_kg": 80.0, "reps": 8}
+    # F105：PrEntry 多了 duration_seconds，次數型一律 null
+    assert body["prs"]["top_weight"] == {"weight_kg": 100.0, "reps": 3, "duration_seconds": None}
+    assert body["prs"]["top_set_volume"] == {
+        "weight_kg": 80.0,
+        "reps": 8,
+        "duration_seconds": None,
+    }
 
 
 def test_api_history_invalid_date_format_422(client: TestClient, exercise_id: int) -> None:
@@ -148,7 +153,8 @@ def test_api_history_set_schema_only_contract_fields(client: TestClient, exercis
     assert resp.status_code == 200
     s = resp.json()["sessions"][0]["sets"][0]
     # R1 契約：只回 id/set_number/weight_kg/reps/rpe，不外洩 workout_id/exercise_id/rest_seconds
-    assert set(s.keys()) == {"id", "set_number", "weight_kg", "reps", "rpe"}
+    # F105：契約多一個 duration_seconds（時間型才有值），仍不外洩 workout_id/exercise_id
+    assert set(s.keys()) == {"id", "set_number", "weight_kg", "reps", "duration_seconds", "rpe"}
 
 
 def test_api_history_from_after_to_422(client: TestClient, exercise_id: int) -> None:

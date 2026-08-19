@@ -96,6 +96,8 @@ class ExerciseCreate(BaseModel):
     name_en: str | None = None
     muscle_group: str | None = None
     is_bodyweight: bool = False
+    # F105：時間型動作（棒式這類做幾秒）。省略＝次數型，既有呼叫端不必改。
+    mode: Literal["reps", "time"] = "reps"
 
     @field_validator("name_zh")
     @classmethod
@@ -122,6 +124,8 @@ class ExerciseOut(BaseModel):
     name_en: str
     muscle_group: str
     is_bodyweight: bool
+    # F105：前端 logger 與各顯示點依這個欄位分流（'reps' / 'time'）
+    mode: str
 
 
 class TemplateExerciseIn(BaseModel):
@@ -238,7 +242,10 @@ class SetCreate(BaseModel):
     # 寫入路徑不必把 F32 的組號規則再實作一份；有帶就沿用，前端與匯入路徑行為不變。
     set_number: int | None = Field(default=None, gt=0)
     weight_kg: float = Field(ge=0)
-    reps: int = Field(gt=0)
+    # F105：次數型帶 reps、時間型帶 duration_seconds，兩者互斥且必須擇一。
+    # 「擇一」的強制放在 service 層（要對照該動作的 mode 才判得準），這裡只收欄位。
+    reps: int | None = Field(default=None, gt=0)
+    duration_seconds: int | None = Field(default=None, gt=0)
     rpe: int | None = Field(default=None, ge=1, le=10)
     rest_seconds: int | None = Field(default=None, ge=0)
 
@@ -250,7 +257,9 @@ class SetUpdate(BaseModel):
     """
 
     weight_kg: float = Field(ge=0)
-    reps: int = Field(gt=0)
+    # F105：同 SetCreate——互斥擇一，強制在 service 層。
+    reps: int | None = Field(default=None, gt=0)
+    duration_seconds: int | None = Field(default=None, gt=0)
     rpe: int | None = Field(default=None, ge=1, le=10)
     rest_seconds: int | None = Field(default=None, ge=0)
 
@@ -260,7 +269,9 @@ class LogSetIn(BaseModel):
 
     exercise: str = Field(min_length=1)
     weight_kg: float = Field(ge=0)
-    reps: int = Field(gt=0)
+    # F105：同 SetCreate——互斥擇一，強制在 service 層。
+    reps: int | None = Field(default=None, gt=0)
+    duration_seconds: int | None = Field(default=None, gt=0)
     rpe: int | None = Field(default=None, ge=1, le=10)
 
     @field_validator("exercise")
@@ -290,6 +301,9 @@ class LogWorkoutSummary(BaseModel):
     date: date_type
     sets_count: int
     tonnage_kg: float
+    # F105 ③：時間型不進噸位，改以總秒數表達份量。兩個數字**並列不相加**，
+    # 呼叫端要各自標明自己是什麼；沒有時間型組時為 0。
+    duration_seconds: int = 0
     # F151：這次呼叫實際新寫入 vs 因冪等鍵命中而略過的組數
     created_count: int
     skipped_count: int
@@ -301,7 +315,8 @@ class BatchDryRunPreviewItem(BaseModel):
     index: int
     exercise: str
     weight_kg: float
-    reps: int
+    reps: int | None = None
+    duration_seconds: int | None = None  # F105：時間型才有值
     disposition: Literal["create", "skip", "conflict"]
 
 
@@ -319,10 +334,24 @@ class ExerciseName(BaseModel):
     name_en: str
 
 
+class CalendarDay(BaseModel):
+    """F105 ④：日曆一天的三個數字。
+
+    熱力圖分級吃 sets_count（兩種模式共有）；tonnage_kg 與 duration_seconds
+    是③的「並列不相加」兩個份量指標，呼叫端顯示時各自標明單位。
+    """
+
+    tonnage_kg: float
+    duration_seconds: int
+    sets_count: int
+
+
 class ProgressPoint(BaseModel):
     date: date_type
     top_weight_kg: float
-    reps: int
+    # F105：次數型是「最重那組的次數」；時間型改看最長那組的秒數，reps 為 None。
+    reps: int | None = None
+    duration_seconds: int | None = None
 
 
 class ProgressOut(BaseModel):
@@ -384,7 +413,10 @@ class SetOut(BaseModel):
     exercise_id: int
     set_number: int
     weight_kg: float
-    reps: int
+    # F105：次數型 duration_seconds 為 null、時間型 reps 為 null。兩個都給，
+    # 讓讀取端用「哪個有值」判斷，不必再去查動作的 mode。
+    reps: int | None
+    duration_seconds: int | None
     rpe: int | None
     rest_seconds: int | None
 
@@ -419,16 +451,26 @@ class WorkoutDetailOut(WorkoutOut):
 # F35：動作詳情頁的歷來查詢
 class PrEntry(BaseModel):
     weight_kg: float
-    reps: int
+    reps: int | None = None
+    duration_seconds: int | None = None  # F105：時間型才有值
 
 
 class PrSummary(BaseModel):
+    """次數型與時間型各自一組欄位，另一組全為 None——判斷用動作的 mode，不要用「哪個非空」。
+
+    F105 ⑤：時間型的 PR 是兩張卡（最長單組秒數、單次訓練總秒數），
+    估計 1RM 那格**整格不出現**（不是顯示 —），所以 top_est_1rm 對時間型一律 None。
+    """
+
     top_weight: PrEntry | None  # 全期單組最大 weight_kg
     top_set_volume: PrEntry | None  # 全期單組最大 weight_kg × reps
     # F86 ②：PR 卡改成三張，這兩個是新的。都是**全期**值——
     # 從畫面當下的區間去算等於把「這三個月最好的一次」當成個人紀錄顯示。
     top_est_1rm: float | None = None  # Epley：max(w × (1 + reps/30))
     top_session_volume: float | None = None  # 單次訓練總量 Σ(w × reps) 的全期最大值
+    # F105 時間型：最長單組秒數、單次訓練總秒數（都是全期值，理由同上）
+    top_set_duration: PrEntry | None = None
+    top_session_duration_seconds: int | None = None
 
 
 class HistorySet(BaseModel):
@@ -438,7 +480,8 @@ class HistorySet(BaseModel):
     id: int
     set_number: int
     weight_kg: float
-    reps: int
+    reps: int | None
+    duration_seconds: int | None  # F105：時間型才有值
     rpe: int | None
 
 
@@ -477,7 +520,8 @@ class ExerciseLastSet(BaseModel):
 
     exercise_id: int
     weight_kg: float
-    reps: int
+    reps: int | None
+    duration_seconds: int | None = None  # F105：時間型才有值
 
 
 class SyncPushIn(BaseModel):
@@ -511,6 +555,8 @@ class SyncExercisePayload(_SyncPayload):
     name_en: str = Field(min_length=1, max_length=100)
     muscle_group: str = Field(min_length=1, max_length=100)
     is_bodyweight: bool
+    # F105：省略＝次數型。舊版 client 不會送這個欄位，仍要能推上來。
+    mode: Literal["reps", "time"] = "reps"
 
 
 class SyncTemplateExercisePayload(BaseModel):
@@ -548,7 +594,9 @@ class SyncSetPayload(_SyncPayload):
     exercise_sync_id: UUID
     set_number: int = Field(gt=0)
     weight_kg: float = Field(ge=0)
-    reps: int = Field(gt=0)
+    # F105：同 SetCreate。Android 推上來的時間型組走同一條驗證。
+    reps: int | None = Field(default=None, gt=0)
+    duration_seconds: int | None = Field(default=None, gt=0)
     rpe: int | None = Field(default=None, ge=1, le=10)
     rest_seconds: int | None = Field(default=None, ge=0)
 

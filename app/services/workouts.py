@@ -23,7 +23,11 @@ from app.schemas import (
 )
 from app.services import projection
 from app.services.body_metrics import latest_weight
-from app.services.exercises import exercise_label, normalize_name
+from app.services.exercises import (
+    assert_set_matches_mode,
+    exercise_label,
+    normalize_name,
+)
 from app.services.stats import set_tonnage
 
 _SUGGEST_CUTOFF = 0.4
@@ -127,6 +131,7 @@ def _replayed_summary(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary
         date=workout.date,
         sets_count=len(logged),
         tonnage_kg=tonnage,
+        duration_seconds=sum(s.duration_seconds or 0 for s in logged),
         # F143 層重放：整批視為已處理過，不算這次新建
         created_count=0,
         skipped_count=len(logged),
@@ -187,6 +192,9 @@ def _plan_batch(session: Session, data: LogWorkoutIn) -> _BatchPlan:
     planned: list[_PlannedSet] = []
     for ordinal, item in enumerate(data.sets, start=1):
         exercise = index[item.exercise.lower()]
+        # F105 ②：欄位組合與動作 mode 不符 → 422，整包拒絕不寫入（與 unknown 動作同語意）。
+        # 放在配號之前，避免半套的 set_number 被算出來又丟掉。
+        assert_set_matches_mode(exercise, item.reps, item.duration_seconds)
         set_counts[exercise.id] = set_counts.get(exercise.id, 0) + 1
         set_number = set_counts[exercise.id]
         planned.append(
@@ -259,6 +267,7 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
 
     bodyweight_kg = latest_weight(session)
     tonnage = 0.0
+    duration_seconds = 0
     # 明確收集這一批寫了哪些組。**不要**事後用 `session.new` 反查——
     # 任何一次 flush 都會把它們移出那個集合，於是 change log 靜默漏掉整批
     #（驗收在 2026-08-14 抓到：MCP 記的組完全同步不出去）。
@@ -271,6 +280,7 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
             set_number=planned_set.set_number,
             weight_kg=planned_set.item.weight_kg,
             reps=planned_set.item.reps,
+            duration_seconds=planned_set.item.duration_seconds,
             rpe=planned_set.item.rpe,
             idem_key=planned_set.idem_key,
         )
@@ -282,6 +292,8 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
             planned_set.exercise.is_bodyweight,
             bodyweight_kg,
         )
+        # F105 ③：時間型不進噸位，改累總秒數；兩個數字並列不相加
+        duration_seconds += planned_set.item.duration_seconds or 0
     try:
         # F154：整批寫入的每一列都要進 change log，否則 agent 批次記的組手機同步不到
         projection.record_write(session, "workout", workout)
@@ -301,6 +313,7 @@ def _log_workout(session: Session, data: LogWorkoutIn) -> LogWorkoutSummary:
         date=workout.date,
         sets_count=len(plan.to_write),
         tonnage_kg=tonnage,
+        duration_seconds=duration_seconds,
         created_count=len(plan.to_write),
         skipped_count=plan.skipped_count,
     )
@@ -354,6 +367,7 @@ def dry_run_log_workout(session: Session, data: LogWorkoutIn) -> BatchDryRunSumm
                         exercise=planned_set.item.exercise,
                         weight_kg=planned_set.item.weight_kg,
                         reps=planned_set.item.reps,
+                        duration_seconds=planned_set.item.duration_seconds,
                         disposition=disposition,
                     )
                 )
@@ -499,8 +513,11 @@ def log_set(session: Session, workout_id: int, data: SetCreate) -> tuple[Workout
       - client 自己帶號撞號 → 直接回 409，不得改配別的號碼靜默寫成重複列（F133 ③）。
     """
     get_workout(session, workout_id)
-    if session.get(Exercise, data.exercise_id) is None:
+    exercise = session.get(Exercise, data.exercise_id)
+    if exercise is None:
         raise DomainError("exercise not found")
+    # F105 ②：先驗欄位組合再進冪等查詢——不合規的請求不該有機會命中既有列並被回成「成功」
+    assert_set_matches_mode(exercise, data.reps, data.duration_seconds)
 
     existing = _find_by_client_uuid(session, data.client_uuid)
     if existing is not None:
@@ -557,8 +574,13 @@ def update_set(session: Session, set_id: int, data: SetUpdate) -> WorkoutSet:
     workout_set = session.get(WorkoutSet, set_id)
     if workout_set is None or workout_set.deleted_at is not None:
         raise NotFoundError()
+    # F105 ②：編輯不得把一組從次數型改成時間型（動作的 mode 才是權威），組合不符 → 422
+    exercise = session.get(Exercise, workout_set.exercise_id)
+    if exercise is not None:
+        assert_set_matches_mode(exercise, data.reps, data.duration_seconds)
     workout_set.weight_kg = data.weight_kg
     workout_set.reps = data.reps
+    workout_set.duration_seconds = data.duration_seconds
     workout_set.rpe = data.rpe
     workout_set.rest_seconds = data.rest_seconds
     projection.record_write(session, "set", workout_set)

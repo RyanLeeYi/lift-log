@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    EXERCISE_MODE_REPS,
     AppSetting,
     BodyMetric,
     DailyStatus,
@@ -115,6 +116,7 @@ def payload_for(session: Session, entity_type: str, row: Any) -> dict[str, Any]:
             "name_en": row.name_en,
             "muscle_group": row.muscle_group,
             "is_bodyweight": bool(row.is_bodyweight),
+            "mode": row.mode,  # F105：時間型動作要同步到手機，否則另一台的 logger 選錯輸入
         }
     if entity_type == "template":
         items = session.scalars(
@@ -165,6 +167,7 @@ def payload_for(session: Session, entity_type: str, row: Any) -> dict[str, Any]:
             "set_number": row.set_number,
             "weight_kg": row.weight_kg,
             "reps": row.reps,
+            "duration_seconds": row.duration_seconds,  # F105：時間型才有值
             "rpe": row.rpe,
             "rest_seconds": row.rest_seconds,
         }
@@ -254,6 +257,8 @@ def apply_payload(session: Session, entity_type: str, payload: dict[str, Any]) -
         row.name_en = payload["name_en"]
         row.muscle_group = payload["muscle_group"]
         row.is_bodyweight = bool(payload["is_bodyweight"])
+        # F105：舊版 client 不送 mode，視為次數型（與既有資料同一預設）
+        row.mode = payload.get("mode") or EXERCISE_MODE_REPS
     elif entity_type == "template":
         row.name = payload["name"]
         weekdays = payload.get("weekdays")
@@ -296,10 +301,23 @@ def apply_payload(session: Session, entity_type: str, payload: dict[str, Any]) -
     elif entity_type == "set":
         row.client_uuid = payload["client_uuid"]
         row.workout_id = _require_row(session, "workout", str(payload["workout_sync_id"])).id
-        row.exercise_id = _require_row(session, "exercise", str(payload["exercise_sync_id"])).id
+        exercise_row = _require_row(session, "exercise", str(payload["exercise_sync_id"]))
+        row.exercise_id = exercise_row.id
+        # 函式內 import：exercises.py 在模組層 import 了 projection，拉到頂層就是循環。
+        # 這條規則的權威定義只有一份，寧可局部 import 也不要複製第二份判斷。
+        from app.services.exercises import assert_set_matches_mode
+
+        # F105 ②：同步推上來的組一樣要對照動作 mode——三條寫入路徑共用同一個判斷，
+        # 少擋這一條就等於留了一個把壞資料寫進最底層的後門。
+        assert_set_matches_mode(
+            exercise_row, payload.get("reps"), payload.get("duration_seconds")
+        )
         row.set_number = payload["set_number"]
         row.weight_kg = payload["weight_kg"]
-        row.reps = payload["reps"]
+        # F105：兩者互斥，用 .get 讓舊版 client 送上來的 payload（沒有 duration_seconds）
+        # 仍舊被視為次數型，而不是整包 KeyError
+        row.reps = payload.get("reps")
+        row.duration_seconds = payload.get("duration_seconds")
         row.rpe = payload.get("rpe")
         row.rest_seconds = payload.get("rest_seconds")
     elif entity_type == "body_metric":

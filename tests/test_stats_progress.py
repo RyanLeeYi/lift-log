@@ -80,7 +80,9 @@ def test_api_progress_endpoint(client: TestClient, exercise_id: int) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["exercise"]["name_zh"] == "深蹲"
-    assert body["points"] == [{"date": "2026-07-10", "top_weight_kg": 80.0, "reps": 8}]
+    assert body["points"] == [
+            {"date": "2026-07-10", "top_weight_kg": 80.0, "reps": 8, "duration_seconds": None}
+        ]
 
 
 def test_api_progress_unknown_exercise_404(client: TestClient) -> None:

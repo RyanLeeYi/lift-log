@@ -64,7 +64,9 @@ def last_set_values(
     wanted = [int(part) for part in ids.split(",") if part.strip().isdigit()]
     found = svc.last_set_values(session, wanted, exclude_workout_id=exclude_workout)
     return [
-        ExerciseLastSet(exercise_id=key, weight_kg=value[0], reps=value[1])
+        ExerciseLastSet(
+            exercise_id=key, weight_kg=value[0], reps=value[1], duration_seconds=value[2]
+        )
         for key, value in found.items()
     ]
 

@@ -186,7 +186,7 @@ class TestBodyMetricsApi:
         client.post("/api/body-metrics", json={"date": "2026-07-12", "weight_kg": 100.0})
 
         days = client.get("/api/stats/calendar?year=2026&month=7").json()["days"]
-        assert days["2026-07-10"] == 600.0
+        assert days["2026-07-10"]["tonnage_kg"] == 600.0
 
 
 def test_log_workout_bodyweight_tonnage_uses_latest_weight(db_session: Session) -> None:

@@ -15,6 +15,11 @@ SET_NUMBER_UNIQUE_INDEX = "ix_sets_workout_exercise_set_number_active"
 # F151：批次寫入冪等鍵的唯一索引名，理由同上——app/migrations.py 補索引到既有 DB 要對得上名字。
 IDEM_KEY_UNIQUE_INDEX = "ix_sets_idem_key_active"
 
+# F105：動作的計量模式。既有資料與省略時一律 'reps'。
+EXERCISE_MODE_REPS = "reps"
+EXERCISE_MODE_TIME = "time"
+EXERCISE_MODES = (EXERCISE_MODE_REPS, EXERCISE_MODE_TIME)
+
 
 # F154：可同步的 domain 表共用這三個欄位。domain 表是唯一事實來源，
 # `sync_entities` 只留版本簿與 change log——所以版本要跟著 domain row 走，不是反過來。
@@ -35,6 +40,11 @@ class Exercise(Base, SyncColumns):
     name_en: Mapped[str] = mapped_column(String, unique=True)
     muscle_group: Mapped[str] = mapped_column(String)
     is_bodyweight: Mapped[bool] = mapped_column(default=False)
+    # F105：'reps'＝次數型（預設，既有資料全部視為這個）／'time'＝時間型（棒式這類做幾秒）。
+    # 值域由 app/schemas.py 收斂，DB 不是驗證的地方（同 app_settings 的作法）。
+    mode: Mapped[str] = mapped_column(
+        String, default=EXERCISE_MODE_REPS, server_default=EXERCISE_MODE_REPS
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -146,7 +156,12 @@ class WorkoutSet(Base, SyncColumns):
     exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"), index=True)
     set_number: Mapped[int] = mapped_column()
     weight_kg: Mapped[float] = mapped_column(Float)
-    reps: Mapped[int] = mapped_column()
+    # F105：兩種模式互斥且都不可省——次數型 reps 有值、duration_seconds 為 NULL；
+    # 時間型反之（weight_kg 仍可有值＝負重棒式，無負重時是 0 而不是 NULL）。
+    # **不重用 reps 裝秒數**：省一個欄位換來的是每個讀取點都要先判斷那是次數還是秒數。
+    # 兩者皆 nullable 是為了讓「哪一種」由值本身表達；組合的強制在 schemas 層（422）。
+    reps: Mapped[int | None] = mapped_column(default=None)
+    duration_seconds: Mapped[int | None] = mapped_column(default=None)
     rpe: Mapped[int | None] = mapped_column(default=None)
     rest_seconds: Mapped[int | None] = mapped_column(default=None)
     # F151：批次寫入冪等鍵＝sha256(date|exercise_id|set_number)。舊列一律 NULL、永不回填——

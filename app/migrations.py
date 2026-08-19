@@ -9,7 +9,7 @@ from sqlalchemy.engine import Engine
 
 from app.models import IDEM_KEY_UNIQUE_INDEX, SET_NUMBER_UNIQUE_INDEX
 
-DOMAIN_SCHEMA_VERSION = 4
+DOMAIN_SCHEMA_VERSION = 5
 
 # F154：參與同步的 domain 表。順序無關，但 sets 依賴 workouts/exercises 先存在。
 SYNC_TABLES = (
@@ -101,7 +101,67 @@ _COLUMN_MIGRATIONS = [
     ("daily_status", "deleted_at", "ALTER TABLE daily_status ADD COLUMN deleted_at TIMESTAMP"),
     ("app_settings", "deleted_at", "ALTER TABLE app_settings ADD COLUMN deleted_at TIMESTAMP"),
 
+    # F105 時間型動作。既有動作全部是次數型，所以 mode 給 NOT NULL DEFAULT 'reps'
+    # ——不留 NULL，避免每個讀取點都要寫 `mode or 'reps'`。
+    ("exercises", "mode", "ALTER TABLE exercises ADD COLUMN mode TEXT NOT NULL DEFAULT 'reps'"),
+    # 既有組全部是次數型，duration_seconds 一律 NULL，不回填。
+    ("sets", "duration_seconds", "ALTER TABLE sets ADD COLUMN duration_seconds INTEGER"),
+
 ]
+
+
+# F105：時間型的組 reps 必須是 NULL，但既有 DB 的 `sets.reps` 是 INTEGER NOT NULL。
+# SQLite 沒有 ALTER COLUMN，唯一的辦法是整表重建（官方 12-step 的簡化版：
+# 本 DB 沒有任何表以 sets 為父表，所以不必處理反向 FK 改寫）。
+#
+# ⚠ created_at 刻意**不**加 NOT NULL，雖然 create_all 對新 DB 會加。理由：F151 之前的
+# 舊表允許 created_at 為 NULL，而真的有這種列（tests/test_migration.py 的 legacy fixture
+# 就是照實際舊 schema 建的）。重建不該比它取代的那張表更嚴格——那會讓升級直接炸在
+# INSERT ... SELECT，而且唯一的「修法」是替使用者捏一個假的建立時間。
+#
+# 這段只會在「舊 DB 第一次升到 F105」時跑一次；判斷依據是 PRAGMA table_info 的 notnull 旗標，
+# 重建完就永遠不會再進來。新建的 DB 由 create_all 直接產出正確 schema，不經過這裡。
+_SETS_REBUILD_TABLE = """
+CREATE TABLE sets_f105_new (
+	id INTEGER NOT NULL,
+	client_uuid VARCHAR NOT NULL,
+	workout_id INTEGER NOT NULL,
+	exercise_id INTEGER NOT NULL,
+	set_number INTEGER NOT NULL,
+	weight_kg FLOAT NOT NULL,
+	reps INTEGER,
+	duration_seconds INTEGER,
+	rpe INTEGER,
+	rest_seconds INTEGER,
+	idem_key VARCHAR,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	sync_id VARCHAR,
+	version INTEGER NOT NULL,
+	deleted_at DATETIME,
+	PRIMARY KEY (id),
+	FOREIGN KEY(workout_id) REFERENCES workouts (id),
+	FOREIGN KEY(exercise_id) REFERENCES exercises (id)
+)
+"""
+
+_SETS_REBUILD_COLUMNS = (
+    "id, client_uuid, workout_id, exercise_id, set_number, weight_kg, reps, "
+    "duration_seconds, rpe, rest_seconds, idem_key, created_at, sync_id, version, deleted_at"
+)
+
+# 重建會 DROP TABLE，所有索引跟著消失，必須原樣補回。
+# ⚠ 這份清單要與 app/models.py 的 __table_args__ 和 mapped_column(index=/unique=) 保持一致；
+# 少補一條不會報錯，只會安靜失去唯一性保護。
+_SETS_REBUILD_INDEXES = (
+    "CREATE UNIQUE INDEX ix_sets_client_uuid ON sets (client_uuid)",
+    "CREATE INDEX ix_sets_workout_id ON sets (workout_id)",
+    "CREATE INDEX ix_sets_exercise_id ON sets (exercise_id)",
+    "CREATE UNIQUE INDEX ix_sets_sync_id ON sets (sync_id)",
+    f"CREATE UNIQUE INDEX {SET_NUMBER_UNIQUE_INDEX} "
+    "ON sets (workout_id, exercise_id, set_number) WHERE deleted_at IS NULL",
+    f"CREATE UNIQUE INDEX {IDEM_KEY_UNIQUE_INDEX} "
+    "ON sets (idem_key) WHERE idem_key IS NOT NULL AND deleted_at IS NULL",
+)
 
 
 def _assert_no_duplicate_active_set_numbers(conn) -> None:  # noqa: ANN001 - Connection 型別冗長
@@ -122,7 +182,90 @@ def _assert_no_duplicate_active_set_numbers(conn) -> None:  # noqa: ANN001 - Con
         )
 
 
+def _sets_reps_is_not_null(cursor) -> bool:  # noqa: ANN001 - sqlite3.Cursor
+    for row in cursor.execute("PRAGMA table_info(sets)").fetchall():
+        if row[1] == "reps":
+            return bool(row[3])  # notnull 旗標
+    return False
+
+
+def _sets_fingerprint(cursor) -> tuple:  # noqa: ANN001 - sqlite3.Cursor
+    """重建前後的複製保真度指紋：筆數對得上，且欄位沒有被搬錯位置。
+
+    只比筆數不夠——`INSERT ... SELECT` 的欄位順序寫錯時筆數一樣正確，值卻整欄錯位。
+    加總與相異鍵數量能抓到那種錯。
+
+    刻意**不**用 `PRAGMA foreign_key_check`：F151 之前的舊表沒有 FK 子句，重建後才有，
+    於是既有的孤兒列會在重建後「首次」被報出來，看起來像是這次弄壞的。孤兒資料是另一個
+    問題，不該讓一個其實成功的升級 rollback。
+    """
+    return cursor.execute(
+        "SELECT COUNT(*), COUNT(DISTINCT client_uuid), "
+        "COALESCE(SUM(reps), -1), COALESCE(SUM(weight_kg), -1), "
+        "COALESCE(SUM(set_number), -1), COALESCE(SUM(workout_id), -1) FROM sets"
+    ).fetchone()
+
+
+def _rebuild_sets_for_nullable_reps(engine: Engine) -> None:
+    """把既有 DB 的 sets.reps 從 NOT NULL 改成 nullable。已經是 nullable 就整段跳過。
+
+    走 DBAPI 原生連線而不是 SQLAlchemy Connection：`PRAGMA foreign_keys` 在交易內是**無效指令**
+    （不報錯、也不生效），而 SQLAlchemy 2.0 一 execute 就 autobegin，沒有「交易外」可用。
+    所以這裡改成 autocommit（isolation_level=None）並自己下 BEGIN/COMMIT。
+    """
+    raw = engine.raw_connection()
+    try:
+        dbapi = raw.driver_connection
+        previous_isolation = dbapi.isolation_level
+        dbapi.isolation_level = None  # 自己管交易；否則 DDL 不會被包進去
+        cursor = dbapi.cursor()
+        try:
+            if not _sets_reps_is_not_null(cursor):
+                return
+            cursor.execute("PRAGMA foreign_keys=OFF")
+            fingerprint_before = _sets_fingerprint(cursor)
+            try:
+                cursor.execute("BEGIN")
+                cursor.execute(_SETS_REBUILD_TABLE)
+                cursor.execute(
+                    f"INSERT INTO sets_f105_new ({_SETS_REBUILD_COLUMNS}) "
+                    f"SELECT {_SETS_REBUILD_COLUMNS} FROM sets"
+                )
+                cursor.execute("DROP TABLE sets")
+                cursor.execute("ALTER TABLE sets_f105_new RENAME TO sets")
+                for ddl in _SETS_REBUILD_INDEXES:
+                    cursor.execute(ddl)
+                # 提交前自我檢查：外鍵沒斷、reps 真的可為 NULL。這是不可逆操作，
+                # 出事要當場回滾，不要留到使用者記第一組時才發現。
+                fingerprint_after = _sets_fingerprint(cursor)
+                if fingerprint_after != fingerprint_before:
+                    raise RuntimeError(
+                        f"F105 sets 重建前後資料不一致：{fingerprint_before} -> {fingerprint_after}"
+                    )
+                if _sets_reps_is_not_null(cursor):
+                    raise RuntimeError("F105 sets 重建後 reps 仍是 NOT NULL")
+            except Exception:
+                cursor.execute("ROLLBACK")
+                raise
+            else:
+                cursor.execute("COMMIT")
+            finally:
+                cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+            dbapi.isolation_level = previous_isolation
+    finally:
+        raw.close()
+
+
 def migrate_schema(engine: Engine) -> None:
+    _add_columns_and_indexes(engine)
+    # 欄位補完才重建——新表要把 duration_seconds 一起搬過去。
+    _rebuild_sets_for_nullable_reps(engine)
+    _stamp_schema_version(engine)
+
+
+def _add_columns_and_indexes(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -168,6 +311,11 @@ def migrate_schema(engine: Engine) -> None:
                     f"ON {table} (sync_id)"
                 )
             )
+
+
+def _stamp_schema_version(engine: Engine) -> None:
+    """版本戳最後才寫——中途失敗時 schema_version 要停在舊值，否則下次啟動會以為升級完成了。"""
+    with engine.begin() as conn:
         conn.execute(
             text(
                 "INSERT INTO schema_metadata (key, value) VALUES ('schema_version', :version) "

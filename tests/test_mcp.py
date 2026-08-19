@@ -158,7 +158,9 @@ async def test_mcp_query_workouts_and_progress(
     ]
 
     points = _structured(progress)["points"]
-    assert points == [{"date": "2026-07-10", "top_weight_kg": 85.0, "reps": 6}]
+    assert points == [
+        {"date": "2026-07-10", "top_weight_kg": 85.0, "reps": 6, "duration_seconds": None}
+    ]
 
 
 @pytest.mark.asyncio

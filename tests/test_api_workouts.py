@@ -245,12 +245,14 @@ class TestLogSet:
         detail = client.get(f"/api/workouts/{workout_id}").json()
         assert len(detail["sets"]) == 1
 
-    def test_missing_reps_returns_400(self, client, exercise_id):
+    def test_missing_reps_returns_422(self, client, exercise_id):
+        """F105 ②：reps 從 schema 必填改成「與 duration_seconds 擇一」，改由 service 對照
+        動作 mode 判定，所以次數型動作漏帶 reps 的狀態碼從 400 變成 422。"""
         workout_id = client.post("/api/workouts", json={}).json()["id"]
         payload = make_set_payload(exercise_id)
         del payload["reps"]
         resp = client.post(f"/api/workouts/{workout_id}/sets", json=payload)
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         assert "reps" in resp.json()["error"]
 
     @pytest.mark.parametrize(

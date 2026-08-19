@@ -22,7 +22,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import Settings
 from app.control_models import User
 from app.db import UserDataUnavailable, canonical_user_db_path, make_engine
-from app.errors import DomainError, NotFoundError, UnknownExerciseError, validation_message
+from app.errors import (
+    DomainError,
+    NotFoundError,
+    UnknownExerciseError,
+    UnprocessableError,
+    validation_message,
+)
 from app.models import BodyMetric, DailyStatus
 from app.schemas import (
     BodyMetricIn,
@@ -211,7 +217,10 @@ def create_mcp(
                                     "exercise": names[s.exercise_id],
                                     "set_number": s.set_number,
                                     "weight_kg": s.weight_kg,
+                                    # F105：次數型回 reps、時間型回 duration_seconds，
+                                    # 另一個為 null——讀的人靠「哪個有值」就知道是哪種
                                     "reps": s.reps,
+                                    "duration_seconds": s.duration_seconds,
                                     "rpe": s.rpe,
                                     "rest_seconds": s.rest_seconds,
                                 }
@@ -225,7 +234,11 @@ def create_mcp(
 
     @mcp.tool
     def get_progress(exercise: str) -> dict:
-        """該動作的進步曲線：每次訓練的最大重量與次數（中文或英文名皆可）。"""
+        """該動作的進步曲線（中文或英文名皆可）。
+
+        次數型動作回每次訓練的最大重量與該重量的次數；
+        時間型動作（棒式這類做幾秒）改回每次訓練**最長那組的秒數**（duration_seconds）。
+        """
         try:
             with domain_session() as session:
                 try:
@@ -271,6 +284,11 @@ def create_mcp(
     ) -> dict:
         """代主人記錄一次訓練（整包寫入或整包拒絕）。
 
+        每一組依動作的計量方式擇一填：次數型填 reps、時間型（棒式這類做幾秒）填
+        duration_seconds。填錯或兩個都填會整包拒絕；時間型的 weight_kg 是負重，
+        沒有負重就填 0。回傳的 tonnage_kg 只算次數型，時間型看 duration_seconds
+        ——兩個數字並列，不要相加。
+
         動作名雙語比對；比對不到時整包拒絕並回相近建議，
         經主人同意後帶 create_missing=true 才自動建新動作。
         每次記錄請自產一個 client_uuid（≥8 字元）；timeout 重試帶同值
@@ -300,6 +318,8 @@ def create_mcp(
                         "unknown": exc.unknown,
                         "suggestions": exc.suggestions,
                     }
+                except UnprocessableError as exc:
+                    return {"error": exc.message}
                 except DomainError as exc:
                     return {"error": exc.message}
                 return summary.model_dump(mode="json")

@@ -26,6 +26,18 @@ class UnknownExerciseError(Exception):
         super().__init__(f"unknown exercise: {', '.join(unknown)}")
 
 
+class UnprocessableError(Exception):
+    """F105：欄位各自合法、但組合與動作的 mode 不符 → 422。
+
+    與 DomainError（400）分開是因為語意不同：400 是「這個請求說不通」（動作不存在），
+    422 是「請求說得通但內容不合規則」（時間型動作卻帶 reps）。acceptance ② 指定 422。
+    """
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
 class ConflictError(Exception):
     """冪等鍵衝突（client_uuid 已用於其他 workout 或已刪除的組）→ 409。"""
 
@@ -71,6 +83,10 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def on_domain_error(request: Request, exc: DomainError) -> JSONResponse:
         return _error(status.HTTP_400_BAD_REQUEST, exc.message)
+
+    @app.exception_handler(UnprocessableError)
+    async def on_unprocessable(request: Request, exc: UnprocessableError) -> JSONResponse:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.message)
 
     @app.exception_handler(ConflictError)
     async def on_conflict(request: Request, exc: ConflictError) -> JSONResponse:

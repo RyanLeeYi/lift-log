@@ -33,7 +33,10 @@ class TestCalendarTonnage:
         body = resp.json()
         assert body["year"] == 2026
         assert body["month"] == 7
-        assert body["days"]["2026-07-16"] == 80 * 8 + 85 * 6  # 1150
+        # F105 ④：days 的值改成三個數字的物件（熱力圖分級改吃 sets_count）
+        assert body["days"]["2026-07-16"]["tonnage_kg"] == 80 * 8 + 85 * 6  # 1150
+        assert body["days"]["2026-07-16"]["sets_count"] == 2
+        assert body["days"]["2026-07-16"]["duration_seconds"] == 0
 
     def test_bodyweight_without_body_metrics_counts_extra_load_only(self, client):
         pullup = client.post(
@@ -50,7 +53,7 @@ class TestCalendarTonnage:
         _log(client, w, pullup, "a2" * 16, weight_kg=10, reps=6, set_number=2)  # 額外負重 10
 
         days = client.get("/api/stats/calendar?year=2026&month=7").json()["days"]
-        assert days["2026-07-10"] == 0 * 6 + 10 * 6  # 60
+        assert days["2026-07-10"]["tonnage_kg"] == 0 * 6 + 10 * 6  # 60
 
     def test_soft_deleted_sets_excluded(self, client, exercise_id):
         w = _workout_on(client, "2026-07-05")
@@ -60,7 +63,7 @@ class TestCalendarTonnage:
         assert client.delete(f"/api/sets/{removed['id']}").status_code == 204
 
         days = client.get("/api/stats/calendar?year=2026&month=7").json()["days"]
-        assert days["2026-07-05"] == 500
+        assert days["2026-07-05"]["tonnage_kg"] == 500
 
     def test_only_requested_month_included(self, client, exercise_id):
         w_in = _workout_on(client, "2026-07-31")
