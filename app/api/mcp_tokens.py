@@ -24,9 +24,20 @@ def create_mcp_token(data: McpTokenCreateIn, request: Request) -> McpTokenCreate
     """明文只在這次回應出現——之後 GET 列表與 DB 都只有 hash。"""
     user_id = _user_id(request)
     with request.app.state.control_session_factory() as control:
-        token, plaintext = svc.create_token(control, user_id, data.name)
+        token, plaintext = svc.create_token(
+            control,
+            user_id,
+            data.name,
+            expires_in_days=data.expires_in_days,
+            read_only=data.read_only,
+        )
         return McpTokenCreateOut(
-            id=token.id, name=token.name, token=plaintext, created_at=token.created_at
+            id=token.id,
+            name=token.name,
+            token=plaintext,
+            created_at=token.created_at,
+            expires_at=token.expires_at,
+            read_only=token.read_only,
         )
 
 

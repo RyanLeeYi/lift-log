@@ -62,6 +62,11 @@ class AccountDeleteIn(ReauthIn):
 
 class McpTokenCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    # F158：預設 90 天（與 app.services.mcp_tokens.DEFAULT_EXPIRY_DAYS 一致——那裡才是實際
+    # 套用的來源，這裡的預設值只是讓漏填欄位的呼叫端也落在同一個「有限期」預設，不會意外變永久）。
+    # 明確傳 None 才是永久。
+    expires_in_days: int | None = Field(default=90, gt=0)
+    read_only: bool = False
 
 
 class McpTokenCreateOut(BaseModel):
@@ -69,6 +74,8 @@ class McpTokenCreateOut(BaseModel):
     name: str
     token: str
     created_at: datetime_type
+    expires_at: datetime_type | None
+    read_only: bool
 
 
 class McpTokenOut(BaseModel):
@@ -79,6 +86,8 @@ class McpTokenOut(BaseModel):
     created_at: datetime_type
     last_used_at: datetime_type | None
     revoked_at: datetime_type | None
+    expires_at: datetime_type | None
+    read_only: bool
 
 
 class ExerciseCreate(BaseModel):

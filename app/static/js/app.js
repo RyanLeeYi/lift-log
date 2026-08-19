@@ -1,7 +1,7 @@
 // lift-log 記錄頁：setup → home →（templateSelect）→ picker → logger，全部由 render() 重繪；
 // 課表管理（templates / templateEdit）在 templates.js。
 
-import { accountSettingsSection, completePendingAccountWipe } from "./account.js";
+import { accountSettingsSection, completePendingAccountWipe, mcpTokenSection } from "./account.js";
 import { api, ApiError, getToken, setToken } from "./api.js";
 import {
   getNativeAccessToken,
@@ -1096,6 +1096,9 @@ function renderSettings() {
     ...nativeSyncSettingsRow(),
     ...webSignOutRow(),
     ...accountSettingsSection(
+      { webAuthenticated, nativeAuthenticated }, render, guard,
+    ),
+    ...mcpTokenSection(
       { webAuthenticated, nativeAuthenticated }, render, guard,
     ),
     ...conflictInboxSection(),
