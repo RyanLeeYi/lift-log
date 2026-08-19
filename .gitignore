@@ -40,3 +40,4 @@ release-dev/
 .claude/
 .harness/
 prod-data/
+graphify-out/
