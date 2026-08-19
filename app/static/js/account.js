@@ -288,6 +288,11 @@ function ensureMcpTokensLoaded(rerender, guard) {
       // 外部資料不假設形狀——非陣列（伺服器契約意外跑掉、代理層吞掉回應）就當作空列表，
       // 不讓一顆壞回應把整個設定畫面的 render() 拖垮（mcp.tokens.map 會直接炸掉整頁）。
       mcp.tokens = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+      // 失敗也要讓 mcp.tokens 脫離 null，不然下一輪 render 又會走進這裡再發一次請求 → 緊迴圈。
+      // 錯誤本身照樣往外丟給 guard 的既有 showError（401 則由 guard 轉去登入畫面）。
+      mcp.tokens = [];
+      throw err;
     } finally {
       mcp.loading = false;
       rerender();
@@ -437,14 +442,7 @@ function mcpCreateModal(rerender) {
       rerender();
       return;
     }
-    mcp.tokens = [
-      {
-        id: created.id, name: created.name, created_at: created.created_at,
-        last_used_at: null, revoked_at: null,
-        expires_at: created.expires_at, read_only: created.read_only,
-      },
-      ...(mcp.tokens ?? []),
-    ];
+    mcp.tokens = await api.listMcpTokens(); // 與 mcpRevokeModal 一致：讓列表順序真的反映伺服器狀態
     mcp.createdPlaintext = created;
     mcp.createBusy = false;
     rerender();

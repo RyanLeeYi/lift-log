@@ -65,7 +65,7 @@ class McpTokenCreateIn(BaseModel):
     # F158：預設 90 天（與 app.services.mcp_tokens.DEFAULT_EXPIRY_DAYS 一致——那裡才是實際
     # 套用的來源，這裡的預設值只是讓漏填欄位的呼叫端也落在同一個「有限期」預設，不會意外變永久）。
     # 明確傳 None 才是永久。
-    expires_in_days: int | None = Field(default=90, gt=0)
+    expires_in_days: int | None = Field(default=90, gt=0, le=3650)
     read_only: bool = False
 
 
