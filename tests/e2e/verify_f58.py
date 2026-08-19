@@ -1,5 +1,5 @@
 """F58 資料不足時停用超出範圍的區間檔位 E2E。
-用法：PYTHONUTF8=1 uv run python verify_f58_own.py
+用法：PYTHONUTF8=1 uv run python tests/e2e/verify_f58.py
 涵蓋 acceptance ①–⑧。
 
 測資設計：體重從 100 天前開始、體脂只從 20 天前開始 → 體重可用到 6M（100 天）、
@@ -8,12 +8,9 @@
 
 import datetime
 import json
-import os
-import socket
-import subprocess
+import shutil
 import sys
 import tempfile
-import time
 import urllib.request
 from pathlib import Path
 
@@ -25,20 +22,12 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 from verify_f67 import (  # noqa: E402
+    TOKEN,
     read_version,
+    safe_port,
+    start_server,
     wait_home,
 )
-
-REPO = Path(__file__).resolve().parents[2]
-TOKEN = "f58-own-token"
-
-
-def free_port():
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    p = s.getsockname()[1]
-    s.close()
-    return p
 
 
 def api(base, method, path, body=None):
@@ -54,17 +43,6 @@ def api(base, method, path, body=None):
     return json.loads(raw) if raw.strip() else None
 
 
-def wait_up(url, timeout=25):
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            urllib.request.urlopen(url, timeout=1)
-            return True
-        except Exception:
-            time.sleep(0.3)
-    return False
-
-
 def chip_state(page):
     return page.evaluate("""() => {
       const out = {};
@@ -76,28 +54,11 @@ def chip_state(page):
 
 
 def main():
-    port = free_port()
-    tmpdb = Path(tempfile.gettempdir()) / f"liftlog_f58_{port}.db"
-    if tmpdb.exists():
-        tmpdb.unlink()
-    env = dict(os.environ, LIFTLOG_TOKEN=TOKEN, LIFTLOG_DB=str(tmpdb))
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "app.main:app_factory",
-            "--factory",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ],
-        cwd=str(REPO),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    port = safe_port()
+    tmp = Path(tempfile.mkdtemp(prefix="liftlog-f58-"))
+    release = tmp / "release"
+    release.mkdir()
+    proc = start_server(port, tmp / "e2e.db", release)
     base = f"http://127.0.0.1:{port}"
     results = []
 
@@ -105,10 +66,6 @@ def main():
         results.append((name, bool(ok), detail))
 
     try:
-        if not wait_up(base + "/"):
-            print("SERVER FAILED")
-            return 1
-
         today = datetime.date.today()
 
         # ⑥ 先在完全沒資料時驗「不限制」
@@ -289,68 +246,44 @@ def main():
             browser.close()
 
         # ⑥ 空 DB 的情況：另起一個乾淨 server 驗「不限制」
-        port2 = free_port()
-        tmpdb2 = Path(tempfile.gettempdir()) / f"liftlog_f58b_{port2}.db"
-        env2 = dict(os.environ, LIFTLOG_TOKEN=TOKEN, LIFTLOG_DB=str(tmpdb2))
-        proc2 = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "uvicorn",
-                "app.main:app_factory",
-                "--factory",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port2),
-            ],
-            cwd=str(REPO),
-            env=env2,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        port2 = safe_port()
+        tmp2 = Path(tempfile.mkdtemp(prefix="liftlog-f58b-"))
+        release2 = tmp2 / "release"
+        release2.mkdir()
+        proc2 = start_server(port2, tmp2 / "e2e.db", release2)
         base2 = f"http://127.0.0.1:{port2}"
         try:
-            if wait_up(base2 + "/"):
-                with sync_playwright() as pw:
-                    browser = pw.chromium.launch()
-                    page = browser.new_page(viewport={"width": 390, "height": 900})
-                    page.goto(base2 + "/")
-                    page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
-                    page.reload()
-                    wait_home(page)
-                    page.locator(".bottom-nav .nav-item", has_text="體重").click()
-                    page.wait_for_selector(".screen.body", timeout=8000)
-                    page.wait_for_timeout(600)
-                    st0 = chip_state(page)
-                    check(
-                        "⑥ 完全沒有紀錄時不啟用限制（沒有任何檔位被灰掉）",
-                        all(not v["off"] for v in st0.values()),
-                        f"{ {k: ('off' if v['off'] else 'ok') for k, v in st0.items()} }",
-                    )
-                    browser.close()
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 390, "height": 900})
+                page.goto(base2 + "/")
+                page.evaluate("t => localStorage.setItem('liftlog.token', t)", TOKEN)
+                page.reload()
+                wait_home(page)
+                page.locator(".bottom-nav .nav-item", has_text="體重").click()
+                page.wait_for_selector(".screen.body", timeout=8000)
+                page.wait_for_timeout(600)
+                st0 = chip_state(page)
+                check(
+                    "⑥ 完全沒有紀錄時不啟用限制（沒有任何檔位被灰掉）",
+                    all(not v["off"] for v in st0.values()),
+                    f"{ {k: ('off' if v['off'] else 'ok') for k, v in st0.items()} }",
+                )
+                browser.close()
         finally:
             proc2.terminate()
             try:
-                proc2.wait(timeout=5)
+                proc2.wait(timeout=10)
             except Exception:
                 proc2.kill()
-            if tmpdb2.exists():
-                try:
-                    tmpdb2.unlink()
-                except Exception:
-                    pass
+            shutil.rmtree(tmp2, ignore_errors=True)
     finally:
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=10)
         except Exception:
             proc.kill()
-        if tmpdb.exists():
-            try:
-                tmpdb.unlink()
-            except Exception:
-                pass
+        shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n==== F58 E2E ====")
     allok = True

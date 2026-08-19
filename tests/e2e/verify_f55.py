@@ -1,16 +1,13 @@
 """F55 體重頁「＋ 記錄」移到畫面下方 E2E（含 F54 行為回歸）。
-用法：PYTHONUTF8=1 uv run python verify_f55_own.py
+用法：PYTHONUTF8=1 uv run python tests/e2e/verify_f55.py
 涵蓋 F55 acceptance ①–⑤（沿用 F54 腳本的視窗行為檢查當 ④ 的回歸）。
 """
 
 import datetime
 import json
-import os
-import socket
-import subprocess
+import shutil
 import sys
 import tempfile
-import time
 import urllib.request
 from pathlib import Path
 
@@ -22,20 +19,12 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 from verify_f67 import (  # noqa: E402
+    TOKEN,
     read_version,
+    safe_port,
+    start_server,
     wait_home,
 )
-
-REPO = Path(__file__).resolve().parents[2]
-TOKEN = "f55-own-token"
-
-
-def free_port():
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    p = s.getsockname()[1]
-    s.close()
-    return p
 
 
 def api(base, method, path, body=None):
@@ -49,17 +38,6 @@ def api(base, method, path, body=None):
     with urllib.request.urlopen(req, timeout=5) as r:
         raw = r.read().decode()
     return json.loads(raw) if raw.strip() else None
-
-
-def wait_up(url, timeout=25):
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            urllib.request.urlopen(url, timeout=1)
-            return True
-        except Exception:
-            time.sleep(0.3)
-    return False
 
 
 def box_h(page, sel):
@@ -90,28 +68,11 @@ def body_threshold(base):
 
 
 def main():
-    port = free_port()
-    tmpdb = Path(tempfile.gettempdir()) / f"liftlog_f55_{port}.db"
-    if tmpdb.exists():
-        tmpdb.unlink()
-    env = dict(os.environ, LIFTLOG_TOKEN=TOKEN, LIFTLOG_DB=str(tmpdb))
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "app.main:app_factory",
-            "--factory",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ],
-        cwd=str(REPO),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    port = safe_port()
+    tmp = Path(tempfile.mkdtemp(prefix="liftlog-f55-"))
+    release = tmp / "release"
+    release.mkdir()
+    proc = start_server(port, tmp / "e2e.db", release)
     base = f"http://127.0.0.1:{port}"
     results = []
 
@@ -119,10 +80,6 @@ def main():
         results.append((name, bool(ok), detail))
 
     try:
-        if not wait_up(base + "/"):
-            print("SERVER FAILED")
-            return 1
-
         today = datetime.date.today()
         for i in range(12, 0, -1):
             d = (today - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
@@ -378,16 +335,12 @@ def main():
     finally:
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=10)
         except Exception:
             proc.kill()
-        if tmpdb.exists():
-            try:
-                tmpdb.unlink()
-            except Exception:
-                pass
+        shutil.rmtree(tmp, ignore_errors=True)
 
-    print("\n==== F54 E2E ====")
+    print("\n==== F55 E2E ====")
     allok = True
     for name, ok, detail in results:
         print(f"[{'PASS' if ok else 'FAIL'}] {name}  |  {detail}")
