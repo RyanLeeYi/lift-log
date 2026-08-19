@@ -25,11 +25,12 @@ passing acceptance 在 `docs/archive/`，僅供閱讀，**不作為驗收依據*
    是平行度最低的地方。能不能平行只看三個條件同時成立：不互為 `prerequisites`、`touches` 無交集、
    `requires` 無交集（跑 `harness-plan.py . --dsm` 判定）。可平行時各自 worktree。
    **驗收一律逐條、依 `prerequisites` 順序、各自 evidence**——上游改動會讓已通過的下游驗收失效
-   - ⚠ **不要整份 `Read` `feature_list.json`**（145KB；2026-08-18 把 145 條 passing 的
-     acceptance 移進 `docs/archive/acceptance.jsonl` 後從 337KB 降下來，但整讀仍然貴）。
-     要哪幾條就挑哪幾條：
-     `uv run python -c "import json;fs=json.load(open('feature_list.json',encoding='utf-8'))['features'];print([f['id'] for f in fs if f['status']=='failing'])"`
-     ——長證據早已搬進 `docs/evidence/F<id>.md`，`evidence` 欄位只剩 pointer
+   - `feature_list.json` **只留 failing 與 envelopes**（55KB）。passing 一律整條搬進
+     `docs/archive/features.jsonl`（2026-08-19；337KB → 148KB → 55KB）。查歷史條目讀那個檔，
+     不要把它搬回主檔。`harness-plan.py` 會自己合併歸檔做 hub 偵測與 prerequisites 檢查
+     ——**少了它，`sw.js` 會掉出 hub 門檻讓任兩條都假重疊，指向已 passing 的前置也會被誤報成
+     「指向不存在的 F59」**（2026-08-19 遷移時實際踩到）。
+     長證據在 `docs/evidence/F<id>.md`，`evidence` 欄位只剩 pointer
 2. feature 狀態只能 failing → passing，且必須附驗證證據（測試輸出/截圖）
 3. 不做 feature_list 之外的事；發現該做的新事項 → 先加進 list 標 failing，不直接做
 4. session 結束前更新 `session-handoff.md`（L2 起）

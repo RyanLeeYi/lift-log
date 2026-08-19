@@ -108,9 +108,12 @@ there is no frontend build step. Android build and signing instructions are in
 
 Historical material, kept for context and never used to judge anything.
 
-- `acceptance.jsonl` — one line per feature whose acceptance was frozen, verified
-  and archived after it passed. Read one back with:
-  `python -c "import json;print([json.loads(l) for l in open('docs/archive/acceptance.jsonl',encoding='utf-8') if '\"F35\"' in l])"`
+- `features.jsonl` — one line per feature that passed: the whole entry, moved out
+  of `feature_list.json` at wrap-up (acceptance text, evidence pointer, `touches`,
+  `requires`). The main list keeps only failing entries. Read one back with:
+  `python -c "import json;print([json.loads(l) for l in open('docs/archive/features.jsonl',encoding='utf-8') if '\"F35\"' in l])"`
+  `harness-plan.py` merges this file back in for hub detection and prerequisite
+  checks, so archiving does not distort its analysis.
 - `*.md` — design documents written before a feature was signed off.
 
 The only spec is the `acceptance` field in `feature_list.json`. A feature being
