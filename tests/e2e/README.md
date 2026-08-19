@@ -15,8 +15,8 @@ Playwright 已是 dev 依賴，瀏覽器由 `init.sh` 的 `uv run playwright ins
 ### 🟡 隔離區（verify_f48–f60，2026-07-30 從舊 session 的 scratchpad 搬進來）
 
 **這批原本 13 支多數目前跑不起來，不是現役回歸防線**（`verify_f59`／`verify_f60` 已於
-F86 ⑩ 翻新完成，`verify_f48`–`verify_f52` 已於 F88 ⑩ 翻新完成，2026-08-19，現況見下表；
-其餘 6 支（`verify_f53`–`verify_f58`）仍待對應改版 feature 處理）。放進 repo 的目的是**保存**——
+F86 ⑩ 翻新完成，`verify_f48`–`verify_f52` 已於 F88 ⑩、`verify_f53`–`verify_f58` 已於 F87 ⑭ 翻新完成
+（皆 2026-08-19），現況見下表；13 支全部翻新完畢，隔離區已清空）。放進 repo 的目的是**保存**——
 它們原本散在 `%TEMP%\claude\...\scratchpad\`，那些目錄不保證長存，再不搬就沒了。
 
 失效原因：全部在等 `.home-start`，而 F81 首頁改版後那個 class 已不再出現在 DOM
@@ -28,7 +28,7 @@ F86 ⑩ 翻新完成，`verify_f48`–`verify_f52` 已於 F88 ⑩ 翻新完成�
 
 | 腳本 | 翻新時機 |
 |---|---|
-| `verify_f53`–`verify_f58`（/body） | **F87 體重體脂改版**（該頁 DOM 本來就要重做） |
+| `verify_f53`–`verify_f58`（/body） | 已翻新（F87 ⑭，2026-08-19）——刪掉自帶的啟動樣板，改用 `safe_port`／`start_server`；`.home-start` 早於此輪之前已換成 `wait_home()`（不需要 `start_from_home()`：這批走底部導覽直接進 `/body`，不經開練流程）；現役可跑，不再是隔離區 |
 | `verify_f59`、`verify_f60`（動作表現、批次列） | 已翻新（F86 ⑩，2026-08-19）——刪掉自帶的啟動樣板，改用 `safe_port`／`start_server`；現役可跑，不再是隔離區 |
 | `verify_f48`–`verify_f52`（課表清單／編輯頁） | 已翻新（F88 ⑩，2026-08-19）——刪掉自帶的 `free_port`／`wait_up`／`subprocess.Popen` 樣板，改用 `verify_f67` 的 `TOKEN`／`safe_port`／`start_server`；本來就沒有殘留的 `.home-start`（改版過程中已先換成 `wait_home`／`start_from_home`）。現役可跑，不再是隔離區 |
 

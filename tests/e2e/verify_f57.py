@@ -19,12 +19,9 @@ F87 ⑤ 把折線圖整個換成 24 根長條圖，F57 賴以驗證的 `svg poly
 
 import datetime
 import json
-import os
-import socket
-import subprocess
+import shutil
 import sys
 import tempfile
-import time
 import urllib.request
 from pathlib import Path
 
@@ -36,28 +33,12 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 from verify_f67 import (  # noqa: E402
+    TOKEN,
     read_version,
+    safe_port,
+    start_server,
     wait_home,
 )
-
-REPO = Path(__file__).resolve().parents[2]
-TOKEN = "f57-own-token"
-
-
-def ensure_custom(page):
-    """確保自訂面板是開著的。點「自訂」是 toggle：面板已開時再點會關掉，
-    後續找 .ex-custom .ex-date 就會 timeout（本腳本踩過）。"""
-    if page.locator(".ex-custom").count() == 0:
-        page.locator('.body-range button:has-text("自訂")').click()
-        page.wait_for_timeout(350)
-
-
-def free_port():
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    p = s.getsockname()[1]
-    s.close()
-    return p
 
 
 def api(base, method, path, body=None):
@@ -73,40 +54,12 @@ def api(base, method, path, body=None):
     return json.loads(raw) if raw.strip() else None
 
 
-def wait_up(url, timeout=25):
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            urllib.request.urlopen(url, timeout=1)
-            return True
-        except Exception:
-            time.sleep(0.3)
-    return False
-
-
 def main():
-    port = free_port()
-    tmpdb = Path(tempfile.gettempdir()) / f"liftlog_f57_{port}.db"
-    if tmpdb.exists():
-        tmpdb.unlink()
-    env = dict(os.environ, LIFTLOG_TOKEN=TOKEN, LIFTLOG_DB=str(tmpdb))
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "app.main:app_factory",
-            "--factory",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ],
-        cwd=str(REPO),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    port = safe_port()
+    tmp = Path(tempfile.mkdtemp(prefix="liftlog-f57-"))
+    release = tmp / "release"
+    release.mkdir()
+    proc = start_server(port, tmp / "e2e.db", release)
     base = f"http://127.0.0.1:{port}"
     results = []
 
@@ -114,10 +67,6 @@ def main():
         results.append((name, bool(ok), detail))
 
     try:
-        if not wait_up(base + "/"):
-            print("SERVER FAILED")
-            return 1
-
         today = datetime.date.today()
         # 刻意的空缺：85–80 天前有資料，之後跳到 20 天前才有（中間約兩個月空白）
         DAYS = [85, 84, 83, 82, 81, 80, 20, 19, 18, 17, 16, 15]
@@ -231,14 +180,10 @@ def main():
     finally:
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=10)
         except Exception:
             proc.kill()
-        if tmpdb.exists():
-            try:
-                tmpdb.unlink()
-            except Exception:
-                pass
+        shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n==== F57 E2E ====")
     allok = True
