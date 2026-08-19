@@ -101,39 +101,6 @@
       ]
     },
     {
-      "id": "F105",
-      "name": "時間型動作（棒式這類做幾秒、休幾秒）",
-      "status": "failing",
-      "evidence": "",
-      "acceptance": "（2026-07-31 Ryan 簽核凍結，三個決策已拍板。\n2026-08-18 併入原設計文件的三項驗收標準後重新簽核；設計來源文件已歸檔至\n`docs/archive/`，**不作為驗收依據**——本條是唯一規格。）\n\n⚠ **本專案動到最底層的一條**：資料模型的錯誤會沉進歷史資料裡、事後很難回頭。\n\n① 資料模型：`exercises` 新增 `mode`（`'reps'` 預設／`'time'`）；`sets` 新增\n   `duration_seconds`（nullable int）。次數型＝reps 有值、duration 為 null；\n   時間型＝duration 有值、reps 為 null，weight_kg 仍可有值（負重棒式），\n   無負重時為 0（不是 null）。既有資料全部視為 `'reps'`。\n   **不重用 reps 欄位裝秒數**——省一個欄位換來的是每個讀取點都要先判斷那是次數還是秒數。\n② 寫入驗證：兩種模式的欄位組合互斥（時間型帶 reps、次數型帶 duration_seconds 一律 422）。\n③ **決策一：時間型不進噸位統計**（Ryan 拍板）。噸位的意義是「舉起了多少重量」，\n   折算會讓未來每一個噸位數字都不可信。時間型改由**總秒數**表達份量，與噸位**並列不相加**。\n   **首頁、上次訓練摘要、動作詳情頁**在有時間型資料時要同時講兩個數字，各自標明自己是什麼。\n④ **決策二：日曆熱力圖改吃組數**（Ryan 拍板）。這是 ③ 的直接後果——不進噸位的話，\n   一場只做棒式的訓練噸位是 0，那天會顯示成沒練。分級門檻要重訂。\n⑤ **決策三：時間型的 PR 是兩張卡**（Ryan 拍板）——「最長單組秒數」與「單次訓練總秒數」。\n   原提案的第三張「累計次數」已由 Ryan 砍掉（那是次數不是表現，沒有破紀錄的意義）。\n   估計 1RM 那格**整格不出現**（不是顯示 `—`）；F86 ② 的三張卡橫排在時間型動作上改為兩張、等分。\n⑥ logger 依 mode 換輸入（時間型：秒數 ＋ 負重，沿用 F102 的直接輸入）；\n   組列表、日曆明細、動作詳情頁依 mode 分流顯示（`60 秒` 而不是 `60 次`）；\n   自訂動作（F10）建立時可選 mode。\n⑦ MCP 的查詢工具要能回答「棒式我做過幾秒」。\n⑧ 不做：組內計時器（按開始→數秒→自動記錄）、距離型動作、新圖表。\n⑨ **不回歸**：既有次數型動作的記錄、統計、顯示、MCP 全部行為不變。\n   改的是共用資料層，逐項檢查：`app/models.py`、`app/schemas.py`、migration；\n   `app/services/` 全部（body 除外）；`app/mcp.py` 的回傳語意；\n   `app/static/js/` 的 `app.js`、`calendar.js`、`exercise-detail.js`；\n   以及 `feature_list.json` 中與噸位、熱力圖、PR 相關的既有條文，逐條確認有沒有被本條取代。\n⑩ 驗收：ruff ＋ pytest（含 migration 對既有資料的驗證）＋ 對應 E2E ＋\n   既有 E2E 全套回歸（噸位、熱力圖、PR 相關的都要跑）。",
-      "touches": [
-        "app/models.py",
-        "app/schemas.py",
-        "app/services/workouts.py",
-        "app/services/stats.py",
-        "app/services/history.py",
-        "app/services/exercises.py",
-        "app/services/projection.py",
-        "app/mcp.py",
-        "app/static/js/app.js",
-        "app/static/js/calendar.js",
-        "app/static/js/exercise-detail.js",
-        "app/migrations.py",
-        "app/errors.py",
-        "app/api/stats.py",
-        "app/api/exercises.py",
-        "app/static/js/api.js",
-        "app/static/css/app.css",
-        "tests/test_time_mode.py"
-      ],
-      "requires": [],
-      "prerequisites": [
-        "F10",
-        "F102"
-      ],
-      "signed_off": true
-    },
-    {
       "id": "F124",
       "name": "Activity 重建時原生送給前端的控制事件會被丟掉（尚未簽核）",
       "status": "failing",
@@ -220,6 +187,27 @@
         "不做串流輸出、多輪記憶、對話持久化、模型選擇 UI",
         "不為內建對話另建一套 prompt 層或第二條寫入路徑",
         "key 不寫進 repo、不隨 APK 打包"
+      ]
+    },
+    {
+      "id": "F159",
+      "name": "Android 原生本地儲存支援時間型動作（解除 F105 的 APK 封鎖）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "（2026-08-20 由 F105 第二輪獨立驗收開出的 P0 分割而來，Ryan 裁決另立條目。**尚未簽核凍結**——動工前需 Ryan 逐條確認。）\n\n⚠ **這條沒完成前，F105 不得部署到正式站、也不得出 APK。**正式站一旦存在任何一筆時間型組，既有 Android 裝置的同步就會卡住。\n\n① 根因：`android/.../LocalStore.java::applyRemoteUpsert()` 的 `case \"set\"` 用 `payload.getInt(\"reps\")` 讀一個現在可能為 null 的欄位（同一段的 rpe／rest_seconds 用的是 null-safe 的 `putJsonNullableInteger`）。org.json 的 getInt 對 JSONObject.NULL 一律拋 JSONException。\n② 放大原因：`applyPullPage()` 是「change apply 與 cursor commit 共用同一個 transaction，任一 change 壞掉就整批回滾」（該檔既有註解與既有測試 `pullPageAndCursorCommitTogether` 都證實這個設計）。`SyncClient.syncOnce()` 的 pull 迴圈沒有 per-change try/catch。所以後果不是「時間型的組存不進去」，而是**該裝置的 pull cursor 永久卡在那一頁之前**，連同頁之後所有正常的次數型資料一起擋住，且不會自我恢復。\n③ 要做的事：原生本地 schema 加 `duration_seconds`、放寬 `sets.reps` 的 `NOT NULL CHECK(reps > 0)`；`applyRemoteUpsert` 的 `case \"set\"` 依 `payload.isNull(\"reps\")` 分流；`exercises` 表與其 upsert 加 `mode`。\n④ 離線寫入路徑（`LocalStorePlugin` 與 JS `localApi` 的橋接）也要能存時間型的組，否則 Android 離線記棒式會靜默丟失秒數。\n⑤ 回歸：`LocalStoreTest.java` 目前對 `entity_type=\"set\"` 的 pull 情境**零覆蓋**。至少要有一條：一頁 pull 內含「時間型 set（reps=null、duration_seconds=60）」＋其後一筆次數型 set，套用後不拋例外、`serverCursor()` 正確前進、兩筆都寫進本地。\n⑥ 不回歸：既有次數型組的 pull／push／離線記錄行為不變。\n⑦ 驗收：`gradlew testDebugUnitTest` 綠；出 APK 後在實機做一次「網頁建時間型動作 → 手機同步 → 看得到、且既有次數型資料照常同步」的冒煙。",
+      "touches": [
+        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStore.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStorePlugin.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/SyncClient.java",
+        "android/app/src/test/java/com/ryanleeyi/liftlog/LocalStoreTest.java"
+      ],
+      "requires": [],
+      "prerequisites": [
+        "F105"
+      ],
+      "non_goals": [
+        "不改伺服器端的 sync 契約（F105 已定案）",
+        "不做 Android 端的時間型 UI——UI 是打包進 APK 的同一份 web 資產，F105 已完成"
       ]
     }
   ]
