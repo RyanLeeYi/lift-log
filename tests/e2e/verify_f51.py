@@ -4,12 +4,9 @@
 """
 
 import json
-import os
-import socket
-import subprocess
+import shutil
 import sys
 import tempfile
-import time
 import urllib.request
 from pathlib import Path
 
@@ -21,20 +18,12 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 from verify_f67 import (  # noqa: E402
+    TOKEN,
     read_version,
+    safe_port,
+    start_server,
     wait_home,
 )
-
-REPO = Path(__file__).resolve().parents[2]
-TOKEN = "f51-own-token"
-
-
-def free_port():
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    p = s.getsockname()[1]
-    s.close()
-    return p
 
 
 def api(base, method, path, body=None):
@@ -50,17 +39,6 @@ def api(base, method, path, body=None):
     return json.loads(raw) if raw.strip() else None
 
 
-def wait_up(url, timeout=25):
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            urllib.request.urlopen(url, timeout=1)
-            return True
-        except Exception:
-            time.sleep(0.3)
-    return False
-
-
 def box_h(page, selector):
     b = page.locator(selector).first.bounding_box()
     return round(b["height"]) if b else None
@@ -74,28 +52,11 @@ def fully_visible(page, selector):
 
 
 def main():
-    port = free_port()
-    tmpdb = Path(tempfile.gettempdir()) / f"liftlog_f51_{port}.db"
-    if tmpdb.exists():
-        tmpdb.unlink()
-    env = dict(os.environ, LIFTLOG_TOKEN=TOKEN, LIFTLOG_DB=str(tmpdb))
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "app.main:app_factory",
-            "--factory",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ],
-        cwd=str(REPO),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    port = safe_port()
+    tmp = Path(tempfile.mkdtemp(prefix="liftlog-f51-"))
+    release = tmp / "release"
+    release.mkdir()
+    proc = start_server(port, tmp / "e2e.db", release)
     base = f"http://127.0.0.1:{port}"
     results = []
     notes = []
@@ -104,10 +65,6 @@ def main():
         results.append((name, bool(ok), detail))
 
     try:
-        if not wait_up(base + "/"):
-            print("SERVER FAILED")
-            return 1
-
         exs = api(base, "GET", "/api/exercises")
         pool = [e for e in exs if not e.get("is_bodyweight")][:8]
         # 大課表（8 動作 → 必定溢出）與小課表（2 動作 → 門檻下）
@@ -299,14 +256,10 @@ def main():
     finally:
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=10)
         except Exception:
             proc.kill()
-        if tmpdb.exists():
-            try:
-                tmpdb.unlink()
-            except Exception:
-                pass
+        shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n==== F51 E2E ====")
     allok = True
