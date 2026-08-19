@@ -47,7 +47,8 @@
       "prerequisites": [
         "F59",
         "F60"
-      ]
+      ],
+      "signed_off": true
     },
     {
       "id": "F87",
@@ -345,7 +346,8 @@
         "不做 OAuth 授權流程（MCP 仍走 bearer token）",
         "不做細到單一 tool 的權限矩陣，只分唯讀／可寫兩級",
         "不做 token 使用量統計或稽核日誌"
-      ]
+      ],
+      "signed_off": true
     }
   ]
 }
