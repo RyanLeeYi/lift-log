@@ -70,7 +70,10 @@ def last_workout(session: Session, before: date_type) -> LastWorkout | None:
             Workout.date,
             Workout.template_id,
             func.count(WorkoutSet.id),
+            # F105：時間型的 reps 是 NULL，`weight * NULL` 在 SQL 裡就是 NULL，
+            # 而 SUM 會略過 NULL——所以噸位天然不含時間型，不必另外加條件。
             func.sum(WorkoutSet.weight_kg * WorkoutSet.reps),
+            func.sum(WorkoutSet.duration_seconds),
         )
         .join(WorkoutSet, WorkoutSet.workout_id == Workout.id)
         .where(Workout.date <= before, WorkoutSet.deleted_at.is_(None))
@@ -80,7 +83,7 @@ def last_workout(session: Session, before: date_type) -> LastWorkout | None:
     ).first()
     if row is None:
         return None
-    _, day, template_id, set_count, volume = row
+    _, day, template_id, set_count, volume, duration = row
     name = None
     if template_id is not None:
         name = session.scalar(select(Template.name).where(Template.id == template_id))
@@ -89,6 +92,7 @@ def last_workout(session: Session, before: date_type) -> LastWorkout | None:
         template_name=name,
         set_count=set_count,
         volume_kg=round(volume or 0, 1),
+        duration_seconds=int(duration or 0),
     )
 
 

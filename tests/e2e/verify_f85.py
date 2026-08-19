@@ -136,17 +136,20 @@ def seed(base: str, today: date) -> dict:
     def prev_day(dom: int) -> date:
         return prev_month.replace(day=dom)
 
-    # 上個月的最大噸位＝335×10＝3350（20 號）；其餘取約 20% / 45% / 70% 落在 lv1 / lv2 / lv3
+    # F105 ④：熱力分級改吃**組數**（不再是噸位——時間型不進噸位，只做棒式的一天噸位是 0，
+    # 吃噸位會把那天畫成沒練）。門檻是固定的 ≤3 / ≤7 / ≤13 / >13，所以測資改成組數遞增，
+    # 每組的重量與次數已與分級無關，統一用同一組數值。
     graded: dict[str, int] = {}
-    for dom, (kg, reps, want) in {
-        5: (67.0, 10, 1), 10: (150.0, 10, 2), 15: (235.0, 10, 3), 20: (335.0, 10, 4),
+    for dom, (sets_count, want) in {
+        5: (2, 1), 10: (5, 2), 15: (10, 3), 20: (16, 4),
     }.items():
         day = prev_day(dom)
         wk = api(base, "/api/workouts", "POST", {"date": day.isoformat()})
-        api(base, f"/api/workouts/{wk['id']}/sets", "POST", {
-            "client_uuid": f"f85-lv{want}-0001", "exercise_id": ids[0],
-            "set_number": 1, "weight_kg": kg, "reps": reps,
-        })
+        for n in range(1, sets_count + 1):
+            api(base, f"/api/workouts/{wk['id']}/sets", "POST", {
+                "client_uuid": f"f85-lv{want}-{n:04d}", "exercise_id": ids[0],
+                "set_number": n, "weight_kg": 100.0, "reps": 10,
+            })
         graded[day.isoformat()] = want
 
     # 「有訓練、但沒有課表」的一天：標題只該有日期，不該多出「· 課表名」
@@ -269,15 +272,17 @@ def main() -> int:  # noqa: C901, PLR0915
                   f"③ 選取前後尺寸不變（{box_before['width']:.1f} → {box_after['width']:.1f}）")
 
             # ---------- ④ 熱力階與未來日 ----------
-            check(page.locator(f'.cal-day[aria-label="{today.isoformat()}"].lv4').count() == 1,
-                  "④ 當月噸位最大的一天 → lv4")
-            # F115：四個熱力階都在上個月（熱力是「同月內比噸位」，四階必須湊在同一個月）。
+            # F105 ④：分級改吃組數的固定門檻，不再是「同月內比噸位」。今天這場是 3+2+2＝7 組
+            # → lv2（≤7）。它不再需要是「當月最大」才拿得到最高階。
+            check(page.locator(f'.cal-day[aria-label="{today.isoformat()}"].lv2').count() == 1,
+                  "④ 今天 7 組 → lv2（組數門檻 ≤7）")
+            # 四個熱力階都放在上個月，一次看得到 lv1–lv4。
             # 切過去驗完再切回來——後面的未來日／明細檢查都以當月為前提。
             page.locator(".cal-prev").click()
             page.wait_for_timeout(700)
             for iso, want in graded.items():
                 cls = page.locator(f'.cal-day[aria-label="{iso}"]').get_attribute("class")
-                check(f"lv{want}" in cls, f"④ {iso} 依噸位落在 lv{want}（{cls}）")
+                check(f"lv{want}" in cls, f"④ {iso} 依組數落在 lv{want}（{cls}）")
             # 五階要真的看得出來：四個底色兩兩不同，否則「分 5 階」只是 class 名稱
             heats = [
                 css(page, f'.cal-day[aria-label="{iso}"]', "background-color")

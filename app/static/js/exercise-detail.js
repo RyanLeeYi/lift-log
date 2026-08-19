@@ -101,23 +101,42 @@ export async function openExerciseDetail(exercise, returnScreen = "picker") {
   }
 }
 
-// ---------- F86：每次最佳組 ----------
+// ---------- F86：每次最佳組（F105 起依 mode 分流） ----------
 
-// 一次訓練的「最佳組」＝重量最大者；同重量取次數多的。
+// F105：判斷一律用動作的 mode，不用「哪個欄位非空」（凍結契約）。
+function isTimeMode() {
+  return detail.exercise?.mode === "time";
+}
+
+// 一次訓練的「最佳組」：次數型＝重量最大者（同重量取次數多的）；
+// 時間型＝撐最久者（duration_seconds 最大）——沒有「重量」這個排序軸。
 // ⚠ 這是整個畫面的軸心（折線圖的 y 座標、chip 的獎盃、右上角的最大值都問它），
 // 所以只能有一個定義。先前 dayBlock 自己用 `Math.max(weight)` 判當日最重，
 // 遇到同重量不同次數會同時標兩顆——那不是「最佳組」，是「最重的重量」。
 function bestSet(session) {
+  if (isTimeMode()) {
+    return session.sets.reduce((a, b) => (b.duration_seconds > a.duration_seconds ? b : a));
+  }
   return session.sets.reduce((a, b) => {
     if (b.weight_kg !== a.weight_kg) return b.weight_kg > a.weight_kg ? b : a;
     return b.reps > a.reps ? b : a;
   });
 }
 
+// bestSet() 拿到的那組要拿哪個欄位當「排名用數值」——折線圖 y 座標、PR 累進判定共用。
+function bestMetric(best) {
+  return isTimeMode() ? best.duration_seconds : best.weight_kg;
+}
+
 function sessionTonnage(session) {
   // 自體重動作以（最新體重＋額外負重）計，同日曆 set_tonnage 規則
   const bw = detail.exercise?.is_bodyweight && detail.bodyweight ? detail.bodyweight : 0;
   return session.sets.reduce((a, x) => a + (x.weight_kg + bw) * x.reps, 0);
+}
+
+// F105 ③：時間型以總秒數表達一次訓練的份量（reps 型用噸位，見上）。
+function sessionDuration(session) {
+  return session.sets.reduce((a, x) => a + x.duration_seconds, 0);
 }
 
 // ---------- render ----------
@@ -127,20 +146,7 @@ function fmtNum(v) {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-function prCards() {
-  const prs = detail.data.prs || {};
-  const top = prs.top_weight;
-  const cards = [
-    // 主卡（--card-hi 底 ＋ --accent 數字）：推估 1RM 是三者中最能一眼看出進步的
-    ["推估 1RM", prs.top_est_1rm == null ? "—" : fmtNum(Math.round(prs.top_est_1rm)), "", true],
-    ["最重", top ? fmtNum(top.weight_kg) : "—", "", false],
-    [
-      "單次量",
-      prs.top_session_volume == null ? "—" : fmtNum(Math.round(prs.top_session_volume / 100) / 10),
-      "t",
-      false,
-    ],
-  ];
+function renderPrCards(cards) {
   return el(
     "div",
     { class: "pr-cards" },
@@ -151,6 +157,31 @@ function prCards() {
       ]),
     ),
   );
+}
+
+function prCards() {
+  const prs = detail.data.prs || {};
+  // F105 ⑤（Ryan 拍板）：時間型只有兩張卡（最長單組秒數／單次訓練總秒數），
+  // 兩張等分——`.pr-card{flex:1}` 本來就是等分規則，卡數變動不必再改 CSS。
+  // 估計 1RM「整格不出現」＝陣列裡根本沒有那個項目，不是塞 "—" 進去。
+  if (isTimeMode()) {
+    return renderPrCards([
+      ["最長單組秒數", prs.top_set_duration == null ? "—" : fmtNum(prs.top_set_duration.duration_seconds), "秒", true],
+      ["單次訓練總秒數", prs.top_session_duration_seconds == null ? "—" : fmtNum(prs.top_session_duration_seconds), "秒", false],
+    ]);
+  }
+  const top = prs.top_weight;
+  return renderPrCards([
+    // 主卡（--card-hi 底 ＋ --accent 數字）：推估 1RM 是三者中最能一眼看出進步的
+    ["推估 1RM", prs.top_est_1rm == null ? "—" : fmtNum(Math.round(prs.top_est_1rm)), "", true],
+    ["最重", top ? fmtNum(top.weight_kg) : "—", "", false],
+    [
+      "單次量",
+      prs.top_session_volume == null ? "—" : fmtNum(Math.round(prs.top_session_volume / 100) / 10),
+      "t",
+      false,
+    ],
+  ]);
 }
 
 // ---------- F134：可點選的折線圖（取代上面 F86 ⑤ 的長條圖） ----------
@@ -172,26 +203,28 @@ const CHART_PAD_BOTTOM = 12;
 
 /**
  * 把 sessions 轉成畫圖用的點陣列：x／y 座標、是否 PR，並過濾掉算不出最佳組的那次
- * （F134 邊界情況：sets 是空陣列，或 bestSet() 給的 weight_kg 是 null——沿用 bestSet()
- * 本身的定義，這裡只加一層「算不出來就跳過、不連線」的防呆）。
+ * （F134 邊界情況：sets 是空陣列，或 bestSet() 給的排名數值是 null——沿用 bestSet()／
+ * bestMetric() 本身的定義，這裡只加一層「算不出來就跳過、不連線」的防呆）。
  *
  * PR 判定沿用 F86：**累進**最佳（到那次為止的最高），不是「等於全期最大值」。
+ * F105：排名數值＝bestMetric()，次數型是 weight_kg、時間型是 duration_seconds。
  */
 function chartPoints(sessions) {
   const raw = sessions
     .map((s) => {
       if (!s.sets.length) return null;
       const best = bestSet(s);
-      return best && best.weight_kg != null ? { date: s.date, session: s, best } : null;
+      const metric = best ? bestMetric(best) : null;
+      return metric != null ? { date: s.date, session: s, best, metric } : null;
     })
     .filter(Boolean);
   let running = -Infinity;
   for (const point of raw) {
-    point.isPr = point.best.weight_kg > running;
-    if (point.isPr) running = point.best.weight_kg;
+    point.isPr = point.metric > running;
+    if (point.isPr) running = point.metric;
   }
   const n = raw.length;
-  const vals = raw.map((p) => p.best.weight_kg);
+  const vals = raw.map((p) => p.metric);
   const valMax = Math.max(...vals);
   const valMin = Math.min(...vals);
   const span = valMax - valMin;
@@ -211,7 +244,7 @@ function chartPoints(sessions) {
     // y：span===0（只有一筆，或所有值都相同）畫在圖高中線，不除以 0。
     y: span === 0
       ? padTop + plotH / 2
-      : padTop + (1 - (p.best.weight_kg - valMin) / span) * plotH,
+      : padTop + (1 - (p.metric - valMin) / span) * plotH,
   }));
 }
 
@@ -286,6 +319,14 @@ function nearestPointIndex(points, xPct) {
   return best;
 }
 
+// F105 ⑥：一組的數值標籤依 mode 分流——時間型顯示「N 秒」，不是把 duration_seconds
+// 套進次數型「N 次」的位置（reps 欄位本身在時間型 set 上就是 null）。
+function bestSetLabel(best) {
+  return isTimeMode()
+    ? `${best.duration_seconds} 秒`
+    : `${fmtNum(best.weight_kg)}kg × ${best.reps}`;
+}
+
 // F136 ②：role="status" 隱含 aria-live="polite"——選中內容變更（換點／關閉再開）
 // 時會被朗讀，不需要額外掛 aria-live 屬性。
 function lineTip(point) {
@@ -299,7 +340,7 @@ function lineTip(point) {
     // 日期沿用 sessionCard() 同一段算式（slice(5)+replace），確保與歷史清單同一天那張卡文字一致。
     el("span", { class: "line-tip-date" }, [point.date.slice(5).replace("-", "/")]),
     el("span", { class: "line-tip-sets" }, [`${point.session.sets.length} 組`]),
-    el("span", { class: "line-tip-best" }, [`${fmtNum(point.best.weight_kg)}kg × ${point.best.reps}`]),
+    el("span", { class: "line-tip-best" }, [bestSetLabel(point.best)]),
   ]);
 }
 
@@ -325,7 +366,7 @@ function barChart(rerender) {
       el("p", { class: "bars-empty" }, ["這個區間內沒有紀錄"]),
     ]);
   }
-  const max = Math.max(...points.map((p) => p.best.weight_kg));
+  const max = Math.max(...points.map((p) => p.metric)); // F105：時間型是秒數，次數型是重量
   const monthOf = (d) => `${+d.slice(5, 7)}月`;
 
   const svg = svgEl("svg", {
@@ -363,7 +404,7 @@ function barChart(rerender) {
   return el("div", { class: "bars-card", onclick: onCardClick }, [
     el("div", { class: "bars-head" }, [
       el("span", { class: "bars-title" }, ["每次最佳組"]),
-      el("span", { class: "bars-max" }, [`${fmtNum(max)} kg`]),
+      el("span", { class: "bars-max" }, [isTimeMode() ? `${fmtNum(max)} 秒` : `${fmtNum(max)} kg`]),
     ]),
     el("div", { class: "line-chart" }, [
       svg,
@@ -375,7 +416,7 @@ function barChart(rerender) {
           style: `left:${point.x}%;top:${point.y}px`,
           role: "button",
           tabindex: "0",
-          "aria-label": `${point.date} 最佳組 ${point.best.weight_kg}kg × ${point.best.reps}`,
+          "aria-label": `${point.date} 最佳組 ${bestSetLabel(point.best)}`,
           onkeydown: (e) => {
             if (e.key === "Enter" || e.key === " ") {
               // Space 的預設行為是捲動頁面（沿用 dom.js stepper 同一套 preventDefault）
@@ -425,22 +466,32 @@ function relTime(dateStr) {
   return `${Math.floor(days / 365)} 年前`;
 }
 
+// F105 ⑥：組列表 chip 的量測值——次數型「重量×次數」、時間型「重量×秒數」
+// （沿用既有無空格、無 kg 單位的緊湊格式，只把 reps 換成 duration_seconds＋秒）。
+function chipLabel(x) {
+  return isTimeMode() ? `${fmtNum(x.weight_kg)}×${x.duration_seconds}秒` : `${fmtNum(x.weight_kg)}×${x.reps}`;
+}
+
 // F86 ⑥：一次訓練一張卡。F37 的月份摺疊拿掉——改版後每張卡本來就只有兩行，
 // 摺疊層級反而讓「最近練得如何」要多點兩下才看得到。
 function sessionCard(session) {
   const best = bestSet(session);
+  // F105 ③：時間型改由總秒數表達一次訓練的份量（次數型仍是噸位）。
+  const volume = isTimeMode()
+    ? `${sessionDuration(session)} 秒`
+    : `${Math.round(sessionTonnage(session)).toLocaleString()} kg`;
   return el("div", { class: "hist-card" }, [
     el("div", { class: "hist-head" }, [
       el("span", { class: "hist-date" }, [session.date.slice(5).replace("-", "/")]),
       el("span", { class: "hist-rel" }, [relTime(session.date)]),
-      el("span", { class: "hist-vol" }, [`${Math.round(sessionTonnage(session)).toLocaleString()} kg`]),
+      el("span", { class: "hist-vol" }, [volume]),
     ]),
     el(
       "div",
       { class: "hist-sets" },
       session.sets.map((x) =>
         el("span", { class: `set-chip${x === best ? " best" : ""}` }, [
-          `${fmtNum(x.weight_kg)}×${x.reps}`,
+          chipLabel(x),
           ...(x.rpe ? [el("span", { class: "rpe" }, [`@${x.rpe}`])] : []),
           ...(x === best ? [icon("trophy", { size: 11, label: "當次最佳組" })] : []),
         ]),

@@ -74,6 +74,8 @@ const todayIso = () => {
   return `${now.getFullYear()}-${month}-${day}`;
 };
 const byId = (rows) => new Map(rows.map((row) => [row.id, row]));
+// F105 ①：時間型的組（reps 為 null）一律不進噸位——同一條規則，離線與後端各自算一次會漂移。
+const volumeFor = (weightKg, reps) => (reps != null ? weightKg * reps : 0);
 
 async function snapshot() {
   return localCall("snapshot");
@@ -101,6 +103,8 @@ function setOut(set) {
     set_number: set.set_number,
     weight_kg: set.weight_kg,
     reps: set.reps,
+    // F105：次數型為 null、時間型有值；本機資料若還沒帶這欄（F105 之前寫入的）視為 null。
+    duration_seconds: set.duration_seconds ?? null,
     rpe: set.rpe,
     rest_seconds: set.rest_seconds,
   };
@@ -110,11 +114,12 @@ async function localExercises(q = "", hasData = false) {
   const data = await snapshot();
   const needle = q.trim().toLocaleLowerCase();
   const used = new Set(data.sets.map((set) => set.exercise_id));
+  // F105：省略＝次數型，與後端 ExerciseCreate 預設一致（本機舊資料未帶 mode 時的退回值）。
   return data.exercises.filter((exercise) => {
     if (hasData && !used.has(exercise.id)) return false;
     return !needle || exercise.name_zh.toLocaleLowerCase().includes(needle)
       || exercise.name_en.toLocaleLowerCase().includes(needle);
-  });
+  }).map((exercise) => ({ ...exercise, mode: exercise.mode ?? "reps" }));
 }
 
 async function localTemplates() {
@@ -126,7 +131,7 @@ async function localTemplates() {
       .reduce((map, set) => {
         const workout = workouts.get(set.workout_id);
         const row = map.get(set.workout_id) ?? { date: workout.date, id: workout.id, volume: 0 };
-        row.volume += set.weight_kg * set.reps;
+        row.volume += volumeFor(set.weight_kg, set.reps);
         map.set(set.workout_id, row);
         return map;
       }, new Map());
@@ -166,11 +171,55 @@ async function localWorkoutDetail(workoutId) {
   };
 }
 
+const emptyPrs = () => ({
+  top_weight: null,
+  top_set_volume: null,
+  top_est_1rm: null,
+  top_session_volume: null,
+  top_set_duration: null,
+  top_session_duration_seconds: null,
+});
+
+// F105 ⑤：時間型只有兩項 PR（最長單組秒數、單次訓練總秒數）——估計 1RM 對「撐幾秒」沒有意義。
+function timePrs(rows) {
+  const timed = rows.filter((row) => row.duration_seconds != null);
+  if (!timed.length) return emptyPrs();
+  const longest = timed.reduce((best, row) => row.duration_seconds > best.duration_seconds ? row : best);
+  const perWorkout = new Map();
+  for (const row of timed) {
+    perWorkout.set(row.workout_id, (perWorkout.get(row.workout_id) ?? 0) + row.duration_seconds);
+  }
+  return {
+    ...emptyPrs(),
+    top_set_duration: { weight_kg: longest.weight_kg, reps: null, duration_seconds: longest.duration_seconds },
+    top_session_duration_seconds: Math.max(...perWorkout.values()),
+  };
+}
+
+function repsPrs(rows) {
+  const counted = rows.filter((row) => row.reps != null);
+  if (!counted.length) return emptyPrs();
+  const topWeight = counted.reduce((best, row) => row.weight_kg > best.weight_kg ? row : best);
+  const topVolume = counted.reduce((best, row) =>
+    row.weight_kg * row.reps > best.weight_kg * best.reps ? row : best);
+  const perWorkout = new Map();
+  for (const row of counted) {
+    perWorkout.set(row.workout_id, (perWorkout.get(row.workout_id) ?? 0) + row.weight_kg * row.reps);
+  }
+  return {
+    ...emptyPrs(),
+    top_weight: { weight_kg: topWeight.weight_kg, reps: topWeight.reps, duration_seconds: null },
+    top_set_volume: { weight_kg: topVolume.weight_kg, reps: topVolume.reps, duration_seconds: null },
+    // Epley：w × (1 + reps/30)
+    top_est_1rm: Math.max(...counted.map((row) => row.weight_kg * (1 + row.reps / 30))),
+    top_session_volume: Math.max(...perWorkout.values()),
+  };
+}
+
 async function localExerciseHistory(exerciseId, from, to) {
   const data = await snapshot();
-  if (!data.exercises.some((row) => row.id === exerciseId)) {
-    throw new ApiError(404, "找不到動作");
-  }
+  const exercise = data.exercises.find((row) => row.id === exerciseId);
+  if (!exercise) throw new ApiError(404, "找不到動作");
   const workouts = byId(data.workouts);
   const all = data.sets.filter((set) => set.exercise_id === exerciseId);
   const sessions = new Map();
@@ -183,28 +232,15 @@ async function localExerciseHistory(exerciseId, from, to) {
       set_number: set.set_number,
       weight_kg: set.weight_kg,
       reps: set.reps,
+      duration_seconds: set.duration_seconds ?? null,
       rpe: set.rpe,
     });
     sessions.set(workout.id, session);
   }
-  const topWeight = all.reduce((best, row) => !best || row.weight_kg > best.weight_kg ? row : best, null);
-  const topSetVolume = all.reduce((best, row) =>
-    !best || row.weight_kg * row.reps > best.weight_kg * best.reps ? row : best, null);
-  const perWorkout = new Map();
-  for (const row of all) {
-    perWorkout.set(row.workout_id,
-      (perWorkout.get(row.workout_id) ?? 0) + row.weight_kg * row.reps);
-  }
   const dates = all.map((row) => workouts.get(row.workout_id)?.date).filter(Boolean).sort();
   return {
-    prs: {
-      top_weight: topWeight ? { weight_kg: topWeight.weight_kg, reps: topWeight.reps } : null,
-      top_set_volume: topSetVolume
-        ? { weight_kg: topSetVolume.weight_kg, reps: topSetVolume.reps } : null,
-      top_est_1rm: all.length
-        ? Math.max(...all.map((row) => row.weight_kg * (1 + row.reps / 30))) : null,
-      top_session_volume: perWorkout.size ? Math.max(...perWorkout.values()) : null,
-    },
+    // F105：全期（不限 from/to）PR，依動作 mode 分流——四項不看區間，用區間值填會是靜默的謊。
+    prs: !all.length ? emptyPrs() : exercise.mode === "time" ? timePrs(all) : repsPrs(all),
     sessions: [...sessions.values()].sort((a, b) => a.date.localeCompare(b.date) || a.workout_id - b.workout_id),
     first_session_date: dates[0] ?? null,
   };
@@ -216,12 +252,17 @@ async function localCalendar(year, month) {
   const exercises = byId(data.exercises);
   const latestWeight = [...data.body_metrics].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.weight_kg;
   const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  // F105 ④：days 從單一噸位數字改成 {tonnage_kg, duration_seconds, sets_count}——
+  // 熱力圖分級改吃 sets_count（兩種模式共有；時間型不進噸位，只吃噸位的日子會被畫成沒練）。
   const days = {};
   for (const set of data.sets) {
     const date = workouts.get(set.workout_id)?.date;
     if (!date?.startsWith(prefix)) continue;
+    const day = days[date] ?? (days[date] = { tonnage_kg: 0, duration_seconds: 0, sets_count: 0 });
     const bodyweight = exercises.get(set.exercise_id)?.is_bodyweight ? latestWeight ?? 0 : 0;
-    days[date] = (days[date] ?? 0) + (set.weight_kg + bodyweight) * set.reps;
+    day.tonnage_kg += volumeFor(set.weight_kg + bodyweight, set.reps);
+    day.duration_seconds += set.duration_seconds ?? 0;
+    day.sets_count += 1;
   }
   return { year, month, days };
 }
@@ -273,7 +314,7 @@ async function localScheduleToday() {
       template_name: template?.name ?? null,
       set_count: last.sets.length,
       volume_kg: Math.round(last.sets.reduce((sum, set) =>
-        sum + set.weight_kg * set.reps, 0) * 10) / 10,
+        sum + volumeFor(set.weight_kg, set.reps), 0) * 10) / 10,
     } : null,
     weekly_target_days: target,
     week_done_days: week.filter((day) => trained.has(day)).length,
@@ -287,6 +328,8 @@ const localApi = {
     syncId: uuid(), mutationId: uuid(), nameZh: payload.name_zh,
     nameEn: payload.name_en, muscleGroup: payload.muscle_group,
     isBodyweight: Boolean(payload.is_bodyweight),
+    // F105：省略＝次數型，與後端 ExerciseCreate 預設一致。
+    mode: payload.mode ?? "reps",
   }),
   exercisesWithData: () => localExercises("", true),
   lastSets: localLastSets,
@@ -316,11 +359,14 @@ const localApi = {
   logSet: (workoutId, payload) => localCall("addSet", {
     syncId: uuid(), mutationId: uuid(), workoutId, exerciseId: payload.exercise_id,
     clientUuid: payload.client_uuid, setNumber: payload.set_number,
-    weightKg: payload.weight_kg, reps: payload.reps, rpe: payload.rpe,
+    weightKg: payload.weight_kg, reps: payload.reps,
+    // F105：兩者互斥且擇一，同 SetCreate（強制放在動作對應的 store 實作，這裡只轉遞欄位）。
+    durationSeconds: payload.duration_seconds, rpe: payload.rpe,
     restSeconds: payload.rest_seconds, leaseGeneration: 1,
   }),
   updateSet: (id, payload) => localCall("updateSet", {
     id, mutationId: uuid(), weightKg: payload.weight_kg, reps: payload.reps,
+    durationSeconds: payload.duration_seconds,
     rpe: payload.rpe, restSeconds: payload.rest_seconds,
   }),
   deleteSet: (id) => localCall("deleteSet", { id, mutationId: uuid() }),
@@ -357,7 +403,10 @@ const localApi = {
     for (const id of ids) {
       const rows = await localLastSets(id, excludeWorkoutId);
       const last = rows.at(-1);
-      if (last) values.push({ exercise_id: id, weight_kg: last.weight_kg, reps: last.reps });
+      if (last) values.push({
+        exercise_id: id, weight_kg: last.weight_kg, reps: last.reps,
+        duration_seconds: last.duration_seconds,
+      });
     }
     return values;
   },

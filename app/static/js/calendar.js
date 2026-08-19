@@ -1,4 +1,4 @@
-// 日曆 heatmap：CSS grid 月視圖、5 級深淺（依當月最大噸位分四檔）、點日看明細。
+// 日曆 heatmap：CSS grid 月視圖、5 級深淺（F105 ④起依組數固定門檻分四檔）、點日看明細。
 
 import { api, ApiError } from "./api.js";
 import { el, rpePicker, stepper } from "./dom.js";
@@ -9,14 +9,14 @@ import { exerciseAlias, exerciseName, getLang, state } from "./state.js";
 const cal = {
   year: new Date().getFullYear(),
   month: new Date().getMonth() + 1, // 1-12
-  days: {}, // {"YYYY-MM-DD": tonnage}
+  days: {}, // F105 ④：{"YYYY-MM-DD": {tonnage_kg, duration_seconds, sets_count}}（原本是純數字噸位）
   selected: null, // "YYYY-MM-DD"
   detail: [], // [{workout, sets}]
   status: null, // 當日狀態 {energy, sleep_quality, note}（F9；沒記就是 null）
   exerciseById: null, // 進日曆時載一次，點日不重抓
   editSetId: null, // F16→F45：日曆明細正在編輯的 set id（F45 起表單在懸浮 modal，不在列內）
   editSet: null, // F45：正在編輯的那筆 set（modal 要顯示 set_number／動作名，且存檔要原欄位）
-  editDraft: null, // {weight, reps, rpe} 編輯草稿（steppers 就地維護）
+  editDraft: null, // {weight, reps, duration, rpe} 編輯草稿（steppers 就地維護；F105：duration 給時間型用）
   editSubmitting: false, // F45：編輯送出中（停用儲存/取消、遮罩不關；同補記 modal 的防競態）
   selectMode: false, // F19：多選批次刪除模式
   selectedIds: [], // F19：多選模式下已勾選的 set id
@@ -84,10 +84,15 @@ function dayTitle(dateStr) {
   return `${Number(m)}月${Number(dd)}日`;
 }
 
-function level(tonnage, max) {
-  // 0 = 沒練；1–4 依當月最大值等分
-  if (!tonnage || max <= 0) return 0;
-  return Math.min(4, Math.ceil((tonnage / max) * 4));
+// F105 ④：分級改吃 sets_count（原本吃噸位；時間型不進噸位，純棒式的一天噸位是 0，
+// 依噸位分級會被畫成「沒練」）。組數的實際分布比噸位窄很多——多數訓練日落在個位數到
+// 十幾組之間，若沿用「依當月最大值等分四級」，多數日子會擠在同一級。改用固定門檻。
+function level(setsCount) {
+  if (!setsCount) return 0; // 0 = 沒練
+  if (setsCount <= 3) return 1; // 暖身／單一動作
+  if (setsCount <= 7) return 2;
+  if (setsCount <= 13) return 3;
+  return 4;
 }
 
 function monthLabel() {
@@ -282,10 +287,12 @@ async function saveEditSet(s, rerender) {
   cal.editSubmitting = true;
   rerender(); // 先畫出停用態，再送出
   try {
-    const { weight: w, reps: r, rpe } = cal.editDraft; // 值由 steppers 就地維護，邊界已保證
+    const { weight: w, reps: r, duration: dur, rpe } = cal.editDraft; // 值由 steppers 就地維護，邊界已保證
     await api.updateSet(s.id, {
       weight_kg: w,
-      reps: r,
+      // F105：PATCH 要對照這組原本的 mode 送對應欄位（s.reps 為 null＝時間型）——
+      // 兩個都送或送錯那個，後端 assert_set_matches_mode 一律 422（見 exercises.py）。
+      ...(s.reps == null ? { duration_seconds: dur } : { reps: r }),
       ...(rpe ? { rpe } : {}),
       ...(s.rest_seconds != null ? { rest_seconds: s.rest_seconds } : {}),
     });
@@ -318,6 +325,7 @@ function editModal(guard, rerender) {
   const s = cal.editSet;
   const d = cal.editDraft;
   const exx = (cal.exerciseById || {})[s.exercise_id];
+  const isTime = s.reps == null; // F105：這組原本是時間型（動作 mode 才是權威，見後端 assert_set_matches_mode）
   return [
     el("div", {
       class: "modal-overlay",
@@ -328,11 +336,17 @@ function editModal(guard, rerender) {
           el("span", { class: "ex-name" }, [exx ? exerciseName(exx) : ""]),
           el("span", { class: "setno" }, [`編輯 #${s.set_number}`]),
         ]),
+        // F105：modal 是 fixed 全螢幕遮罩，蓋在頁面層的 error-banner 上面（同 app.js F49
+        // review P2-2 踩過的坑）——422（送錯 reps/duration_seconds 組合）要在視窗內自己顯示一份。
+        ...(state.error ? [el("div", { class: "error-banner" }, [state.error])] : []),
         el("div", { class: "steppers" }, [
           stepper("KG", d.weight, [["−2.5", -2.5], ["+2.5", +2.5]],
             (delta) => { d.weight = Math.max(0, Math.round((d.weight + delta) * 10) / 10); }, rerender),
-          stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
-            (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
+          isTime
+            ? stepper("秒", d.duration, [["−5", -5], ["+5", +5]],
+                (delta) => { d.duration = Math.max(1, d.duration + delta); }, rerender)
+            : stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
+                (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
         ]),
         rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
         el("div", { class: "modal-actions" }, [
@@ -361,10 +375,18 @@ function editModal(guard, rerender) {
   ];
 }
 
+// F105 ⑥：組 chip 依動作 mode 分流——次數型『80×8』；時間型『60秒』（weight_kg > 0
+// 才是負重棒式，前面加「Nkg×」，無負重不重複講一次「0kg」）。用 s.reps 是否為 null 判斷
+// （SetOut 契約：次數型 duration_seconds 為 null、時間型 reps 為 null，兩者互斥）。
+function setLabel(s) {
+  if (s.reps != null) return `${s.weight_kg}×${s.reps}`;
+  return s.weight_kg > 0 ? `${s.weight_kg}kg×${s.duration_seconds}秒` : `${s.duration_seconds}秒`;
+}
+
 // F85：一組一顆 chip（設計稿：`80×8`、當日最佳組加 ★ 並填琥珀）。
 // 點 chip ＝ 開編輯 modal（原本每列的 ✎）；刪除移進 modal 內（原本每列的 🗑，語意不變）。
 function calSetChip(s, best, rerender) {
-  const label = `${s.weight_kg}×${s.reps}`;
+  const label = setLabel(s);
   if (cal.selectMode) {
     // F19 多選：chip 本身即勾選目標（勾中填琥珀邊），不另外畫勾選框
     const checked = cal.selectedIds.includes(s.id);
@@ -385,14 +407,24 @@ function calSetChip(s, best, rerender) {
     onclick: () => {
       cal.editSetId = s.id;
       cal.editSet = s;
-      cal.editDraft = { weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
+      // F105：時間型 s.reps 為 null，草稿多帶 duration 供 editModal 的秒數 stepper 用
+      cal.editDraft = { weight: s.weight_kg, reps: s.reps, duration: s.duration_seconds, rpe: s.rpe ?? 6 };
       rerender();
     },
   }, [s.id === best?.id ? `${label} ★` : label]);
 }
 
-// F34：收合摘要用的「最重組」——weight_kg 最大者，平手取 reps 多者
+// F34：收合摘要用的「最佳組」——次數型看 weight_kg 最大者（平手取 reps 多者）。
+// F105：同一組內的 sets 屬於同一個 exercise_id，mode 是動作屬性、組內同質——
+// 時間型 reps 一律 null，改看 duration_seconds 最長者（平手取 weight_kg 大者，
+// 負重棒式撐更久或加更重都算進步）。
 function topSet(sets) {
+  if (sets[0].reps == null) {
+    return sets.reduce((a, b) =>
+      b.duration_seconds > a.duration_seconds
+      || (b.duration_seconds === a.duration_seconds && b.weight_kg > a.weight_kg) ? b : a,
+    );
+  }
   return sets.reduce((a, b) =>
     b.weight_kg > a.weight_kg || (b.weight_kg === a.weight_kg && b.reps > a.reps) ? b : a,
   );
@@ -404,9 +436,16 @@ function newAddDraft(exercise) {
   return {
     weight: exercise.is_bodyweight ? 0 : 20,
     reps: 8,
+    // F105：時間型動作補記時填秒數。預設 30 與 logger 的 DEFAULT_TIME_SECONDS 一致。
+    duration: 30,
     rpe: 6,
     uuid: crypto.randomUUID(),
   };
+}
+
+// F105：動作的 mode 才是權威（不是「哪個欄位非空」，那個判斷只對已存在的組成立）。
+function isTimeExercise(exercise) {
+  return exercise?.mode === "time";
 }
 
 // F41：就地補記——送一組到「選中日」的 workout（該日無則以選中日新建），全程不碰 state.workoutId。
@@ -427,7 +466,8 @@ async function addSet(rerender) {
       client_uuid: d.uuid, // Codex P2：重試沿用同 uuid，伺服器對重複 client_uuid 冪等去重
       exercise_id: ex.id,
       weight_kg: d.weight,
-      reps: d.reps,
+      // F105：兩者互斥且必須擇一，送錯組合後端回 422
+      ...(isTimeExercise(ex) ? { duration_seconds: d.duration } : { reps: d.reps }),
       rpe: d.rpe,
     });
     await refreshMonthAndDay(); // 刷新熱力圖＋當日明細（keepExpanded）
@@ -454,21 +494,30 @@ function ensureUuids(row) {
 // 註：last-sets 回的是該動作**最近一次**訓練（不分早於／晚於補記日），純粹當填表預設值。
 async function openBatch(tpl, rerender) {
   const rows = await Promise.all(tpl.exercises.map(async (it) => {
+    const isTime = it.mode === "time"; // F105：課表項自帶 mode（TemplateExerciseOut）
     let weight = it.is_bodyweight ? 0 : 20;
     let reps = 8;
+    let duration = 30;
     try {
       const last = await api.lastSets(it.exercise_id);
       if (last.length) {
-        const top = last.reduce((a, b) =>
-          b.weight_kg > a.weight_kg || (b.weight_kg === a.weight_kg && b.reps > a.reps) ? b : a);
+        // F105：時間型比最長那組，次數型比最重那組（reps 為 null 時比大小恆為 false）
+        const top = isTime
+          ? last.reduce((a, b) => (b.duration_seconds > a.duration_seconds ? b : a))
+          : last.reduce((a, b) =>
+              b.weight_kg > a.weight_kg || (b.weight_kg === a.weight_kg && b.reps > a.reps) ? b : a);
         weight = top.weight_kg;
-        reps = top.reps;
+        if (isTime) duration = top.duration_seconds;
+        else reps = top.reps;
       }
     } catch {
       // 查不到上次紀錄不該擋住補記——沿用預設值即可
     }
     // F60：open＝該列是否展開 steppers，預設全部收合
-    return { item: it, checked: true, open: false, weight, reps, sets: Math.max(1, it.default_sets), uuids: [] };
+    return {
+      item: it, checked: true, open: false, isTime, weight, reps, duration,
+      sets: Math.max(1, it.default_sets), uuids: [],
+    };
   }));
   cal.batch = { name: tpl.name, rows, workoutId: null };
   rerender();
@@ -496,7 +545,8 @@ async function batchLog(rerender) {
           client_uuid: row.uuids[i],
           exercise_id: row.item.exercise_id,
           weight_kg: row.weight,
-          reps: row.reps,
+          // F105：兩者互斥且必須擇一，送錯組合後端回 422
+          ...(row.isTime ? { duration_seconds: row.duration } : { reps: row.reps }),
           rpe: 6, // 批次一律預設「輕鬆」，要調再逐組編輯（F45 modal）
         });
       }
@@ -593,7 +643,9 @@ function batchRowNode(row, onCheckChange) {
   const paint = () => {
     node.className = `cal-batch-row${row.checked ? "" : " off"}${row.open ? " open" : ""}`;
     const unit = row.item.is_bodyweight ? "負重 " : "";
-    const summary = `${unit}${row.weight}kg × ${row.reps} × ${row.sets} 組`;
+    // F105：時間型講秒數不講次數
+    const each = row.isTime ? `${row.duration} 秒` : String(row.reps);
+    const summary = `${unit}${row.weight}kg × ${each} × ${row.sets} 組`;
     const head = el("div", {
       class: "batch-head",
       onclick: (e) => {
@@ -624,8 +676,11 @@ function batchRowNode(row, onCheckChange) {
             [["−2.5", -2.5], ["+2.5", +2.5]],
             (delta) => { row.weight = Math.max(0, Math.round((row.weight + delta) * 10) / 10); },
             paint),
-          stepper("REPS", row.reps, [["−1", -1], ["+1", +1]],
-            (delta) => { row.reps = Math.max(1, row.reps + delta); }, paint),
+          row.isTime
+            ? stepper("秒數", row.duration, [["−5", -5], ["+5", +5]],
+                (delta) => { row.duration = Math.max(1, row.duration + delta); }, paint)
+            : stepper("REPS", row.reps, [["−1", -1], ["+1", +1]],
+                (delta) => { row.reps = Math.max(1, row.reps + delta); }, paint),
         ]),
         el("div", { class: "batch-sets" }, [
           el("span", { class: "name" }, ["組數"]),
@@ -746,8 +801,11 @@ function addModal(guard, rerender) {
         stepper(cal.addExercise.is_bodyweight ? "負重 KG" : "KG", d.weight,
           [["−2.5", -2.5], ["+2.5", +2.5]],
           (delta) => { d.weight = Math.max(0, Math.round((d.weight + delta) * 10) / 10); }, rerender),
-        stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
-          (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
+        isTimeExercise(cal.addExercise)
+          ? stepper("秒數", d.duration, [["−5", -5], ["+5", +5]],
+              (delta) => { d.duration = Math.max(1, d.duration + delta); }, rerender)
+          : stepper("REPS", d.reps, [["−1", -1], ["+1", +1]],
+              (delta) => { d.reps = Math.max(1, d.reps + delta); }, rerender),
       ]),
       rpePicker(d.rpe, (v) => { d.rpe = v; }, rerender),
       el("div", { class: "modal-actions" }, [
@@ -783,7 +841,7 @@ function detailRows(guard, rerender) {
       ...addBlock(rerender),
     ];
   }
-  const tonnage = cal.days[cal.selected];
+  const dayStats = cal.days[cal.selected]; // F105 ④：{tonnage_kg, duration_seconds, sets_count} 或 undefined
   // F19：有組才顯示「選取」入口（進多選批次刪除）
   // F34：入口從獨立一列的 .cal-select-bar 收進 head 右側，不再獨占一列
   const hasSets = cal.detail.some((d) => d.sets.length > 0);
@@ -794,8 +852,13 @@ function detailRows(guard, rerender) {
       el("span", { class: "d" }, [dayTitle(cal.selected) + (tplName ? ` · ${tplName}` : "")]),
       el("span", { class: "n" }, [
         // 純自體重日噸位可為 0，仍要顯示
-        tonnage !== undefined ? `${Math.round(tonnage).toLocaleString()} kg` : "",
+        dayStats ? `${Math.round(dayStats.tonnage_kg).toLocaleString()} kg` : "",
       ]),
+      // F105 ③：時間型不進噸位、改以總秒數並列表達份量，不與噸位相加——只在當天有時間型組
+      // （duration_seconds > 0）時才多顯示這個數字，次數型單獨的日子維持原本只有一個「n」。
+      ...(dayStats && dayStats.duration_seconds > 0
+        ? [el("span", { class: "n n-duration" }, [`${dayStats.duration_seconds} 秒`])]
+        : []),
       ...(hasSets
         ? [
             cal.selectMode
@@ -888,7 +951,6 @@ export function renderCalendar(rerender, goHome, guard) {
   const first = new Date(cal.year, cal.month - 1, 1);
   const daysInMonth = new Date(cal.year, cal.month, 0).getDate();
   const leadBlanks = first.getDay(); // F85：週日起始（設計表頭是「日一二三四五六」）
-  const max = Math.max(0, ...Object.values(cal.days));
   const today = calToday();
 
   const cells = [];
@@ -899,7 +961,7 @@ export function renderCalendar(rerender, goHome, guard) {
   for (let i = 0; i < leadBlanks; i++) cells.push(el("div", {}));
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${cal.year}-${String(cal.month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    const lv = level(cal.days[dateStr], max);
+    const lv = level(cal.days[dateStr]?.sets_count);
     // F85：未來日單獨一個底色（--heat-future）——它跟「過去這天沒練」是兩件事，
     // 共用 lv0 會讓月底一整排看起來像連續缺練
     const future = dateStr > today;

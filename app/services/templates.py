@@ -96,6 +96,7 @@ def _to_out(template: Template, last_used: dict[int, tuple[object, float]] | Non
                 name_en=item.exercise.name_en,
                 muscle_group=item.exercise.muscle_group,
                 is_bodyweight=item.exercise.is_bodyweight,
+                mode=item.exercise.mode,
             )
             for item in template.exercises
         ],

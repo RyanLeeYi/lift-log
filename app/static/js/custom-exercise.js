@@ -16,6 +16,9 @@ export function customExerciseModal({ groups, onCreated, onCancel, onFatal }) {
   const nameEn = el("input", { type: "text", placeholder: "英文名（選填）" });
   const customGroup = el("input", { type: "text", placeholder: "其他部位（自訂，選填）" });
   const bodyweight = el("input", { type: "checkbox" });
+  // F105 ⑥：時間型動作（棒式這類做幾秒）。用 checkbox 而不是兩顆 radio——
+  // 只有兩種模式且預設明確（次數型），一個勾選框就表達得完，不必多一組樣式。
+  const timeMode = el("input", { type: "checkbox" });
 
   const errorBox = el("div", { class: "error-banner" }, []);
   errorBox.style.display = "none";
@@ -54,6 +57,8 @@ export function customExerciseModal({ groups, onCreated, onCancel, onFatal }) {
       return;
     }
     const payload = { name_zh, is_bodyweight: bodyweight.checked };
+    // 只在勾選時送——後端 mode 預設就是 "reps"，不送等於次數型
+    if (timeMode.checked) payload.mode = "time";
     const en = nameEn.value.trim();
     if (en) payload.name_en = en;
     const grp = customGroup.value.trim() || selectedGroup; // 自訂文字優先，否則用選中的 chip
@@ -88,6 +93,10 @@ export function customExerciseModal({ groups, onCreated, onCancel, onFatal }) {
         chips,
         customGroup,
         el("label", { class: "checkbox-row" }, [bodyweight, el("span", {}, ["自體重動作"])]),
+        el("label", { class: "checkbox-row" }, [
+          timeMode,
+          el("span", {}, ["時間型動作（記秒數，如棒式）"]),
+        ]),
         el("div", { class: "modal-actions" }, [
           confirmBtn,
           el("button", { class: "btn btn-ghost modal-cancel", onclick: onCancel }, ["取消"]),

@@ -180,6 +180,10 @@ class TemplateExerciseOut(BaseModel):
     name_en: str
     muscle_group: str
     is_bodyweight: bool
+    # F105：課表項也要帶 mode。少了它，所有從課表進入的寫入路徑（今日菜單、接著做、
+    # 日曆批次補記）都得自己去別處反查動作的 mode——三個呼叫點各查一次，
+    # 漏掉的那一個就會把時間型動作當成次數型送出並吃 422。
+    mode: str
 
 
 class TemplateOut(BaseModel):
@@ -217,6 +221,9 @@ class LastWorkout(BaseModel):
     template_name: str | None
     set_count: int
     volume_kg: float
+    # F105 ③：時間型不進噸位，份量改由總秒數表達。兩個數字**並列不相加**，
+    # 首頁那張卡在這個值 > 0 時要把兩者都講出來、各自標明單位。沒有時間型組時是 0。
+    duration_seconds: int = 0
 
 
 class ScheduleTodayOut(BaseModel):

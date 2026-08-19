@@ -680,10 +680,21 @@ function lastWorkoutCard() {
           `${Number(month)}/${Number(day)} · ${last.set_count} 組`,
         ]),
       ]),
+      // F105 ③：噸位與總秒數**並列不相加**，各自標明單位。時間型不進噸位，所以
+      // 只做棒式的一次訓練噸位是 0——沒有秒數這一格的話那張卡會講成「練了 0」。
+      // 兩格都在時才有兩個數字；沒有時間型組（duration_seconds 為 0）就維持原樣一格。
       el("div", { class: "last-volume" }, [
         el("span", { class: "v" }, [Math.round(last.volume_kg).toLocaleString("en-US")]),
         el("span", { class: "u" }, ["kg"]),
       ]),
+      ...(last.duration_seconds
+        ? [
+            el("div", { class: "last-volume last-duration" }, [
+              el("span", { class: "v" }, [String(last.duration_seconds)]),
+              el("span", { class: "u" }, ["秒"]),
+            ]),
+          ]
+        : []),
     ]),
   ];
 }
@@ -1415,6 +1426,19 @@ function rememberDoneSets() {
   state.doneByExercise = { ...state.doneByExercise, [state.exercise.id]: state.doneSets };
 }
 
+// F105 ⑥：logger／組列表全部依這個判斷分流，不用「哪個欄位有值」猜（凍結契約）。
+function isTimeMode(exercise) {
+  return exercise?.mode === "time";
+}
+
+// 一筆組紀錄（reps／duration_seconds 兩欄，其一為 null 或未帶）依 mode 挑要顯示的那個數字＋單位。
+// 次數型沿用既有裸數字格式（⑨ 不回歸）；時間型標秒數單位（「60 秒」而不是「60」）。
+function countText(exercise, entry) {
+  return isTimeMode(exercise) ? `${entry.duration_seconds} 秒` : `${entry.reps}`;
+}
+
+const DEFAULT_TIME_SECONDS = 30; // F105：時間型第一次做、沒有任何參考值時的預設秒數
+
 async function pickExercise(exercise) {
   addPanelOpen = false; // F49：選了動作就離開 picker，視窗狀態不留到下次回來（否則回 picker 會自己彈開）
   // F129 codex review P1：冷開機丟棄殭屍休息時凍結的秒數綁著原動作（pendingRestExerciseId）。
@@ -1448,11 +1472,12 @@ async function pickExercise(exercise) {
       /* 離線/失敗：退回下方 lastSets 流程 */
     }
   }
+  const timeMode = isTimeMode(exercise);
   if (Array.isArray(resumed) && resumed.length > 0) {
     state.doneSets = resumed.map((s) => ({ ...s }));
     const lastSet = state.doneSets[state.doneSets.length - 1];
     state.weightKg = lastSet.weight_kg; // 續接本次：預設帶本次最後一組
-    state.reps = lastSet.reps;
+    state.reps = timeMode ? lastSet.duration_seconds : lastSet.reps;
     // 「上次」仍要顯示——但查的是**前一次** workout（排除本次），不是把本次組誤標成上次。
     // 查不到前一次（第一次做這個動作）才退回顯示本次摘要。離線就略過參考。
     let prev = [];
@@ -1465,11 +1490,16 @@ async function pickExercise(exercise) {
     if (state.exercise !== exercise) return; // await 期間已換動作/結束訓練：丟棄過期結果，別把畫面拉回 logger
     state.lastHint =
       prev.length > 0
-        ? `上次  ${prev.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`
-        : `本次  ${state.doneSets.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
+        ? `上次  ${prev.map((s) => `${s.weight_kg}×${countText(exercise, s)}`).join("  ")}`
+        : `本次  ${state.doneSets.map((s) => `${s.weight_kg}×${countText(exercise, s)}`).join("  ")}`;
     const ref = prev.length > 0 ? prev[0] : state.doneSets[state.doneSets.length - 1];
     state.lastRef = ref
-      ? { date: ref.workout_date ?? null, weight: ref.weight_kg, reps: ref.reps }
+      ? {
+          date: ref.workout_date ?? null,
+          weight: ref.weight_kg,
+          reps: ref.reps,
+          duration_seconds: ref.duration_seconds,
+        }
       : null;
     // F101：視窗列的是「上次那次訓練」的全部組。本次的組已經在 done-list 上了，
     // 拿本次的組去填「上次」視窗只會讓人看到同一份資料兩次。
@@ -1490,13 +1520,14 @@ async function pickExercise(exercise) {
   }
   if (last.length > 0) {
     state.weightKg = last[0].weight_kg;
-    state.reps = last[0].reps;
-    state.lastHint = `上次  ${last.map((s) => `${s.weight_kg}×${s.reps}`).join("  ")}`;
+    state.reps = timeMode ? last[0].duration_seconds : last[0].reps;
+    state.lastHint = `上次  ${last.map((s) => `${s.weight_kg}×${countText(exercise, s)}`).join("  ")}`;
     // F84：上次提示卡要的是結構化資料（日期＋代表值），顯示字串湊不回來
     state.lastRef = {
       date: last[0].workout_date ?? null,
       weight: last[0].weight_kg,
       reps: last[0].reps,
+      duration_seconds: last[0].duration_seconds,
     };
     state.lastSets = last; // F101：視窗要列全部組
   } else if (offline) {
@@ -1510,20 +1541,20 @@ async function pickExercise(exercise) {
     if (queued.length > 0) {
       const newest = queued[queued.length - 1].payload;
       state.weightKg = newest.weight_kg;
-      state.reps = newest.reps;
+      state.reps = timeMode ? newest.duration_seconds : newest.reps;
       state.lastHint = `本次（待同步）  ${queued
-        .map((e) => `${e.payload.weight_kg}×${e.payload.reps}`)
+        .map((e) => `${e.payload.weight_kg}×${countText(exercise, e.payload)}`)
         .join("  ")}`;
     } else {
       state.weightKg = exercise.is_bodyweight ? 0 : 20;
-      state.reps = 8;
+      state.reps = timeMode ? DEFAULT_TIME_SECONDS : 8;
       state.lastHint = "離線中——載不到上次紀錄";
       state.lastRef = null;
       state.lastSets = [];
     }
   } else {
     state.weightKg = exercise.is_bodyweight ? 0 : 20;
-    state.reps = 8;
+    state.reps = timeMode ? DEFAULT_TIME_SECONDS : 8;
     state.lastHint = null;
     state.lastRef = null; // 換動作沒清＝上一個動作的參考值殘留在卡片上
     state.lastSets = [];
@@ -1668,7 +1699,10 @@ export async function loadMenuMeta() {
       workoutId,
       startedAt: detail.created_at ? Date.parse(detail.created_at + "Z") : null,
       lastValues: Object.fromEntries(
-        values.map((v) => [v.exercise_id, { weight: v.weight_kg, reps: v.reps }]),
+        values.map((v) => [
+          v.exercise_id,
+          { weight: v.weight_kg, reps: v.reps, duration_seconds: v.duration_seconds },
+        ]),
       ),
     };
   } catch {
@@ -1681,13 +1715,23 @@ export async function loadMenuMeta() {
 function currentValues(exerciseId) {
   const done = state.doneByExercise?.[exerciseId] ?? [];
   const last = done[done.length - 1];
-  return last ? { weight: last.weight_kg, reps: last.reps } : null;
+  return last
+    ? { weight: last.weight_kg, reps: last.reps, duration_seconds: last.duration_seconds }
+    : null;
+}
+
+// F105：今日菜單項目來自 TemplateExerciseOut，不帶 mode——用已載入的 pickerExercises（含完整
+// ExerciseOut）反查。goPicker() 保證進到這個畫面前 pickerExercises 已非空，查不到才退回次數型。
+function exerciseModeById(id) {
+  return pickerExercises.find((e) => e.id === id)?.mode ?? "reps";
 }
 
 function menuValuesText(item) {
   const values = currentValues(item.exercise_id) ?? menuMeta.lastValues[item.exercise_id];
   if (!values) return null; // 沒做過也沒歷史：不留一行空的
-  return `${Number(values.weight)} kg × ${values.reps}`;
+  return exerciseModeById(item.exercise_id) === "time"
+    ? `${Number(values.weight)} kg × ${values.duration_seconds} 秒`
+    : `${Number(values.weight)} kg × ${values.reps}`;
 }
 
 // 環形進度：SVG 圓環 ＋ 中央百分比。stroke-dasharray 走圓周長，dashoffset 表未完成的部分。
@@ -1788,6 +1832,9 @@ function nextUpBlock() {
     name_en: item.name_en,
     muscle_group: item.muscle_group,
     is_bodyweight: item.is_bodyweight,
+    // F105：TemplateExerciseOut 不帶 mode，補查 pickerExercises——否則從今日菜單進 logger
+    // 會被誤判成次數型（見 exerciseModeById 註解）。
+    mode: exerciseModeById(item.exercise_id),
   };
   return [
     el("div", { class: "next-up-label" }, ["接著做"]),
@@ -1853,6 +1900,8 @@ function menuCard(item) {
     name_en: item.name_en,
     muscle_group: item.muscle_group,
     is_bodyweight: item.is_bodyweight,
+    // F105：見 nextUpBlock 同一個補丁——今日菜單這條路一樣要補 mode 才能正確分流。
+    mode: exerciseModeById(item.exercise_id),
   };
   const values = menuValuesText(item);
   const card = el(
@@ -2354,7 +2403,7 @@ function lastRefCard() {
   const ref = state.lastRef;
   const hasSets = state.lastSets.length > 0;
   const headline = ref
-    ? `上次 ${refDateText(ref)}${ref.weight} kg × ${ref.reps}`
+    ? `上次 ${refDateText(ref)}${ref.weight} kg × ${countText(state.exercise, ref)}`
     : (state.lastHint ?? "第一次做這個動作");
   const delta = ref ? Math.round((state.weightKg - ref.weight) * 10) / 10 : 0;
   const head = el("div", { class: "last-ref-head" }, [
@@ -2400,7 +2449,7 @@ function lastSetsModal() {
   // 沿用原本快調列的分寸；直接送出會讓「我只是想看看」變成一筆真的紀錄
   const applySet = (s) => {
     state.weightKg = s.weight_kg;
-    state.reps = s.reps;
+    state.reps = isTimeMode(state.exercise) ? s.duration_seconds : s.reps;
     state.lastSetsOpen = false;
     render();
   };
@@ -2420,7 +2469,7 @@ function lastSetsModal() {
           state.lastSets.map((s, i) =>
             el("button", { class: "btn last-set-row", onclick: () => applySet(s) }, [
               el("span", { class: "set-no" }, [`#${i + 1}`]),
-              el("span", { class: "n" }, [`${s.weight_kg} kg × ${s.reps}`]),
+              el("span", { class: "n" }, [`${s.weight_kg} kg × ${countText(state.exercise, s)}`]),
               ...(s.rpe != null ? [el("span", { class: "rpe" }, [RPE_WORDS[s.rpe] ?? ""])] : []),
             ]),
           ),
@@ -2466,7 +2515,9 @@ async function logCurrentSet({ rpe = undefined, clientUuid = null } = {}) {
       // 原生剛剛在背景寫進去的那組，於是兩個寫入者各算各的，真的撞出兩列同組號
       // （驗收在 workout 77 實測到 id 430 與 433 都是 #7）。組號只有一個算式才不會撞。
       weight_kg: state.weightKg,
-      reps: state.reps,
+      // F105 ②：reps／duration_seconds 互斥擇一，只送符合 mode 的那一個——
+      // 兩個都送或都不送，service 層的 assert_set_matches_mode 會 422。
+      ...(isTimeMode(exercise) ? { duration_seconds: state.reps } : { reps: state.reps }),
       // F40：app 內記的組累度軸一律有值（6–10）。
       // F104 ⑦：**浮動視窗就地記的組留 null**（Ryan 2026-07-31 決定不沿用上一組）——
       // 沿用是猜一個值填進去，填了就再也分不出哪些真哪些猜。回 app 時提示補。
@@ -2574,10 +2625,13 @@ function renderLogger() {
 
   const saveEditDoneSet = async (s) => {
     const { weight: w, reps: r, rpe } = editDraft; // 值由 steppers 就地維護，邊界已保證
+    // F105：不得把一組從次數型改成時間型（後端會 422）——編輯永遠沿用這一組所屬動作的 mode，
+    // 只送符合 mode 的那個計量欄位。
+    const countField = isTimeMode(exercise) ? { duration_seconds: r } : { reps: r };
     if (s.id != null) {
       const updated = await api.updateSet(s.id, {
         weight_kg: w,
-        reps: r,
+        ...countField,
         ...(rpe ? { rpe } : {}),
         ...(s.rest_seconds != null ? { rest_seconds: s.rest_seconds } : {}),
       });
@@ -2588,7 +2642,7 @@ function renderLogger() {
       // 帶著它等於把 F131 ③ 拿掉的「client 自己算組號」從編輯這條路放回來，而那個值此刻
       // 更可能已經過期（原生 outbox 或別的裝置已經寫了同一個動作）。
       const { set_number: _displayOnly, ...rest } = s;
-      const payload = { ...rest, weight_kg: w, reps: r, rpe };
+      const payload = { ...rest, weight_kg: w, ...countField, rpe };
       await enqueueSet(state.workoutId, payload);
       replaceInDone(s, { ...payload, set_number: s.set_number });
     }
@@ -2621,11 +2675,14 @@ function renderLogger() {
               editDraft.weight = Math.max(0, Math.round((editDraft.weight + d) * 10) / 10);
             }, render,
             { set: (v) => { editDraft.weight = v; }, parse: parseWeight }),
-            stepper("REPS", editDraft.reps, [
-              ["−1", -1],
-              ["+1", +1],
-            ], (d) => { editDraft.reps = Math.max(1, editDraft.reps + d); }, render,
-            { set: (v) => { editDraft.reps = v; }, parse: parseReps }),
+            stepper(
+              isTimeMode(exercise) ? "秒數" : "REPS",
+              editDraft.reps,
+              isTimeMode(exercise) ? [["−5", -5], ["+5", 5]] : [["−1", -1], ["+1", +1]],
+              (d) => { editDraft.reps = Math.max(1, editDraft.reps + d); },
+              render,
+              { set: (v) => { editDraft.reps = v; }, parse: parseReps },
+            ),
           ]),
           rpePicker(editDraft.rpe, (v) => { editDraft.rpe = v; }, render),
           el("div", { class: "modal-actions" }, [
@@ -2652,13 +2709,19 @@ function renderLogger() {
         : [];
     return el("div", { class: `done-row${queued ? ` ${queued}` : ""}` }, [
       el("span", { class: "set-no" }, [`#${s.set_number}`, ...mark]),
-      el("span", { class: "n" }, [`${s.weight_kg} kg × ${s.reps}`]),
+      // F105 ⑥：組列表依 mode 分流——時間型顯示「60 秒」而不是「60 次」。
+      el("span", { class: "n" }, [`${s.weight_kg} kg × ${countText(exercise, s)}`]),
       // F84 ③：顯示口語詞而不是 @6——記錄時選的就是詞，回看時卻要自己換算數字
       ...(s.rpe ? [el("span", { class: "done-rpe" }, [RPE_WORDS[s.rpe] ?? `@${s.rpe}`])] : []),
       el("button", {
         class: "btn icon-btn edit-set",
         onclick: () => {
-          editDraft = { key, weight: s.weight_kg, reps: s.reps, rpe: s.rpe ?? 6 };
+          editDraft = {
+            key,
+            weight: s.weight_kg,
+            reps: isTimeMode(exercise) ? s.duration_seconds : s.reps,
+            rpe: s.rpe ?? 6,
+          };
           render();
         },
       }, [icon("pencil", { size: 18, label: "編輯這組" })]),
@@ -2735,11 +2798,16 @@ function renderLogger() {
           ["+2.5", +2.5],
         ], (d) => { state.weightKg = Math.max(0, Math.round((state.weightKg + d) * 10) / 10); }, render,
         { set: (v) => { state.weightKg = v; }, parse: parseWeight }),
-        stepper("REPS", state.reps, [
-          ["−1", -1],
-          ["+1", +1],
-        ], (d) => { state.reps = Math.max(1, state.reps + d); }, render,
-        { set: (v) => { state.reps = v; }, parse: parseReps }),
+        // F105 ⑥：logger 依 mode 換輸入——時間型是秒數＋負重，沿用 F102 同一顆直接輸入的
+        // stepper，只換名稱／步階；不是一顆計時器（⑧ 明確排除按開始→數秒→自動記錄那種）。
+        stepper(
+          isTimeMode(exercise) ? "秒數" : "REPS",
+          state.reps,
+          isTimeMode(exercise) ? [["−5", -5], ["+5", 5]] : [["−1", -1], ["+1", +1]],
+          (d) => { state.reps = Math.max(1, state.reps + d); },
+          render,
+          { set: (v) => { state.reps = v; }, parse: parseReps },
+        ),
       ]),
       // F112 ①⑥：就緒態才顯示。休息中已經有 ±15s 在休息卡上，兩處同時可改
       // 會讓人不知道該信哪一個——所以這一列在休息態整個不畫。
