@@ -4,7 +4,7 @@
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
 // F93：開發與正式環境分離（環境標示、兩顆可並存的 APK）。
-const CACHE_NAME = "liftlog-shell-v155"; // F158 MCP token UI（account.js/api.js/app.js/app.css）＋F136 折線圖鍵盤存取（exercise-detail.js/app.css）
+const CACHE_NAME = "liftlog-shell-v156"; // F159 時間型動作的原生本地儲存與浮動視窗快記（app.js/native-notify.js）
 const SHELL = [
   "/",
   "/css/app.css",
