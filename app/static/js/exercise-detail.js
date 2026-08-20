@@ -13,6 +13,20 @@ import {
   presetAvailable as presetUsable,
 } from "./range.js";
 import { exerciseName, state } from "./state.js";
+import {
+  CHART_H,
+  CHART_PAD_BOTTOM,
+  CHART_PAD_TOP,
+  MIN_CHART_W,
+  aggregate,
+  cardClickHandler,
+  focusChartPoint,
+  layoutPoints,
+  lineTip,
+  linePath,
+  pointNodes,
+  pointSizeClass,
+} from "./line-chart.js";
 
 // 本模組畫面狀態（不進全域 state：換畫面即重置無妨）
 const detail = {
@@ -186,20 +200,8 @@ function prCards() {
 
 // ---------- F134：可點選的折線圖（取代上面 F86 ⑤ 的長條圖） ----------
 
-const SVG_NS = "http://www.w3.org/2000/svg";
 
-function svgEl(tag, attrs = {}) {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-  return node;
-}
 
-// 折線圖高度與上緣留白（px）。PAD_TOP 要放得下「獎盃 icon＋最高點的圓點」，
-// 不夠的話最高那點（若剛好也是 PR）會被容器上緣裁切——這是量出來才發現的坑，
-// 跟原本長條圖註解記的兩個坑同一類。改這兩個數字要連 app.css 的 .line-chart 一起改。
-const CHART_H = 140;
-const CHART_PAD_TOP = 26;
-const CHART_PAD_BOTTOM = 12;
 
 /**
  * 把 sessions 轉成畫圖用的點陣列：x／y 座標、是否 PR，並過濾掉算不出最佳組的那次
@@ -223,40 +225,20 @@ function chartPoints(sessions) {
     point.isPr = point.metric > running;
     if (point.isPr) running = point.metric;
   }
-  const n = raw.length;
-  const vals = raw.map((p) => p.metric);
-  const valMax = Math.max(...vals);
-  const valMin = Math.min(...vals);
-  const span = valMax - valMin;
+  // F162：點數超過門檻改畫區間平均（日 -> 週 -> 月）。聚合後 PR 這個概念不再對應到
+  // 單一場次，所以獎盃一併不畫——這是 F134 ⑧「不省略資料點」被本條 supersede 的部分，
+  // 換來的是點距回到看得清的範圍。動作表現實務上很少超過 50 點，這條路徑罕見但不特例化。
+  const { items, label } = aggregate(
+    raw.map((p) => ({ ...p, key: p.date, value: p.metric })),
+  );
+  const aggregated = label !== null;
   // 走獎盃帶時，繪圖區整個下移到帶子底下——這就是「獎盃永不蓋住資料點」的來源。
   // 圖總高（CHART_H／app.css 的 .line-chart）維持不變，只有繪圖區被壓縮。
-  const band = flagLayout(n);
+  const band = aggregated ? null : flagLayout(items.length);
   const padTop = band ? band.height + FLAG_BAND_GAP : CHART_PAD_TOP;
-  const plotH = CHART_H - padTop - CHART_PAD_BOTTOM;
-  return raw.map((p, i) => ({
-    ...p,
-    // x：序位等距、內縮到各自那一格的中心（不是依實際天數比例）——同一天兩場也各占自己的
-    // 位置，不會疊到同一像素。⚠ 這裡故意不用 i/(n-1)（頭尾點會落在 0%／100%，貼齊容器邊緣）：
-    // nearestPointIndex() 的邊界在兩點中點，頭尾點只有一側有鄰居，命中寬會只剩內部點的一半、
-    // 跌破 F113 的 44px 線（P1 review 抓到，2026-08-07）。改成 (i+0.5)/n 讓每個點（含頭尾）
-    // 各佔 1/n 格、命中寬全部一致＝圖寬/n。
-    x: n === 1 ? 50 : ((i + 0.5) / n) * 100,
-    // y：span===0（只有一筆，或所有值都相同）畫在圖高中線，不除以 0。
-    y: span === 0
-      ? padTop + plotH / 2
-      : padTop + (1 - (p.metric - valMin) / span) * plotH,
-  }));
+  return { points: layoutPoints(items, { padTop }), band, aggLabel: label };
 }
 
-// F135：高 N（練很多次的動作切到「全部」）時，序位等距佈局把點擠在一起——
-// 未選中點依區間內實際點數分級縮小（① 350px 寬圖寬 252px、N=50 時點距僅 ~5px，
-// 8px 的點會黏成一條粗線）。分級只動視覺尺寸（CSS class），不動 x 座標公式與命中判定，
-// 所以 ⑤ 頭尾一致的命中寬與 F134 ⑥ 的門檻不受影響。選中點（.sel）尺寸不分級（③）。
-function pointSizeClass(n) {
-  if (n > 40) return " sz-sm"; // 4px
-  if (n > 20) return " sz-md"; // 6px
-  return ""; // N ≤ 20：8px，F134 現行尺寸不變
-}
 
 // PR 獎盃 icon 尺寸比照同一套分級縮小（④），高 N 時避免獎盃彼此蓋住；不省略任何一個。
 function trophySize(n) {
@@ -265,9 +247,6 @@ function trophySize(n) {
   return 11;
 }
 
-// 320px 視窗下的實際圖寬——獎盃佈局一律用這個最窄情境判定，寬螢幕只會更鬆。
-// （x 是百分比、真實寬度要 layout 後才知道，這裡不量 DOM，用最壞情況換取可預測與可測試。）
-const MIN_CHART_W = 252;
 const FLAG_ROW_GAP = 2;   // 帶內兩層之間的垂直留白
 // 獎盃帶與繪圖區之間的留白。下限不是隨手取的：帶底到最高點圓心的距離＝
 // FLAG_BAND_GAP + FLAG_ROW_GAP，而**選中**的點是 13px（半徑 6.5）再加 4px 光暈＝10.5px，
@@ -307,17 +286,6 @@ function flagLayout(n) {
   return { iconW, rows, rowH, height: rows * rowH };
 }
 
-// 命中判定：x 軸距離最近的點（不要求精準落在點上）。points 已經是等距排列，
-// 相鄰兩點的邊界自然落在中點，不會重疊也不會留空隙。
-function nearestPointIndex(points, xPct) {
-  let best = 0;
-  let bestDist = Infinity;
-  points.forEach((p, i) => {
-    const dist = Math.abs(p.x - xPct);
-    if (dist < bestDist) { bestDist = dist; best = i; }
-  });
-  return best;
-}
 
 // F105 ⑥：一組的數值標籤依 mode 分流——時間型顯示「N 秒」，不是把 duration_seconds
 // 套進次數型「N 次」的位置（reps 欄位本身在時間型 set 上就是 null）。
@@ -327,22 +295,6 @@ function bestSetLabel(best) {
     : `${fmtNum(best.weight_kg)}kg × ${best.reps}`;
 }
 
-// F136 ②：role="status" 隱含 aria-live="polite"——選中內容變更（換點／關閉再開）
-// 時會被朗讀，不需要額外掛 aria-live 屬性。
-function lineTip(point) {
-  // 選中的點落在最左/最右 30% 就靠邊貼齊，否則置中——避免框被容器裁切（F134 ⑦）。
-  const align = point.x <= 30 ? "left" : point.x >= 70 ? "right" : "center";
-  return el("div", {
-    class: `line-tip align-${align}`,
-    role: "status",
-    ...(align === "center" ? { style: `left:${point.x}%` } : {}),
-  }, [
-    // 日期沿用 sessionCard() 同一段算式（slice(5)+replace），確保與歷史清單同一天那張卡文字一致。
-    el("span", { class: "line-tip-date" }, [point.date.slice(5).replace("-", "/")]),
-    el("span", { class: "line-tip-sets" }, [`${point.session.sets.length} 組`]),
-    el("span", { class: "line-tip-best" }, [bestSetLabel(point.best)]),
-  ]);
-}
 
 // F136 ①：滑鼠點擊（經 .bars-card 代理）與鍵盤 Enter/Space（掛在各自的 .line-pt）
 // 走同一個選中分支，不各自維護一份 toggle 邏輯。
@@ -351,93 +303,70 @@ function selectChartPoint(idx, rerender) {
   rerender();
 }
 
-// rerender() 是整棵子樹重繪（root.replaceChildren），舊的 .line-pt 節點連同焦點一起被拆掉。
-// 鍵盤操作後要把焦點找回「同一序位」的新節點——每次重繪 chartPoints() 的陣列順序不變
-// （同一份 sessions、同一個排序），用索引對應即可，不需要額外記住是哪一天。
-function focusChartPoint(idx) {
-  const pts = document.querySelectorAll(".line-pt");
-  if (pts[idx]) pts[idx].focus();
+
+// 聚合後的浮動框：顯示區間與平均，並把該區間的最低／最高一併帶出來——聚合抹掉的是
+// 線上的波動，不是資訊本身（同 body.js 對 F56 那條反對意見的回應）。
+function aggTipLines(point, unit) {
+  const range = `${point.from.slice(5).replace("-", "/")}-${point.to.slice(5).replace("-", "/")}`;
+  return [
+    `${range}  平均 ${fmtNum(point.value)}${unit}`,
+    `最低 ${fmtNum(point.min)}  最高 ${fmtNum(point.max)}`,
+    `${point.count} 次`,
+  ];
 }
 
 function barChart(rerender) {
-  const points = chartPoints(detail.data.sessions);
+  const { points, band, aggLabel } = chartPoints(detail.data.sessions);
   if (!points.length) {
     return el("div", { class: "bars-card" }, [
       el("p", { class: "bars-empty" }, ["這個區間內沒有紀錄"]),
     ]);
   }
-  const max = Math.max(...points.map((p) => p.metric)); // F105：時間型是秒數，次數型是重量
+  const max = Math.max(...points.map((p) => p.metric ?? p.value)); // F105：時間型是秒數，次數型是重量
   const monthOf = (d) => `${+d.slice(5, 7)}月`;
-
-  const svg = svgEl("svg", {
-    class: "line-svg", viewBox: `0 0 100 ${CHART_H}`, preserveAspectRatio: "none",
-  });
-  if (points.length >= 2) {
-    svg.append(svgEl("polyline", {
-      class: "line-path",
-      points: points.map((p) => `${p.x},${p.y}`).join(" "),
-      "vector-effect": "non-scaling-stroke",
-    }));
-  }
-
+  const unit = isTimeMode() ? " 秒" : " kg";
   const selected = detail.chartSelected != null ? points[detail.chartSelected] : null;
   const sizeClass = pointSizeClass(points.length); // F135 ①②④：依 N 分級
-  const band = flagLayout(points.length); // F135 ④：null＝獎盃維持畫在點正上方
 
-  // 點擊落在 .line-chart 內：選最近的點（再點已選中的就關閉）。
-  // 落在 .bars-card 其餘地方（標題列／底部標示等空白處）：關閉浮動資訊。
-  const onCardClick = (e) => {
-    const chartEl = e.currentTarget.querySelector(".line-chart");
-    if (!chartEl || !chartEl.contains(e.target)) {
-      if (detail.chartSelected !== null) {
-        detail.chartSelected = null;
-        rerender();
-      }
-      return;
-    }
-    const rect = chartEl.getBoundingClientRect();
-    const frac = rect.width > 0 ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
-    const idx = nearestPointIndex(points, frac * 100);
+  const close = (focusIdx) => {
+    if (detail.chartSelected === null) return;
+    detail.chartSelected = null;
+    rerender();
+    if (focusIdx != null) focusChartPoint(focusIdx);
+  };
+  const select = (idx, refocus) => {
     selectChartPoint(idx, rerender);
+    if (refocus) focusChartPoint(idx);
   };
 
-  return el("div", { class: "bars-card", onclick: onCardClick }, [
+  return el("div", {
+    class: "bars-card",
+    onclick: cardClickHandler(points, { onSelect: (i) => select(i, false), onClose: () => close(null) }),
+  }, [
     el("div", { class: "bars-head" }, [
-      el("span", { class: "bars-title" }, ["每次最佳組"]),
-      el("span", { class: "bars-max" }, [isTimeMode() ? `${fmtNum(max)} 秒` : `${fmtNum(max)} kg`]),
+      // F162 R6：聚合時標題要講明畫的是區間平均，不能讓人以為每個點是一次訓練。
+      el("span", { class: "bars-title" }, [aggLabel ? `每次最佳組（${aggLabel}）` : "每次最佳組"]),
+      el("span", { class: "bars-max" }, [`${fmtNum(max)}${unit}`]),
     ]),
     el("div", { class: "line-chart" }, [
-      svg,
-      // F136 ①③：role="button"＋tabindex="0" 給鍵盤與螢幕閱讀器一個非指標裝置的入口；
-      // DOM 順序＝points 陣列順序＝日期左舊右新，Tab 順序天然等於視覺順序，不必另外處理。
-      ...points.map((point, i) =>
-        el("div", {
-          class: `line-pt${sizeClass}${point.isPr ? " pr" : ""}${point === selected ? " sel" : ""}`,
-          style: `left:${point.x}%;top:${point.y}px`,
-          role: "button",
-          tabindex: "0",
-          "aria-label": `${point.date} 最佳組 ${bestSetLabel(point.best)}`,
-          onkeydown: (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              // Space 的預設行為是捲動頁面（沿用 dom.js stepper 同一套 preventDefault）
-              e.preventDefault();
-              selectChartPoint(i, rerender);
-              focusChartPoint(i);
-            } else if (e.key === "Escape" && detail.chartSelected !== null) {
-              e.preventDefault();
-              detail.chartSelected = null;
-              rerender();
-              focusChartPoint(i);
-            }
-          },
-        }, []),
-      ),
+      linePath(points),
+      ...pointNodes(points, {
+        selected,
+        sizeClass,
+        // 聚合後沒有「某一次是 PR」這回事，點也就不上獎盃色。
+        extraClass: (p) => (p.isPr && !aggLabel ? " pr" : ""),
+        ariaLabel: (p) => (aggLabel
+          ? aggTipLines(p, unit).join("，")
+          : `${p.date} 最佳組 ${bestSetLabel(p.best)}`),
+        onSelect: (i) => select(i, true),
+        onClose: (i) => close(i),
+      }),
       // 獎盃只在 PR 那幾點才畫（不像長條圖需要每欄都保留節點來撐版面——
       // 這裡每個點的 y 各自獨立算出，沒有那個限制）。
       // 點距容不下 icon 時走專用帶（見 flagLayout）：top 改用帶內固定分層，不再跟著點的 y。
       // 交錯用的是**序位 i**（不是第幾個 PR）——相鄰序位必落在不同層，而同層兩個獎盃
-      // 至少隔 rows 個序位，橫向間距因此 ≥ icon 寬。
-      ...points.map((point, i) => [point, i]).filter(([p]) => p.isPr).map(([point, i]) =>
+      // 至少隔 rows 個序位，橫向間距因此 >= icon 寬。
+      ...(aggLabel ? [] : points.map((point, i) => [point, i]).filter(([p]) => p.isPr).map(([point, i]) =>
         el("div", {
           class: `line-flag${sizeClass}${band ? " band" : ""}`,
           style: band
@@ -446,13 +375,21 @@ function barChart(rerender) {
         }, [
           icon("trophy", { size: trophySize(points.length), label: "個人紀錄" }),
         ]),
-      ),
-      ...(selected ? [lineTip(selected)] : []),
+      )),
+      ...(selected
+        ? [lineTip(selected, aggLabel
+            ? aggTipLines(selected, unit)
+            : [
+                selected.date.slice(5).replace("-", "/"),
+                `${selected.session.sets.length} 組`,
+                bestSetLabel(selected.best),
+              ])]
+        : []),
     ]),
     el("div", { class: "bars-foot" }, [
-      el("span", {}, [monthOf(points[0].date)]),
-      el("span", { class: "bars-legend" }, [icon("trophy", { size: 9 }), "個人紀錄"]),
-      el("span", {}, [monthOf(points[points.length - 1].date)]),
+      el("span", {}, [monthOf(points[0].key)]),
+      ...(aggLabel ? [] : [el("span", { class: "bars-legend" }, [icon("trophy", { size: 9 }), "個人紀錄"])]),
+      el("span", {}, [monthOf(points[points.length - 1].key)]),
     ]),
   ]);
 }

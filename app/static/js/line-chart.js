@@ -84,9 +84,15 @@ export function focusChartPoint(idx, root = document) {
   if (pts[idx]) pts[idx].focus();
 }
 
+// 每一行各自的 class。**三個名字必須各自唯一**：F134 的 E2E 用 `.line-tip-sets`
+// 這種單一選擇器直接取值，同一個框裡出現兩個就撞 Playwright 的 strict mode
+// （2026-08-20 抽共用模組時把它們壓成兩種，verify_f134 當場紅給我看）。
+// 超過三行的情形沿用最後一個 class——目前沒有呼叫端這樣用。
+const TIP_LINE_CLASSES = ["line-tip-date", "line-tip-sets", "line-tip-best"];
+
 /**
  * 浮動框。選中的點落在最左/最右 30% 就靠邊貼齊，否則置中——避免框被容器裁切（F134 ⑦）。
- * lines 是要顯示的字串陣列，第一行套 .line-tip-date（粗體），其餘 .line-tip-sets（次要色）。
+ * lines 是要顯示的字串陣列，依序套 TIP_LINE_CLASSES。
  *
  * role="status" 隱含 aria-live="polite"：換點／關閉再開會被朗讀，不必另外掛 aria-live。
  */
@@ -97,7 +103,9 @@ export function lineTip(point, lines) {
     role: "status",
     ...(align === "center" ? { style: `left:${point.x}%` } : {}),
   }, lines.map((text, i) =>
-    el("span", { class: i === 0 ? "line-tip-date" : "line-tip-sets" }, [text]),
+    el("span", {
+      class: TIP_LINE_CLASSES[Math.min(i, TIP_LINE_CLASSES.length - 1)],
+    }, [text]),
   ));
 }
 
