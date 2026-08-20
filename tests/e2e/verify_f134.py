@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -36,6 +37,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # 報告裡有 ≥、①、⚠ 這類字，Windows console 預設 CP950 編不出來會 UnicodeEncodeError exit 1
 # ——腳本自己釘 UTF-8，不依賴呼叫端帶 PYTHONUTF8／PYTHONIOENCODING（F138）。
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+# ⑧(c) 的壓力情境是 50 筆，而 F162 的聚合門檻是「> AGG_MAX_POINTS」——兩個 50 原本是
+# 兩個獨立字面值，中間只有 docs/evidence/F162.md 的一句話維繫。把門檻從實作讀出來並
+# 斷言，是因為那句話擋不住任何人：有人為了「測更多」把 51 改上去，⑧(c) 的「不省略資料
+# 點」就會翻紅，而錯誤訊息不會指向真正原因。讀不到就直接中止，不要靜靜跳過。
+# （2026-08-20 F162 驗收 P4；同一個教訓當天也在 scripts/backup.py 上出現過一次。）
+def _agg_max_points() -> int:
+    src = (Path(__file__).resolve().parents[2] / "app" / "static" / "js" / "line-chart.js")
+    text = src.read_text(encoding="utf-8")
+    m = re.search(r"AGG_MAX_POINTS\s*=\s*(\d+)", text)
+    if not m:
+        raise SystemExit(f"讀不到 AGG_MAX_POINTS（{src}）——聚合門檻與本腳本的種子筆數"
+                         "無法對照，不繼續。")
+    return int(m.group(1))
+
+
+AGG_MAX_POINTS = _agg_max_points()
+STRESS_N = 50  # ⑧(c) 的壓力情境筆數
+if STRESS_N > AGG_MAX_POINTS:
+    raise SystemExit(
+        f"⑧(c) 的種子筆數 {STRESS_N} 已超過 F162 的聚合門檻 {AGG_MAX_POINTS}，"
+        "圖表會改畫區間平均，『不省略資料點』這條斷言在該情境下不再適用。"
+        "要嘛把種子筆數降回門檻內，要嘛這條斷言需要隨新的規格重寫。"
+    )
 
 
 from playwright.sync_api import sync_playwright  # noqa: E402
@@ -127,7 +152,7 @@ def seed_new_edge_cases(base: str) -> dict:
     log_set(base, front_squat["id"], 10, 65.0, 5, "fsqB")
 
     # (c) 50 筆不同日期
-    for i, days_ago in enumerate(range(1, 51)):
+    for i, days_ago in enumerate(range(1, STRESS_N + 1)):
         log_set(base, leg_curl["id"], days_ago, 40.0 + i * 0.5, 8, "curl")
 
     return {
@@ -506,7 +531,8 @@ def run_checks(base: str, edge: dict) -> None:  # noqa: C901
         open_detail(page, "腿", "腿彎舉")
         lc_pts = page.locator(".line-pt")
         lc_count = lc_pts.count()
-        check(lc_count == 50, f"⑧(c) 50 點：不省略資料點（實際 {lc_count}）")
+        check(lc_count == STRESS_N,
+              f"⑧(c) {STRESS_N} 點：不省略資料點（實際 {lc_count}，聚合門檻 >{AGG_MAX_POINTS}）")
         w50 = lc_pts.nth(0).bounding_box()["width"]
         check(w50 <= n8_pt_width + 0.5,
               f"⑧(c) 50 點：未選中點直徑未放大（50 點測得 {w50:.2f}px，"

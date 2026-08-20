@@ -259,7 +259,7 @@
     {
       "id": "F162",
       "name": "體重圖改折線圖，折線圖抽成共用模組並支援聚合",
-      "status": "failing",
+      "status": "passing",
       "signed_off": true,
       "prerequisites": [],
       "non_goals": [
@@ -281,7 +281,6 @@
         "tests/e2e/verify_f58.py",
         "tests/e2e/verify_f87.py"
       ],
-      "acceptance": "背景：體重卡片的圖是 24 根長條（body.js 的 barChart()），動作表現已是 SVG 折線（F134/F135/F136）。Ryan 2026-08-20 要求體重也改折線，且與動作表現一致。\n做法：折線圖的幾何、點渲染、tip 定位與鍵盤互動抽成共用模組 app/static/js/line-chart.js；exercise-detail.js 改用它（PR 獎盃與 flagLayout 留在 exercise-detail.js，透過 padTop 與 flags 掛回去）；body.js 移除 barChart() 改用它。抽取而非複製的理由：那張圖的幾何含 review 打出來的不變量（x 用 (i+0.5)/n 而非 i/(n-1)，為了讓頭尾點命中寬不跌破 44px），複製等於複製兩份會各自漂移的隱形規則。\n\nR1 體重與體脂兩個頁籤都是折線圖，與動作表現使用同一組 CSS 類別（.line-chart／.line-svg／.line-path／.line-pt／.line-tip），不另立一套樣式。\nR2 點圖上任一點顯示浮動框（日期 + 數值）；再點同一點關閉；點卡片內非圖表區域也關閉。\nR3 鍵盤：Tab 逐點移動焦點、Enter 或 Space 選取、Escape 關閉；重繪後焦點回到同序位的點。不得加入方向鍵操作。\nR4 切換體重／體脂頁籤、切換區間時清掉選中狀態，不殘留上一個 metric 或區間的選中點。\nR5 移除 body.js 的 BAR_COUNT（24 筆）上限：選什麼區間就畫該區間的全部資料。\nR6 點數 > 50 時聚合：依序嘗試日 → 週 → 月，取第一個讓點數 <= 50 的單位。門檻 50 的來源是 F135 ② 的「320px 寬、圖寬 252px 下相鄰未選中點圓緣間距 >= 1px」——4px 的點需要 >= 5px 間距，252/5 約等於 50。圖表標題必須顯示當前單位（例如「每週平均」）；未聚合時標題維持原樣。\nR7 聚合後選中一個點，浮動框顯示的是該區間與聚合值（例如「08/11-08/17 平均 72.3kg」），不得偽裝成單一日期。\nR8 兩張圖套用同一套聚合規則，不為動作表現特例化（實務上動作表現很少超過 50 點，但規則一致）。\nR9 不得回歸：verify_f134.py、verify_f135.py、verify_f136.py 三支 Playwright 腳本重跑通過。\nR10 uv run pytest 全綠；uv run ruff check . 乾淨。\nR11 APP_VERSION 與 CACHE_NAME 同步升號（沿用本專案前端改動的慣例）。\n\n【明確的規格變更】本條 supersede F134 ⑧ 的「不省略資料點」與 F135 對高 N 的處理方式：N > 50 時改由聚合承擔。F135 的依 N 分級縮小（8px／6px／4px）在 N <= 50 區間仍然有效，不移除。\n記錄反對意見與推翻理由：2026-08-07 Ryan 曾裁示否決「另做只看最近 N 次的視圖」，理由是與區間藥丸職責重疊；2026-08-20 主 session 據此擋下「兩張圖都加固定上限」的提議，Ryan 改採「無上限 + 太多才聚合」。聚合與固定截斷的差別在於：聚合不丟資料且在標題上明示，固定截斷是看不見的靜默丟棄（體重圖原本的 24 筆上限就是後者，F56 曾以 P3-4 接受）。",
       "supersedes": [
         "F134 ⑧「不省略資料點」——N > 50 時改由聚合承擔",
         "F135 對高 N 的處理——分級縮小在 N <= 50 仍有效，超過改聚合",
@@ -290,7 +289,10 @@
         "F87 ③ 中「長條圖跟著篩」的字面——改為折線圖跟著篩；③ 的其餘要求（五顆藥丸、清單同步篩、F58 停用檔位與自動退檔）不變",
         "F57 ④「仍不做折點聚合抽樣」——改為 N > 50 才聚合，且取平均並在浮動框保留 min/max"
       ],
-      "supersedes_signed_off": "2026-08-20 Ryan"
+      "supersedes_signed_off": "2026-08-20 Ryan",
+      "evidence": "2026-08-20。commits d6ba2ab、3e346e1、e2347ec、272384d、ec2347d、d10a39c 與本條。折線圖的幾何、點渲染、浮動框定位與鍵盤互動抽成 app/static/js/line-chart.js；exercise-detail.js 與 body.js 共用；body.js 移除 barChart() 與 BAR_COUNT（24 筆靜默上限）；N > 50 時聚合成區間平均（日→週→月），標題顯示單位，浮動框帶 min/max。詳細規格變更紀錄與被取代條文對照見 docs/evidence/F162.md。\n分工：主 session 寫共用模組（介面設計不可外包）與 exercise-detail.js 重構（幾何不變量只有 Playwright 手動腳本護著，風險高）；body.js + CSS、verify_f57/f58、verify_f87 各派一個executor（三次派工，檔案零交集，其中後兩者平行）。baton 五問逐條過，Independence 由「介面先由主 session 定死」才成立。\n整合時抓到三個 worker 看不到的問題：(1) sw.js 的 shell 清單漏了 line-chart.js，test_sw_shell_list_matches_static_files 抓到——沒補的話離線少一支檔案；(2) 圖表底部日期標示被連同長條圖一起刪掉，但那是 F57 ⑤ 明文要求的區間邊界，x 軸是序位等距，沒有它「選 3 個月」與「選全部」畫面上長得一樣，已改用 .bars-foot 補回；(3) 抽模組時把浮動框三個 class 壓成兩個，同框出現兩個 .line-tip-sets 撞 Playwright strict mode，verify_f134 當場紅——這種缺陷只有實跑會現形。\n驗收後追加：把 verify_f134 ⑧(c) 的壓力情境筆數與 line-chart.js 的 AGG_MAX_POINTS 耦合起來（從實作讀出門檻並斷言），原本兩個 50 是獨立字面值、只靠證據檔一句話維繫。實測把種子改成 51 會直接中止並說明原因，而不是讓「不省略資料點」莫名翻紅。",
+      "reviewed_by": "claude@2026-08-20 主 session 自審：無信任邊界、授權或資料寫入路徑變更（純前端呈現層），風險由五支 E2E 與獨立驗收覆蓋，未另跑 /code-review。",
+      "verified_by": "claude@2026-08-20 acceptance-verifier（fresh context，同模型非跨模型）：R1-R11 全數 PASS，最高 severity 無。驗收者自寫獨立腳本 31/31 覆蓋 R1-R8，不採信主 session 的說法。\n三項額外獨立判斷：(a) R8 實測動作表現圖在 60 場資料下確實聚合成 10 點、標題變「每次最佳組（每週平均）」、聚合時不畫 PR 獎盃——不是只有 body 會聚合；(b) 直接量測 50 vs 51 的邊界，確認臨界點精準落在 >50；(c) 逐字比對 docs/archive/features.jsonl 的 F87 原文，確認 verify_f87 的 3 條 SUPERSEDED 恰好覆蓋 ⑤ 與 ⑮ 的長條幾何與配色、一字不多，且「底部標示起訖日期」被正確保留繼續測。\n唯一 P4：AGG_MAX_POINTS 與 verify_f134 的種子筆數是巧合式耦合，只靠文件維繫——驗收者直指主 session 在證據檔寫的「這不是運氣」缺乏機制支撐。主 session 處置 FIX（P4 預設 DEFER，此條因十行可解且與當日 backup.py 是同一個教訓而選擇修）。測試全套 466 passed；verify_f134 60/60、f135 44/44、f136 25/25、f87 33/33（另 3 條 SUPERSEDED）、f57 與 f58 全綠。"
     }
   ]
 }
