@@ -255,6 +255,28 @@
       "evidence": "2026-08-20 由主 session 直接執行（baton 第 3 問 Independence 擋下平行委派：搬遷是一條耦合序列，且動的是 repo 之外的真實正式資料，worktree 隔離在此無意義且會誤導 worker）。commits a48265c、fa4f327、a37fd30、0ed3933、2d2438b。正式站整包搬到 git 工作樹之外的 lift-log-prod/（current、previous、.venv、.venv-previous、.env、data、release）；deploy.ps1 改為依快照 uv.lock 建 .venv-staging 再換名，環境與程式碼同進同退；services.toml 正式站三行改指新位置。逐表 row count 與回退演練的原始數據見 docs/evidence/F161.md。搬遷前後四個 DB 逐表 row count 全數一致（649/115/40/264）；加密備份 + restore drill 通過。\n過程中抓到兩個只有實跑才會現形的缺陷：(1) uv 建的 .exe shim 把自己 venv 的絕對路徑寫死在 trampoline 裡，.venv-staging 改名成 .venv 會壞（首次部署失敗並自動回退，log 只有一行 Failed to canonicalize script path）。已在隔離環境重現確認，改用 python.exe -m uvicorn。靜態讀 deploy.ps1 看不出這個問題。(2) 本次引入的回歸：.env 隨正式站搬走後，從 repo 跑 backup.py 會靜默落回預設的 ./control.db 與 ./users（工作樹底下剛好是測試站的檔案），exit 0 印出 [OK]，看起來完全成功。backup.py 新增 unresolved_source()，讀不到 .env 又沒明講來源就 exit 2 拒絕執行——選拒絕而非警告，因為這支腳本的正常歸宿是排程工作，警告沒有人會看到。三條回歸測試已紅測證明。\n測試站曾因 8138 被 roam-research MCP 佔走而長期 failed，一度改 8139；查其原始碼確認那不是隨機埠（findAvailablePort 從 8088 起每次 +2，只吃偶數），真正的問題是 52 個實例從 8/14 起累積佔滿8088-8138 全部偶數埠。使用者決定整包移除 roam MCP，8138 釋出，測試站改回原埠，Cloudflare tunnel 路由不必動。\nuv run pytest 全綠、ruff 乾淨；正式站 8137 與測試站 8138 health 皆 200，公開網址實測 200。",
       "reviewed_by": "claude@2026-08-20 主 session 自審：改動集中在部署腳本與備份腳本的來源解析，無信任邊界或授權邏輯變更；風險已由兩輪獨立驗收覆蓋，未另跑 /code-review。",
       "verified_by": "claude@2026-08-20 acceptance-verifier 兩輪（fresh context，同模型非跨模型）。第一輪：R1/R2/R3/R5/R6/R8/R9 PASS；R4/R7 UNVERIFIED（動作做了但當時沒留檔，事後無從查證）；另獨立重現一個 P2——backup.py 在 repo 目錄會靜默備份到測試站的 DB，且指出文件層緩解不足（排程工作看不到警告）。主 session 處置：P2 FIX（改為拒絕執行 + 三條紅測證明的回歸測試）、R4/R7 FIX（補 docs/evidence/F161.md 原始數據）、P4 埠號文字 FIX。第二輪針對性重驗（只驗那三項）：全部 PASS。驗收者另以 mission-control 的 events 表與 .deployed 時間戳（誤差 <0.1s）獨立佐證 R7 的回退演練確實發生過，那是它自己挖出來的旁證。\n主 session 覆核發現第二輪 ② 的量測有誤：它報「重測 649 完全吻合」，但當時 live DB 已是 666——649 是文件裡搬遷前那組數字。實際差異來自使用者實機驗證時記的一筆訓練（workouts 8→10、sets 150→151），資料只增不減。結論不變（無資料遺失），但證據不採信其原文。根因正是驗收者自己提的規格回饋：證據表沒標量測時間，對活著的正式站不可重現。已在 docs/evidence/F161.md 補上量測時間戳與「哪些表預期會漂移」的說明。"
+    },
+    {
+      "id": "F162",
+      "name": "體重圖改折線圖，折線圖抽成共用模組並支援聚合",
+      "status": "failing",
+      "signed_off": true,
+      "prerequisites": [],
+      "non_goals": [
+        "不改資料模型或 API",
+        "不改體重紀錄清單（bm-rows）的行為",
+        "不加方向鍵操作（2026-08-20 Ryan 裁決：手機為主，鍵盤操作維持 Tab/Enter/Space/Escape）",
+        "不動區間藥丸（F119/F120/F87）的行為"
+      ],
+      "touches": [
+        "app/static/js/line-chart.js",
+        "app/static/js/exercise-detail.js",
+        "app/static/js/body.js",
+        "app/static/js/state.js",
+        "app/static/css/app.css",
+        "feature_list.json"
+      ],
+      "acceptance": "背景：體重卡片的圖是 24 根長條（body.js 的 barChart()），動作表現已是 SVG 折線（F134/F135/F136）。Ryan 2026-08-20 要求體重也改折線，且與動作表現一致。\n做法：折線圖的幾何、點渲染、tip 定位與鍵盤互動抽成共用模組 app/static/js/line-chart.js；exercise-detail.js 改用它（PR 獎盃與 flagLayout 留在 exercise-detail.js，透過 padTop 與 flags 掛回去）；body.js 移除 barChart() 改用它。抽取而非複製的理由：那張圖的幾何含 review 打出來的不變量（x 用 (i+0.5)/n 而非 i/(n-1)，為了讓頭尾點命中寬不跌破 44px），複製等於複製兩份會各自漂移的隱形規則。\n\nR1 體重與體脂兩個頁籤都是折線圖，與動作表現使用同一組 CSS 類別（.line-chart／.line-svg／.line-path／.line-pt／.line-tip），不另立一套樣式。\nR2 點圖上任一點顯示浮動框（日期 + 數值）；再點同一點關閉；點卡片內非圖表區域也關閉。\nR3 鍵盤：Tab 逐點移動焦點、Enter 或 Space 選取、Escape 關閉；重繪後焦點回到同序位的點。不得加入方向鍵操作。\nR4 切換體重／體脂頁籤、切換區間時清掉選中狀態，不殘留上一個 metric 或區間的選中點。\nR5 移除 body.js 的 BAR_COUNT（24 筆）上限：選什麼區間就畫該區間的全部資料。\nR6 點數 > 50 時聚合：依序嘗試日 → 週 → 月，取第一個讓點數 <= 50 的單位。門檻 50 的來源是 F135 ② 的「320px 寬、圖寬 252px 下相鄰未選中點圓緣間距 >= 1px」——4px 的點需要 >= 5px 間距，252/5 約等於 50。圖表標題必須顯示當前單位（例如「每週平均」）；未聚合時標題維持原樣。\nR7 聚合後選中一個點，浮動框顯示的是該區間與聚合值（例如「08/11-08/17 平均 72.3kg」），不得偽裝成單一日期。\nR8 兩張圖套用同一套聚合規則，不為動作表現特例化（實務上動作表現很少超過 50 點，但規則一致）。\nR9 不得回歸：verify_f134.py、verify_f135.py、verify_f136.py 三支 Playwright 腳本重跑通過。\nR10 uv run pytest 全綠；uv run ruff check . 乾淨。\nR11 APP_VERSION 與 CACHE_NAME 同步升號（沿用本專案前端改動的慣例）。\n\n【明確的規格變更】本條 supersede F134 ⑧ 的「不省略資料點」與 F135 對高 N 的處理方式：N > 50 時改由聚合承擔。F135 的依 N 分級縮小（8px／6px／4px）在 N <= 50 區間仍然有效，不移除。\n記錄反對意見與推翻理由：2026-08-07 Ryan 曾裁示否決「另做只看最近 N 次的視圖」，理由是與區間藥丸職責重疊；2026-08-20 主 session 據此擋下「兩張圖都加固定上限」的提議，Ryan 改採「無上限 + 太多才聚合」。聚合與固定截斷的差別在於：聚合不丟資料且在標題上明示，固定截斷是看不見的靜默丟棄（體重圖原本的 24 筆上限就是後者，F56 曾以 P3-4 接受）。"
     }
   ]
 }
