@@ -237,7 +237,7 @@
     {
       "id": "F161",
       "name": "正式站搬出開發工作樹（環境、設定與資料完全隔離）",
-      "status": "failing",
+      "status": "passing",
       "signed_off": true,
       "prerequisites": [],
       "non_goals": [
@@ -252,7 +252,9 @@
         "feature_list.json",
         "../mission-control/services.toml"
       ],
-      "acceptance": "背景（承接 mission-control 已關閉的 F44）：正式站的程式碼已由 F93 快照隔離，但直譯器仍是開發工作樹的 lift-log/.venv，且正式站的資料與設定全部住在 git 工作樹裡並被 .gitignore 蓋著。2026-08-20 實測 git clean -xdn 會刪除 liftlog.db、prod-data/（含兩個真實帳號的 user DB）、.env、release/、deploy/，git 全程不警告。兩個問題同一根源：正式站住在開發工作樹裡。\n目標配置：SideProject/lift-log-prod/ 位於 git 工作樹之外，內含 current/、previous/、.venv/、.env、data/control.db、data/users/、release/。（本條所有路徑一律以 / 書寫，實作時對應 Windows 路徑分隔符。）\nR1 正式站的程式碼快照、.venv、.env 與所有資料位於 git 工作樹之外的 lift-log-prod/。在 lift-log 工作樹執行 git clean -xdn，輸出不含任何正式站檔案（附實際輸出為證）。\nR2 deploy.ps1 解完快照後，依快照內的 uv.lock 在 lift-log-prod/.venv 建立或更新環境，使環境版本與程式碼版本同源；快照缺 uv.lock 或環境建置失敗時中止換版且不動 current。\nR3 mission-control 的 services.toml 中 lift-log 正式站的 cwd、command、env_file 全指向 lift-log-prod；lift-log-dev 那條維持指向工作樹不變。\nR4 搬遷前以 scripts/backup.py 產出加密備份並記錄逐表 row count；搬遷後 control DB 與兩個 user DB 的逐表 row count 與搬遷前一致；另以 restore_drill.py 在隔離目錄實際驗過至少一份備份可還原。\nR5 雙向隔離實證：(a) 在工作樹 .venv 安裝一個正式站沒有的套件，重啟正式站後正式站仍以舊相依執行（附證明指令與輸出）；(b) 工作樹 git clean -xdn 的輸出不含正式站資料。\nR6 正式站 8137 與測試站 8138 的 health 皆回 200；deploy.ps1 在新位置完整跑一次（含停機、換目錄、啟動、health 輪詢）並成功換版。\nR7 回滾路徑在新位置仍成立：實測回退到 previous 一次，再前進一次。\nR8 uv run pytest 全綠；uv run ruff check . 乾淨。\nR9 搬遷過程不得在文件、log 或指令歷史中留下 .env 內容或備份金鑰。"
+      "evidence": "2026-08-20 由主 session 直接執行（baton 第 3 問 Independence 擋下平行委派：搬遷是一條耦合序列，且動的是 repo 之外的真實正式資料，worktree 隔離在此無意義且會誤導 worker）。commits a48265c、fa4f327、a37fd30、0ed3933、2d2438b。正式站整包搬到 git 工作樹之外的 lift-log-prod/（current、previous、.venv、.venv-previous、.env、data、release）；deploy.ps1 改為依快照 uv.lock 建 .venv-staging 再換名，環境與程式碼同進同退；services.toml 正式站三行改指新位置。逐表 row count 與回退演練的原始數據見 docs/evidence/F161.md。搬遷前後四個 DB 逐表 row count 全數一致（649/115/40/264）；加密備份 + restore drill 通過。\n過程中抓到兩個只有實跑才會現形的缺陷：(1) uv 建的 .exe shim 把自己 venv 的絕對路徑寫死在 trampoline 裡，.venv-staging 改名成 .venv 會壞（首次部署失敗並自動回退，log 只有一行 Failed to canonicalize script path）。已在隔離環境重現確認，改用 python.exe -m uvicorn。靜態讀 deploy.ps1 看不出這個問題。(2) 本次引入的回歸：.env 隨正式站搬走後，從 repo 跑 backup.py 會靜默落回預設的 ./control.db 與 ./users（工作樹底下剛好是測試站的檔案），exit 0 印出 [OK]，看起來完全成功。backup.py 新增 unresolved_source()，讀不到 .env 又沒明講來源就 exit 2 拒絕執行——選拒絕而非警告，因為這支腳本的正常歸宿是排程工作，警告沒有人會看到。三條回歸測試已紅測證明。\n測試站曾因 8138 被 roam-research MCP 佔走而長期 failed，一度改 8139；查其原始碼確認那不是隨機埠（findAvailablePort 從 8088 起每次 +2，只吃偶數），真正的問題是 52 個實例從 8/14 起累積佔滿8088-8138 全部偶數埠。使用者決定整包移除 roam MCP，8138 釋出，測試站改回原埠，Cloudflare tunnel 路由不必動。\nuv run pytest 全綠、ruff 乾淨；正式站 8137 與測試站 8138 health 皆 200，公開網址實測 200。",
+      "reviewed_by": "claude@2026-08-20 主 session 自審：改動集中在部署腳本與備份腳本的來源解析，無信任邊界或授權邏輯變更；風險已由兩輪獨立驗收覆蓋，未另跑 /code-review。",
+      "verified_by": "claude@2026-08-20 acceptance-verifier 兩輪（fresh context，同模型非跨模型）。第一輪：R1/R2/R3/R5/R6/R8/R9 PASS；R4/R7 UNVERIFIED（動作做了但當時沒留檔，事後無從查證）；另獨立重現一個 P2——backup.py 在 repo 目錄會靜默備份到測試站的 DB，且指出文件層緩解不足（排程工作看不到警告）。主 session 處置：P2 FIX（改為拒絕執行 + 三條紅測證明的回歸測試）、R4/R7 FIX（補 docs/evidence/F161.md 原始數據）、P4 埠號文字 FIX。第二輪針對性重驗（只驗那三項）：全部 PASS。驗收者另以 mission-control 的 events 表與 .deployed 時間戳（誤差 <0.1s）獨立佐證 R7 的回退演練確實發生過，那是它自己挖出來的旁證。\n主 session 覆核發現第二輪 ② 的量測有誤：它報「重測 649 完全吻合」，但當時 live DB 已是 666——649 是文件裡搬遷前那組數字。實際差異來自使用者實機驗證時記的一筆訓練（workouts 8→10、sets 150→151），資料只增不減。結論不變（無資料遺失），但證據不採信其原文。根因正是驗收者自己提的規格回饋：證據表沒標量測時間，對活著的正式站不可重現。已在 docs/evidence/F161.md 補上量測時間戳與「哪些表預期會漂移」的說明。"
     }
   ]
 }
