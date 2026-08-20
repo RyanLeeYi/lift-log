@@ -233,6 +233,26 @@
         "不做 Android 端的時間型 UI——UI 是打包進 APK 的同一份 web 資產，F105 已完成"
       ],
       "signed_off": true
+    },
+    {
+      "id": "F161",
+      "name": "正式站搬出開發工作樹（環境、設定與資料完全隔離）",
+      "status": "failing",
+      "signed_off": true,
+      "prerequisites": [],
+      "non_goals": [
+        "不改應用程式邏輯",
+        "不改 DB schema",
+        "不動測試站（lift-log-dev）設定——測試站就是要即時反映開發工作樹",
+        "不做 mission-control 的通用混搭偵測（cwd 指快照但直譯器指工作樹），那是另一條"
+      ],
+      "touches": [
+        "scripts/deploy.ps1",
+        "docs/operations.md",
+        "feature_list.json",
+        "../mission-control/services.toml"
+      ],
+      "acceptance": "背景（承接 mission-control 已關閉的 F44）：正式站的程式碼已由 F93 快照隔離，但直譯器仍是開發工作樹的 lift-log/.venv，且正式站的資料與設定全部住在 git 工作樹裡並被 .gitignore 蓋著。2026-08-20 實測 git clean -xdn 會刪除 liftlog.db、prod-data/（含兩個真實帳號的 user DB）、.env、release/、deploy/，git 全程不警告。兩個問題同一根源：正式站住在開發工作樹裡。\n目標配置：SideProject/lift-log-prod/ 位於 git 工作樹之外，內含 current/、previous/、.venv/、.env、data/control.db、data/users/、release/。（本條所有路徑一律以 / 書寫，實作時對應 Windows 路徑分隔符。）\nR1 正式站的程式碼快照、.venv、.env 與所有資料位於 git 工作樹之外的 lift-log-prod/。在 lift-log 工作樹執行 git clean -xdn，輸出不含任何正式站檔案（附實際輸出為證）。\nR2 deploy.ps1 解完快照後，依快照內的 uv.lock 在 lift-log-prod/.venv 建立或更新環境，使環境版本與程式碼版本同源；快照缺 uv.lock 或環境建置失敗時中止換版且不動 current。\nR3 mission-control 的 services.toml 中 lift-log 正式站的 cwd、command、env_file 全指向 lift-log-prod；lift-log-dev 那條維持指向工作樹不變。\nR4 搬遷前以 scripts/backup.py 產出加密備份並記錄逐表 row count；搬遷後 control DB 與兩個 user DB 的逐表 row count 與搬遷前一致；另以 restore_drill.py 在隔離目錄實際驗過至少一份備份可還原。\nR5 雙向隔離實證：(a) 在工作樹 .venv 安裝一個正式站沒有的套件，重啟正式站後正式站仍以舊相依執行（附證明指令與輸出）；(b) 工作樹 git clean -xdn 的輸出不含正式站資料。\nR6 正式站 8137 與測試站 8138 的 health 皆回 200；deploy.ps1 在新位置完整跑一次（含停機、換目錄、啟動、health 輪詢）並成功換版。\nR7 回滾路徑在新位置仍成立：實測回退到 previous 一次，再前進一次。\nR8 uv run pytest 全綠；uv run ruff check . 乾淨。\nR9 搬遷過程不得在文件、log 或指令歷史中留下 .env 內容或備份金鑰。"
     }
   ]
 }
