@@ -1929,13 +1929,19 @@ public class LocalStore extends SQLiteOpenHelper {
     }
 
     /** 重建前後的複製保真度指紋：筆數、相異外鍵數與加總都要對得上，比對筆數不夠——
-     *  欄位順序寫錯時筆數一樣正確，值卻整欄錯位。weight_kg 換成分（避免浮點數比較誤差）。 */
-    private static long[] setsFingerprint(SQLiteDatabase db) {
+     *  欄位順序寫錯時筆數一樣正確，值卻整欄錯位。weight_kg 換成分（避免浮點數比較誤差）；
+     *  rpe/rest_seconds/version 比照 reps/set_number 用加總，updated_at/deleted_at/created_at
+     *  這三個文字時間戳用相異值數量（SQLite 沒有現成雜湊可比對值本身）。duration_seconds
+     *  不用比——重建當下一律填 NULL，前後恆等，沒有鑑別力。package-private 供測試直接呼叫。 */
+    static long[] setsFingerprint(SQLiteDatabase db) {
         try (Cursor cursor = db.rawQuery(
             "SELECT COUNT(*), COUNT(DISTINCT client_uuid), COUNT(DISTINCT workout_sync_id), "
                 + "COUNT(DISTINCT exercise_sync_id), COALESCE(SUM(reps), -1), "
                 + "COALESCE(SUM(set_number), -1), "
-                + "CAST(ROUND(COALESCE(SUM(weight_kg), -1) * 100) AS INTEGER) FROM sets",
+                + "CAST(ROUND(COALESCE(SUM(weight_kg), -1) * 100) AS INTEGER), "
+                + "COALESCE(SUM(rpe), -1), COALESCE(SUM(rest_seconds), -1), "
+                + "COALESCE(SUM(version), -1), COUNT(DISTINCT updated_at), "
+                + "COUNT(DISTINCT deleted_at), COUNT(DISTINCT created_at) FROM sets",
             null
         )) {
             cursor.moveToFirst();
@@ -1957,7 +1963,9 @@ public class LocalStore extends SQLiteOpenHelper {
      * FK（→ workouts／exercises），沒有其他表以 FK 指向 `sets`，drop 掉它不會留下懸空參照。
      */
     private static void rebuildSetsForNullableReps(SQLiteDatabase db) {
-        if (!setsRepsIsNotNull(db)) return;
+        // P3-3：冪等判斷要看欄位存在性，不是 reps 的 NOT NULL 狀態——後者只是重建的其中一個
+        // 結果，日後若再放寬其他欄位的 NOT NULL，用它判斷會誤判「已經重建過」而漏跑。
+        if (hasColumn(db, "sets", "duration_seconds")) return;
         long[] fingerprintBefore = setsFingerprint(db);
         db.execSQL("CREATE TABLE sets_f159_new ("
             + "sync_id TEXT PRIMARY KEY NOT NULL, client_uuid TEXT NOT NULL UNIQUE,"
@@ -1969,6 +1977,10 @@ public class LocalStore extends SQLiteOpenHelper {
             + "rpe INTEGER CHECK(rpe IS NULL OR rpe BETWEEN 1 AND 10),"
             + "rest_seconds INTEGER CHECK(rest_seconds IS NULL OR rest_seconds >= 0),"
             + syncColumns() + ","
+            // P3-1：reps 與 duration_seconds 擇一且僅擇一——擋「兩者都給／都沒給」，
+            // 擋不到「秒數寫進 reps 欄」這種型別正確但語意錯的值（那要靠 service 層/外掛驗證）。
+            // 表級 CHECK 必須排在所有欄位定義之後，不能插在欄位之間（SQLite 語法要求）。
+            + "CHECK((reps IS NULL) <> (duration_seconds IS NULL)),"
             + "FOREIGN KEY(workout_sync_id) REFERENCES workouts(sync_id),"
             + "FOREIGN KEY(exercise_sync_id) REFERENCES exercises(sync_id))");
         db.execSQL(

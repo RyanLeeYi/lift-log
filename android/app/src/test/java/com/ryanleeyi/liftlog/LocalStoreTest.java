@@ -1,5 +1,6 @@
 package com.ryanleeyi.liftlog;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -10,6 +11,7 @@ import static org.junit.Assert.fail;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteConstraintException;
 import android.database.sqlite.SQLiteDatabase;
 
 import org.json.JSONArray;
@@ -23,6 +25,7 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
+import java.util.Arrays;
 import java.util.UUID;
 
 @RunWith(RobolectricTestRunner.class)
@@ -214,6 +217,83 @@ public class LocalStoreTest {
         timedSet.put("duration_seconds", 45);
         store.getWritableDatabase().insertOrThrow("sets", null, timedSet);
         assertEquals(2, store.count("sets", null, null));
+    }
+
+    /**
+     * F159 P3-1：重建後的 sets 表要求 reps 與 duration_seconds 擇一且僅擇一，兩者都是 NULL
+     * 必須被 DB 層 CHECK 擋下（不是只靠 service 層／LocalStorePlugin 驗證）。
+     * 注意：這條 CHECK 只擋「兩者都給／都沒給」，擋不到「秒數寫進 reps 欄」這種型別正確
+     * 但語意錯的資料。
+     */
+    @Test
+    public void setsCheckRejectsBothRepsAndDurationSecondsNull() {
+        store.ensureReady();
+        SQLiteDatabase db = store.getWritableDatabase();
+        String exerciseId = insertExercise(db);
+        String workoutId = insertWorkout(db);
+
+        ContentValues invalidSet = new ContentValues();
+        invalidSet.put("sync_id", uuid());
+        invalidSet.put("client_uuid", uuid());
+        invalidSet.put("workout_sync_id", workoutId);
+        invalidSet.put("exercise_sync_id", exerciseId);
+        invalidSet.put("set_number", 1);
+        invalidSet.put("weight_kg", 100);
+        invalidSet.putNull("reps");
+        invalidSet.putNull("duration_seconds");
+
+        try {
+            db.insertOrThrow("sets", null, invalidSet);
+            fail("reps 與 duration_seconds 同時為 NULL 應被 DB CHECK 擋下");
+        } catch (SQLiteConstraintException expected) {
+            assertNotNull(expected);
+        }
+    }
+
+    /**
+     * F159 P3-2：setsFingerprint 擴充前只涵蓋 client_uuid/workout_sync_id/exercise_sync_id/
+     * reps/set_number/weight_kg，`deleted_at` 與 `created_at` 對調這種欄位錯位完全看不出來
+     * ——兩個字串值互換，這 6 個聚合值一個都不會變。
+     *
+     * <p>用擴充前的 7 欄位查詢（原樣內嵌於此，作為修正前行為的對照組）與現在的
+     * {@link LocalStore#setsFingerprint} 對同一份「created_at 與 deleted_at 對調」資料各跑一次：
+     * 前者 before/after 相等（=「通過」了，但資料其實已經錯位）；後者 before/after 不相等
+     * （=「抓到了」）。
+     */
+    @Test
+    public void setsFingerprintCatchesCreatedAtDeletedAtSwap() {
+        store.ensureReady();
+        SQLiteDatabase db = store.getWritableDatabase();
+        String exerciseId = insertExercise(db);
+        String workoutId = insertWorkout(db);
+
+        // 兩筆 deleted_at 相同、created_at 不同：只有這樣，「相異值數量」才會在對調後改變
+        // （兩欄的值分佈不對稱，是唯一能讓純聚合式指紋看出對調的條件）。
+        insertSetWithTimestamps(
+            db, workoutId, exerciseId, 1,
+            "2026-08-01T00:00:00.000Z", "2026-08-05T00:00:00.000Z"
+        );
+        insertSetWithTimestamps(
+            db, workoutId, exerciseId, 2,
+            "2026-08-02T00:00:00.000Z", "2026-08-05T00:00:00.000Z"
+        );
+
+        long[] legacyBefore = legacyFingerprint(db);
+        long[] currentBefore = LocalStore.setsFingerprint(db);
+
+        db.execSQL("UPDATE sets SET created_at = deleted_at, deleted_at = created_at");
+
+        long[] legacyAfter = legacyFingerprint(db);
+        long[] currentAfter = LocalStore.setsFingerprint(db);
+
+        assertArrayEquals(
+            "修正前的 7 欄位指紋看不出 created_at/deleted_at 對調",
+            legacyBefore, legacyAfter
+        );
+        assertFalse(
+            "修正後的指紋必須抓到 created_at/deleted_at 對調",
+            Arrays.equals(currentBefore, currentAfter)
+        );
     }
 
     @Test
@@ -859,6 +939,71 @@ public class LocalStoreTest {
 
     private static String uuid() {
         return UUID.randomUUID().toString();
+    }
+
+    /** F159 P3-1/P3-2 測試共用：插入一筆最小可用的動作，回傳 sync_id。 */
+    private static String insertExercise(SQLiteDatabase db) {
+        String exerciseId = uuid();
+        ContentValues exercise = new ContentValues();
+        exercise.put("sync_id", exerciseId);
+        exercise.put("name_zh", "深蹲");
+        exercise.put("name_en", "Squat-" + exerciseId);
+        exercise.put("muscle_group", "腿");
+        exercise.put("is_bodyweight", 0);
+        db.insertOrThrow("exercises", null, exercise);
+        return exerciseId;
+    }
+
+    /** F159 P3-1/P3-2 測試共用：插入一筆最小可用的訓練，回傳 sync_id。 */
+    private static String insertWorkout(SQLiteDatabase db) {
+        String workoutId = uuid();
+        ContentValues workout = new ContentValues();
+        workout.put("sync_id", workoutId);
+        workout.put("date", "2026-08-10");
+        db.insertOrThrow("workouts", null, workout);
+        return workoutId;
+    }
+
+    /** F159 P3-2 測試專用：插入一筆合法（reps 有值、duration_seconds 為 NULL）的 set，
+     *  並指定 created_at/deleted_at 以便之後對調驗證 fingerprint。 */
+    private static void insertSetWithTimestamps(
+        SQLiteDatabase db,
+        String workoutId,
+        String exerciseId,
+        int setNumber,
+        String createdAt,
+        String deletedAt
+    ) {
+        ContentValues set = new ContentValues();
+        set.put("sync_id", uuid());
+        set.put("client_uuid", uuid());
+        set.put("workout_sync_id", workoutId);
+        set.put("exercise_sync_id", exerciseId);
+        set.put("set_number", setNumber);
+        set.put("weight_kg", 100);
+        set.put("reps", 5);
+        set.put("created_at", createdAt);
+        set.put("deleted_at", deletedAt);
+        db.insertOrThrow("sets", null, set);
+    }
+
+    /** F159 P3-2 測試專用：修正前的 setsFingerprint 查詢原樣內嵌於此，作為對照組
+     *  ——只用來證明「加欄位前」看不出 created_at/deleted_at 對調，不是給生產程式碼用。 */
+    private static long[] legacyFingerprint(SQLiteDatabase db) {
+        try (Cursor cursor = db.rawQuery(
+            "SELECT COUNT(*), COUNT(DISTINCT client_uuid), COUNT(DISTINCT workout_sync_id), "
+                + "COUNT(DISTINCT exercise_sync_id), COALESCE(SUM(reps), -1), "
+                + "COALESCE(SUM(set_number), -1), "
+                + "CAST(ROUND(COALESCE(SUM(weight_kg), -1) * 100) AS INTEGER) FROM sets",
+            null
+        )) {
+            cursor.moveToFirst();
+            long[] fingerprint = new long[cursor.getColumnCount()];
+            for (int index = 0; index < fingerprint.length; index++) {
+                fingerprint[index] = cursor.getLong(index);
+            }
+            return fingerprint;
+        }
     }
 
     private static JSONArray templateExercises(int exerciseId, int defaultSets, int restHint)
