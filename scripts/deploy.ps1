@@ -134,8 +134,13 @@ Invoke-MissionControl -Name "lift-log" -Action "start"
 # 服務其實好好的，只是 F147 之後開機多了 control DB 與各 user data DB 的初始化，
 # 要 5~6 秒才聽得到 port。一次性檢查把「還沒起來」當成「起不來」，回退掉一個沒問題的版本。
 # 改成輪詢：成功就往下走，真的死了才在 30 秒後回退。
+# ⚠ 2026-08-20 第二次假失敗：v156 其實**有起來**（log 有 `Uvicorn running on 0.0.0.0:8137`
+# 與 `Application startup complete`），只是超過當時的 30 秒門檻才聽到 port，於是被判死並回退。
+# 啟動時間會隨 user data DB 數量繼續長，門檻放寬到 180 秒，並印出實際耗時——
+# 下次要不要再調，看這個數字，不要再憑感覺。
 try {
-    $deadline = (Get-Date).AddSeconds(30)
+    $started = Get-Date
+    $deadline = $started.AddSeconds(180)
     $ok = $false
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 2
@@ -144,8 +149,9 @@ try {
             if ($health.StatusCode -eq 200) { $ok = $true; break }
         } catch { }   # 還沒聽 port＝連線被拒，屬預期，繼續等
     }
-    if (-not $ok) { throw "30 秒內 health 沒有回 200" }
-    Write-Host "正式站健康檢查 200，部署完成。" -ForegroundColor Green
+    if (-not $ok) { throw "180 秒內 health 沒有回 200" }
+    $elapsed = [int]((Get-Date) - $started).TotalSeconds
+    Write-Host "正式站健康檢查 200（起來花了 ${elapsed}s），部署完成。" -ForegroundColor Green
 } catch {
     Write-Host "部署後起不來：$_" -ForegroundColor Red
     if (Test-Path $previous) {
