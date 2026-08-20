@@ -64,10 +64,16 @@ if ($dirty) {
 }
 
 $sha = (git rev-parse --short $Ref).Trim()
-$deploy  = Join-Path $repo "deploy"
-$staging = Join-Path $deploy "staging"
-$current = Join-Path $deploy "current"
-$previous = Join-Path $deploy "previous"
+# F161：正式站整包住在工作樹之外。工作樹底下不再有 deploy\，正式資料與 .env 也不在
+# 這裡——所以在 repo 跑 `git clean -xdf` 不會再碰到正式站任何東西。
+$prod = Join-Path (Split-Path -Parent $repo) "lift-log-prod"
+if (-not (Test-Path $prod)) { throw "找不到正式站目錄 $prod——不換版。" }
+$staging = Join-Path $prod "staging"
+$current = Join-Path $prod "current"
+$previous = Join-Path $prod "previous"
+$venv         = Join-Path $prod ".venv"
+$venvStaging  = Join-Path $prod ".venv-staging"
+$venvPrevious = Join-Path $prod ".venv-previous"
 
 if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
@@ -81,7 +87,7 @@ New-Item -ItemType Directory -Force -Path $staging | Out-Null
 $tar = Join-Path $env:SystemRoot "System32\tar.exe"
 if (-not (Test-Path $tar)) { throw "找不到 $tar——Windows 內建 tar 缺席，不換版。" }
 
-$tarball = Join-Path $deploy "snapshot.tar"
+$tarball = Join-Path $prod "snapshot.tar"
 Invoke-Native { git archive --format=tar -o $tarball $Ref } "git archive"
 Invoke-Native { & $tar -x -f $tarball -C $staging } "tar 解壓"
 Remove-Item $tarball
@@ -104,6 +110,27 @@ Write-Host "快照版號：$snapVersion"
 
 # ⚠ Windows 會鎖住「有程序以它為 cwd」的目錄——正式站跑起來之後，deploy\current
 # 就搬不動也刪不掉，第二次部署會直接在這裡失敗，連回退路徑也一起壞掉（Codex P1）。
+# F161：環境要跟著程式碼版本走，不能共用開發工作樹的 .venv——開發期的 uv sync 會直接
+# 進正式站，這正是 F93 想擋的「開發改動流進正式站」，只是走的是相依而不是原始碼。
+#
+# 建到 .venv-staging 再換名，不是就地 sync：就地 sync 會動到正在跑的環境，中途失敗就
+# 沒有可以啟動的正式站了。與 current/previous 同一套換名法，環境因此也有回退版。
+$lock = Join-Path $staging "uv.lock"
+if (-not (Test-Path $lock)) { throw "快照缺少 uv.lock——無法重建正式環境，不換版。" }
+if (Test-Path $venvStaging) { Remove-Item -Recurse -Force $venvStaging }
+Push-Location $staging
+try {
+    $env:UV_PROJECT_ENVIRONMENT = $venvStaging
+    Invoke-Native { uv sync --frozen --no-dev } "uv sync（正式環境）"
+} finally {
+    Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue
+    Pop-Location
+}
+if (-not (Test-Path (Join-Path $venvStaging "Scripts\uvicorn.exe"))) {
+    throw "新環境缺少 uvicorn——不換版。"
+}
+Write-Host "正式環境已依快照 uv.lock 建好（.venv-staging）"
+
 # 所以換版前先停服務。停機時間就是換目錄那幾秒，部署本來就不頻繁。
 $serviceStopped = $false
 if (-not $NoRestart) {
@@ -117,6 +144,11 @@ if (-not $NoRestart) {
 if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }
 if (Test-Path $current) { Move-Item $current $previous }
 Move-Item $staging $current
+
+# 環境與程式碼同進同退
+if (Test-Path $venvPrevious) { Remove-Item -Recurse -Force $venvPrevious }
+if (Test-Path $venv) { Move-Item $venv $venvPrevious }
+Move-Item $venvStaging $venv
 
 $deployed = Join-Path $current ".deployed"
 "ref=$Ref`nsha=$sha`nat=$(Get-Date -Format o)" | Set-Content -Path $deployed -Encoding utf8
@@ -160,6 +192,10 @@ try {
         Start-Sleep -Seconds 2
         Remove-Item -Recurse -Force $current
         Move-Item $previous $current
+        if (Test-Path $venvPrevious) {
+            if (Test-Path $venv) { Remove-Item -Recurse -Force $venv }
+            Move-Item $venvPrevious $venv
+        }
         Invoke-MissionControl -Name "lift-log" -Action "start"
         Write-Host "已回退到上一版。" -ForegroundColor Yellow
     }
