@@ -126,9 +126,13 @@ try {
     Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue
     Pop-Location
 }
-if (-not (Test-Path (Join-Path $venvStaging "Scripts\uvicorn.exe"))) {
-    throw "新環境缺少 uvicorn——不換版。"
-}
+# 用實際執行檢查，不只看檔案在不在。並且刻意走 python.exe -m uvicorn：uv 建的
+# .exe shim 把自己 venv 的絕對路徑寫死在 trampoline 裡，等一下 .venv-staging -> .venv
+# 改名會讓 uvicorn.exe 直接壞掉（只印 Failed to canonicalize script path 就結束，
+# 2026-08-20 F161 首次換版就是這樣失敗並回退的）。services.toml 也已改用 python.exe。
+$prodPython = Join-Path $venvStaging "Scripts\python.exe"
+if (-not (Test-Path $prodPython)) { throw "新環境缺少 python.exe——不換版。" }
+Invoke-Native { & $prodPython -m uvicorn --version } "新環境 uvicorn 自我檢查"
 Write-Host "正式環境已依快照 uv.lock 建好（.venv-staging）"
 
 # 所以換版前先停服務。停機時間就是換目錄那幾秒，部署本來就不頻繁。
