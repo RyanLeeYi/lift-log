@@ -1,10 +1,12 @@
-"""F87 E2E：體重體脂改版（大數字主卡 ＋ 24 根長條圖，保留時間窗），①–⑫。
+"""F87 E2E：體重體脂改版（大數字主卡 ＋ 時間窗），①–⑫。
 
 跑法：`PYTHONUTF8=1 uv run python tests/e2e/verify_f87.py`
 
 ⚠ 量測一律問渲染結果，不問 class 名稱（handoff 記過四次假綠）。
 ⚠ ⑪ 的版面門檻**不得寫死**：從服役中的 /css/app.css 讀 @media (max-height: N) 再推算，
    否則改了 CSS 沒改測試就變成兩個各說各話的真相來源。
+⚠ ⑤ 原本量的是 24 根長條圖；F162（2026-08-20 Ryan 簽核）把它換成折線圖，
+   ⑤／⑮ 的長條幾何與配色斷言已汰役（見 mark_superseded 呼叫與 docs/evidence/F162.md）。
 """
 
 from __future__ import annotations
@@ -35,11 +37,22 @@ from verify_f67 import (  # noqa: E402
 )
 
 results: list[tuple[bool, str]] = []
+superseded: list[str] = []
 
 
 def check(ok: bool, label: str) -> None:
     results.append((bool(ok), label))
     print(f"{'PASS' if ok else 'FAIL'}  {label}")
+
+
+def mark_superseded(label: str, note: str) -> None:
+    """條文被明確的規格變更取代（不是選擇器過期）——不計入 pass/fail，但要留痕跡。
+
+    見 feature_list.json F162.supersedes（2026-08-20 Ryan 簽核）與
+    docs/evidence/F162.md「被取代的條文」表。
+    """
+    superseded.append(label)
+    print(f"SUPERSEDED  {label} — {note}")
 
 
 def api(base: str, method: str, path: str, body=None):
@@ -99,7 +112,8 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     passed = sum(1 for ok, _ in results if ok)
-    print(f"\n{passed}/{len(results)} passed")
+    tail = f"（另 {len(superseded)} 條由 F162 supersede，不計入）" if superseded else ""
+    print(f"\n{passed}/{len(results)} passed{tail}")
     if passed != len(results):
         print("\nFAILED:")
         for ok, label in results:
@@ -161,22 +175,27 @@ def run_checks(base: str) -> None:  # noqa: C901
         check(good != mute or delta.startswith("±"),
               "④ 差值顏色與區間文字不同（下降 --good／上升 --text-mute）")
 
-        # ⑤ 24 根長條，不足不補
-        bars = page.locator(".body-bar")
-        check(bars.count() == 15, f"⑤ 15 筆資料就畫 15 根，不補空條（實際 {bars.count()}）")
-        heights = [bars.nth(i).bounding_box()["height"] for i in range(bars.count())]
-        track = page.locator(".body-bars").bounding_box()["height"]
-        ratios = sorted(h / track for h in heights)
-        # 下限 24%（Ryan 2026-07-30 裁決，偏離設計稿的 14%）——理由見 body.js barChart 的說明：
-        # 80px 的長條區上 14% 只有 11px，圓角之下看起來是點不是長條
-        check(0.23 <= ratios[0] <= 0.25,
-              f"⑤ 最小值保底 24%（實際 {ratios[0]:.3f}）")
-        check(0.95 <= ratios[-1] <= 1.0, f"⑤ 最大值約 96%（24+72，實際 {ratios[-1]:.3f}）")
-        colors = [css(page, f".body-bar:nth-child({i + 1})", "backgroundColor") for i in range(15)]
-        check(colors[-1] == accent, "⑤ 最新一根用 --accent")
-        check(all(c != accent for c in colors[:-1]), "⑤ 其餘用 --line（不是全部都染色）")
-        foot = page.locator(".body-bars-foot").inner_text()
-        check(foot.count("/") == 2, f"⑤ 底部標示起訖日期（實際 {foot!r}）")
+        # ⑤／⑮ 長條圖本身（數量、高度算式、逐根配色）已被 F162（2026-08-20 Ryan 簽核）
+        # supersede——折線圖沒有「長條」這個概念。汰役但不靜默刪除，見
+        # docs/evidence/F162.md「被取代的條文」表 ＋ feature_list.json F162.supersedes。
+        mark_superseded(
+            "F87 ⑤ 長條圖 24 根、資料點少於 24 筆不補空條、不變形",
+            "F162 supersede：折線圖無長條，畫幾筆改由 R5（移除 BAR_COUNT 上限）規範",
+        )
+        mark_superseded(
+            "F87 ⑤／⑮ 長條高度＝24% 保底 + 正規化 × 72%（flex:1、r99、最高 96%）",
+            "F162 supersede：折線圖沒有長條高度可言",
+        )
+        mark_superseded(
+            "F87 ⑤ 最新一根 --accent、其餘 --line",
+            "F162 supersede：改由 line-chart.js 共用配色，非逐根染色",
+        )
+
+        # 底部日期標示不是 supersede，是 F57 ⑤ 明文要求（區間邊界）的選擇器改名：
+        # .body-bars-foot → .bars-foot（沿用動作表現折線圖的樣式，見 F162 整合筆記）。繼續驗。
+        foot = page.locator(".bars-foot").inner_text()
+        check(foot.count("/") == 2,
+              f"F57⑤ 底部標示起訖日期（選擇器已改 .bars-foot，實際 {foot!r}）")
 
         # ⑥ 「記錄」鈕在清單下方
         log_btn = page.locator(".body-log-open").bounding_box()
