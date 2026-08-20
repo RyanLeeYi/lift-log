@@ -233,14 +233,14 @@ def main():
             page.wait_for_timeout(500)
             page.locator('.body-range button:has-text("3M")').click()
             page.wait_for_timeout(800)
-            # F87 ⑤ 把折線圖換成 24 根長條圖，`svg polyline` 不存在了。
-            # ⑦ 要的是「圖表照畫」這個行為，不是某種圖表型別——改驗長條有畫出來。
-            bars = page.locator(".body-bars .body-bar").count()
+            # F162 把長條圖換回折線圖（.line-chart 底下的 .line-pt，見 line-chart.js）。
+            # ⑦ 要的是「圖表照畫」這個行為，不是某種圖表型別——改驗資料點有畫出來。
+            pts = page.locator(".line-chart .line-pt").count()
             rows = page.locator(".bm-rows .bm-row").count()
             check(
                 "⑦ 既有行為：切回體重 3M 仍正常出圖、清單有資料",
-                bars > 0 and rows > 0,
-                f"bars={bars} rows={rows}",
+                pts > 0 and rows > 0,
+                f"pts={pts} rows={rows}",
             )
 
             browser.close()

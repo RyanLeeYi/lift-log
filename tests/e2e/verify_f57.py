@@ -2,23 +2,28 @@
 
 用法：PYTHONUTF8=1 uv run python tests/e2e/verify_f57.py
 
-F87 ⑤ 把折線圖整個換成 24 根長條圖，F57 賴以驗證的 `svg polyline` 不存在了。
-原本的核心手法（讀 polyline 的 x 座標，驗「水平間距與日期成比例」）**沒有對應物可驗**：
-長條圖是等寬等距的，日期差多遠都長一樣。
+F87 ⑤ 曾把折線圖整個換成 24 根長條圖，F57 賴以驗證的 `svg polyline` 一度不存在。
+原本的核心手法（讀 polyline 的 x 座標，驗「水平間距與日期成比例」）在長條圖時代
+**沒有對應物可驗**：長條圖是等寬等距的，日期差多遠都長一樣。
 
-⚠ **這代表 F57 的存在理由消失了**：它要守的是「兩點之間的時間差看得出來」——
+⚠ **這代表 F57 的存在理由曾經消失過**：它要守的是「兩點之間的時間差看得出來」——
 中間停量兩個月，圖上要看得出那是一段空白。長條圖看不出來。
 **2026-08-01 Ryan 裁決：接受這個語意消失，不在長條圖上補回。**
-記在這裡是為了讓後人知道它是被知情地放棄的，不是被漏掉的。
+
+**F162 把體重頁的長條圖換回折線圖**（`.line-chart` / `.line-pt`，見 line-chart.js），
+但沿用的是動作表現共用的序位等距折線模組，x 軸依然不是「與日期成比例」——F57 ①②⑤
+那條「水平間距與日期成比例」的驗法仍然沒有對應物，繼續不補回；本檔只把量測手段從
+`.body-bars .body-bar` 換成 `.line-pt`，選擇器過期不代表條文重新成立。
 
 留下來的是**與圖表型別無關、至今仍然有效**的那幾條：⑦ 版號同步、③ 的邊界不炸圖
 （0 點 / 1 點 / 全部同一天）、⑥ 切體脂後區間不變且單位正確。
 折線圖專屬的條目（①②⑤ 的 x 軸比例與 domain、review P2-1 的每點小圓）已移除——
-被驗的東西不存在了，不是把斷言放寬。長條圖自己的契約由 verify_f87 顧著（38 條）。
+被驗的東西不存在了，不是把斷言放寬。折線圖自己的契約由 verify_f134/135/136 顧著。
 """
 
 import datetime
 import json
+import math
 import shutil
 import sys
 import tempfile
@@ -102,13 +107,14 @@ def main():
             page.wait_for_timeout(400)
 
             # ③ 邊界不炸圖（0 點 / 1 點 / 全部同一天）——與圖表型別無關，仍然有效。
-            # F87 ⑤ 之後畫的是 .body-bars .body-bar，不再是 svg polyline。
-            bars = page.locator(".body-bars .body-bar").count()
+            # F162 把長條圖換回折線圖，畫的是 .line-chart 底下的 .line-pt（見 line-chart.js）。
+            # 12 筆 <= AGG_MAX_POINTS(50)，不觸發聚合，點數恆等於筆數。
+            pts = page.locator(".line-chart .line-pt").count()
             rows = page.locator(".bm-rows .bm-row").count()
             check(
-                "（承接自 ①②）12 筆資料畫得出長條圖、清單同步（原文驗的 x 軸比例已隨折線圖退役）",
-                bars > 0 and rows == 12,
-                f"bars={bars} rows={rows}",
+                "（承接自 ①②）12 筆資料畫得出折線圖、清單同步（原文驗的 x 軸比例已隨折線圖退役）",
+                pts == 12 and rows == 12,
+                f"pts={pts} rows={rows}",
             )
 
             # ⑥ 切體脂：區間不變、單位跟著換（與圖表型別無關）
@@ -116,12 +122,12 @@ def main():
             page.locator(".metric-toggle .metric-pill", has_text="體脂").click()
             page.wait_for_timeout(600)
             range_after = page.locator(".body-range button.on").inner_text().strip()
-            fat_bars = page.locator(".body-bars .body-bar").count()
+            fat_pts = page.locator(".line-chart .line-pt").count()
             unit_pct = "%" in page.locator(".body-card").first.inner_text()
             check(
                 "⑥ 切體脂後區間不變、圖照畫、單位是 %",
-                range_before == range_after and fat_bars > 0 and unit_pct,
-                f"range {range_before}→{range_after} bars={fat_bars} unit_pct={unit_pct}",
+                range_before == range_after and fat_pts == 12 and unit_pct,
+                f"range {range_before}→{range_after} pts={fat_pts} unit_pct={unit_pct}",
             )
             page.locator(".metric-toggle .metric-pill", has_text="體重").click()
             page.wait_for_timeout(500)
@@ -136,9 +142,9 @@ def main():
             page.wait_for_selector(".screen.body", timeout=8000)
             page.wait_for_timeout(400)
             check(
-                "③ 0 點：顯示「還沒有紀錄」、沒有長條、不炸圖",
+                "③ 0 點：顯示「還沒有紀錄」、沒有資料點、不炸圖",
                 page.locator(".screen.body .body-empty").count() >= 1
-                and page.locator(".body-bars .body-bar").count() == 0
+                and page.locator(".line-chart .line-pt").count() == 0
                 and page.locator(".bm-rows .bm-row").count() == 0,
                 f"empty={page.locator('.screen.body .body-empty').count()}",
             )
@@ -151,15 +157,22 @@ def main():
             page.locator(".bottom-nav .nav-item", has_text="體重").click()
             page.wait_for_selector(".screen.body", timeout=8000)
             page.wait_for_timeout(400)
-            one_bars = page.locator(".body-bars .body-bar").count()
-            one_h = page.evaluate(
-                "() => { const b = document.querySelector('.body-bars .body-bar');"
-                " return b ? Math.round(b.getBoundingClientRect().height) : 0; }"
+            # 長條圖時代這裡驗的是「高度」（正規化分母為 0 時的除零風險）。折線圖沒有
+            # 高度概念（.line-pt 是固定直徑的圓點，靠 top 定位），除零風險轉移到
+            # layoutPoints() 的 y 座標計算：span===0（單點時 valMax===valMin）要落到
+            # 繪圖區中線而非 NaN。改驗這個——y 座標是有限數字即代表分母為 0 的邊界沒有炸開。
+            one_pts = page.locator(".line-chart .line-pt").count()
+            one_top = page.evaluate(
+                "() => { const p = document.querySelector('.line-chart .line-pt');"
+                " return p ? parseFloat(p.style.top) : NaN; }"
             )
             check(
-                "③ 1 點：畫得出一根長條且高度 > 0（正規化分母為 0 的邊界不除零）",
-                one_bars == 1 and one_h > 0 and page.locator(".bm-rows .bm-row").count() == 1,
-                f"bars={one_bars} h={one_h}",
+                "③ 1 點：畫得出一個資料點且 y 座標非 NaN（正規化分母為 0 的邊界不除零）",
+                one_pts == 1
+                and not math.isnan(one_top)
+                and one_top > 0
+                and page.locator(".bm-rows .bm-row").count() == 1,
+                f"pts={one_pts} top={one_top}",
             )
 
             # ③ 全部同一天（值不同）：仍不炸圖
@@ -170,10 +183,10 @@ def main():
             page.wait_for_selector(".screen.body", timeout=8000)
             page.wait_for_timeout(400)
             check(
-                "③ 同一天重複記錄（upsert）：仍是一筆一根、不炸圖",
-                page.locator(".body-bars .body-bar").count() == 1
+                "③ 同一天重複記錄（upsert）：仍是一筆一點、不炸圖",
+                page.locator(".line-chart .line-pt").count() == 1
                 and page.locator(".bm-rows .bm-row").count() == 1,
-                f"bars={page.locator('.body-bars .body-bar').count()}",
+                f"pts={page.locator('.line-chart .line-pt').count()}",
             )
 
             browser.close()
