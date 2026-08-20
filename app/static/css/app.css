@@ -1155,20 +1155,10 @@ body {
 .bm-delta.down { color: var(--good); }
 .bm-span { font-family: var(--mono); font-size: 10px; color: var(--text-mute); }
 
-/* F87 ⑤ 24 根長條 */
-.body-bars-wrap { display: flex; flex-direction: column; gap: 6px; }
-/* ⚠ 80 而不是 96：門檻算式（見下方）是 96 時算出 726，而 Ryan 的 Note10+ 可視高度是 **727**
-   ——只差 1px 的「剛好過門檻」正是 F84 最貴的那個教訓（釘死高度卻塞不進，比沒過還糟）。
-   降到 80 讓門檻變 710，那台裝置有 17px 餘裕。設計稿沒有指定長條區高度，這是可動的那一項。 */
-.body-bars { display: flex; align-items: flex-end; gap: 4px; height: 80px; }
-.body-bar { flex: 1; min-width: 0; border-radius: 99px; background: var(--line); }
-.body-bar.latest { background: var(--accent); }
+/* F162：24 根長條圖改折線圖，重用動作表現（F134/F135/F136）的 .line-*／.bars-title
+   類別（見 app.css 上方「⑤ 每次最佳組折線圖」區段），這裡不再另立一套樣式。 */
 /* F87 ⑩：送出中——按鈕在視覺上也要看得出來已停用 */
 .body-log-modal.saving .modal-actions button { opacity: .5; }
-.body-bars-foot {
-  display: flex; justify-content: space-between;
-  font-family: var(--mono); font-weight: 400; font-size: 10px; color: var(--text-mute);
-}
 .body-empty { color: var(--text-dim); font-size: 14px; padding: 4px 0 8px; }
 /* F17 體重紀錄清單：每列可編輯/單擊刪除 */
 /* F53：紀錄清單填滿剩餘空間（畫面掛 .fills 提供確定高度），>2 筆才內部捲動；「← 回首頁」不被推走。

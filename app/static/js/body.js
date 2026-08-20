@@ -4,6 +4,17 @@ import { api, ApiError } from "./api.js";
 import { el } from "./dom.js";
 import { icon } from "./icons.js";
 import {
+  aggregate,
+  cardClickHandler,
+  CHART_PAD_TOP,
+  focusChartPoint,
+  layoutPoints,
+  linePath,
+  lineTip,
+  pointNodes,
+  pointSizeClass,
+} from "./line-chart.js";
+import {
   PRESETS,
   iso as isoOf,
   longestAvailable,
@@ -14,8 +25,10 @@ import {
 } from "./range.js";
 import { state } from "./state.js";
 
-// 折線最多畫的點數上限（保險，避免極長區間畫出上千個點）。**刻意不做聚合抽樣**：
-// 體重是天天量的連續數列，取週/月最佳會抹掉短期波動，而波動正是看體重的重點（F56 簽核時已告知 Ryan）
+// 折線最多畫的點數上限（保險，避免極長區間畫出上千個點）。F162 起改採聚合（見 line-chart.js
+// 的 aggregate()）：點數 > 50 就依日/週/月退到聚合單位，不再是「刻意不做聚合抽樣」——
+// 取平均而非 F56 反對的「最佳」，且每個聚合點帶 min/max 進浮動框，波動沒有消失，只是從線上
+// 移到框裡。這個上限是聚合之外另一道保險，避免「全部」檔位真的查回幾千筆時還要排一次序位。
 const CHART_POINTS = 1200;
 
 // 本模組自己的畫面狀態（不進全域 state：換畫面即重置無妨）
@@ -27,6 +40,7 @@ const body = {
   editDate: null, // F17：清單裡正在行內編輯的那天（date iso）
   editDraft: { weight: "", fat: "" }, // F17：編輯草稿——驗證/網路失敗重繪時不丟使用者輸入
   metric: "weight", // F53：圖表與紀錄清單顯示哪一項（weight|fat）；不持久化，進畫面一律回體重
+  chartSelected: null, // F162：折線圖目前選中的資料點索引（對應當前 metric 聚合後的 points 陣列）
   // F56：查詢區間。{kind:"preset",months}。不持久化，進畫面回 3M。
   // 自選區間已移除：F87 ③ 改成五顆藥丸，2026-08-01 Ryan 裁決（F119 選 B）確認不補回
   // ——F87 ③ 原本寫著「F56 的自選區間不回歸」，是那次改版沒照做，經裁決才解除。
@@ -101,6 +115,7 @@ async function loadRange(newRange) {
   // 連同「實際查詢用的 from/to」一起存：foot 與 x 軸從此等於真正查過的區間（review P3-3）
   body.range = { ...newRange, from, to };
   body.metrics = data;
+  body.chartSelected = null; // F162 R4：切換區間清掉選中狀態，不殘留上一個區間的點
 }
 
 export async function openBody() {
@@ -140,10 +155,7 @@ function latestMetric() {
   return body.metrics[body.metrics.length - 1] || null;
 }
 
-// ---------- F87：主卡（大數字＋差值）＋ 24 根長條圖 ----------
-
-const BAR_COUNT = 24; // 設計稿訂的根數。資料不足 24 筆時**不補空條**（⑤）——補了會讓
-//                      「才記三天」看起來像「有 24 天資料但大多是 0」。
+// ---------- F87：主卡（大數字＋差值）；F162：折線圖取代原本的 24 根長條 ----------
 
 function fmtValue(v) {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
@@ -181,41 +193,27 @@ function mainCard(points, unit, domain) {
   ]);
 }
 
-/**
- * 24 根長條。高度＝**24% + 正規化 * 72%**（Ryan 2026-07-30 裁決，偏離設計稿的 14%+82%）。
- *
- * 設計稿的 14% 下限是對著較高的圖表區訂的；F87 ⑪ 為了讓版面門檻避開 Ryan 的 727px 裝置，
- * 把長條區壓到 80px，14% 只剩 11px——圓角 99px 之下看起來是一顆點而不是長條，
- * 而那顆點正好是「最新值」的強調色，反而最不明顯（真機截圖才看出來）。
- * 提到 24%（約 19px）後最矮的仍讀得出是長條；最高仍是 96%，兩端的對比沒有變。
- *
- * 只有一筆資料時全部值相同，正規化分母為 0 → 一律給滿（不是 0）。
- */
-function barChart(points, unit) {
-  if (!points.length) return el("div", { class: "body-bars-empty" }, []);
-  const shown = points.slice(-BAR_COUNT);
-  const values = shown.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min;
-  return el("div", { class: "body-bars-wrap" }, [
-    el(
-      "div",
-      { class: "body-bars" },
-      shown.map((point, i) => {
-        const norm = span === 0 ? 1 : (point.value - min) / span;
-        return el("div", {
-          class: `body-bar${i === shown.length - 1 ? " latest" : ""}`,
-          style: `height:${(24 + norm * 72).toFixed(1)}%`,
-          "aria-label": `${point.date} ${point.value}${unit}`,
-        }, []);
-      }),
-    ),
-    el("div", { class: "body-bars-foot" }, [
-      el("span", {}, [shown[0].date.slice(5).replace("-", "/")]),
-      el("span", {}, [shown[shown.length - 1].date.slice(5).replace("-", "/")]),
-    ]),
-  ]);
+function mmdd(dateStr) {
+  return dateStr.slice(5).replace("-", "/");
+}
+
+// F162：資料點的 aria-label——未聚合的點是「日期 數值」；聚合點（有 count）換成
+// 「區間 平均 數值，最低 X 最高 Y」，不偽裝成單一日期（R7）。
+function pointAriaLabel(p, unit) {
+  if (p.count == null) return `${p.key} ${fmtValue(p.value)}${unit}`;
+  const range = p.from === p.to ? p.from : `${p.from} 至 ${p.to}`;
+  return `${range} 平均 ${fmtValue(p.value)}${unit}，最低 ${fmtValue(p.min)} 最高 ${fmtValue(p.max)}`;
+}
+
+// F162 R7：浮動框固定兩行。未聚合＝單日格式（日期／數值）；聚合＝區間＋平均一行、
+// 最低/最高一行——波動沒有消失，只是從線上移到框裡（見 line-chart.js aggregate() 的說明）。
+function tipLines(p, unit) {
+  if (p.count == null) return [mmdd(p.key), `${fmtValue(p.value)}${unit}`];
+  const range = p.from === p.to ? mmdd(p.from) : `${mmdd(p.from)}-${mmdd(p.to)}`;
+  return [
+    `${range} 平均 ${fmtValue(p.value)}${unit}`,
+    `最低 ${fmtValue(p.min)} 最高 ${fmtValue(p.max)}`,
+  ];
 }
 
 export function renderBody(rerender, goHome, guard) {
@@ -439,16 +437,16 @@ export function renderBody(rerender, goHome, guard) {
   };
 
   // 兩序列各自先篩選再取最後 N 點——體脂記得稀疏時，先切再篩會丟掉仍屬最近的體脂點
-  // slice(-CHART_POINTS) 會靜默丟掉最舊的點。原本只有「自訂 > 1200 天」會觸發；F87 ③ 把自訂換成
-  // 「全部」之後，觸發條件變成**紀錄總量超過 1200 筆**（每天量一次約 3.3 年）。
-  // F57 起 foot 顯示的是 domain 邊界，所以被丟掉的點在 x 軸左側呈現為空白——看不出是「沒資料」還是
-  // 「被丟棄」，這是已知降級（F56 P3-4 已接受）
+  // slice(-CHART_POINTS) 會靜默丟掉最舊的點，只在紀錄總量超過 1200 筆（每天量一次約 3.3 年）
+  // 才觸發，是聚合之外的最後一道保險，跟 F162 的聚合各管各的：這裡丟的是「資料」，
+  // 聚合丟的只是「畫幾個點」，min/max 仍在浮動框裡。mainCard 的區間文字（bm-span）
+  // 讀的是 domain 而非這份被切過的陣列，不受影響。
   const weightPoints = body.metrics
-    .map((m) => ({ date: m.date, value: m.weight_kg }))
+    .map((m) => ({ key: m.date, value: m.weight_kg }))
     .slice(-CHART_POINTS);
   const fatPoints = body.metrics
     .filter((m) => m.body_fat_pct != null)
-    .map((m) => ({ date: m.date, value: m.body_fat_pct }))
+    .map((m) => ({ key: m.date, value: m.body_fat_pct }))
     .slice(-CHART_POINTS);
 
   // F53：體重／體脂一顆 toggle 切換（沿用 F36 動作表現的 metric 切換範式）。
@@ -468,6 +466,7 @@ export function renderBody(rerender, goHome, guard) {
           body.metric = key;
           body.editDate = null;
           body.rangeNote = null;
+          body.chartSelected = null; // F162 R4：切頁籤清掉選中狀態，不殘留上一個 metric 的選中點
           // F58：分 metric 判定的代價——切過去後當前檔位可能不可用（體脂通常比體重晚開始記）。
           // 留在不可用的檔位只會給一張空圖，故自動退到最長的可用檔位並說明一次。
           if (body.range.kind === "preset" && !presetUsable(body.range.months, firstDateFor(key))) {
@@ -498,13 +497,70 @@ export function renderBody(rerender, goHome, guard) {
   const tabF = mkTab("fat", "體脂");
   const toggle = el("div", { class: "metric-toggle" }, [tabW, tabF]);
 
+  // F162 R2/R3：選取／關閉浮動框一律走 paint()（就地替換 chartHost），不呼叫 rerender()——
+  // 整頁重繪會清掉上方表單正在輸入的值並讓輸入框失焦（同 F87 ⑩ 的教訓，見 body state 註解）。
+  // onClose 收到的索引可能是 undefined（cardClickHandler 點卡片空白處觸發，見 line-chart.js）——
+  // 這種情形沒有「原本聚焦的點」，不必也不能還原焦點。
+  const selectChartPoint = (i) => {
+    body.chartSelected = body.chartSelected === i ? null : i;
+    paint();
+    focusChartPoint(i, chartHost);
+  };
+  const closeChartPoint = (i) => {
+    body.chartSelected = null;
+    paint();
+    if (i !== undefined) focusChartPoint(i, chartHost);
+  };
+
+  // F162：折線圖本體（取代 F87 的 24 根長條）。體重／體脂共用同一套聚合規則（line-chart.js
+  // 的 aggregate()）；沒有 PR 概念，pointNodes 的 extraClass 給 undefined、padTop 用預設的
+  // CHART_PAD_TOP。回傳節點陣列（可能是空陣列）供 paint() 直接 spread 進 chartHost。
+  function chartNodes(points, unit) {
+    if (!points.length) {
+      chartHost.onclick = null; // 沒圖可點，避免殘留舊聚合結果的 click handler
+      return [];
+    }
+    const domain = datesFor(body.range);
+    const { items, label } = aggregate(points);
+    const chartPoints = layoutPoints(items, { padTop: CHART_PAD_TOP });
+    const selected = body.chartSelected != null ? chartPoints[body.chartSelected] : null;
+    const sizeClass = pointSizeClass(chartPoints.length);
+    // 卡片內非圖表區域（含下面可能的聚合標題）點擊即關閉（R2）——掛在 chartHost 本身，
+    // 由 cardClickHandler 判斷點擊落在 .line-chart 內外。
+    chartHost.onclick = cardClickHandler(chartPoints, { onSelect: selectChartPoint, onClose: closeChartPoint });
+    return [
+      // R6：點數 > 50 時 aggregate() 才回傳非 null 的 label；未聚合時不畫標題（維持原樣）。
+      ...(label ? [el("p", { class: "bars-title" }, [label])] : []),
+      el("div", { class: "line-chart" }, [
+        linePath(chartPoints),
+        ...pointNodes(chartPoints, {
+          selected,
+          sizeClass,
+          extraClass: undefined,
+          ariaLabel: (p) => pointAriaLabel(p, unit),
+          onSelect: selectChartPoint,
+          onClose: closeChartPoint,
+        }),
+        ...(selected ? [lineTip(selected, tipLines(selected, unit))] : []),
+      ]),
+      // F57 ⑤：卡片底部顯示**區間邊界**（不是資料首末點）。長條圖時代這是
+      // .body-bars-foot，換成折線後沿用動作表現的 .bars-foot，樣式與位置一致。
+      // ⚠ 這一行不是裝飾：x 軸是序位等距（F87 起就是），沒有它就完全看不出這條線
+      // 涵蓋多長的時間——把它一起刪掉會讓「選 3 個月」與「選全部」在畫面上長得一樣。
+      el("div", { class: "bars-foot" }, [
+        el("span", {}, [mmdd(domain.from)]),
+        el("span", {}, [mmdd(domain.to)]),
+      ]),
+    ];
+  }
+
   function paint() {
     const isFat = body.metric === "fat";
     const points = isFat ? fatPoints : weightPoints;
     const unit = isFat ? "%" : "kg";
     chartHost.replaceChildren(
       mainCard(points, unit, datesFor(body.range)),
-      barChart(points, unit),
+      ...chartNodes(points, unit),
     );
     // F87 ⑧：體脂頁籤**列出全部日子**，沒量體脂的顯示 —。
     // 原本只列有體脂的日子是 F53 的實作解讀（acceptance ② 沒明說），後果是
