@@ -24,7 +24,7 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 正式站整包住在 git 工作樹**之外**，所以在 repo 跑 `git clean -xdf` 不會碰到它：
 
 ```
-SideProject\lift-log\        <- 開發工作樹；測試站(8139)吃這裡，可隨意清
+SideProject\lift-log\        <- 開發工作樹；測試站(8138)吃這裡，可隨意清
 SideProject\lift-log-prod\   <- 正式站(8137)
   current\  previous\        程式碼快照（deploy.ps1 換名切換）
   .venv\  .venv-previous\    依快照 uv.lock 建的環境，與程式碼同進同退
