@@ -1,4 +1,5 @@
-# F93：把指定 commit 的快照展開到 deploy\current，正式站只吃這裡。
+# F93：把指定 commit 的快照展開到正式站的 current\，正式站只吃這裡。
+# F161 起這個位置在 git 工作樹之外（..\lift-log-prod\），連同它自己的 .venv 與 .env。
 #
 # 為什麼要這一步：先前正式站的 cwd 直接是工作目錄，**開發中的每一次存檔都即時對外**。
 # 2026-07-30 實際出事——v91 帶著會產生重複組號的邏輯上線過，是 code review 問
@@ -157,7 +158,7 @@ Move-Item $venvStaging $venv
 $deployed = Join-Path $current ".deployed"
 "ref=$Ref`nsha=$sha`nat=$(Get-Date -Format o)" | Set-Content -Path $deployed -Encoding utf8
 
-Write-Host "已部署 $Ref ($sha) → deploy\current" -ForegroundColor Green
+Write-Host "已部署 $Ref ($sha) → $current" -ForegroundColor Green
 
 if (-not $serviceStopped) {
     Write-Host "（-NoRestart：沒有停機也沒有重啟；服務仍在跑舊目錄）"

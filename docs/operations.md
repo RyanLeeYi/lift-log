@@ -19,14 +19,45 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 所以務必和 `.env` 分開保存一份離線備份。跑排程時只在執行當下的 process 環境注入
 `LIFTLOG_BACKUP_KEY`，不要寫進 `.env`（`.env` 會被 `git status` 檢查到、也可能被其他流程印出）。
 
+## 1b. 正式站的實際位置（F161）
+
+正式站整包住在 git 工作樹**之外**，所以在 repo 跑 `git clean -xdf` 不會碰到它：
+
+```
+SideProject\lift-log\        <- 開發工作樹；測試站(8138)吃這裡，可隨意清
+SideProject\lift-log-prod\   <- 正式站(8137)
+  current\  previous\        程式碼快照（deploy.ps1 換名切換）
+  .venv\  .venv-previous\    依快照 uv.lock 建的環境，與程式碼同進同退
+  .env                       正式站設定
+  data\control.db  data\users\
+  release\
+```
+
+兩件容易踩到的事：
+
+- **任何維運指令都要從 `lift-log-prod` 跑**，否則 `.env` 讀不到、會靜默套用開發預設值。
+- mission-control 啟動正式站用的是 `.venv\Scripts\python.exe -m uvicorn`，**不是**
+  `uvicorn.exe`。uv 建的 `.exe` shim 把自己 venv 的絕對路徑寫死在裡面，換版時
+  `.venv-staging` 改名成 `.venv` 會讓它壞掉（只印一行 `Failed to canonicalize
+  script path` 就結束）。`python.exe` 靠 `pyvenv.cfg` 與自身位置解析，不受改名影響。
+
 ## 2. 每日備份怎麼排程
 
 `scripts/backup.py` 每次執行對 control DB 與 `LIFTLOG_USER_DATA_DIR` 下每個 `<uuid>.db` 各產生
 一份加密快照，寫進 `--dest-dir` 底下的 `daily/<name>/` 與（週一另外再寫一份）`weekly/<name>/`。
 
+**一定要從正式站那一側跑**（F161 起）。`Settings` 讀的是「當下工作目錄的 `.env`」，
+而正式站的 `.env` 已經隨整個正式站搬出 git 工作樹。在 repo 裡跑會靜默套用預設值
+（`./control.db`、`./users`）——備份看起來成功，備到的卻是開發用的檔案：
+
 ```powershell
-uv run python scripts/backup.py --dest-dir E:\lift-log-backups
+$prod = "C:\Users\user\OneDrive\Desktop\SideProject\lift-log-prod"
+$env:LIFTLOG_BACKUP_KEY = (Get-Content <金鑰檔路徑> -Raw).Trim()
+Set-Location $prod                       # <- .env 從這裡讀
+& "$prod\.venv\Scripts\python.exe" "$prod\current\scripts\backup.py" --dest-dir D:\lift-log-backups
 ```
+
+用的是正式站自己的 `.venv` 與快照裡的 `scripts\backup.py`，整條路徑都不碰工作樹。
 
 `--control-db` 與 `--user-data-dir` 預設讀 `Settings`（即 `.env` 的
 `LIFTLOG_CONTROL_DB_PATH` / `LIFTLOG_USER_DATA_DIR`），通常不必另外指定。
@@ -34,7 +65,7 @@ uv run python scripts/backup.py --dest-dir E:\lift-log-backups
 **Windows（Task Scheduler）**：建一個每日觸發的工作，動作是執行
 
 ```powershell
-powershell.exe -NoProfile -Command "$env:LIFTLOG_BACKUP_KEY = (Get-Content <金鑰檔路徑> -Raw).Trim(); cd C:\path\to\lift-log; uv run python scripts\backup.py --dest-dir E:\lift-log-backups"
+powershell.exe -NoProfile -Command "$env:LIFTLOG_BACKUP_KEY = (Get-Content <金鑰檔路徑> -Raw).Trim(); $prod = 'C:\Users\user\OneDrive\Desktop\SideProject\lift-log-prod'; Set-Location $prod; & \"$prod\.venv\Scripts\python.exe\" \"$prod\current\scripts\backup.py\" --dest-dir D:\lift-log-backups"
 ```
 
 金鑰檔本身要被排除在任何雲端同步／git 追蹤之外，且與家機 DB 不同顆磁碟（見第 4 節）。
