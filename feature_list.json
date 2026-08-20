@@ -199,7 +199,12 @@
         "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStore.java",
         "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStorePlugin.java",
         "android/app/src/main/java/com/ryanleeyi/liftlog/SyncClient.java",
-        "android/app/src/test/java/com/ryanleeyi/liftlog/LocalStoreTest.java"
+        "android/app/src/test/java/com/ryanleeyi/liftlog/LocalStoreTest.java",
+        "app/static/js/app.js",
+        "app/static/js/native-notify.js",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerPlugin.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerService.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java"
       ],
       "requires": [],
       "prerequisites": [
