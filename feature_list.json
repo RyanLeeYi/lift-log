@@ -28,6 +28,24 @@
   ],
   "features": [
     {
+      "id": "F160",
+      "name": "單筆 mutation 被伺服器拒絕時不得連坐整批 outbox",
+      "status": "failing",
+      "evidence": "",
+      "touches": [
+        "android/app/src/main/java/com/ryanleeyi/liftlog/SyncClient.java",
+        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStore.java",
+        "android/app/src/test/java/com/ryanleeyi/liftlog/SyncClientTest.java"
+      ],
+      "requires": [],
+      "prerequisites": [],
+      "non_goals": [
+        "不改伺服器端的 push 契約",
+        "不做整批重試的退避策略調整（那是另一件事）"
+      ],
+      "acceptance": "**草案，尚未簽核凍結**（2026-08-20 起草，由 F159 的 /code-review 發現）。動工前必須經 Ryan 逐條簽核。\n\n起因：F159 收尾時 review 指出，一筆時間型組寫錯欄位會被 server 回 422，而\n`SyncClient.java:96` 把非重試、非 session 類的失敗交給\n`LocalStore.markPushPermanentFailure(body, errorCode)`；後者（`LocalStore.java:875-891`）\n是 for 迴圈把 body 裡**每一筆** mutation 都標成永久失敗，batch 上限 `MAX_PUSH_COUNT = 500`。\n主 session 開檔驗證屬實。\n\n那一筆寫錯欄位的 bug 已在 F159 修掉，但**連坐機制本身還在**——日後任何一筆被 server 拒絕的\nmutation（欄位驗證、契約漂移、資料競態）都會靜默帶走同批最多 499 筆無關的訓練、組數與體重紀錄。\n\n① server 回不可重試錯誤時，**只有真正被拒絕的那些 mutation** 可以標成永久失敗；\n   同批其他 mutation 必須維持 pending，下一輪照常重送。\n\n② 判斷「哪些被拒絕」的依據要來自 server 回應本身，不是猜。\n   動工前先確認 server 的 422 回應**是否帶得出出錯的 mutation_id**：\n   - 帶得出 → 照它標\n   - 帶不出 → 這條的範圍要改成「先讓 server 帶得出來」，或改採逐筆退避重送；\n     **不得用「猜第一筆」或「全部保留」草草了事**（全部保留會變成無限重試同一筆毒藥）\n\n③ 毒藥 mutation 不得造成無限重試：被判定永久失敗的那一筆要留下可辨識的錯誤碼與時間，\n   使用者要能知道「有一筆沒送出去」，不是靜默消失。\n\n④ 回歸測試：構造一批 N 筆 mutation、其中第 k 筆被 server 拒絕，斷言\n   pending 數量只少 1、其餘 N-1 筆在下一輪仍會被送出。\n\n⑤ 不回歸：F125（排入→回 app 寫入）、既有的 retryable／session 失敗分支行為不變。\n\n⑥ 這是既有設計的缺陷，**不是 F159 引入的**；F159 只是讓它第一次有具體的觸發路徑。"
+    },
+    {
       "id": "F89",
       "name": "浮動休息視窗原生重做（收合／展開兩態 ＋ 圓環倒數）",
       "status": "failing",
