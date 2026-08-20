@@ -269,14 +269,28 @@
         "不動區間藥丸（F119/F120/F87）的行為"
       ],
       "touches": [
-        "app/static/js/line-chart.js",
-        "app/static/js/exercise-detail.js",
-        "app/static/js/body.js",
-        "app/static/js/state.js",
         "app/static/css/app.css",
-        "feature_list.json"
+        "app/static/js/body.js",
+        "app/static/js/exercise-detail.js",
+        "app/static/js/line-chart.js",
+        "app/static/js/state.js",
+        "app/static/sw.js",
+        "docs/evidence/F162.md",
+        "feature_list.json",
+        "tests/e2e/verify_f57.py",
+        "tests/e2e/verify_f58.py",
+        "tests/e2e/verify_f87.py"
       ],
-      "acceptance": "背景：體重卡片的圖是 24 根長條（body.js 的 barChart()），動作表現已是 SVG 折線（F134/F135/F136）。Ryan 2026-08-20 要求體重也改折線，且與動作表現一致。\n做法：折線圖的幾何、點渲染、tip 定位與鍵盤互動抽成共用模組 app/static/js/line-chart.js；exercise-detail.js 改用它（PR 獎盃與 flagLayout 留在 exercise-detail.js，透過 padTop 與 flags 掛回去）；body.js 移除 barChart() 改用它。抽取而非複製的理由：那張圖的幾何含 review 打出來的不變量（x 用 (i+0.5)/n 而非 i/(n-1)，為了讓頭尾點命中寬不跌破 44px），複製等於複製兩份會各自漂移的隱形規則。\n\nR1 體重與體脂兩個頁籤都是折線圖，與動作表現使用同一組 CSS 類別（.line-chart／.line-svg／.line-path／.line-pt／.line-tip），不另立一套樣式。\nR2 點圖上任一點顯示浮動框（日期 + 數值）；再點同一點關閉；點卡片內非圖表區域也關閉。\nR3 鍵盤：Tab 逐點移動焦點、Enter 或 Space 選取、Escape 關閉；重繪後焦點回到同序位的點。不得加入方向鍵操作。\nR4 切換體重／體脂頁籤、切換區間時清掉選中狀態，不殘留上一個 metric 或區間的選中點。\nR5 移除 body.js 的 BAR_COUNT（24 筆）上限：選什麼區間就畫該區間的全部資料。\nR6 點數 > 50 時聚合：依序嘗試日 → 週 → 月，取第一個讓點數 <= 50 的單位。門檻 50 的來源是 F135 ② 的「320px 寬、圖寬 252px 下相鄰未選中點圓緣間距 >= 1px」——4px 的點需要 >= 5px 間距，252/5 約等於 50。圖表標題必須顯示當前單位（例如「每週平均」）；未聚合時標題維持原樣。\nR7 聚合後選中一個點，浮動框顯示的是該區間與聚合值（例如「08/11-08/17 平均 72.3kg」），不得偽裝成單一日期。\nR8 兩張圖套用同一套聚合規則，不為動作表現特例化（實務上動作表現很少超過 50 點，但規則一致）。\nR9 不得回歸：verify_f134.py、verify_f135.py、verify_f136.py 三支 Playwright 腳本重跑通過。\nR10 uv run pytest 全綠；uv run ruff check . 乾淨。\nR11 APP_VERSION 與 CACHE_NAME 同步升號（沿用本專案前端改動的慣例）。\n\n【明確的規格變更】本條 supersede F134 ⑧ 的「不省略資料點」與 F135 對高 N 的處理方式：N > 50 時改由聚合承擔。F135 的依 N 分級縮小（8px／6px／4px）在 N <= 50 區間仍然有效，不移除。\n記錄反對意見與推翻理由：2026-08-07 Ryan 曾裁示否決「另做只看最近 N 次的視圖」，理由是與區間藥丸職責重疊；2026-08-20 主 session 據此擋下「兩張圖都加固定上限」的提議，Ryan 改採「無上限 + 太多才聚合」。聚合與固定截斷的差別在於：聚合不丟資料且在標題上明示，固定截斷是看不見的靜默丟棄（體重圖原本的 24 筆上限就是後者，F56 曾以 P3-4 接受）。"
+      "acceptance": "背景：體重卡片的圖是 24 根長條（body.js 的 barChart()），動作表現已是 SVG 折線（F134/F135/F136）。Ryan 2026-08-20 要求體重也改折線，且與動作表現一致。\n做法：折線圖的幾何、點渲染、tip 定位與鍵盤互動抽成共用模組 app/static/js/line-chart.js；exercise-detail.js 改用它（PR 獎盃與 flagLayout 留在 exercise-detail.js，透過 padTop 與 flags 掛回去）；body.js 移除 barChart() 改用它。抽取而非複製的理由：那張圖的幾何含 review 打出來的不變量（x 用 (i+0.5)/n 而非 i/(n-1)，為了讓頭尾點命中寬不跌破 44px），複製等於複製兩份會各自漂移的隱形規則。\n\nR1 體重與體脂兩個頁籤都是折線圖，與動作表現使用同一組 CSS 類別（.line-chart／.line-svg／.line-path／.line-pt／.line-tip），不另立一套樣式。\nR2 點圖上任一點顯示浮動框（日期 + 數值）；再點同一點關閉；點卡片內非圖表區域也關閉。\nR3 鍵盤：Tab 逐點移動焦點、Enter 或 Space 選取、Escape 關閉；重繪後焦點回到同序位的點。不得加入方向鍵操作。\nR4 切換體重／體脂頁籤、切換區間時清掉選中狀態，不殘留上一個 metric 或區間的選中點。\nR5 移除 body.js 的 BAR_COUNT（24 筆）上限：選什麼區間就畫該區間的全部資料。\nR6 點數 > 50 時聚合：依序嘗試日 → 週 → 月，取第一個讓點數 <= 50 的單位。門檻 50 的來源是 F135 ② 的「320px 寬、圖寬 252px 下相鄰未選中點圓緣間距 >= 1px」——4px 的點需要 >= 5px 間距，252/5 約等於 50。圖表標題必須顯示當前單位（例如「每週平均」）；未聚合時標題維持原樣。\nR7 聚合後選中一個點，浮動框顯示的是該區間與聚合值（例如「08/11-08/17 平均 72.3kg」），不得偽裝成單一日期。\nR8 兩張圖套用同一套聚合規則，不為動作表現特例化（實務上動作表現很少超過 50 點，但規則一致）。\nR9 不得回歸：verify_f134.py、verify_f135.py、verify_f136.py 三支 Playwright 腳本重跑通過。\nR10 uv run pytest 全綠；uv run ruff check . 乾淨。\nR11 APP_VERSION 與 CACHE_NAME 同步升號（沿用本專案前端改動的慣例）。\n\n【明確的規格變更】本條 supersede F134 ⑧ 的「不省略資料點」與 F135 對高 N 的處理方式：N > 50 時改由聚合承擔。F135 的依 N 分級縮小（8px／6px／4px）在 N <= 50 區間仍然有效，不移除。\n記錄反對意見與推翻理由：2026-08-07 Ryan 曾裁示否決「另做只看最近 N 次的視圖」，理由是與區間藥丸職責重疊；2026-08-20 主 session 據此擋下「兩張圖都加固定上限」的提議，Ryan 改採「無上限 + 太多才聚合」。聚合與固定截斷的差別在於：聚合不丟資料且在標題上明示，固定截斷是看不見的靜默丟棄（體重圖原本的 24 筆上限就是後者，F56 曾以 P3-4 接受）。",
+      "supersedes": [
+        "F134 ⑧「不省略資料點」——N > 50 時改由聚合承擔",
+        "F135 對高 N 的處理——分級縮小在 N <= 50 仍有效，超過改聚合",
+        "F87 ⑤ 長條圖 24 根、flex:1、r99、高度＝14% + 正規化 * 82%、最新一根 --accent",
+        "F87 ⑮ 長條高度下限由 14% 改為 24%（算式 24% + 正規化 × 72%）",
+        "F87 ③ 中「長條圖跟著篩」的字面——改為折線圖跟著篩；③ 的其餘要求（五顆藥丸、清單同步篩、F58 停用檔位與自動退檔）不變",
+        "F57 ④「仍不做折點聚合抽樣」——改為 N > 50 才聚合，且取平均並在浮動框保留 min/max"
+      ],
+      "supersedes_signed_off": "2026-08-20 Ryan"
     }
   ]
 }
