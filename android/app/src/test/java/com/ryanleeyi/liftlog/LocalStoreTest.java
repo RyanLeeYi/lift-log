@@ -148,6 +148,74 @@ public class LocalStoreTest {
         assertEquals(7, store.pendingMutationCount());
     }
 
+    /** F159：既有次數型資料的舊 DB 升到 v4 必須保留列數，且 migrateVersion4 本身可重複執行。 */
+    @Test
+    public void versionFourMigrationRelaxesRepsAddsExerciseModeAndIsIdempotent()
+        throws JSONException {
+        store.close();
+        String exerciseId = uuid();
+        String workoutId = uuid();
+        SQLiteDatabase raw = context.openOrCreateDatabase(databaseName, 0, null);
+        try {
+            LocalStore.createVersion1Schema(raw);
+            store.migrateVersion2(raw);
+            store.migrateVersion3(raw);
+
+            ContentValues exercise = new ContentValues();
+            exercise.put("sync_id", exerciseId);
+            exercise.put("name_zh", "深蹲");
+            exercise.put("name_en", "Squat");
+            exercise.put("muscle_group", "腿");
+            exercise.put("is_bodyweight", 0);
+            raw.insertOrThrow("exercises", null, exercise);
+
+            ContentValues workout = new ContentValues();
+            workout.put("sync_id", workoutId);
+            workout.put("date", "2026-08-10");
+            raw.insertOrThrow("workouts", null, workout);
+
+            ContentValues set = new ContentValues();
+            set.put("sync_id", uuid());
+            set.put("client_uuid", uuid());
+            set.put("workout_sync_id", workoutId);
+            set.put("exercise_sync_id", exerciseId);
+            set.put("set_number", 1);
+            set.put("weight_kg", 100);
+            set.put("reps", 5);
+            raw.insertOrThrow("sets", null, set);
+
+            // 冪等：舊資料的遷移在同一顆 DB 上跑兩次不得出錯、不得重複列。
+            store.migrateVersion4(raw);
+            store.migrateVersion4(raw);
+            raw.setVersion(4);
+        } finally {
+            raw.close();
+        }
+
+        store = new LocalStore(context, databaseName);
+        assertEquals(LocalStore.DATABASE_VERSION, store.ensureReady());
+        assertEquals(1, store.count("sets", null, null));
+        assertEquals(1, store.count("exercises", null, null));
+        JSONObject snapshot = store.snapshot();
+        assertEquals(5, snapshot.getJSONArray("sets").getJSONObject(0).getInt("reps"));
+        assertEquals(
+            "reps", snapshot.getJSONArray("exercises").getJSONObject(0).getString("mode")
+        );
+
+        // reps 現在可為 NULL——時間型的組可以直接寫入而不再撞 NOT NULL。
+        ContentValues timedSet = new ContentValues();
+        timedSet.put("sync_id", uuid());
+        timedSet.put("client_uuid", uuid());
+        timedSet.put("workout_sync_id", workoutId);
+        timedSet.put("exercise_sync_id", exerciseId);
+        timedSet.put("set_number", 2);
+        timedSet.put("weight_kg", 0);
+        timedSet.putNull("reps");
+        timedSet.put("duration_seconds", 45);
+        store.getWritableDatabase().insertOrThrow("sets", null, timedSet);
+        assertEquals(2, store.count("sets", null, null));
+    }
+
     @Test
     public void failedUpgradeRollsBackAndLocksWrites() {
         String preservedId = createVersionOneDatabase();
@@ -235,7 +303,7 @@ public class LocalStoreTest {
         JSONObject set = store.set(setSyncId);
         assertEquals(1, set.getInt("set_number"));
         int setId = set.getInt("id");
-        JSONObject changedSet = store.updateSet(setId, 102.5, 6, 9, 60, uuid());
+        JSONObject changedSet = store.updateSet(setId, 102.5, 6, null, 9, 60, uuid());
         assertEquals(102.5, changedSet.getDouble("weight_kg"), 0.001);
         assertEquals(6, changedSet.getInt("reps"));
         store.deleteSet(setId, uuid());
@@ -464,6 +532,107 @@ public class LocalStoreTest {
         }
         assertEquals(1, store.serverCursor());
         assertEquals(1, store.snapshot().getJSONArray("exercises").length());
+    }
+
+    /**
+     * F159 ⑤：一頁 pull 內含時間型 set（reps=null、duration_seconds=60）與其後一筆次數型 set，
+     * 套用後不得拋例外、cursor 必須前進、兩筆都要落地。
+     *
+     * <p>還原成 `values.put("reps", payload.getInt("reps"))` 會讓這條測試變紅——
+     * `getInt` 對 JSONObject.NULL 一律拋 JSONException，整頁因此回滾。
+     */
+    @Test
+    public void pullAppliesTimedAndCountedSetsInSamePageWithoutException() throws JSONException {
+        store.ensureReady();
+        String exerciseId = uuid();
+        store.applyPullPage(new JSONObject()
+            .put("changes", new JSONArray().put(new JSONObject()
+                .put("server_seq", 1)
+                .put("schema_version", 1)
+                .put("entity_type", "exercise")
+                .put("entity_id", exerciseId)
+                .put("operation", "upsert")
+                .put("version", 1)
+                .put("updated_at", "2026-08-20T00:00:00Z")
+                .put("deleted_at", JSONObject.NULL)
+                .put("payload", new JSONObject()
+                    .put("sync_id", exerciseId)
+                    .put("name_zh", "棒式")
+                    .put("name_en", "Plank")
+                    .put("muscle_group", "核心")
+                    .put("is_bodyweight", true)
+                    .put("mode", "time"))))
+            .put("next_cursor", 1)
+            .put("has_more", false));
+
+        String workoutId = uuid();
+        store.createWorkout(workoutId, "2026-08-20", null, null, null, uuid());
+
+        String timedSetId = uuid();
+        String countedSetId = uuid();
+        store.applyPullPage(new JSONObject()
+            .put("changes", new JSONArray()
+                .put(remoteChange(2, "set", timedSetId, new JSONObject()
+                    .put("sync_id", timedSetId)
+                    .put("client_uuid", uuid())
+                    .put("workout_sync_id", workoutId)
+                    .put("exercise_sync_id", exerciseId)
+                    .put("set_number", 1)
+                    .put("weight_kg", 0)
+                    .put("reps", JSONObject.NULL)
+                    .put("duration_seconds", 60)
+                    .put("rpe", JSONObject.NULL)
+                    .put("rest_seconds", JSONObject.NULL)))
+                .put(remoteChange(3, "set", countedSetId, new JSONObject()
+                    .put("sync_id", countedSetId)
+                    .put("client_uuid", uuid())
+                    .put("workout_sync_id", workoutId)
+                    .put("exercise_sync_id", exerciseId)
+                    .put("set_number", 2)
+                    .put("weight_kg", 20)
+                    .put("reps", 12)
+                    .put("duration_seconds", JSONObject.NULL)
+                    .put("rpe", JSONObject.NULL)
+                    .put("rest_seconds", JSONObject.NULL))))
+            .put("next_cursor", 3)
+            .put("has_more", false));
+
+        assertEquals(3, store.serverCursor());
+        JSONObject timedSet = store.set(timedSetId);
+        assertTrue(timedSet.isNull("reps"));
+        assertEquals(60, timedSet.getInt("duration_seconds"));
+        JSONObject countedSet = store.set(countedSetId);
+        assertEquals(12, countedSet.getInt("reps"));
+        assertTrue(countedSet.isNull("duration_seconds"));
+    }
+
+    /** F159 ④：離線寫入路徑（LocalStorePlugin 橋接的底層）也要能存時間型的組。 */
+    @Test
+    public void addSetAndUpdateSetPersistTimeTypedValuesOffline() throws JSONException {
+        store.ensureReady();
+        JSONObject exercise = store.createExercise(
+            uuid(), "測試棒式", "Plank Test", "核心", true, "time", uuid()
+        );
+        int exerciseId = exercise.getInt("id");
+        assertEquals("time", exercise.getString("mode"));
+
+        String workoutSyncId = uuid();
+        store.createWorkout(workoutSyncId, "2026-08-20", null, null, null, uuid());
+        int workoutId = store.workout(workoutSyncId).getInt("id");
+
+        String setSyncId = uuid();
+        store.addSet(
+            setSyncId, uuid(), workoutId, exerciseId, null, 0, null, 45, null, null, 1, uuid()
+        );
+        JSONObject set = store.set(setSyncId);
+        assertTrue(set.isNull("reps"));
+        assertEquals(45, set.getInt("duration_seconds"));
+
+        JSONObject updated = store.updateSet(
+            set.getInt("id"), 5, null, 60, null, null, uuid()
+        );
+        assertTrue(updated.isNull("reps"));
+        assertEquals(60, updated.getInt("duration_seconds"));
     }
 
     @Test

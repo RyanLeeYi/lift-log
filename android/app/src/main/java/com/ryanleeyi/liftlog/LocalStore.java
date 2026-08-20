@@ -11,13 +11,16 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.UUID;
 
 /** Android 的唯一 domain store；所有本地 mutation 與 outbox 必須在同一個 transaction。 */
 public class LocalStore extends SQLiteOpenHelper {
     static final String DATABASE_NAME = "liftlog-local.db";
-    static final int DATABASE_VERSION = 3;
+    static final int DATABASE_VERSION = 4;
     private static final String WORKOUT_TEMPLATE_PREFIX = "workout_template:";
+    // F159：動作的計量模式，值域與 server app/models.py 的 EXERCISE_MODE_REPS 一致。
+    private static final String EXERCISE_MODE_REPS = "reps";
     // ponytail: rowid 只作本機 handle；若日後加入 VACUUM/rebuild，再 materialize local ids。
 
     private static final String[][] DEFAULT_EXERCISES = {
@@ -82,6 +85,10 @@ public class LocalStore extends SQLiteOpenHelper {
     public void onCreate(SQLiteDatabase db) {
         createVersion1Schema(db);
         migrateVersion2(db);
+        // F159：migrateVersion4 要在 migrateVersion3 之前跑——v3 的 enqueueExistingDomainRows
+        // 會用 exercisePayload／setPayload 把既有列補進 outbox，而這兩個共用函式現在會讀
+        // v4 才新增的 mode／duration_seconds 欄位；順序反過來會撞「no such column」。
+        migrateVersion4(db);
         migrateVersion3(db);
     }
 
@@ -90,6 +97,7 @@ public class LocalStore extends SQLiteOpenHelper {
         try {
             if (oldVersion < 1) createVersion1Schema(db);
             if (oldVersion < 2) migrateVersion2(db);
+            if (oldVersion < 4) migrateVersion4(db);
             if (oldVersion < 3) migrateVersion3(db);
             if (newVersion > DATABASE_VERSION) {
                 throw new IllegalStateException("不支援 LocalStore schema v" + newVersion);
@@ -179,7 +187,11 @@ public class LocalStore extends SQLiteOpenHelper {
         });
     }
 
-    /** 建立 set 與 mutation receipt；供 F140 的 WebView 與 overlay 共用。 */
+    /**
+     * 建立 set 與 mutation receipt；供 F140 的 WebView 與 overlay 共用。
+     * 舊呼叫端（RestOverlay、F140 instrumented test）只支援次數型、reps 不可為 null，
+     * 沿用這個多載；F159 起 WebView 橋接（LocalStorePlugin）走下面帶 durationSeconds 的版本。
+     */
     public void addSet(
         String syncId,
         String clientUuid,
@@ -188,6 +200,27 @@ public class LocalStore extends SQLiteOpenHelper {
         Integer setNumber,
         double weightKg,
         int reps,
+        Integer rpe,
+        Integer restSeconds,
+        int leaseGeneration,
+        String mutationId
+    ) {
+        addSet(
+            syncId, clientUuid, workoutId, exerciseId, setNumber, weightKg, reps, null,
+            rpe, restSeconds, leaseGeneration, mutationId
+        );
+    }
+
+    /** F159：reps／durationSeconds 兩者擇一為 null（呼叫端已驗證互斥），時間型 reps 傳 null。 */
+    public void addSet(
+        String syncId,
+        String clientUuid,
+        int workoutId,
+        int exerciseId,
+        Integer setNumber,
+        double weightKg,
+        Integer reps,
+        Integer durationSeconds,
         Integer rpe,
         Integer restSeconds,
         int leaseGeneration,
@@ -205,7 +238,8 @@ public class LocalStore extends SQLiteOpenHelper {
             set.put("exercise_sync_id", exerciseSyncId);
             set.put("set_number", resolvedSetNumber);
             set.put("weight_kg", weightKg);
-            set.put("reps", reps);
+            putNullable(set, "reps", reps);
+            putNullable(set, "duration_seconds", durationSeconds);
             putNullable(set, "rpe", rpe);
             putNullable(set, "rest_seconds", restSeconds);
             db.insertOrThrow("sets", null, set);
@@ -217,12 +251,25 @@ public class LocalStore extends SQLiteOpenHelper {
         });
     }
 
+    /** 舊呼叫端（未帶 mode，如 SyncClientTest）沿用次數型預設；F159 起一律走下面帶 mode 的版本。 */
     public JSONObject createExercise(
         String syncId,
         String nameZh,
         String nameEn,
         String muscleGroup,
         boolean isBodyweight,
+        String mutationId
+    ) {
+        return createExercise(syncId, nameZh, nameEn, muscleGroup, isBodyweight, null, mutationId);
+    }
+
+    public JSONObject createExercise(
+        String syncId,
+        String nameZh,
+        String nameEn,
+        String muscleGroup,
+        boolean isBodyweight,
+        String mode,
         String mutationId
     ) {
         return transaction(db -> {
@@ -232,6 +279,7 @@ public class LocalStore extends SQLiteOpenHelper {
             exercise.put("name_en", emptyTo(nameEn, nameZh));
             exercise.put("muscle_group", emptyTo(muscleGroup, "其他"));
             exercise.put("is_bodyweight", isBodyweight ? 1 : 0);
+            exercise.put("mode", emptyTo(mode, EXERCISE_MODE_REPS));
             long id = db.insertOrThrow("exercises", null, exercise);
             insertOutbox(
                 db, mutationId, "exercise", syncId, "upsert", 0, null,
@@ -317,7 +365,8 @@ public class LocalStore extends SQLiteOpenHelper {
     public JSONObject updateSet(
         int id,
         double weightKg,
-        int reps,
+        Integer reps,
+        Integer durationSeconds,
         Integer rpe,
         Integer restSeconds,
         String mutationId
@@ -326,7 +375,8 @@ public class LocalStore extends SQLiteOpenHelper {
             Entity set = activeEntity(db, "sets", id);
             ContentValues values = new ContentValues();
             values.put("weight_kg", weightKg);
-            values.put("reps", reps);
+            putNullable(values, "reps", reps);
+            putNullable(values, "duration_seconds", durationSeconds);
             putNullable(values, "rpe", rpe);
             putNullable(values, "rest_seconds", restSeconds);
             if (db.update("sets", values, "rowid = ?", new String[]{String.valueOf(id)}) != 1) {
@@ -941,7 +991,10 @@ public class LocalStore extends SQLiteOpenHelper {
     private JSONArray exercises(SQLiteDatabase db) {
         JSONArray result = new JSONArray();
         try (Cursor cursor = db.query(
-            "exercises", new String[]{"rowid AS id", "sync_id", "name_zh", "name_en", "muscle_group", "is_bodyweight"},
+            "exercises",
+            new String[]{
+                "rowid AS id", "sync_id", "name_zh", "name_en", "muscle_group", "is_bodyweight", "mode"
+            },
             "deleted_at IS NULL", null, null, null, "name_zh COLLATE NOCASE"
         )) {
             while (cursor.moveToNext()) result.put(exerciseJson(cursor));
@@ -982,8 +1035,8 @@ public class LocalStore extends SQLiteOpenHelper {
                 + "LEFT JOIN exercises e ON e.sync_id = s.exercise_sync_id",
             new String[]{
                 "s.rowid AS id", "s.sync_id", "s.client_uuid", "w.rowid AS workout_id",
-                "e.rowid AS exercise_id", "s.set_number", "s.weight_kg", "s.reps", "s.rpe",
-                "s.rest_seconds", "s.created_at"
+                "e.rowid AS exercise_id", "s.set_number", "s.weight_kg", "s.reps",
+                "s.duration_seconds", "s.rpe", "s.rest_seconds", "s.created_at"
             },
             "s.deleted_at IS NULL", null, null, null, "s.created_at ASC"
         )) {
@@ -1027,7 +1080,10 @@ public class LocalStore extends SQLiteOpenHelper {
 
     private JSONObject exerciseById(SQLiteDatabase db, int id) {
         try (Cursor cursor = db.query(
-            "exercises", new String[]{"rowid AS id", "sync_id", "name_zh", "name_en", "muscle_group", "is_bodyweight"},
+            "exercises",
+            new String[]{
+                "rowid AS id", "sync_id", "name_zh", "name_en", "muscle_group", "is_bodyweight", "mode"
+            },
             "rowid = ? AND deleted_at IS NULL", new String[]{String.valueOf(id)}, null, null, null
         )) {
             if (cursor.moveToFirst()) return exerciseJson(cursor);
@@ -1077,8 +1133,8 @@ public class LocalStore extends SQLiteOpenHelper {
                 + "LEFT JOIN exercises e ON e.sync_id = s.exercise_sync_id",
             new String[]{
                 "s.rowid AS id", "s.sync_id", "s.client_uuid", "w.rowid AS workout_id",
-                "e.rowid AS exercise_id", "s.set_number", "s.weight_kg", "s.reps", "s.rpe",
-                "s.rest_seconds", "s.created_at"
+                "e.rowid AS exercise_id", "s.set_number", "s.weight_kg", "s.reps",
+                "s.duration_seconds", "s.rpe", "s.rest_seconds", "s.created_at"
             },
             "s.rowid = ? AND s.deleted_at IS NULL", new String[]{String.valueOf(id)}, null, null, null
         )) {
@@ -1092,8 +1148,8 @@ public class LocalStore extends SQLiteOpenHelper {
                 + "LEFT JOIN exercises e ON e.sync_id = s.exercise_sync_id",
             new String[]{
                 "s.rowid AS id", "s.sync_id", "s.client_uuid", "w.rowid AS workout_id",
-                "e.rowid AS exercise_id", "s.set_number", "s.weight_kg", "s.reps", "s.rpe",
-                "s.rest_seconds", "s.created_at"
+                "e.rowid AS exercise_id", "s.set_number", "s.weight_kg", "s.reps",
+                "s.duration_seconds", "s.rpe", "s.rest_seconds", "s.created_at"
             },
             "s.sync_id = ? AND s.deleted_at IS NULL", new String[]{syncId}, null, null, null
         )) {
@@ -1167,7 +1223,9 @@ public class LocalStore extends SQLiteOpenHelper {
     }
 
     private JSONObject exerciseJson(Cursor cursor) {
-        return cursorJson(cursor, "id", "sync_id", "name_zh", "name_en", "muscle_group", "is_bodyweight");
+        return cursorJson(
+            cursor, "id", "sync_id", "name_zh", "name_en", "muscle_group", "is_bodyweight", "mode"
+        );
     }
 
     private JSONObject workoutJson(SQLiteDatabase db, Cursor cursor) {
@@ -1182,7 +1240,7 @@ public class LocalStore extends SQLiteOpenHelper {
     private JSONObject setJson(Cursor cursor) {
         return cursorJson(
             cursor, "id", "sync_id", "client_uuid", "workout_id", "exercise_id", "set_number",
-            "weight_kg", "reps", "rpe", "rest_seconds", "created_at"
+            "weight_kg", "reps", "duration_seconds", "rpe", "rest_seconds", "created_at"
         );
     }
 
@@ -1240,7 +1298,8 @@ public class LocalStore extends SQLiteOpenHelper {
 
     private JSONObject exercisePayload(SQLiteDatabase db, String syncId) {
         return payloadBySync(
-            db, "exercises", syncId, "sync_id", "name_zh", "name_en", "muscle_group", "is_bodyweight"
+            db, "exercises", syncId, "sync_id", "name_zh", "name_en", "muscle_group",
+            "is_bodyweight", "mode"
         );
     }
 
@@ -1254,7 +1313,7 @@ public class LocalStore extends SQLiteOpenHelper {
     private JSONObject setPayload(SQLiteDatabase db, String syncId) {
         return payloadBySync(
             db, "sets", syncId, "sync_id", "client_uuid", "workout_sync_id", "exercise_sync_id",
-            "set_number", "weight_kg", "reps", "rpe", "rest_seconds"
+            "set_number", "weight_kg", "reps", "duration_seconds", "rpe", "rest_seconds"
         );
     }
 
@@ -1529,6 +1588,10 @@ public class LocalStore extends SQLiteOpenHelper {
                 values.put("name_en", payload.getString("name_en"));
                 values.put("muscle_group", payload.getString("muscle_group"));
                 values.put("is_bodyweight", payload.getBoolean("is_bodyweight") ? 1 : 0);
+                // F159：舊版 server payload／pre-F105 資料不帶 mode，視為次數型。
+                values.put(
+                    "mode", payload.isNull("mode") ? EXERCISE_MODE_REPS : payload.getString("mode")
+                );
                 break;
             case "template":
                 values.put("name", payload.getString("name"));
@@ -1549,7 +1612,11 @@ public class LocalStore extends SQLiteOpenHelper {
                 values.put("exercise_sync_id", payload.getString("exercise_sync_id"));
                 values.put("set_number", payload.getInt("set_number"));
                 values.put("weight_kg", payload.getDouble("weight_kg"));
-                values.put("reps", payload.getInt("reps"));
+                // F159 根因修正：reps 對時間型組是 null，getInt 對 JSONObject.NULL 一律拋
+                // JSONException，且整批 pull 因此回滾（見 applyPullPage 的共用 transaction）。
+                // rpe／rest_seconds 一直是用這個 null-safe 寫法，reps／duration_seconds 補齊同待遇。
+                putJsonNullableInteger(values, payload, "reps");
+                putJsonNullableInteger(values, payload, "duration_seconds");
                 putJsonNullableInteger(values, payload, "rpe");
                 putJsonNullableInteger(values, payload, "rest_seconds");
                 break;
@@ -1821,6 +1888,111 @@ public class LocalStore extends SQLiteOpenHelper {
         db.execSQL("INSERT OR IGNORE INTO sync_state(key, value) VALUES('last_error_code', '')");
         db.execSQL("INSERT OR IGNORE INTO sync_state(key, value) VALUES('sync_attempt_count', '0')");
         enqueueExistingDomainRows(db);
+    }
+
+    /**
+     * F159：解除時間型動作的 APK 封鎖——`exercises` 補 `mode`，`sets` 補 `duration_seconds`
+     * 並放寬 `reps` 的 NOT NULL（SQLite 沒有 ALTER COLUMN，只能整表重建）。
+     * 兩步都是冪等的：欄位／約束已經是目標狀態就整段跳過，可安全重跑。
+     */
+    protected void migrateVersion4(SQLiteDatabase db) {
+        if (!hasColumn(db, "exercises", "mode")) {
+            db.execSQL(
+                "ALTER TABLE exercises ADD COLUMN mode TEXT NOT NULL DEFAULT '"
+                    + EXERCISE_MODE_REPS + "'"
+            );
+        }
+        rebuildSetsForNullableReps(db);
+    }
+
+    private static boolean hasColumn(SQLiteDatabase db, String table, String column) {
+        try (Cursor cursor = db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+            int nameIndex = cursor.getColumnIndexOrThrow("name");
+            while (cursor.moveToNext()) {
+                if (column.equals(cursor.getString(nameIndex))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean setsRepsIsNotNull(SQLiteDatabase db) {
+        try (Cursor cursor = db.rawQuery("PRAGMA table_info(sets)", null)) {
+            int nameIndex = cursor.getColumnIndexOrThrow("name");
+            int notNullIndex = cursor.getColumnIndexOrThrow("notnull");
+            while (cursor.moveToNext()) {
+                if ("reps".equals(cursor.getString(nameIndex))) {
+                    return cursor.getInt(notNullIndex) != 0;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** 重建前後的複製保真度指紋：筆數、相異外鍵數與加總都要對得上，比對筆數不夠——
+     *  欄位順序寫錯時筆數一樣正確，值卻整欄錯位。weight_kg 換成分（避免浮點數比較誤差）。 */
+    private static long[] setsFingerprint(SQLiteDatabase db) {
+        try (Cursor cursor = db.rawQuery(
+            "SELECT COUNT(*), COUNT(DISTINCT client_uuid), COUNT(DISTINCT workout_sync_id), "
+                + "COUNT(DISTINCT exercise_sync_id), COALESCE(SUM(reps), -1), "
+                + "COALESCE(SUM(set_number), -1), "
+                + "CAST(ROUND(COALESCE(SUM(weight_kg), -1) * 100) AS INTEGER) FROM sets",
+            null
+        )) {
+            cursor.moveToFirst();
+            long[] fingerprint = new long[cursor.getColumnCount()];
+            for (int index = 0; index < fingerprint.length; index++) {
+                fingerprint[index] = cursor.getLong(index);
+            }
+            return fingerprint;
+        }
+    }
+
+    /**
+     * 把既有 DB 的 `sets.reps` 從 NOT NULL 改成 nullable，`duration_seconds` 一併補上。
+     * 已經是 nullable 就整段跳過（冪等）。
+     *
+     * <p>不像 server 端（app/migrations.py::_rebuild_sets_for_nullable_reps）另外關 `PRAGMA
+     * foreign_keys`：SQLiteOpenHelper 的 onCreate/onUpgrade 本來就整個包在一個 transaction
+     * 裡呼叫，PRAGMA foreign_keys 在交易內是無效指令；但這裡也不需要它——`sets` 只有指出去的
+     * FK（→ workouts／exercises），沒有其他表以 FK 指向 `sets`，drop 掉它不會留下懸空參照。
+     */
+    private static void rebuildSetsForNullableReps(SQLiteDatabase db) {
+        if (!setsRepsIsNotNull(db)) return;
+        long[] fingerprintBefore = setsFingerprint(db);
+        db.execSQL("CREATE TABLE sets_f159_new ("
+            + "sync_id TEXT PRIMARY KEY NOT NULL, client_uuid TEXT NOT NULL UNIQUE,"
+            + "workout_sync_id TEXT NOT NULL, exercise_sync_id TEXT NOT NULL,"
+            + "set_number INTEGER NOT NULL CHECK(set_number > 0),"
+            + "weight_kg REAL NOT NULL CHECK(weight_kg >= 0),"
+            + "reps INTEGER CHECK(reps IS NULL OR reps > 0),"
+            + "duration_seconds INTEGER CHECK(duration_seconds IS NULL OR duration_seconds > 0),"
+            + "rpe INTEGER CHECK(rpe IS NULL OR rpe BETWEEN 1 AND 10),"
+            + "rest_seconds INTEGER CHECK(rest_seconds IS NULL OR rest_seconds >= 0),"
+            + syncColumns() + ","
+            + "FOREIGN KEY(workout_sync_id) REFERENCES workouts(sync_id),"
+            + "FOREIGN KEY(exercise_sync_id) REFERENCES exercises(sync_id))");
+        db.execSQL(
+            "INSERT INTO sets_f159_new (sync_id, client_uuid, workout_sync_id, exercise_sync_id,"
+                + " set_number, weight_kg, reps, duration_seconds, rpe, rest_seconds, version,"
+                + " updated_at, deleted_at, created_at)"
+                + " SELECT sync_id, client_uuid, workout_sync_id, exercise_sync_id, set_number,"
+                + " weight_kg, reps, NULL, rpe, rest_seconds, version, updated_at, deleted_at,"
+                + " created_at FROM sets"
+        );
+        db.execSQL("DROP TABLE sets");
+        db.execSQL("ALTER TABLE sets_f159_new RENAME TO sets");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS ux_sets_number_active "
+            + "ON sets(workout_sync_id, exercise_sync_id, set_number) WHERE deleted_at IS NULL");
+        long[] fingerprintAfter = setsFingerprint(db);
+        if (!Arrays.equals(fingerprintBefore, fingerprintAfter)) {
+            throw new IllegalStateException(
+                "F159 sets 重建前後資料不一致：" + Arrays.toString(fingerprintBefore)
+                    + " -> " + Arrays.toString(fingerprintAfter)
+            );
+        }
+        if (setsRepsIsNotNull(db)) {
+            throw new IllegalStateException("F159 sets 重建後 reps 仍是 NOT NULL");
+        }
     }
 
     private void enqueueExistingDomainRows(SQLiteDatabase db) {
