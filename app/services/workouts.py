@@ -465,7 +465,11 @@ def get_active_sets_by_workout(
 def list_workouts(
     session: Session, start: date_type | None, end: date_type | None
 ) -> list[Workout]:
-    query = select(Workout).order_by(Workout.date, Workout.id)
+    # F154 把 delete_workout 從硬刪改成軟刪（tombstone 要能同步出去），但這裡沒跟著加過濾，
+    # 於是刪掉的空訓練照樣出現在列表與日曆明細裡——F92 ⑥ 的六條 e2e 就是這樣一路紅的。
+    query = (
+        select(Workout).where(Workout.deleted_at.is_(None)).order_by(Workout.date, Workout.id)
+    )
     if start is not None:
         query = query.where(Workout.date >= start)
     if end is not None:

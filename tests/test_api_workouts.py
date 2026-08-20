@@ -647,5 +647,12 @@ class TestDeleteWorkout:
         assert client.get(f"/api/workouts/{workout_id}").json()["sets"] == []
         assert client.delete(f"/api/workouts/{workout_id}").status_code == 409
 
+    def test_deleted_workout_disappears_from_the_list(self, client):
+        """F154 把刪除改成軟刪，列表沒跟著過濾——刪掉的空訓練照樣出現在日曆明細裡。"""
+        workout_id = client.post("/api/workouts", json={}).json()["id"]
+        assert client.delete(f"/api/workouts/{workout_id}").status_code == 204
+        listed = client.get("/api/workouts").json()
+        assert [w["id"] for w in listed] == []
+
     def test_delete_unknown_workout_returns_404(self, client):
         assert client.delete("/api/workouts/999999").status_code == 404
