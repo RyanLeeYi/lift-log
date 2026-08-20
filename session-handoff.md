@@ -1,118 +1,75 @@
 # session handoff
 
-最後更新：2026-08-20（第二輪）。**151/160 passing、9 failing**（F89、F95、F104、F124、F128、F149、F153、F159、**F160 新**）。
-`.harness/current_feature` = F159。
+最後更新：2026-08-20（第三輪）。**152/161 passing、9 failing**（F89、F95、F104、F124、F128、F149、F153、F159、F160）。
+`.harness/current_feature` = F162（已 passing）。
 
 ## 接手第一件事
 
-1. **F159 只差一件事：實機冒煙。** 程式碼全部完成並驗證，正式站與 APK 都已是 v156。
-   卡在手機 app 停在 Google 登入頁——那一步只有 Ryan 本人能做（agent 不得代輸憑證）。
-   Ryan 登入後，冒煙流程見下面「F159 剩下的一半」。**沒做完之前不得改 passing。**
-2. `git log --oneline -3` 對 origin/main（本輪已 push 到 `4474496`），確認沒有第二個 session 在動 repo。
-3. **F160 是草案、未簽核**，動工前要 Ryan 逐條看（`delegation-warmup` hook ③ 也會擋沒簽核的派工）。
+1. **正式站已經搬家了。** 不再是 `lift-log\deploy\current` + 工作樹的 `.venv`，改成
+   **`SideProject\lift-log-prod\`**（git 工作樹之外）。任何維運指令要從那裡跑，
+   **在 repo 目錄跑 `backup.py` 會被拒絕**（exit 2，這是刻意的）。完整說明見
+   `docs/operations.md` 第 1b 節與 `docs/evidence/F161.md`。
+2. `git log --oneline -3` 對 origin/main（本輪推到 `47b5d45`），確認沒有第二個 session 在動 repo。
+3. **F159 仍只差實機冒煙**（Ryan 本人登入，agent 不得代輸憑證）；**F160 是草案、未簽核**。
+   兩者狀態與上一輪相同，細節見上一版 handoff 的 git 歷史。
 
-## 本輪完成（2026-08-20 第二輪）
+## 本輪完成（2026-08-20 第三輪）
 
-### F159 — 程式碼完成，等實機冒煙
+### F161 — 正式站搬出開發工作樹
 
-Ryan 簽核凍結 acceptance 後派兩個平行 `executor`（各自 worktree，檔案零重疊），
-主 session 整合＋覆核。證據 `docs/evidence/F159.md`。
+承接 mission-control 已關閉的 F44。原本兩個問題：開發期 `uv sync` 會流進正式站、
+`git clean -xdf` 一行刪光正式資料（實測會刪 `liftlog.db`／`prod-data/`／`.env`／`release/`／`deploy/`，
+git 全程不警告）。根源相同：正式站住在工作樹裡。
 
-| commit | 內容 |
-|---|---|
-| `51faf4c` / `dc3e7b5` | worker 實作：pull 路徑 null-safe、`exercises.mode`、`sets` 整表重建（v3→v4） |
-| `23e110c` | **P2 修正**：原生浮動視窗的快記貫通 mode |
-| `fc9e00c` | 3 條 P3 護欄：DB 層互斥 CHECK、指紋涵蓋率、冪等依據 |
-| `4ee3d5c` | bump v156 |
-| `4474496` | 證據補寫 ＋ 開 F160 |
+- 搬到 `lift-log-prod\`：`current/ previous/ .venv/ .venv-previous/ .env data/ release/`
+- `deploy.ps1` 依快照的 `uv.lock` 建 `.venv-staging` 再換名，環境與程式碼同進同退
+- mission-control `services.toml` 三行改指新位置（**該檔未 commit，是 Ryan 自己的部署設定**）
+- 逐表 row count 搬遷前後一致，加密備份在 `D:\lift-log-backups`，金鑰 `C:\Users\user\.liftlog\backup.key`
 
-**最值得記的三件事**
+**兩個踩過的坑（下一個人請不要重踩）**：
 
-1. **`/code-review` 抓到 `acceptance-verifier` 抓不到的 P2**，而且波及範圍比第一眼大得多。
-   時間型動作的 `state.reps` 裝的是秒數（`app.js:2520` 才在 API 邊界轉成 `duration_seconds`），
-   但浮動視窗的快記把它原樣寫進 `reps` 欄 → server 回 422。
-   **關鍵在後果**：`SyncClient.java:96` 把 422 交給 `LocalStore.markPushPermanentFailure(body, …)`，
-   而它（`LocalStore.java:875-891`）是 for 迴圈把 body 裡**每一筆** mutation 標成永久失敗，
-   batch 上限 500。一筆壞資料會靜默帶走同批最多 499 筆無關紀錄。
-   **兩種檢查看的是不同的東西**：驗收看「acceptance 逐條有沒有做到」（①–⑦ 全 PASS 是對的），
-   review 看「這段程式碼會不會壞」。strict 檔位兩個都跑不是重複。
-2. **worker 踩到的 SQLite 語法規則**：`CREATE TABLE` 的表級約束必須排在所有欄位定義之後，
-   插在欄位中間會 `near "rpe": syntax error`（29/36 測試直接紅）。
-3. **重建保真度指紋原本只涵蓋 14 欄中的 4 欄**，把 `deleted_at` 與 `created_at` 對調會完全通過——
-   而那正是它宣稱要擋的故障。已擴到 13 個聚合值。
-   **限制要知道**：純聚合統計量對「值分佈對稱的兩欄互換」天生看不出來，這是手法的極限。
+1. **uv 的 `.exe` shim 不能改名**——絕對路徑寫死在 trampoline 裡，`.venv-staging` → `.venv`
+   一改名就壞，log 只有一行 `Failed to canonicalize script path`。所以 `services.toml` 用的是
+   `python.exe -m uvicorn`，**不是 `uvicorn.exe`**。不要「順手改回來」。
+2. **`.env` 搬走後 `backup.py` 會靜默備錯**——落回 `./control.db`／`./users`，那在工作樹底下
+   剛好是測試站的檔案，exit 0 印 `[OK]`。已改成拒絕執行，回歸測試在 `tests/test_backup.py`。
 
-### 部署與維運
+### F162 — 體重圖改折線圖，折線圖抽共用模組並支援聚合
 
-- **正式站 `800c0e2`（v155）→ `6451b35`（v156）**，F105 時間型動作正式上線。
-- **`scripts/deploy.ps1` 的 health 門檻 30s → 180s**，並印出實際啟動耗時。
-  本輪第一次部署被誤判回退（log 明明有 `Uvicorn running on 0.0.0.0:8137`），
-  正式站因此有約 4 分鐘不可用。
-  ⚠ **但重跑時只花 24 秒，比舊門檻還短**——所以根因是「卡在邊界」而不是「穩定超時」。
-  下次要不要再調，看腳本現在會印的那個數字，不要憑感覺。
-- APK v156 已裝上實機（`versionCode=156`、`SITE=prod` 都用 `unzip` 核對過，
-  避開 `apk\release\app-release.apk` 那顆殭屍檔）。
+- 新增 `app/static/js/line-chart.js`：幾何、點渲染、浮動框、鍵盤互動。`exercise-detail.js`
+  與 `body.js` 共用
+- `body.js` 移除 `barChart()` 與 `BAR_COUNT`（24 筆靜默上限）
+- **N > 50 時聚合**成區間平均（日→週→月），標題顯示單位，浮動框帶 min/max
+- **正式 supersede 六條既有條文**，清單在 `feature_list.json` 的 `F162.supersedes`，
+  理由與對照表在 `docs/evidence/F162.md`。改那張圖之前先讀那份檔案
 
-### 平行派工實測（供 harness 決策）
+**三件容易踩的事**：
 
-兩個 worker、檔案零重疊、零合併衝突。耗時 7.6 / 12.3 分鐘。
-**主 session 覆核 worker 的非顯而易見主張仍然抓到東西**：A 把 `addSet` 寫成 if/else 兩支、
-10 個參數重複兩遍，收成單次呼叫（用 `Integer` 先裝箱避開三元的 unboxing 陷阱）。
+1. **`.line-tip` 的三個行內 class 必須各自唯一**（`line-tip-date`／`line-tip-sets`／`line-tip-best`）
+   ——`verify_f134.py` 用單一選擇器取值，重複就撞 Playwright strict mode
+2. **圖表底部的 `.bars-foot` 不是裝飾**——x 軸是序位等距，沒有那兩個日期就看不出區間長度，
+   而且它是 F57 ⑤ 明文要求
+3. **新增前端模組要同步加進 `app/static/sw.js` 的 shell 清單**——有測試守著
+   （`test_sw_shell_list_matches_static_files`），漏了會離線少檔
 
-上一輪的教訓仍然成立：worker 說「這不是我造成的」時，要用它動不到的那個變因去驗。
+**聚合門檻已與 E2E 耦合**：`verify_f134.py` 從 `line-chart.js` 讀出 `AGG_MAX_POINTS` 並斷言
+壓力情境筆數沒超過它。改任一邊的數字，腳本會直接中止並說明原因，不會讓斷言莫名翻紅。
 
-## F159 剩下的一半
+## APK v157 — 已建好，**還沒進 Google Drive**
 
-acceptance ⑦ 的實機冒煙，狀態 `unverified (人工)`。Ryan 在手機上登入後：
+`G:` 當時沒掛載（Google Drive 桌面版沒跑），所以只做到建置與驗證：
 
-1. 網頁（或手機 app）建一個**時間型動作**，記一組
-2. 手機同步 → 看得到那筆，且**既有次數型資料照常同步**
-3. 浮動休息視窗對時間型動作顯示「N 秒」、步進 ±5，按「完成這組」後那筆能成功 push（不是 422）
+- 暫存在 **`C:\Users\user\Downloads\lift-log-v157-F162.apk`**（10.7 MB）
+- 已用 `unzip -p ... state.js | grep APP_VERSION` 驗過是 `v157`，且內含 `line-chart.js`
+- **Google Drive 開起來之後**：`Copy-Item C:\Users\user\Downloads\lift-log-v157-F162.apk "G:\我的雲端硬碟\lift-log-apk\"`
+- ⚠ `android\app\build\outputs\apk\release\app-release.apk`（無 `prod`）那顆 **7/30 的殭屍檔還在**，
+  CLAUDE.md 警告的坑是真的，複製一律走 `apk\prod\release\`
 
-補充：`app/services/sync.py::pull` **沒有 device 過濾**，回的是 cursor 之後的所有變更，
-包含裝置自己 push 上去的。所以在手機上建時間型資料，也會再 pull 回來走一次
-`applyRemoteUpsert`——原本會拋 `JSONException` 卡死 cursor 的正是那條路徑。
-換句話說「手機建」也驗得到根因，不是非得從網頁建不可。
+## 下一場
 
-⚠ 正式站現在**已經**支援時間型動作。任何還在跑 v155 以下 APK 的裝置，
-一旦 pull 到時間型資料就會卡死 cursor。目前只有 Ryan 這一支，且已升到 v156。
+剩 9 條 failing，幾乎都卡在 agent 做不到的事：
 
-## 尚未完成
-
-### F160（新開，未簽核）— 單筆 mutation 被拒不得連坐整批
-
-由 F159 的 review 發現、主 session 開檔驗證。連坐機制**是既有設計，不是 F159 引入的**；
-F159 只是讓它第一次有具體觸發路徑。動工前要先確認 server 的 422 回應
-**帶不帶得出出錯的 mutation_id**——帶不出來的話這條的範圍要跟著改，
-不得用「猜第一筆」或「全部保留」草草了事（後者會變成無限重試同一筆毒藥）。
-
-### F149 剩餘
-
-1. release-signed APK 全流程冒煙：真登入、完整離線訓練、衝突處理、換裝置、MCP、匯出、刪帳
-2. Web/APK/MCP/schema 版本一致
-3. 派獨立 review 與 `acceptance-verifier` 逐條驗收，才可改 passing
-
-F159 解除封鎖後這條就能繼續（APK 已是 v156）。
-
-### 通知家族合併（Ryan 2026-08-20 決定）
-
-F89 / F104 / F128 三條合併成一條——它們的 `touches` 是同一批原生檔
-（`RestOverlay.java`／`RestTimerService.java`／`RestTimerPlugin.java`），分開做等於同一段程式碼改三次。
-**還沒動筆**，因為本輪 P2 正在改那三個檔，寫規格會對著即將過期的程式碼寫。現在可以動了。
-
-合併後有一個問題需要 Ryan 拍板：**F128 ⑥ 的樂觀倒數代價**選 (a) 接受、還是
-(b) 多做一條「這組沒記到」的回報路徑。F128 目前仍是未簽核草案。
-
-## 記帳（不阻塞，但別忘）
-
-- **`verify_f92.py` 的 6 條失敗已修**（本輪第一段）。根因是 F154 把 `delete_workout`
-  改成軟刪，但 `list_workouts` 沒跟著過濾。修在 `app/services/workouts.py`（`6347a31`），
-  附紅→綠回歸測試。verify_f92 9/15 → 15/15。
-- `verify_f144.py` 需要手動起固定 port 8765 的伺服器才能跑，驗收時被跳過。
-- app 內建自我更新（F67）按「立即更新」後沒有動作，server log 也沒有下載請求。
-  **這是一條沒查完的線索**，可能只是「安裝未知應用」權限沒開
-- `scripts/backfill_sync.py` 的快照目錄用秒級時間戳，同一秒重跑會撞 VACUUM INTO 目的檔已存在
-- `docs/evidence/F146.md` 末段第 2 項仍未處理
-- **不要整份 `Read` `feature_list.json`**。理由與挑欄位指令見 `CLAUDE.md` 工作規則 #1
-- **正式站與 APK 都是 v156。** F159 改 passing 後照 `CLAUDE.md` 規則 6 把 APK 丟
-  `G:\我的雲端硬碟\lift-log-apk\lift-log-v156-F159.apk`（本輪還沒丟，因為 F159 未 passing）
+- **要 Android 實機**：F89、F95、F104、F124、F128、F159
+- **要 Ryan 本人**：F149（APK 冒煙、Google 登入）
+- **要先重審規格**：F153 的 `touches` 只寫 `mcp.py` 不可信（這條連續兩輪 handoff 都寫了，還沒動）
+- **未簽核**：F160
