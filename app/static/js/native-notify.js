@@ -440,6 +440,9 @@ export async function startForegroundRest(seconds, hint = "", draft = null) {
         ? {
             weight: draft.weight,
             reps: draft.reps,
+            // mode 決定原生把 reps 這個數字寫進 reps 欄還是 duration_seconds 欄；
+            // 沒帶（舊版前端）就當次數型。
+            mode: draft.mode ?? "reps",
             bodyweight: Boolean(draft.bodyweight),
             // F140：LocalStore 用的本機 rowid，服務只轉交給 overlay。
             exerciseId: draft.exerciseId ?? -1,

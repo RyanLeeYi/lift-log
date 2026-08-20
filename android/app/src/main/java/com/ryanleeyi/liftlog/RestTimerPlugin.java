@@ -179,6 +179,10 @@ public class RestTimerPlugin extends Plugin {
                 call.reject("待記組需要合法的 weight/reps/exerciseId/setNumber/workoutId");
                 return;
             }
+            // 時間型動作的 reps 欄裝的是秒數；省略或非法值一律當次數型，
+            // 舊版前端／舊 APK 沒帶這個欄位時不能讓寫入炸掉。
+            String mode = call.getString("mode");
+            if (!"time".equals(mode)) mode = "reps";
             // F104 ①：待記組沒帶就用 -1／-1，overlay 那邊據此整塊不顯示（舊版前端仍能用）
             RestTimerService.start(
                 getContext(), seconds, overlay, call.getString("hint"),
@@ -187,7 +191,8 @@ public class RestTimerPlugin extends Plugin {
                 // F125 ③：補送時驗證歸屬用；沒帶就是 -1，補送那條路會據此判定不可信而放棄
                 exerciseId == null ? -1 : exerciseId,
                 setNumber == null ? -1 : setNumber,
-                workoutId == null ? -1 : workoutId);
+                workoutId == null ? -1 : workoutId,
+                mode);
             call.resolve();
         } catch (Exception e) {
             // Android 12+ 對背景啟動前景服務有限制；啟不起來要讓前端知道好退回 F62

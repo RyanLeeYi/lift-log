@@ -2124,6 +2124,8 @@ function startRestTimer() {
       // （步進器此刻還停在上面），與「下一組多半跟這組一樣」的實際節奏一致。
       weight: state.weightKg,
       reps: state.reps,
+      // reps 對時間型動作裝的是秒數（見 isTimeMode）；帶 mode 讓原生寫入時挑對欄位。
+      mode: isTimeMode(state.exercise) ? "time" : "reps",
       bodyweight: Boolean(state.exercise.is_bodyweight),
       // F125 ③：跨行程補送要能驗證「這一組是記在誰身上、第幾組」。
       // 光靠還原後的 state 不夠——中間可能換過動作，那時補送會記到錯的地方。
@@ -3300,6 +3302,8 @@ async function resumeRestAfterRestore() {
       ? {
           weight: state.weightKg,
           reps: state.reps,
+          // reps 對時間型動作裝的是秒數（見 isTimeMode）；帶 mode 讓原生寫入時挑對欄位。
+          mode: isTimeMode(state.exercise) ? "time" : "reps",
           bodyweight: Boolean(state.exercise.is_bodyweight),
           // F125 ③：還原路徑同樣要帶歸屬，否則被回收重開後那一輪排入的組沒有驗證依據
           exerciseId: state.exercise.id,

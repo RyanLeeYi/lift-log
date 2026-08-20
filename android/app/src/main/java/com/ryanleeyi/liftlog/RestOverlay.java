@@ -76,6 +76,9 @@ final class RestOverlay {
     /** F104 ①：待記組——這輪休息結束後要記的那一組。weight < 0 ＝ 前端沒送，整塊不顯示。 */
     private static double draftWeight = -1;
     private static int draftReps = -1;
+    /** 待記組是次數型還是時間型——決定 draftReps 這個數字顯示成「次」還是「秒」、
+     * 增減步進、以及「完成這組」寫進哪個欄位。省略或非法值一律當 "reps"。 */
+    private static String draftMode = "reps";
     private static boolean draftBodyweight;
     /** F125 ③：補送時驗證歸屬用——這一組屬於哪個動作、第幾組。-1 ＝ 沒帶（舊版前端）。 */
     private static int draftExerciseId = -1;
@@ -296,7 +299,7 @@ final class RestOverlay {
     /** F104 ①：這輪的待記組。weight < 0 或 reps < 0 ＝ 沒帶，整塊不顯示。 */
     static void setDraft(
         Context context, double weight, int reps, boolean bodyweight,
-        int exerciseId, int setNumber, int workoutId
+        int exerciseId, int setNumber, int workoutId, String mode
     ) {
         onMain(() -> {
             draftWeight = weight;
@@ -305,11 +308,16 @@ final class RestOverlay {
             draftExerciseId = exerciseId;
             draftSetNumber = setNumber;
             draftWorkoutId = workoutId;
+            draftMode = "time".equals(mode) ? "time" : "reps";
             // 新的一輪＝上一輪的記錄狀態不再適用（失敗態不該跨輪殘留）
             clearLogPending();
             logFailed = false;
             apply(context);
         });
+    }
+
+    private static boolean isTimeMode() {
+        return "time".equals(draftMode);
     }
 
     /**
@@ -909,22 +917,26 @@ final class RestOverlay {
         return draftWeight >= 0 && draftReps > 0 && draftExerciseId > 0 && draftWorkoutId > 0;
     }
 
-    /** ② 重量 ±2.5 下限 0、次數 ±1 下限 1。只動視窗上的草稿，不寫進任何地方。 */
+    /**
+     * ② 重量 ±2.5 下限 0；次數型 ±1、時間型 ±5，下限皆 1。
+     * `dr` 只帶方向（-1／+1，見呼叫端），實際步進量由 mode 決定。只動視窗上的草稿，不寫進任何地方。
+     */
     private static void adjustDraft(Context context, double dw, int dr) {
         if (!hasDraft()) return;
         draftWeight = Math.max(0, Math.round((draftWeight + dw) * 10) / 10.0);
-        draftReps = Math.max(1, draftReps + dr);
+        int step = isTimeMode() ? 5 : 1;
+        draftReps = Math.max(1, draftReps + dr * step);
         paintDraft();
     }
 
     private static void paintDraft() {
-        // 一列一個量：上面重量、下面次數。擠在同一行的話兩組 ± 會分不出各自管哪一個。
+        // 一列一個量：上面重量、下面次數/秒數。擠在同一行的話兩組 ± 會分不出各自管哪一個。
         if (draftLabel != null) {
             draftLabel.setText(draftBodyweight
                 ? (draftWeight > 0 ? "+" + trimNumber(draftWeight) + " kg" : "自體重")
                 : trimNumber(draftWeight) + " kg");
         }
-        if (repsLabel != null) repsLabel.setText(draftReps + " 次");
+        if (repsLabel != null) repsLabel.setText(draftReps + (isTimeMode() ? " 秒" : " 次"));
     }
 
     private static String trimNumber(double value) {
@@ -968,12 +980,16 @@ final class RestOverlay {
         paintLogStatus();
         final double weight = draftWeight;
         final int reps = draftReps;
+        final boolean timeMode = isTimeMode();
         final int exerciseId = draftExerciseId;
         final int workoutId = draftWorkoutId;
         final int restSeconds = RestTimerService.elapsedSeconds();
         new Thread(() -> {
             try {
                 LocalStore store = LocalStore.getInstance(context);
+                // 時間型：draftReps 裝的是秒數，寫進 durationSeconds、reps 傳 null；次數型反過來。
+                // 兩邊先裝成 Integer 再三元，避開「null 跟 primitive int 混在同一個三元」的 unboxing 陷阱。
+                Integer boxed = reps;
                 store.addSet(
                     UUID.randomUUID().toString(),
                     UUID.randomUUID().toString(),
@@ -981,7 +997,8 @@ final class RestOverlay {
                     exerciseId,
                     null,
                     weight,
-                    reps,
+                    timeMode ? null : boxed,
+                    timeMode ? boxed : null,
                     null,
                     restSeconds,
                     1,
