@@ -55,6 +55,7 @@ public class LocalStorePlugin extends Plugin {
                 optionalText(call, "nameEn", 120),
                 optionalText(call, "muscleGroup", 60),
                 Boolean.TRUE.equals(call.getBoolean("isBodyweight", false)),
+                requireMode(call),
                 requireUuid(call, "mutationId")
             );
             SyncScheduler.kick(getContext());
@@ -119,6 +120,9 @@ public class LocalStorePlugin extends Plugin {
     public void addSet(PluginCall call) {
         try {
             String syncId = requireUuid(call, "syncId");
+            Integer reps = optionalInt(call, "reps");
+            Integer durationSeconds = optionalInt(call, "durationSeconds");
+            validateSetMode(reps, durationSeconds);
             Integer rpe = optionalInt(call, "rpe");
             Integer restSeconds = optionalInt(call, "restSeconds");
             validateSetOptionals(rpe, restSeconds);
@@ -129,7 +133,8 @@ public class LocalStorePlugin extends Plugin {
                 requirePositive(call, "exerciseId"),
                 optionalPositive(call, "setNumber"),
                 requireNonNegativeDouble(call, "weightKg"),
-                requirePositive(call, "reps"),
+                reps,
+                durationSeconds,
                 rpe,
                 restSeconds,
                 requirePositive(call, "leaseGeneration"),
@@ -147,13 +152,17 @@ public class LocalStorePlugin extends Plugin {
     @PluginMethod
     public void updateSet(PluginCall call) {
         try {
+            Integer reps = optionalInt(call, "reps");
+            Integer durationSeconds = optionalInt(call, "durationSeconds");
+            validateSetMode(reps, durationSeconds);
             Integer rpe = optionalInt(call, "rpe");
             Integer restSeconds = optionalInt(call, "restSeconds");
             validateSetOptionals(rpe, restSeconds);
             JSONObject result = store().updateSet(
                 requirePositive(call, "id"),
                 requireNonNegativeDouble(call, "weightKg"),
-                requirePositive(call, "reps"),
+                reps,
+                durationSeconds,
                 rpe,
                 restSeconds,
                 requireUuid(call, "mutationId")
@@ -406,6 +415,25 @@ public class LocalStorePlugin extends Plugin {
         if (restSeconds != null && restSeconds < 0) {
             throw new IllegalArgumentException("restSeconds 不得小於 0");
         }
+    }
+
+    /** F159：次數型與時間型互斥且必須擇一——哪一種由呼叫端（依動作 mode）決定，這裡只擋格式。 */
+    private static void validateSetMode(Integer reps, Integer durationSeconds) {
+        if ((reps == null) == (durationSeconds == null)) {
+            throw new IllegalArgumentException("reps 與 durationSeconds 必須擇一且僅擇一");
+        }
+        if (reps != null && reps <= 0) throw new IllegalArgumentException("reps 必須大於 0");
+        if (durationSeconds != null && durationSeconds <= 0) {
+            throw new IllegalArgumentException("durationSeconds 必須大於 0");
+        }
+    }
+
+    private static String requireMode(PluginCall call) {
+        String value = call.getString("mode", "reps");
+        if (!"reps".equals(value) && !"time".equals(value)) {
+            throw new IllegalArgumentException("mode 必須是 reps 或 time");
+        }
+        return value;
     }
 
     private static JSArray requireTemplateExercises(PluginCall call) {
