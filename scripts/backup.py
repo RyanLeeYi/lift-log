@@ -146,6 +146,28 @@ def latest_backup(dest_dir: Path, name: str, pool: str = "daily") -> Path | None
     return backups[-1] if backups else None
 
 
+def unresolved_source(args: argparse.Namespace) -> str | None:
+    """沒有 `.env` 也沒有明講來源時，回一段拒絕理由；其餘情況回 None。
+
+    F161 把正式站搬出 git 工作樹之後，`.env` 也跟著搬走了。`Settings` 讀的是「當下
+    工作目錄的 .env」，讀不到就靜靜套用預設的相對路徑（`./control.db`、`./users`）
+    ——在 repo 目錄下那兩個路徑剛好是**測試站**的檔案，於是備份 exit 0、印出 [OK]，
+    看起來完全成功，備到的卻是開發資料。真正需要備份的那天才會發現。
+
+    所以這裡拒絕執行而不是印警告：這支腳本的正常歸宿是排程工作，警告沒有人會看到。
+    要嘛從有 .env 的目錄跑（正式站那一側），要嘛把來源明講出來。
+    """
+    if args.control_db is not None and args.user_data_dir is not None:
+        return None
+    if Path(".env").is_file():
+        return None
+    return (
+        "當下目錄沒有 .env，備份來源會落回預設的 ./control.db 與 ./users——"
+        "那通常是開發用的檔案，不是正式站。請改從正式站目錄執行"
+        "（見 docs/operations.md 第 1b 節），或用 --control-db 與 --user-data-dir 明講來源。"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="F149 每日加密備份：control DB + 每個 active user DB"
@@ -163,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
         "--now", type=str, default=None, help="ISO8601，補跑/測試用；預設現在 UTC"
     )
     args = parser.parse_args(argv)
+
+    if (missing := unresolved_source(args)) is not None:
+        print(f"[ERROR] {missing}", file=sys.stderr)
+        return 2
 
     settings = Settings()
     control_db_path = args.control_db or Path(settings.control_db_path)

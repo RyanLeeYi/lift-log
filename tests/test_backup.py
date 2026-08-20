@@ -13,7 +13,7 @@ from app.control_db import make_control_session_factory
 from app.control_models import AccountTombstone, User
 from app.db import initialize_data_db
 from app.services.auth import utcnow
-from scripts.backup import DAILY_KEEP, WEEKLY_KEEP, latest_backup, run_backup
+from scripts.backup import DAILY_KEEP, WEEKLY_KEEP, latest_backup, main, run_backup
 from scripts.restore_drill import (
     TombstonedAccountRestoreError,
     promote_to_active,
@@ -157,3 +157,56 @@ def test_promote_to_active_rejects_tombstoned_account(tmp_path: Path) -> None:
         )
 
     assert not active_dest.exists()
+
+
+# --- F161：沒有 .env 時不准猜備份來源 -------------------------------------------
+#
+# 正式站搬出工作樹之後，Settings 讀不到 .env 就會落回 ./control.db 與 ./users。
+# 那兩個相對路徑在 repo 目錄下剛好是測試站的檔案，於是備份會 exit 0、印出 [OK]，
+# 備到的卻是開發資料——真正需要還原的那天才會發現。
+
+
+def test_refuses_when_no_env_and_no_explicit_source(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)          # 一個沒有 .env 的目錄
+    assert not (tmp_path / ".env").exists()
+
+    code = main(["--dest-dir", str(tmp_path / "dest")])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert ".env" in err
+    assert not (tmp_path / "dest").exists()   # 沒有留下半吊子的備份目錄
+
+
+def test_explicit_source_works_without_env(tmp_path, monkeypatch):
+    """明講來源就不需要 .env——排程可以完全不依賴工作目錄。"""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LIFTLOG_BACKUP_KEY", Fernet.generate_key().decode())
+    control = tmp_path / "control.db"
+    sqlite3.connect(control).close()
+    users = tmp_path / "users"
+    users.mkdir()
+
+    code = main([
+        "--control-db", str(control),
+        "--user-data-dir", str(users),
+        "--dest-dir", str(tmp_path / "dest"),
+    ])
+
+    assert code == 0
+
+
+def test_env_present_is_enough(tmp_path, monkeypatch):
+    """有 .env 就照 Settings 走，不多問——這是正式站那一側的正常路徑。"""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LIFTLOG_BACKUP_KEY", Fernet.generate_key().decode())
+    control = tmp_path / "control.db"
+    sqlite3.connect(control).close()
+    (tmp_path / "users").mkdir()
+    env_text = "".join([
+        f"LIFTLOG_CONTROL_DB_PATH={control.as_posix()}\n",
+        f"LIFTLOG_USER_DATA_DIR={(tmp_path / 'users').as_posix()}\n",
+    ])
+    (tmp_path / ".env").write_text(env_text, encoding="utf-8")
+
+    assert main(["--dest-dir", str(tmp_path / "dest")]) == 0
