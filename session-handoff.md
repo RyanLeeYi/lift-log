@@ -1,75 +1,42 @@
 # session handoff
 
-最後更新：2026-08-20（第三輪）。**152/161 passing、9 failing**（F89、F95、F104、F124、F128、F149、F153、F159、F160）。
-`.harness/current_feature` = F162（已 passing）。
+最後更新：2026-08-21（無人看管 dispatch 場）。**152/161 passing、9 failing**（F89、F95、F104、F124、F128、F149、F153、F159、F160）。
 
 ## 接手第一件事
 
-1. **正式站已經搬家了。** 不再是 `lift-log\deploy\current` + 工作樹的 `.venv`，改成
-   **`SideProject\lift-log-prod\`**（git 工作樹之外）。任何維運指令要從那裡跑，
-   **在 repo 目錄跑 `backup.py` 會被拒絕**（exit 2，這是刻意的）。完整說明見
-   `docs/operations.md` 第 1b 節與 `docs/evidence/F161.md`。
-2. `git log --oneline -3` 對 origin/main（本輪推到 `47b5d45`），確認沒有第二個 session 在動 repo。
-3. **F159 仍只差實機冒煙**（Ryan 本人登入，agent 不得代輸憑證）；**F160 是草案、未簽核**。
-   兩者狀態與上一輪相同，細節見上一版 handoff 的 git 歷史。
+1. **正式站在 `SideProject\lift-log-prod\`**（git 工作樹之外），不是 `deploy/current`。
+   維運指令從那裡跑，在 repo 目錄跑 `backup.py` 會被拒絕（exit 2，刻意的）。
+   見 `docs/operations.md` 第 1b 節與 `docs/evidence/F161.md`。
+2. **F159 只差 ⑦ 實機冒煙，清單已備妥在 `docs/evidence/F159.md` 最後一節**——
+   手機已是 v156、正式站也是 v156、服務 running，Ryan 三步做完就能改 `passing`。
+   acceptance 明文寫這步由 Ryan 本人執行，agent 不要代做（會寫進正式站真實訓練資料）。
+3. **F160 草案已重寫，等 Ryan 簽核**（見下）。簽核前 `executor` 派工會被 hook 擋。
 
-## 本輪完成（2026-08-20 第三輪）
+## 本場做的事（2026-08-21 dispatch）
 
-### F161 — 正式站搬出開發工作樹
+只有唯讀調查與一份規格改寫，沒有動任何實作程式碼。
 
-承接 mission-control 已關閉的 F44。原本兩個問題：開發期 `uv sync` 會流進正式站、
-`git clean -xdf` 一行刪光正式資料（實測會刪 `liftlog.db`／`prod-data/`／`.env`／`release/`／`deploy/`，
-git 全程不警告）。根源相同：正式站住在工作樹裡。
+### F160 ② 的前置問題有答案了，原草案起因是誤判
 
-- 搬到 `lift-log-prod\`：`current/ previous/ .venv/ .venv-previous/ .env data/ release/`
-- `deploy.ps1` 依快照的 `uv.lock` 建 `.venv-staging` 再換名，環境與程式碼同進同退
-- mission-control `services.toml` 三行改指新位置（**該檔未 commit，是 Ryan 自己的部署設定**）
-- 逐表 row count 搬遷前後一致，加密備份在 `D:\lift-log-backups`，金鑰 `C:\Users\user\.liftlog\backup.key`
+草案 ② 要求動工前確認「server 的 422 回應帶不帶得出 mutation_id」。查證結果：
+**server 對單筆驗證失敗根本不回 422。**`app/services/sync.py::_process` 逐筆退成
+`_conflict(mutation_id, "validation_failed")`，整個 request 仍是 200，同批其他 mutation 照常 accepted。
+那道守衛是 F105 就寫下的，註解描述的正是本條要防的災難。
 
-**兩個踩過的坑（下一個人請不要重踩）**：
+所以 F159 review 當初說的「時間型組被回 422 → 整批連坐」在現行程式碼**不可達**。
+但連坐機制本身還在，觸發條件是**整包層級的 HTTP 錯誤**，最危險的是
+**409 `unsupported_schema`**——server bump schema 後，還沒更新的 APK 第一次同步就把手上
+最多 500 筆全部合法的 mutation 永久報廢。這是版本落差，不是壞資料。
 
-1. **uv 的 `.exe` shim 不能改名**——絕對路徑寫死在 trampoline 裡，`.venv-staging` → `.venv`
-   一改名就壞，log 只有一行 `Failed to canonicalize script path`。所以 `services.toml` 用的是
-   `python.exe -m uvicorn`，**不是 `uvicorn.exe`**。不要「順手改回來」。
-2. **`.env` 搬走後 `backup.py` 會靜默備錯**——落回 `./control.db`／`./users`，那在工作樹底下
-   剛好是測試站的檔案，exit 0 印 `[OK]`。已改成拒絕執行，回歸測試在 `tests/test_backup.py`。
+順手查到的覆蓋缺口（已寫進 F160 ④）：`sync.py` 那道守衛**拿掉不會有任何測試變紅**
+（`tests/` 內找不到 `validation_failed` 的斷言）；Android 端也沒有涵蓋非 retryable HTTP 的連坐分支。
 
-### F162 — 體重圖改折線圖，折線圖抽共用模組並支援聚合
+F160 的 acceptance 與 `touches` 已依此重寫（多了 `app/services/sync.py`、`tests/test_sync.py`），
+末尾留兩個待 Ryan 拍板的問題。**未簽核，未動工。**
 
-- 新增 `app/static/js/line-chart.js`：幾何、點渲染、浮動框、鍵盤互動。`exercise-detail.js`
-  與 `body.js` 共用
-- `body.js` 移除 `barChart()` 與 `BAR_COUNT`（24 筆靜默上限）
-- **N > 50 時聚合**成區間平均（日→週→月），標題顯示單位，浮動框帶 min/max
-- **正式 supersede 六條既有條文**，清單在 `feature_list.json` 的 `F162.supersedes`，
-  理由與對照表在 `docs/evidence/F162.md`。改那張圖之前先讀那份檔案
+## 卡住的事
 
-**三件容易踩的事**：
-
-1. **`.line-tip` 的三個行內 class 必須各自唯一**（`line-tip-date`／`line-tip-sets`／`line-tip-best`）
-   ——`verify_f134.py` 用單一選擇器取值，重複就撞 Playwright strict mode
-2. **圖表底部的 `.bars-foot` 不是裝飾**——x 軸是序位等距，沒有那兩個日期就看不出區間長度，
-   而且它是 F57 ⑤ 明文要求
-3. **新增前端模組要同步加進 `app/static/sw.js` 的 shell 清單**——有測試守著
-   （`test_sw_shell_list_matches_static_files`），漏了會離線少檔
-
-**聚合門檻已與 E2E 耦合**：`verify_f134.py` 從 `line-chart.js` 讀出 `AGG_MAX_POINTS` 並斷言
-壓力情境筆數沒超過它。改任一邊的數字，腳本會直接中止並說明原因，不會讓斷言莫名翻紅。
-
-## APK v157 — 已建好，**還沒進 Google Drive**
-
-`G:` 當時沒掛載（Google Drive 桌面版沒跑），所以只做到建置與驗證：
-
-- 暫存在 **`C:\Users\user\Downloads\lift-log-v157-F162.apk`**（10.7 MB）
-- 已用 `unzip -p ... state.js | grep APP_VERSION` 驗過是 `v157`，且內含 `line-chart.js`
-- **Google Drive 開起來之後**：`Copy-Item C:\Users\user\Downloads\lift-log-v157-F162.apk "G:\我的雲端硬碟\lift-log-apk\"`
-- ⚠ `android\app\build\outputs\apk\release\app-release.apk`（無 `prod`）那顆 **7/30 的殭屍檔還在**，
-  CLAUDE.md 警告的坑是真的，複製一律走 `apk\prod\release\`
-
-## 下一場
-
-剩 9 條 failing，幾乎都卡在 agent 做不到的事：
-
-- **要 Android 實機**：F89、F95、F104、F124、F128、F159
-- **要 Ryan 本人**：F149（APK 冒煙、Google 登入）
-- **要先重審規格**：F153 的 `touches` 只寫 `mcp.py` 不可信（這條連續兩輪 handoff 都寫了，還沒動）
-- **未簽核**：F160
+- **APK v157 仍在 `C:\Users\user\Downloads\lift-log-v157-F162.apk`**——`G:` 這場也沒掛載。
+  Google Drive 桌面版開起來後：`Copy-Item ... "G:\我的雲端硬碟\lift-log-apk\"`
+- 剩下的 failing 幾乎都要 Ryan 或實機互動：F89／F95／F104／F124／F128 真機驗收、
+  F149 要 Ryan 本人登入、F153 的 `touches` 只寫 `app/mcp.py` 仍不可信（第四場沒動）
