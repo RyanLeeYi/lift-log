@@ -1,6 +1,6 @@
 # session handoff
 
-最後更新：2026-08-21（無人看管 dispatch 場，第三場）。**153/161 passing、8 failing**（F89、F95、F104、F124、F128、F149、F153、F160）。
+最後更新：2026-08-21（無人看管 dispatch 場，第四場）。**153/161 passing、8 failing**（F89、F95、F104、F124、F128、F149、F153、F160）。
 
 ## 接手第一件事
 
@@ -11,7 +11,26 @@
    留在正式站的三筆冒煙資料也已依 Ryan 回覆刪除（見下）。**F105 的部署／出 APK 封鎖解除。**
 3. **F160 草案已重寫，等 Ryan 簽核**（見下）。簽核前 `executor` 派工會被 hook 擋。
 
-## 本場做的事（2026-08-21 第三場 dispatch，收件匣回覆「改 passing，順手刪掉那三筆冒煙資料」）
+## 本場做的事（2026-08-21 第四場 dispatch，收件匣回覆「Run, start with F159」）
+
+**那句指示已經沒有對象**——F159 上一場（`d874fa3`）就已改 `passing` 並歸檔，冒煙資料也刪了。
+本場沒有動任何程式碼，只做狀態確認：
+
+| 檢查 | 結果 |
+|---|---|
+| `uv run pytest` | 466 passed |
+| `uv run ruff check .` | All checks passed |
+| `git status` / 未推 commit | 乾淨、無 |
+
+**8 條 failing 沒有一條是 headless agent 推得動的**：F89／F95／F104／F128 明文要真機；
+F124／F128／F160 草案未簽核（hook 擋 executor）；F149 要 Ryan 本人 Google 登入；
+F153 已簽核但 `touches` 只寫 `app/mcp.py`，與「app 內建對話 UI ＋ LLM key 管理」的範圍明顯不符，
+派工前必須先重寫 `touches` 並拆 slice。
+
+已投一筆 question 進收件匣（id `1e1e7f7d`），四選一 ＋ F160 的 (a)(b) 待拍板問題，
+建議方向是簽核 F160（唯一純軟體、不需真機、規格已可逐條判定）。
+
+## 上一場做的事（2026-08-21 第三場 dispatch，收件匣回覆「改 passing，順手刪掉那三筆冒煙資料」）
 
 1. **F159 → `passing`**，整條原文搬進 `docs/archive/features.jsonl`，主檔只留 failing。
    `evidence` 指向 `docs/evidence/F159.md`。
@@ -26,7 +45,7 @@
 
 **下一步**：F160 等 Ryan 簽核；其餘 failing 全部卡實機或 Ryan 本人。
 
-## 本場做的事（2026-08-21 第二場 dispatch，收件匣回覆後）
+## 更早一場（2026-08-21 第二場 dispatch）（2026-08-21 第二場 dispatch，收件匣回覆後）
 
 Ryan 的回覆是「先做 F159 冒煙，F160 之後再談」。F159 的可委派部分上一場已完成，
 剩下的 ⑦ 實機冒煙 acceptance 明文排除委派；F160 未簽核（hook 也會擋）。
