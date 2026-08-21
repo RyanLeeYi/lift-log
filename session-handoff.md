@@ -53,7 +53,10 @@ F160 的 acceptance 與 `touches` 已依此重寫（多了 `app/services/sync.py
 
 ## 卡住的事
 
-- **APK v157 仍在 `C:\Users\user\Downloads\lift-log-v157-F162.apk`**——`G:` 這場也沒掛載。
-  Google Drive 桌面版開起來後：`Copy-Item ... "G:\我的雲端硬碟\lift-log-apk\"`
+- ~~APK v157 卡在 Downloads~~ **已解決（2026-08-21）**：`lift-log-v157-F162.apk` 已在
+  `G:\我的雲端硬碟\lift-log-apk\`，解壓確認 `APP_VERSION = "v157"`。
+  **`G:` 掛不起來的真正原因**：舊的 `GoogleDriveFS.exe`（8/9 起的 PID 1356）霸佔
+  `\\.\Pipe\GoogleDriveFSPipe_user`，新開的每次 `CANNOT_START_IPC` 秒退，
+  桌面版看起來「開著」但其實沒掛載。下次同樣症狀：砍掉舊的那串 process 再重開即可
 - 剩下的 failing 幾乎都要 Ryan 或實機互動：F89／F95／F104／F124／F128 真機驗收、
   F149 要 Ryan 本人登入、F153 的 `touches` 只寫 `app/mcp.py` 仍不可信（第四場沒動）
