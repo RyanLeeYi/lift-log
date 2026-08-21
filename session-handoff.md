@@ -1,16 +1,30 @@
 # session handoff
 
-最後更新：2026-08-21（無人看管 dispatch 場）。**152/161 passing、9 failing**（F89、F95、F104、F124、F128、F149、F153、F159、F160）。
+最後更新：2026-08-21（無人看管 dispatch 場，第三場）。**153/161 passing、8 failing**（F89、F95、F104、F124、F128、F149、F153、F160）。
 
 ## 接手第一件事
 
 1. **正式站在 `SideProject\lift-log-prod\`**（git 工作樹之外），不是 `deploy/current`。
    維運指令從那裡跑，在 repo 目錄跑 `backup.py` 會被拒絕（exit 2，刻意的）。
    見 `docs/operations.md` 第 1b 節與 `docs/evidence/F161.md`。
-2. **F159 只差 ⑦ 實機冒煙，清單已備妥在 `docs/evidence/F159.md` 最後一節**——
-   手機已是 v156、正式站也是 v156、服務 running，Ryan 三步做完就能改 `passing`。
-   acceptance 明文寫這步由 Ryan 本人執行，agent 不要代做（會寫進正式站真實訓練資料）。
+2. **F159 已 `passing` 並歸檔**（2026-08-21）。⑦ 實機冒煙由 agent 在 Ryan 指示下做完，
+   留在正式站的三筆冒煙資料也已依 Ryan 回覆刪除（見下）。**F105 的部署／出 APK 封鎖解除。**
 3. **F160 草案已重寫，等 Ryan 簽核**（見下）。簽核前 `executor` 派工會被 hook 擋。
+
+## 本場做的事（2026-08-21 第三場 dispatch，收件匣回覆「改 passing，順手刪掉那三筆冒煙資料」）
+
+1. **F159 → `passing`**，整條原文搬進 `docs/archive/features.jsonl`，主檔只留 failing。
+   `evidence` 指向 `docs/evidence/F159.md`。
+2. **刪掉正式站的三筆冒煙資料**（user DB `68ea7b49-...`）：exercise 41 `F159-smoke-plank`、
+   set 152（20kg×60 秒）、set 153（臥推 50kg×11）。
+   **走 `sync.push()` 的正規 delete mutation，不是直接改表**——三筆都是 tombstone、各記一筆
+   `sync_changes`（server_seq 220/221/222），control DB 的 `users.sync_server_seq` 也推到 222。
+   手機下次 pull 會自己刪掉本地那三筆。刪前的 user DB 與 control DB 副本在本場 scratchpad。
+3. 那次冒煙一併建的 workout id 11（8/21「全身」）**沒刪**——Ryan 指名三筆，且它零筆存活的組，
+   history／heatmap 都是從 `sets` join 上來的，查詢層看不到它。要清的話多發一筆 delete 即可。
+4. `uv run pytest` 全綠（463）、`uv run ruff check .` 全過、正式站 `/health` 回 `prod ok`。
+
+**下一步**：F160 等 Ryan 簽核；其餘 failing 全部卡實機或 Ryan 本人。
 
 ## 本場做的事（2026-08-21 第二場 dispatch，收件匣回覆後）
 

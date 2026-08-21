@@ -210,33 +210,6 @@
       ]
     },
     {
-      "id": "F159",
-      "name": "Android 原生本地儲存支援時間型動作（解除 F105 的 APK 封鎖）",
-      "status": "failing",
-      "evidence": "",
-      "acceptance": "（2026-08-20 由 F105 第二輪獨立驗收開出的 P0 分割而來，Ryan 裁決另立條目。**2026-08-20 Ryan 簽核凍結**。⑦ 的實機冒煙由 Ryan 本人執行，不在委派範圍。）\n\n⚠ **這條沒完成前，F105 不得部署到正式站、也不得出 APK。**正式站一旦存在任何一筆時間型組，既有 Android 裝置的同步就會卡住。\n\n① 根因：`android/.../LocalStore.java::applyRemoteUpsert()` 的 `case \"set\"` 用 `payload.getInt(\"reps\")` 讀一個現在可能為 null 的欄位（同一段的 rpe／rest_seconds 用的是 null-safe 的 `putJsonNullableInteger`）。org.json 的 getInt 對 JSONObject.NULL 一律拋 JSONException。\n② 放大原因：`applyPullPage()` 是「change apply 與 cursor commit 共用同一個 transaction，任一 change 壞掉就整批回滾」（該檔既有註解與既有測試 `pullPageAndCursorCommitTogether` 都證實這個設計）。`SyncClient.syncOnce()` 的 pull 迴圈沒有 per-change try/catch。所以後果不是「時間型的組存不進去」，而是**該裝置的 pull cursor 永久卡在那一頁之前**，連同頁之後所有正常的次數型資料一起擋住，且不會自我恢復。\n③ 要做的事：原生本地 schema 加 `duration_seconds`、放寬 `sets.reps` 的 `NOT NULL CHECK(reps > 0)`；`applyRemoteUpsert` 的 `case \"set\"` 依 `payload.isNull(\"reps\")` 分流；`exercises` 表與其 upsert 加 `mode`。\n④ 離線寫入路徑（`LocalStorePlugin` 與 JS `localApi` 的橋接）也要能存時間型的組，否則 Android 離線記棒式會靜默丟失秒數。\n⑤ 回歸：`LocalStoreTest.java` 目前對 `entity_type=\"set\"` 的 pull 情境**零覆蓋**。至少要有一條：一頁 pull 內含「時間型 set（reps=null、duration_seconds=60）」＋其後一筆次數型 set，套用後不拋例外、`serverCursor()` 正確前進、兩筆都寫進本地。\n⑥ 不回歸：既有次數型組的 pull／push／離線記錄行為不變。\n⑦ 驗收：`gradlew testDebugUnitTest` 綠；出 APK 後在實機做一次「網頁建時間型動作 → 手機同步 → 看得到、且既有次數型資料照常同步」的冒煙。",
-      "touches": [
-        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStore.java",
-        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStorePlugin.java",
-        "android/app/src/main/java/com/ryanleeyi/liftlog/SyncClient.java",
-        "android/app/src/test/java/com/ryanleeyi/liftlog/LocalStoreTest.java",
-        "app/static/js/app.js",
-        "app/static/js/native-notify.js",
-        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerPlugin.java",
-        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerService.java",
-        "android/app/src/main/java/com/ryanleeyi/liftlog/RestOverlay.java"
-      ],
-      "requires": [],
-      "prerequisites": [
-        "F105"
-      ],
-      "non_goals": [
-        "不改伺服器端的 sync 契約（F105 已定案）",
-        "不做 Android 端的時間型 UI——UI 是打包進 APK 的同一份 web 資產，F105 已完成"
-      ],
-      "signed_off": true
-    },
-    {
       "id": "F161",
       "name": "正式站搬出開發工作樹（環境、設定與資料完全隔離）",
       "status": "passing",
