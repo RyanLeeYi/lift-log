@@ -12,7 +12,24 @@
    acceptance 明文寫這步由 Ryan 本人執行，agent 不要代做（會寫進正式站真實訓練資料）。
 3. **F160 草案已重寫，等 Ryan 簽核**（見下）。簽核前 `executor` 派工會被 hook 擋。
 
-## 本場做的事（2026-08-21 dispatch）
+## 本場做的事（2026-08-21 第二場 dispatch，收件匣回覆後）
+
+Ryan 的回覆是「先做 F159 冒煙，F160 之後再談」。F159 的可委派部分上一場已完成，
+剩下的 ⑦ 實機冒煙 acceptance 明文排除委派；F160 未簽核（hook 也會擋）。
+所以本場只做狀態確認，**沒有動任何程式碼**：
+
+| 檢查 | 結果 |
+|---|---|
+| `uv run pytest` | 全綠（463） |
+| `uv run ruff check .` | All checks passed |
+| android/ 自 F159 evidence 後有無改動 | 無（最後一筆是 `fc9e00c`），故未重跑 gradle |
+| 正式站 `lift-log` 服務 | running / healthy |
+| `G:` 磁碟 | 仍未掛載，v157 APK 還卡在 Downloads |
+
+**下一步只有 Ryan 能做**：`docs/evidence/F159.md` 最後一節那三步冒煙（約 3 分鐘），
+過了就把 F159 改 `passing`。
+
+## 上一場做的事（2026-08-21 dispatch）
 
 只有唯讀調查與一份規格改寫，沒有動任何實作程式碼。
 
