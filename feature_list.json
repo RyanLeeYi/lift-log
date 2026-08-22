@@ -201,12 +201,115 @@
         "F152"
       ],
       "touches": [
-        "app/mcp.py"
+        "app/mcp.py",
+        "tests/test_mcp.py",
+        "app/api/chat.py",
+        "app/main.py",
+        "app/config.py",
+        ".env.example",
+        "tests/test_chat.py",
+        "app/static/js/app.js",
+        "app/static/js/chat.js",
+        "app/static/js/api.js",
+        "app/static/js/account.js",
+        "app/static/js/state.js",
+        "app/static/css/app.css",
+        "app/static/sw.js",
+        "tests/e2e/verify_f165.py"
       ],
       "non_goals": [
         "不做串流輸出、多輪記憶、對話持久化、模型選擇 UI",
         "不為內建對話另建一套 prompt 層或第二條寫入路徑",
         "key 不寫進 repo、不隨 APK 打包"
+      ],
+      "slices": [
+        "F163",
+        "F164",
+        "F165"
+      ],
+      "note": "2026-08-22：原 touches 只有 app/mcp.py，與「app 內建對話 UI ＋ LLM key 管理」的實際範圍不符，已重寫為三個 slice 的聯集。本條不直接派工——實作走 F163→F164→F165，三條都 passing 之後才依本條 frozen acceptance 的「同一句指令經外部 Claude 與內建對話產生相同資料列」做整體驗收並改 passing。frozen acceptance 一字未動。"
+    },
+    {
+      "id": "F163",
+      "name": "內建對話的 tool 橋接層（後端，無 UI）",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "登入中的使用者能在 server 內部以自己的身分呼叫與外部 agent 完全相同的那組 MCP tools。",
+      "acceptance": "**草案，尚未簽核凍結**（2026-08-22 起草，F153 slice 1/3）。動工前須經 Ryan 逐條簽核。\n\n**問題**：MCP tools 是 `app/mcp.py::create_mcp` 內的 closure，只能經 `/mcp` ＋ token 進入。in-process 呼叫時 `get_access_token()` 回 None，`domain_session()` 會落到 legacy 共用 `session_factory`，`_write_denied()` 的唯讀守衛也一併繞過——直接拿來服務登入中的 web/app 使用者會讀寫到錯的 DB。\n\n**驗收條件**：\n1. 新增 in-process 呼叫入口（`app/mcp.py::run_tool(user_id, name, arguments)` 或等價物），以 user id 綁定該 user 的 data DB，路徑推導與 F147 相同（`canonical_user_db_path`）；呼叫參數不得含 user id 以外的身分或 DB 路徑欄位。\n2. 該入口可用的 tool 名稱集合與 schema 與 `/mcp` 對外暴露的**完全相同**（測試逐一比對名稱集合），不得為內建對話另建 tool，也不得新增第二條寫入路徑。\n3. 經該入口的寫入與經 `/mcp` 的寫入走同一段 `app/services/` 程式碼並同樣寫 change log（測試：以橋接層寫一組，該 user 的 sync change log 看得到）。\n4. `log_workout` tool 新增 `dry_run: bool = False`，原樣傳給 `workouts_svc.log_workout`；`dry_run=True` 回 F152 的 `BatchDryRunSummary`，且零新增列、零 change log。此參數對 `/mcp` 外部 agent 同樣生效。\n5. user 不存在／非 active／data DB 不存在時回既有的 `{\"error\": \"data unavailable\"}`，不拋例外、不洩漏檔案路徑。\n6. 本 slice 不引入任何外部 API 呼叫、不動 `app/static/`，因此不出 APK。\n7. 新增測試涵蓋 1–5；`uv run pytest` 與 `uv run ruff check .` 全綠並貼出輸出。\n\n**rollback**：單一 commit revert。除 4 的新選填參數外不改既有 tool 行為，revert 後 `/mcp` 行為不變。\n**停止條件**：若判定必須改動 `app/services/` 既有函式簽名才能達成，停下回報，不擅自改共用契約。\n**預算**：一輪派工。",
+      "evidence": "",
+      "prerequisites": [
+        "F147",
+        "F152"
+      ],
+      "requires": [],
+      "touches": [
+        "app/mcp.py",
+        "tests/test_mcp.py"
+      ],
+      "non_goals": [
+        "不做串流輸出、多輪記憶、對話持久化、模型選擇 UI",
+        "不為內建對話另建一套 prompt 層或第二條寫入路徑",
+        "key 不寫進 repo、不隨 APK 打包",
+        "不做 LLM 呼叫、不做任何 UI"
+      ]
+    },
+    {
+      "id": "F164",
+      "name": "內建對話後端 endpoint 與 LLM key 來源",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "一句自然語言指令能在 server 端經同一組 tools 執行，寫入前先回 dry-run 摘要等待確認。",
+      "acceptance": "**草案，尚未簽核凍結**（2026-08-22 起草，F153 slice 2/3）。動工前須經 Ryan 逐條簽核。\n\n**待 Ryan 拍板的一題**（簽核時一併回答，答案寫進本條後才動工）：使用者自填的 LLM key 要不要**每次請求以 header 夾帶給 server 代打**？F153 frozen acceptance 只寫「存本機，不上傳 server」。建議 (a)：server 代打、key 只存在請求生命週期內，不落地、不進 log——因為前端直打 LLM 供應商需要在瀏覽器內再實作一套 tool-calling 迴圈，等於違反 E1「不得開第二條寫入路徑」的約束。(b) 前端直打則本條範圍要整個改寫。**下列條文以 (a) 書寫。**\n\n**驗收條件**：\n1. `POST /api/chat` 接受一句自然語言指令，回傳助手文字回覆與（若涉及寫入）dry-run 摘要。只認既有 web session／app 登入身分；legacy `LIFTLOG_TOKEN` 路徑一律 403（比照 `app/api/mcp_tokens.py::_user_id`）。\n2. tool 呼叫一律經 F163 的橋接層，綁定**呼叫者本人**的 data DB。測試：A 的 session 詢問資料只拿得到 A 的，任何參數都無法讓它讀寫到 B 的 DB。\n3. 寫入兩段式：第一次請求只以 `dry_run=True` 執行並回 `pending_write`（tool 名、完整參數、F152 摘要）；真正寫入只在 client 帶回同一份 `pending_write` 的第二次請求才發生。未確認前資料庫零新增列、零 change log。\n4. LLM API key 兩種來源：server `.env` 的 `LIFTLOG_LLM_API_KEY`；或使用者自填、由 client 每次請求以 header 夾帶。使用者自填優先。自填 key 不寫入任何 DB、不寫進 log、不回傳給任何 client。\n5. 兩者皆無 → 回 4xx 與明確錯誤碼 `llm_key_missing`，不得靜默成功或 500。\n6. 用既有 `httpx` 呼叫上游，不新增依賴；model 與 base URL 可由 `.env` 設定，預設 Anthropic Messages API。上游 401／429／逾時轉成可讀錯誤碼回前端，回應與 log 皆不含 key 或完整上游 body。\n7. 單輪查詢：不存對話歷史、不建對話資料表。\n8. pytest 以 stub 掉上游 HTTP（測試不打外網）涵蓋 1–7；`uv run pytest` 與 `uv run ruff check .` 全綠並貼出輸出。\n9. 不動 `app/static/`，因此不出 APK。\n\n**rollback**：新檔 `app/api/chat.py` ＋ `app/main.py` 一行 include_router；revert 後既有 API 行為不變。\n**停止條件**：若 (a)/(b) 那題未在派工單內給出答案，停下回報，不自行選一個。\n**預算**：一輪派工。",
+      "evidence": "",
+      "prerequisites": [
+        "F163"
+      ],
+      "requires": [
+        "LLM API key（server .env 或使用者自填）"
+      ],
+      "touches": [
+        "app/api/chat.py",
+        "app/main.py",
+        "app/config.py",
+        ".env.example",
+        "tests/test_chat.py"
+      ],
+      "non_goals": [
+        "不做串流輸出、多輪記憶、對話持久化、模型選擇 UI",
+        "不為內建對話另建一套 prompt 層或第二條寫入路徑",
+        "key 不寫進 repo、不隨 APK 打包",
+        "不做前端畫面（F165 的事）",
+        "不做用量統計與計費"
+      ]
+    },
+    {
+      "id": "F165",
+      "name": "內建對話 UI 與自填 LLM key 設定",
+      "envelope": "E1",
+      "status": "failing",
+      "outcome": "在 app 裡用一句話查詢或記錄訓練，寫入前看得到 dry-run 摘要並自己按確認。",
+      "acceptance": "**草案，尚未簽核凍結**（2026-08-22 起草，F153 slice 3/3）。動工前須經 Ryan 逐條簽核。\n\n**驗收條件**：\n1. 有一個進得去的對話畫面（底部導覽或首頁入口擇一，實作時定案）：輸入一句話 → 顯示助手回覆。\n2. 寫入類指令先顯示 dry-run 摘要卡：將新增／將略過／將衝突筆數 ＋ 前 5 筆預覽，附「確認寫入」與「取消」。按取消不送第二次請求，資料庫零變更。\n3. 確認後顯示寫入結果摘要（組數、噸位 kg、總秒數**並列不相加**）；重新進日曆／歷史頁看得到那筆。\n4. 設定頁可填入與清除自己的 LLM API key，存 localStorage，不隨同步上傳；已填時畫面標示「使用自己的 key」。\n5. server 與自填 key 皆無時（`llm_key_missing`），對話畫面顯示明確提示並指出去哪裡設定，不是空白或無限轉圈。\n6. 上游錯誤（key 無效、額度用盡、逾時）在畫面顯示可讀訊息，不顯示原始 stack 或 key。\n7. Playwright E2E 涵蓋 1–6（攔截 `/api/chat` 回應模擬 LLM），以 `uv run python tests/e2e/verify_f165.py` 執行；`uv run pytest tests/test_chat.py` 與 `uv run ruff check .` 全綠並貼出輸出。\n8. 新增 JS 檔要加進 `app/static/sw.js` 的 SHELL 清單並遞增其版本，否則既有安裝拿不到新檔。\n9. 動到 `app/static/`：依 CLAUDE.md 規則 6 升 `APP_VERSION`、`npx cap sync android`、出 APK 並以`unzip -p <apk> assets/public/js/state.js | grep APP_VERSION` 確認版號。\n\n**rollback**：新增畫面為獨立模組，revert 後既有畫面與導覽不變。\n**停止條件**：若發現要改 `app/api/chat.py` 的回應契約才做得出來，停下回報——那是 F164 的擁有權。\n**預算**：一輪派工 ＋ 一輪修正。",
+      "evidence": "",
+      "prerequisites": [
+        "F164"
+      ],
+      "requires": [],
+      "touches": [
+        "app/static/js/chat.js",
+        "app/static/js/app.js",
+        "app/static/js/api.js",
+        "app/static/js/account.js",
+        "app/static/js/state.js",
+        "app/static/css/app.css",
+        "app/static/sw.js",
+        "tests/e2e/verify_f165.py"
+      ],
+      "non_goals": [
+        "不做串流輸出、多輪記憶、對話持久化、模型選擇 UI",
+        "不為內建對話另建一套 prompt 層或第二條寫入路徑",
+        "key 不寫進 repo、不隨 APK 打包",
+        "不做語音輸入",
+        "不做對話紀錄列表"
       ]
     },
     {

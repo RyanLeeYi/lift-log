@@ -1,17 +1,44 @@
 # session handoff
 
-最後更新：2026-08-21（無人看管 dispatch 場，第四場）。**153/161 passing、8 failing**（F89、F95、F104、F124、F128、F149、F153、F160）。
+最後更新：2026-08-22（無人看管 dispatch 場，第五場）。**153/164 passing、11 failing**
+（F89、F95、F104、F124、F128、F149、F153、F160、**F163、F164、F165**）。
 
 ## 接手第一件事
 
-1. **正式站在 `SideProject\lift-log-prod\`**（git 工作樹之外），不是 `deploy/current`。
-   維運指令從那裡跑，在 repo 目錄跑 `backup.py` 會被拒絕（exit 2，刻意的）。
-   見 `docs/operations.md` 第 1b 節與 `docs/evidence/F161.md`。
-2. **F159 已 `passing` 並歸檔**（2026-08-21）。⑦ 實機冒煙由 agent 在 Ryan 指示下做完，
-   留在正式站的三筆冒煙資料也已依 Ryan 回覆刪除（見下）。**F105 的部署／出 APK 封鎖解除。**
-3. **F160 草案已重寫，等 Ryan 簽核**（見下）。簽核前 `executor` 派工會被 hook 擋。
+1. **F153 已拆成三個 slice：F163 → F164 → F165，三條都是草案、等 Ryan 簽核**（hook 會擋 executor）。
+   F153 本身不再直接派工，`frozen acceptance` 一字未動，只改了 `touches` 並加 `slices`／`note` 欄位。
+2. **F164 有一題要 Ryan 拍板才動得了**：使用者自填的 LLM key 要不要每次請求以 header 交給 server 代打。
+   建議 (a) server 代打（key 不落地不進 log）；(b) 前端直打會逼出第二條寫入路徑，與 E1 約束衝突。
+   已投進收件匣。
+3. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節），維運指令從那裡跑。
 
-## 本場做的事（2026-08-21 第四場 dispatch，收件匣回覆「Run, start with F159」）
+## 本場做的事（2026-08-22 第五場 dispatch，收件匣回覆「先重寫 F153 的 touches 並拆成可簽核的 slice」）
+
+沒有動任何程式碼，只改 `feature_list.json`。
+
+**原 `touches` 為什麼是錯的**：只寫 `app/mcp.py`，但 F153 要的是「app 內建對話 UI ＋ LLM key 兩種來源
+＋ 寫入前 dry-run 確認」，實際會動到後端 endpoint、設定、前端畫面、sw.js SHELL 清單與 APK。
+照原 touches 派工，DSM 波次分析會誤判它與前端 feature 零交集。
+
+**拆法（依 prerequisites 串起來，不是可平行的三條）**：
+
+| slice | 範圍 | touches 重點 |
+|---|---|---|
+| F163 | in-process tool 橋接層：用 user id 綁該 user 的 data DB，tool 清單與 `/mcp` 完全相同；`log_workout` 補 `dry_run` 參數 | `app/mcp.py`、`tests/test_mcp.py` |
+| F164 | `POST /api/chat`：走 F163 橋接層、兩段式寫入（先 dry-run 再確認）、key 兩來源、缺 key 回 `llm_key_missing` | `app/api/chat.py`、`app/main.py`、`app/config.py`、`.env.example`、`tests/test_chat.py` |
+| F165 | 對話畫面、dry-run 摘要卡＋確認／取消、設定頁自填 key、E2E、出 APK | `app/static/js/*`、`app/static/sw.js`、`tests/e2e/verify_f165.py` |
+
+**查證過的兩件事（不是猜的）**：
+- in-memory 呼叫 MCP tool 時 `get_access_token()` 回 None，`app/mcp.py::domain_session` 會落到 legacy
+  共用 `session_factory`，`_write_denied()` 的唯讀守衛也一併繞過——所以「內建對話直接 in-process 叫 tool」
+  會讀寫到錯的 DB，F163 存在的理由就是這個。
+- F152 的 dry-run 只做在 REST（`app/api/workouts.py:80`），MCP `log_workout` tool **沒有** `dry_run` 參數，
+  而 `LogWorkoutIn.dry_run` 欄位早就在（`app/schemas.py:303`）。所以是補一個參數，不是重做 dry-run。
+
+驗證：`uv run pytest` 466 passed、`uv run ruff check .` 全過、`harness-plan.py . --dsm` 波次為
+F163(wave 1) → F164(wave 3) → F165(wave 5)。
+
+## 上一場做的事（2026-08-21 第四場 dispatch，收件匣回覆「Run, start with F159」）
 
 **那句指示已經沒有對象**——F159 上一場（`d874fa3`）就已改 `passing` 並歸檔，冒煙資料也刪了。
 本場沒有動任何程式碼，只做狀態確認：
