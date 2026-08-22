@@ -30,11 +30,12 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
+    TOKEN,
     open_settings,
     reroute_public_host,
     safe_port,
-    setup_and_home,
     start_server,
+    wait_home,
 )
 
 NOTIFY_FLAG = "liftlog.nativeNotifyEnabled"
@@ -52,12 +53,50 @@ def fake_plugins(channels_js: str) -> str:
 
     RestTimer 存在才會走到 F63 的前景服務路徑——這正是 F65 漏掉的那條。
     """
+    token = TOKEN
     return f"""
 window.__notifyStatus = {{ openedSettings: 0 }};
+// F149 之後 app 版的開機路徑是「Google session -> LocalStore -> Sync bootstrap」，
+// 不再有 token 輸入框。假 plugin 少了這三個就永遠停在登入畫面，整支腳本連設定頁都到不了。
+const __snapshot = {{
+  exercises: [], templates: [], workouts: [], sets: [],
+  body_metrics: [], daily_status: [], settings: [],
+}};
 window.Capacitor = {{
   isNativePlatform: () => true,
   getPlatform: () => 'android',
   Plugins: {{
+    AuthSession: {{
+      loadSession: async () => ({{
+        // 用伺服器認得的那把 token 當 access token：本機 e2e server 走 legacy Bearer，
+        // 隨便給一個字串會 401，app 會判定登入失效並把畫面踢回 setup。
+        accessToken: '{token}',
+        refreshToken: 'test-refresh',
+        accessExpiresAt: Date.now() + 900000,
+        deviceId: '11111111-1111-4111-8111-111111111111',
+      }}),
+      saveSession: async () => ({{}}),
+      clearSession: async () => ({{}}),
+    }},
+    LocalStore: {{
+      initialize: async () => ({{ schemaVersion: 3, seededExercises: 0 }}),
+      snapshot: async () => __snapshot,
+      status: async () => ({{ pendingMutations: 0 }}),
+    }},
+    Sync: {{
+      initialize: async () => ({{
+        state: 'synced', pending: 0, failed: 0, cursor: 1,
+        lastSyncedAt: 1000, bootstrapComplete: true,
+      }}),
+      status: async () => ({{
+        state: 'synced', pending: 0, failed: 0, cursor: 1,
+        lastSyncedAt: 1000, bootstrapComplete: true,
+      }}),
+      syncNow: async () => ({{
+        state: 'synced', pending: 0, failed: 0, cursor: 1,
+        lastSyncedAt: 1000, bootstrapComplete: true,
+      }}),
+    }},
     LocalNotifications: {{
       schedule: async () => ({{}}),
       cancel: async () => ({{}}),
@@ -112,12 +151,18 @@ def open_app(browser, base: str, channels_js: str):
     page = ctx.new_page()
     page.add_init_script(fake_plugins(channels_js))
     reroute_public_host(page, base)
+    # 設定頁一進來就列 MCP token，而 legacy Bearer 在那支 endpoint 一律 401（F147 刻意的），
+    # 401 會被 guard() 判成登入失效、把畫面踢回 setup——那跟 F95 要驗的東西無關。
+    # ⚠ 必須註冊在 reroute_public_host 之後：Playwright 是後註冊的先比對。
+    page.route(
+        "**/api/mcp-tokens/**",
+        lambda route: route.fulfill(status=200, content_type="application/json", body="[]"),
+    )
     page.goto(base, wait_until="domcontentloaded")
-    page.wait_for_selector("input", timeout=10_000)
-    setup_and_home(page)
+    wait_home(page, timeout=15_000)
     page.evaluate(f"() => localStorage.setItem('{NOTIFY_FLAG}', '1')")
     page.reload(wait_until="domcontentloaded")
-    page.wait_for_timeout(1500)
+    wait_home(page, timeout=15_000)
     open_settings(page)
     page.wait_for_timeout(600)
     return ctx, page

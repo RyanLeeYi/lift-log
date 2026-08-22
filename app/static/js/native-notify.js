@@ -60,8 +60,8 @@ const REST_CHANNEL_IDS = ["rest-timer", "default"];
  * channel 概念）時，該由 areEnabled() 這個 app 層的事實來源說了算，不該因為問不到
  * 附加條件就把功能擋死。
  *
- * ⚠ 這裡只看 default channel。F63 前景服務那則倒數通知掛在自己的 `rest-timer`
- * channel（RestTimerService.java），**不在這道判定裡**——見 F95。
+ * F95 起 `rest-timer`（F63 前景服務那則倒數通知的 channel）也算在內，見上方
+ * REST_CHANNEL_IDS——平常使用者長按到的就是它，只看 default 等於漏掉主要路徑。
  */
 async function restChannelMuted() {
   const api = plugin();

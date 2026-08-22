@@ -77,24 +77,6 @@
       ]
     },
     {
-      "id": "F95",
-      "name": "前景服務的 rest-timer channel 被單獨關閉時也要擋下",
-      "status": "failing",
-      "evidence": "",
-      "touches": [
-        "app/static/js/native-notify.js",
-        "tests/e2e/verify_f95.py"
-      ],
-      "requires": [
-        "android-device"
-      ],
-      "acceptance": "（2026-07-30 F65 的 code review 發現，同日 Ryan 簽核凍結）\n① 背景：F65 ② 凍結時寫的是「Capacitor 的 default channel」，但**使用者實際看到、也實際會去長按的那則通知不在那個 channel 上**。F63 之後休息倒數由前景服務負責（`RestTimerService`，channel id `rest-timer`、顯示名「休息倒數」、IMPORTANCE_LOW），F62 的 default channel 只是它啟不動時的退路。\n② 後果：長按通知列的休息倒數選「關閉這類通知」→ 系統把 `rest-timer` 設成 IMPORTANCE_NONE → `areEnabled()` 仍 true、default channel 也仍正常 → 開關顯示「開」→ 前景服務照跑但通知不顯示、歸零也看不到。**F65 想消滅的靜默失敗，在主要路徑上原封不動。**\n③ 要做的事：把 `rest-timer` channel 的 importance 一併納入 granted 判定（與 F65 的 default channel 同一套規則：查不到不算被關、拋錯退回 areEnabled）。\n④ E2E 補回歸情境：app 層允許 ＋ default channel 正常 ＋ `rest-timer` importance=0 → 顯示「關」。F65 的 verify_f65.py 沒有這條（假 plugin 沒有 RestTimer，測到的一律是 F62 退路）。\n⑤ 提示文案要能指到對的地方，但**不要寫死類別名稱**——default 在系統設定顯示為 Capacitor 寫死的「Default」、前景服務那則叫「休息倒數」，講錯名字會讓人在正確的頁面上找不到東西。可考慮改用 ACTION_CHANNEL_NOTIFICATION_SETTINGS 直接深連到該 channel。\n⑥ 真機驗：長按休息倒數通知 →「關閉這類通知」→ 回 app 確認開關變「關」並給引導。",
-      "prerequisites": [
-        "F63",
-        "F65"
-      ]
-    },
-    {
       "id": "F104",
       "name": "浮動視窗直接記錄下一組（重量與次數可調）",
       "status": "failing",
@@ -228,6 +210,24 @@
         "F165"
       ],
       "note": "2026-08-22：原 touches 只有 app/mcp.py，與「app 內建對話 UI ＋ LLM key 管理」的實際範圍不符，已重寫為三個 slice 的聯集。本條不直接派工——實作走 F163→F164→F165，三條都 passing 之後才依本條 frozen acceptance 的「同一句指令經外部 Claude 與內建對話產生相同資料列」做整體驗收並改 passing。frozen acceptance 一字未動。"
+    },
+    {
+      "id": "F166",
+      "name": "rest-alarm channel 被單獨關閉時也要擋下（F95 的第三個 channel）",
+      "status": "failing",
+      "evidence": "",
+      "acceptance": "⚠ **草案，尚未簽核凍結**（2026-08-22 F95 真機驗收時發現）。動工前必須經 Ryan 簽核。\n\n① 背景：休息**歸零**的那則提醒掛在第三個 channel `rest-alarm`（顯示名「休息時間到」，IMPORTANCE_HIGH），不是 F65 的 `default`，也不是 F95 的 `rest-timer`。\n② 後果：使用者只關掉「休息時間到」→ `areEnabled()` 仍 true、另外兩個 channel 也正常 →設定頁開關顯示「開」，但**歸零提醒不會出現**。與 F65／F95 要消滅的靜默失敗完全同型，而且壞掉的正是「時間到」這件事本身。\n③ 要做的事：把 `rest-alarm` 加進 `REST_CHANNEL_IDS`（判定規則不變：查不到不算被關、拋錯退回 areEnabled）。\n④ E2E 補一條：app 允許 ＋ default 正常 ＋ rest-timer 正常 ＋ rest-alarm importance=0 → 顯示「關」，並配一條反面。\n⑤ 要 Ryan 拍板的地方：三個 channel 任一被關就整個開關顯示「關」，誤報面積會變大（例如只想關倒數常駐、留著鬧鐘的人會被說成「關」）。選一個：(a) 維持現行「任一被關就顯示關」的保守做法；(b) 只有 `rest-alarm` 被關才算——因為它才是真正會漏掉的提醒，倒數常駐是資訊不是提醒。\n⑥ 驗收：E2E 新增情境全綠；真機重現一次（關掉「休息時間到」→ 開關顯示「關」）。",
+      "touches": [
+        "app/static/js/native-notify.js",
+        "tests/e2e/verify_f95.py"
+      ],
+      "requires": [
+        "android-device"
+      ],
+      "prerequisites": [
+        "F65",
+        "F95"
+      ]
     }
   ]
 }
