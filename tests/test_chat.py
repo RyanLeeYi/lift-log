@@ -386,3 +386,65 @@ async def test_chat_tools_are_exactly_the_mcp_tools(
             mcp_names = {tool.name for tool in await client.list_tools()}
 
     assert {tool["name"] for tool in upstream.calls[0]["body"]["tools"]} == mcp_names
+
+
+@pytest.mark.asyncio
+async def test_confirm_without_prior_dry_run_is_rejected(tmp_path: Path) -> None:
+    """F164③ 驗收 P2：沒跑過第一段就直接送 pending_write 不得寫入。
+
+    2026-08-22 獨立驗收重現的洞：確認路徑原本只檢查 tool 名在不在寫入清單裡，
+    其餘完全信任 client——等於整個 dry-run 確認流程可以跳過。
+    """
+    app = create_app(
+        _settings(tmp_path, llm_api_key="server-key"), google_token_verifier=_google_claims
+    )
+    async with app.router.lifespan_context(app), _rest_client(app) as hc:
+        issued = await _login(hc, "alice")
+        headers = {"Authorization": f"Bearer {issued['access_token']}"}
+        resp = await hc.post(
+            CHAT_URL,
+            headers=headers,
+            json={
+                "pending_write": {
+                    "tool": "log_body_metrics",
+                    "arguments": {"weight_kg": 71.5, "date": "2026-01-02"},
+                }
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.json() == {"error": "pending_write_invalid"}
+
+        # 真的沒寫進去
+        metrics = await hc.get("/api/body-metrics", headers=headers)
+        assert metrics.json() == []
+
+
+@pytest.mark.asyncio
+async def test_confirm_rejects_tampered_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F164③：拿到合法簽章後偷改參數也不行——簽的是 (tool, arguments) 這一整份。"""
+    upstream = _Upstream(
+        [_tool_use("log_body_metrics", {"weight_kg": 70, "date": "2026-01-02"}, "幫你記")]
+    )
+    upstream.install(monkeypatch)
+    app = create_app(
+        _settings(tmp_path, llm_api_key="server-key"), google_token_verifier=_google_claims
+    )
+    async with app.router.lifespan_context(app), _rest_client(app) as hc:
+        issued = await _login(hc, "alice")
+        headers = {"Authorization": f"Bearer {issued['access_token']}"}
+        first = await hc.post(CHAT_URL, headers=headers, json={"message": "體重 70"})
+        pending = first.json()["pending_write"]
+        assert pending["signature"]
+
+        tampered = {**pending, "arguments": {**pending["arguments"], "weight_kg": 999}}
+        resp = await hc.post(CHAT_URL, headers=headers, json={"pending_write": tampered})
+        assert resp.status_code == 400
+        assert resp.json() == {"error": "pending_write_invalid"}
+
+        # 原封不動帶回去才寫得進
+        ok = await hc.post(CHAT_URL, headers=headers, json={"pending_write": pending})
+        assert ok.status_code == 200
+        metrics = (await hc.get("/api/body-metrics", headers=headers)).json()
+        assert [row["weight_kg"] for row in metrics] == [70]

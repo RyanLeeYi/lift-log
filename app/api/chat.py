@@ -8,6 +8,9 @@ LLM key 兩種來源（F153 決議 (a) server 代打）：server `.env` 的 `LIF
 生命週期內——不寫 DB、不寫 log、不回傳給任何 client。
 """
 
+import hashlib
+import hmac
+import json
 from typing import Any
 
 import httpx
@@ -40,10 +43,17 @@ SYSTEM_PROMPT = """\
 
 
 class PendingWrite(BaseModel):
-    """待確認的寫入：tool 名與完整參數。client 原樣帶回才會真的寫。"""
+    """待確認的寫入：tool 名、完整參數，以及 server 自己核發的簽章。
+
+    ③ 要求「真正寫入只在 client 帶回**同一份** pending_write 時才發生」——沒有簽章的話
+    server 分不出這份是自己核發的還是 client 自己捏的，第一段（LLM ＋ dry-run）就形同
+    可跳過：任何人都能直接送一份 pending_write 進來寫。簽章是無狀態的做法，
+    不必為一次確認建表或存 session。
+    """
 
     tool: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    signature: str = ""
 
 
 class ChatIn(BaseModel):
@@ -65,6 +75,14 @@ class _UpstreamError(Exception):
         super().__init__(code)
         self.code = code
         self.status_code = status_code
+
+
+def _sign(request: Request, tool: str, arguments: dict[str, Any]) -> str:
+    """對 (tool, arguments) 簽名。金鑰沿用 web session 的 CSRF 金鑰（已持久化在 control DB），
+    不另外生一把——多一把金鑰就多一個會漂掉的東西。"""
+    payload = json.dumps([tool, arguments], sort_keys=True, ensure_ascii=False, default=str)
+    secret = request.app.state.web_csrf_secret
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
 def _user_id(request: Request) -> str:
@@ -159,6 +177,11 @@ async def chat(data: ChatIn, request: Request) -> ChatOut:
         if pending.tool not in WRITE_TOOLS:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="not_a_write_tool")
         arguments = {k: v for k, v in pending.arguments.items() if k != "dry_run"}
+        # 沒跑過第一段、或參數被改過，簽章就對不起來——這時不是「換個寫法再試」，是拒絕。
+        if not hmac.compare_digest(pending.signature, _sign(request, pending.tool, arguments)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="pending_write_invalid"
+            )
         result = await _call_tool(request, user_id, pending.tool, arguments)
         return ChatOut(reply="已寫入。", result=result)
 
@@ -188,7 +211,11 @@ async def chat(data: ChatIn, request: Request) -> ChatOut:
                     )
                 return ChatOut(
                     reply=_reply_text(content),
-                    pending_write=PendingWrite(tool=write["name"], arguments=arguments),
+                    pending_write=PendingWrite(
+                        tool=write["name"],
+                        arguments=arguments,
+                        signature=_sign(request, write["name"], arguments),
+                    ),
                     dry_run=summary,
                 )
 
