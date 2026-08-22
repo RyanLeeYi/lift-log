@@ -48,7 +48,7 @@ def check(ok: bool, label: str) -> None:
 def mark_superseded(label: str, note: str) -> None:
     """條文被明確的規格變更取代（不是選擇器過期）——不計入 pass/fail，但要留痕跡。
 
-    見 feature_list.json F162.supersedes（2026-08-20 Ryan 簽核）與
+    見 docs/archive/features.jsonl F162.supersedes（2026-08-20 Ryan 簽核）與
     docs/evidence/F162.md「被取代的條文」表。
     """
     superseded.append(label)
@@ -177,7 +177,7 @@ def run_checks(base: str) -> None:  # noqa: C901
 
         # ⑤／⑮ 長條圖本身（數量、高度算式、逐根配色）已被 F162（2026-08-20 Ryan 簽核）
         # supersede——折線圖沒有「長條」這個概念。汰役但不靜默刪除，見
-        # docs/evidence/F162.md「被取代的條文」表 ＋ feature_list.json F162.supersedes。
+        # docs/evidence/F162.md「被取代的條文」表 ＋ docs/archive/features.jsonl F162.supersedes。
         mark_superseded(
             "F87 ⑤ 長條圖 24 根、資料點少於 24 筆不補空條、不變形",
             "F162 supersede：折線圖無長條，畫幾筆改由 R5（移除 BAR_COUNT 上限）規範",

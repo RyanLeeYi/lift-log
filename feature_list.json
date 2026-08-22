@@ -228,66 +228,6 @@
         "F165"
       ],
       "note": "2026-08-22：原 touches 只有 app/mcp.py，與「app 內建對話 UI ＋ LLM key 管理」的實際範圍不符，已重寫為三個 slice 的聯集。本條不直接派工——實作走 F163→F164→F165，三條都 passing 之後才依本條 frozen acceptance 的「同一句指令經外部 Claude 與內建對話產生相同資料列」做整體驗收並改 passing。frozen acceptance 一字未動。"
-    },
-    {
-      "id": "F161",
-      "name": "正式站搬出開發工作樹（環境、設定與資料完全隔離）",
-      "status": "passing",
-      "signed_off": true,
-      "prerequisites": [],
-      "non_goals": [
-        "不改應用程式邏輯",
-        "不改 DB schema",
-        "不動測試站（lift-log-dev）設定——測試站就是要即時反映開發工作樹",
-        "不做 mission-control 的通用混搭偵測（cwd 指快照但直譯器指工作樹），那是另一條"
-      ],
-      "touches": [
-        "scripts/deploy.ps1",
-        "docs/operations.md",
-        "feature_list.json",
-        "../mission-control/services.toml"
-      ],
-      "evidence": "2026-08-20 由主 session 直接執行（baton 第 3 問 Independence 擋下平行委派：搬遷是一條耦合序列，且動的是 repo 之外的真實正式資料，worktree 隔離在此無意義且會誤導 worker）。commits a48265c、fa4f327、a37fd30、0ed3933、2d2438b。正式站整包搬到 git 工作樹之外的 lift-log-prod/（current、previous、.venv、.venv-previous、.env、data、release）；deploy.ps1 改為依快照 uv.lock 建 .venv-staging 再換名，環境與程式碼同進同退；services.toml 正式站三行改指新位置。逐表 row count 與回退演練的原始數據見 docs/evidence/F161.md。搬遷前後四個 DB 逐表 row count 全數一致（649/115/40/264）；加密備份 + restore drill 通過。\n過程中抓到兩個只有實跑才會現形的缺陷：(1) uv 建的 .exe shim 把自己 venv 的絕對路徑寫死在 trampoline 裡，.venv-staging 改名成 .venv 會壞（首次部署失敗並自動回退，log 只有一行 Failed to canonicalize script path）。已在隔離環境重現確認，改用 python.exe -m uvicorn。靜態讀 deploy.ps1 看不出這個問題。(2) 本次引入的回歸：.env 隨正式站搬走後，從 repo 跑 backup.py 會靜默落回預設的 ./control.db 與 ./users（工作樹底下剛好是測試站的檔案），exit 0 印出 [OK]，看起來完全成功。backup.py 新增 unresolved_source()，讀不到 .env 又沒明講來源就 exit 2 拒絕執行——選拒絕而非警告，因為這支腳本的正常歸宿是排程工作，警告沒有人會看到。三條回歸測試已紅測證明。\n測試站曾因 8138 被 roam-research MCP 佔走而長期 failed，一度改 8139；查其原始碼確認那不是隨機埠（findAvailablePort 從 8088 起每次 +2，只吃偶數），真正的問題是 52 個實例從 8/14 起累積佔滿8088-8138 全部偶數埠。使用者決定整包移除 roam MCP，8138 釋出，測試站改回原埠，Cloudflare tunnel 路由不必動。\nuv run pytest 全綠、ruff 乾淨；正式站 8137 與測試站 8138 health 皆 200，公開網址實測 200。",
-      "reviewed_by": "claude@2026-08-20 主 session 自審：改動集中在部署腳本與備份腳本的來源解析，無信任邊界或授權邏輯變更；風險已由兩輪獨立驗收覆蓋，未另跑 /code-review。",
-      "verified_by": "claude@2026-08-20 acceptance-verifier 兩輪（fresh context，同模型非跨模型）。第一輪：R1/R2/R3/R5/R6/R8/R9 PASS；R4/R7 UNVERIFIED（動作做了但當時沒留檔，事後無從查證）；另獨立重現一個 P2——backup.py 在 repo 目錄會靜默備份到測試站的 DB，且指出文件層緩解不足（排程工作看不到警告）。主 session 處置：P2 FIX（改為拒絕執行 + 三條紅測證明的回歸測試）、R4/R7 FIX（補 docs/evidence/F161.md 原始數據）、P4 埠號文字 FIX。第二輪針對性重驗（只驗那三項）：全部 PASS。驗收者另以 mission-control 的 events 表與 .deployed 時間戳（誤差 <0.1s）獨立佐證 R7 的回退演練確實發生過，那是它自己挖出來的旁證。\n主 session 覆核發現第二輪 ② 的量測有誤：它報「重測 649 完全吻合」，但當時 live DB 已是 666——649 是文件裡搬遷前那組數字。實際差異來自使用者實機驗證時記的一筆訓練（workouts 8→10、sets 150→151），資料只增不減。結論不變（無資料遺失），但證據不採信其原文。根因正是驗收者自己提的規格回饋：證據表沒標量測時間，對活著的正式站不可重現。已在 docs/evidence/F161.md 補上量測時間戳與「哪些表預期會漂移」的說明。"
-    },
-    {
-      "id": "F162",
-      "name": "體重圖改折線圖，折線圖抽成共用模組並支援聚合",
-      "status": "passing",
-      "signed_off": true,
-      "prerequisites": [],
-      "non_goals": [
-        "不改資料模型或 API",
-        "不改體重紀錄清單（bm-rows）的行為",
-        "不加方向鍵操作（2026-08-20 Ryan 裁決：手機為主，鍵盤操作維持 Tab/Enter/Space/Escape）",
-        "不動區間藥丸（F119/F120/F87）的行為"
-      ],
-      "touches": [
-        "app/static/css/app.css",
-        "app/static/js/body.js",
-        "app/static/js/exercise-detail.js",
-        "app/static/js/line-chart.js",
-        "app/static/js/state.js",
-        "app/static/sw.js",
-        "docs/evidence/F162.md",
-        "feature_list.json",
-        "tests/e2e/verify_f57.py",
-        "tests/e2e/verify_f58.py",
-        "tests/e2e/verify_f87.py"
-      ],
-      "supersedes": [
-        "F134 ⑧「不省略資料點」——N > 50 時改由聚合承擔",
-        "F135 對高 N 的處理——分級縮小在 N <= 50 仍有效，超過改聚合",
-        "F87 ⑤ 長條圖 24 根、flex:1、r99、高度＝14% + 正規化 * 82%、最新一根 --accent",
-        "F87 ⑮ 長條高度下限由 14% 改為 24%（算式 24% + 正規化 × 72%）",
-        "F87 ③ 中「長條圖跟著篩」的字面——改為折線圖跟著篩；③ 的其餘要求（五顆藥丸、清單同步篩、F58 停用檔位與自動退檔）不變",
-        "F57 ④「仍不做折點聚合抽樣」——改為 N > 50 才聚合，且取平均並在浮動框保留 min/max"
-      ],
-      "supersedes_signed_off": "2026-08-20 Ryan",
-      "evidence": "2026-08-20。commits d6ba2ab、3e346e1、e2347ec、272384d、ec2347d、d10a39c 與本條。折線圖的幾何、點渲染、浮動框定位與鍵盤互動抽成 app/static/js/line-chart.js；exercise-detail.js 與 body.js 共用；body.js 移除 barChart() 與 BAR_COUNT（24 筆靜默上限）；N > 50 時聚合成區間平均（日→週→月），標題顯示單位，浮動框帶 min/max。詳細規格變更紀錄與被取代條文對照見 docs/evidence/F162.md。\n分工：主 session 寫共用模組（介面設計不可外包）與 exercise-detail.js 重構（幾何不變量只有 Playwright 手動腳本護著，風險高）；body.js + CSS、verify_f57/f58、verify_f87 各派一個executor（三次派工，檔案零交集，其中後兩者平行）。baton 五問逐條過，Independence 由「介面先由主 session 定死」才成立。\n整合時抓到三個 worker 看不到的問題：(1) sw.js 的 shell 清單漏了 line-chart.js，test_sw_shell_list_matches_static_files 抓到——沒補的話離線少一支檔案；(2) 圖表底部日期標示被連同長條圖一起刪掉，但那是 F57 ⑤ 明文要求的區間邊界，x 軸是序位等距，沒有它「選 3 個月」與「選全部」畫面上長得一樣，已改用 .bars-foot 補回；(3) 抽模組時把浮動框三個 class 壓成兩個，同框出現兩個 .line-tip-sets 撞 Playwright strict mode，verify_f134 當場紅——這種缺陷只有實跑會現形。\n驗收後追加：把 verify_f134 ⑧(c) 的壓力情境筆數與 line-chart.js 的 AGG_MAX_POINTS 耦合起來（從實作讀出門檻並斷言），原本兩個 50 是獨立字面值、只靠證據檔一句話維繫。實測把種子改成 51 會直接中止並說明原因，而不是讓「不省略資料點」莫名翻紅。",
-      "reviewed_by": "claude@2026-08-20 主 session 自審：無信任邊界、授權或資料寫入路徑變更（純前端呈現層），風險由五支 E2E 與獨立驗收覆蓋，未另跑 /code-review。",
-      "verified_by": "claude@2026-08-20 acceptance-verifier（fresh context，同模型非跨模型）：R1-R11 全數 PASS，最高 severity 無。驗收者自寫獨立腳本 31/31 覆蓋 R1-R8，不採信主 session 的說法。\n三項額外獨立判斷：(a) R8 實測動作表現圖在 60 場資料下確實聚合成 10 點、標題變「每次最佳組（每週平均）」、聚合時不畫 PR 獎盃——不是只有 body 會聚合；(b) 直接量測 50 vs 51 的邊界，確認臨界點精準落在 >50；(c) 逐字比對 docs/archive/features.jsonl 的 F87 原文，確認 verify_f87 的 3 條 SUPERSEDED 恰好覆蓋 ⑤ 與 ⑮ 的長條幾何與配色、一字不多，且「底部標示起訖日期」被正確保留繼續測。\n唯一 P4：AGG_MAX_POINTS 與 verify_f134 的種子筆數是巧合式耦合，只靠文件維繫——驗收者直指主 session 在證據檔寫的「這不是運氣」缺乏機制支撐。主 session 處置 FIX（P4 預設 DEFER，此條因十行可解且與當日 backup.py 是同一個教訓而選擇修）。測試全套 466 passed；verify_f134 60/60、f135 44/44、f136 25/25、f87 33/33（另 3 條 SUPERSEDED）、f57 與 f58 全綠。"
     }
   ]
 }
