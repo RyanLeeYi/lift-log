@@ -1,77 +1,96 @@
 # session handoff
 
-最後更新：2026-08-22（無人看管 dispatch 場，第八場）。**158/166 passing、8 failing**
-（F89、F104、F124、F128、F149、F153、F160、**F166**）。
+最後更新：2026-08-22（無人看管 dispatch 場，第九場）。**158/166 passing、8 failing**
+（F89、F104、F124、F128、F149、F153、**F160**、**F166**）。
+F160 實作完成、待驗收結果；F166 實作完成、卡在真機那條。
 
 ## 接手第一件事
 
-1. **F95 已 passing 並歸檔**（真機驗完）。長證據 `docs/evidence/F95.md`，截圖 `docs/evidence/F95_0*.png`。
-2. **新開一條 F166（草案、未簽核）**：休息**歸零**那則提醒掛在第三個 channel `rest-alarm`
-   （「休息時間到」，importance 4），不在 `REST_CHANNEL_IDS` 裡——只關掉它，開關仍顯示「開」
-   而提醒不會出現，與 F65／F95 同型的靜默失敗。條文末尾有一個要 Ryan 拍板的選項（(a)/(b)）。
-3. **18 支宣告 native 的 e2e 腳本可能全部腐爛**，見下。這是本場最有價值的副產物。
-4. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節）。
+1. **8 條全部簽核了**（收件匣 8 筆 `[sign-off]` 都回 "Sign off as-is"，commit `a20771a` 已 push）。
+   `delegation-warmup` 的 ②③ 兩道閘門不再擋任何一條。
+2. **F160 已實作並 commit（`241a3b3`）**，`acceptance-verifier` 的判定結果見下方；
+   verifier 判 pass 就改 `passing` ＋ 整條原文搬 `docs/archive/features.jsonl`。
+3. **F166 卡在 ⑥ 真機**——不是 F166 的問題，是那支手機上 lift-log 的通知在系統層是關的。
+   已投 question（high）。細節見下。
+4. **F124 簽核了但沒答案**——條文本身是「待決」清單。已投 question 建議不做。
+5. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節）。
 
-## 本場做的事（2026-08-22 第八場 dispatch）
+## 本場做的事（2026-08-22 第九場 dispatch）
 
-收件匣答案是「我手機連著電腦 你可以直接驗」——解鎖的是**真機驗收**，所以挑了四條要真機的
-（F89／F95／F104／F128）裡唯一「實作已完成、只差驗」的 **F95**。
+收件匣解鎖的是 8 條 feature 的簽核。照 `baton-dispatch` 五問把它們按**共用檔案**分四組，
+不是一條一個 worker：
 
-| 項目 | 結果 |
-|---|---|
-| 真機驗收 F95 | SM-N9750 / RF8NB0BSEFE，安裝 prod v158（原 v156）；③④⑤⑥ 全 PASS |
-| `tests/e2e/verify_f95.py` | 修好後 **9/9 passed**（原本連設定頁都到不了） |
-| `uv run pytest` | **486 passed** |
-| `uv run ruff check .` | 全過 |
+| 組 | feature | 判定 | 理由 |
+|---|---|---|---|
+| rest-overlay | F89 F104 F124 F128 | **direct**（本場未動工） | 四條全撞 `RestTimerPlugin.java`，永遠不能平行；且要真機互動迴圈 |
+| sync | **F160** | **dispatched**（executor / worktree） | 檔案自足、done criteria 可斷言、與其他組零交集 |
+| notify-gate | **F166** | **direct** | 一行常數 ＋ 兩條 E2E，派工成本大於工作本身 |
+| blocked | F149 F153 | 不動工 | 要 Ryan 的 Google `sub`／真 LLM key ＋ 人工對照 |
 
-### E2E 腐爛：F146／F149 打斷了所有 native 模式的腳本
+### F160（dispatched，`241a3b3`）
 
-`verify_f95.py` 卡在 `wait_for_selector("input")`：假 plugin 宣告 `isNativePlatform: () => true`，
-但 F149 之後 app 版 setup 只剩 Google 登入，**沒有 token 輸入框**。修法三件（腳本內，未動產品行為）：
+整包層級的 HTTP 錯誤（409 `unsupported_schema`／403 `device_mismatch`）不再連坐整批 outbox：
+`SyncClient.syncOnce()` 那個 `else` 分支從 `markPushPermanentFailure` 改走 `scheduleRetry`。
+`markPushPermanentFailure` 保留但已無 HTTP 呼叫點（主 session 的裁決，不是刪掉）。
+`syncStatus()` 新增 `failed_items`（`mutationId`/`entityType`/`entityId`/`errorCode`/`createdAt`），
+predicate 與既有 `failed` 計數完全相同。
 
-1. 假 plugin 補 `AuthSession` / `LocalStore` / `Sync`（形狀抄 `verify_f144.py`），讓開機路徑走得完
-2. 假 access token 用 e2e server 的 `LIFTLOG_TOKEN`，否則每支 API 401
-3. `**/api/mcp-tokens/**` stub 成 `[]`——那支對 legacy scope **一律 401**（F147 刻意的），
-   401 會被 `guard()` 判成登入失效踢回 setup。
-   ⚠ 這條 route 必須註冊在 `reroute_public_host()` **之後**：Playwright 是後註冊的先比對
+主 session 集中驗證（不是只看 worker 回報）：
+- `uv run pytest` **487 passed**（基準 486 ＋ 新增 1）
+- `uv run ruff check .` 全過
+- `gradlew testProdDebugUnitTest --tests '*SyncClientTest*'` **tests=8 failures=0**，
+  含新增的 `unsupportedSchemaFailureStaysRetryableAndDoesNotPoisonPending`，
+  且 `oversizedMutationBecomesPermanentErrorWithoutCrashing`（⑤ 的 BatchTooLarge）仍綠
 
-**同型的腳本還有 18 支**（f61–f71、f89、f103–f108、f141、f144…），本場只修了 f95。
-要一次掃完的話，把上面三件抽成 `verify_f67.py` 的共用 helper 比較划算——但那會動到共用檔，
-建議獨立開一條 feature 做。
+⚠ **worker 回報裡有一個值得記的查證**：規格背景寫「422 來自 FastAPI 對 `SyncPushIn` 的外層驗證」，
+但 `app/errors.py::on_validation_error` 實際把 `RequestValidationError` 轉成 **400**。
+修法在 code-path 層級生效（任何非 retryable、非 session 的 `TransportFailure` 都涵蓋），
+所以數字對不上不影響結果，但條文那句話是錯的。
 
-### ⑥ 的 OEM 落差（判 PASS 但要記著）
+⚠ **F160 動到 Android Java，要出 APK 才會到手機上**（CLAUDE.md 那條規則的字面是
+「動到 `app/static/` 才要出」，但 Java 改動同樣只能靠 APK 送達）。**本場還沒出。**
 
-acceptance ⑥ 寫「長按休息倒數通知 →『關閉這類通知』」，但 One UI 的長按面板只給
-**app 層**的「關閉通知」（確認框寫「關閉此應用程式的通知嗎？」），那顆 channel 層的按鈕
-在這支手機上不存在。改由系統「通知類別 → 休息倒數」製造同一個系統狀態
-（`rest-timer` importance=0、app 層仍允許）驗完，並確認**開回去也會自動變回「開」**。
+### F166（direct，`09afde9`）
 
-### ⑤ 的文案為什麼在真機上拍不到
-
-`enableNativeNotify()` 同一個 tick 內既 `showError()` 也 `openSettings()`，系統設定頁立刻蓋掉畫面；
-回 app 時 resume 重繪已把 `state.error` 清掉。連拍與返回後回捲都試過。文案判定改由 E2E 承擔。
-
-### 裝置狀態已還原
-
-`rest-timer` importance 回到 2、測試那組（伏地挺身 0kg×8）已刪、自由訓練已結束、
-首頁「本週進度」回到 1/3。app 層通知設定全程未改。
-
-### 沒出 APK
-
-F95 本場只改了 `native-notify.js` 的一段**過期註解**（沒有行為變更），device 上跑的就是既有的
-v158 prod APK。要出的話 `state.js` 得先升版，本場沒有值得升的東西。
+`REST_CHANNEL_IDS` 補上第三個 channel `rest-alarm`（歸零那則「休息時間到」，importance 4）。
+判定規則一字沒動（查不到不算被關、拋錯退回 `areEnabled`），只是清單多一個 id。
+`verify_f95.py` 補 ④ 的正反兩條，**11/11 passed**（原 9/9）。`ruff` 全過。
+`APP_VERSION` 升到 **v159**，APK 已 build 並裝上 SM-N9750（路徑確認是
+`apk/prod/release/app-prod-release.apk`，`unzip` 驗過版號與那行常數）。
 
 ## 卡住的事
 
-- 剩下 8 條 failing：F89／F104／F128 要真機**且**還有未決事項（F89 ⑥ 的規格落差要簽核、
-  F104／F128 有待拍板的方向題）、F124／F128／F160／F166 未簽核（`delegation-warmup` hook 擋 executor）、
-  F149 要 Ryan 的 Google 身分、F153 要真 LLM key ＋ 人工對照。
-- **手機還連著就能再驗**：F89 剩下的是 ⑨ 的 160ms 過場與 reduced-motion 觀感、⑧ 的逐條回歸，
-  但 ⑥ 的規格落差要先簽核才能改 passing。
+### F166 ⑥ 真機：手機上 lift-log 的通知在系統層是關的
+
+三個 channel 全部正常（default=3、rest-timer=2、rest-alarm=4），系統「應用程式通知 →
+顯示通知」畫面上讀到「開」，**但** `dumpsys notification` 說
+`AppSettings: com.ryanleeyi.liftlog (10917) allowNoti=false`。
+
+`areEnabled()` 是 `native-notify.js` 的唯一事實來源，它一 false，app 內「休息提醒」開關
+就一定顯示「關」，**跟 channel 狀態無關**。所以「關掉 rest-alarm → 開關顯示關」這個觀察
+在目前狀態下**無法區分是不是 F166 造成的**——我把 rest-alarm 關掉再開回，兩邊都是「關」。
+證據無效，沒有拿它充數。
+
+同一份 dumpsys 裡 `com.ipass.ipassmoney` 也是 `allowNoti=false`，所以懷疑是 Samsung 那層的
+批次設定，不是這個 app 的問題。**這條也會讓 F89／F104／F128 的真機驗收不可靠**
+（F89 ⑥ 的浮動計時開關要先開休息提醒）。
+
+**裝置狀態已還原**：rest-alarm importance 回到 4；app 內「休息提醒」開關點過兩次（一開一關，
+淨值為零）；沒動 app 層通知設定；沒碰那筆 pre-existing 的「待處理衝突 1 筆」。
+
+### F124 簽核了，但條文是「待決」清單不是規格
+
+三個問號（要不要做延後派送／就緒訊號從哪來／範圍是否擴及六個事件）都沒答案。
+已投 question 並建議**不做**：F123 之後殘留風險只剩「銷毀與收掉之間那一瞬按下去」，
+後果是那一按沒反應、鈴照響、再按一次即可；為它加一套事件暫存 ＋ 就緒握手，
+等於在幾乎走不到的路徑上新增一條狀態機（重播順序、過期命令、重複派送都是新的錯誤面）。
+
+### 其餘
+
+- F149 要 Ryan 的 Google 身分、F153 要真 LLM key ＋ 人工對照，headless 一律做不了。
+- **e2e 腐爛確認擴大**：`verify_f65.py` 本場實跑，卡在 `wait_for_selector("input")`，
+  與上一場對 `verify_f95.py` 的診斷完全同型。上一場說的「18 支可能全部腐爛」不是猜測。
+  修法（假 plugin 補 `AuthSession`/`LocalStore`/`Sync`、假 token 用 `LIFTLOG_TOKEN`、
+  `**/api/mcp-tokens/**` stub 成 `[]` 且註冊在 `reroute_public_host()` 之後）已在
+  `verify_f95.py` 驗證可行，抽成共用 helper 值得獨立開一條 feature。
 - 本場沒排保溫鬧鐘：`ScheduleWakeup` 只在 `/loop` dynamic mode 可用，headless dispatch 進不去。
-
-## 上一場做的事（2026-08-22 第七場 dispatch）
-
-只做歸檔收尾（commit `7651152`）：F161 原文從舊 `acceptance.jsonl` 搬進 `features.jsonl`、
-主檔移除 F161／F162 骨架，`--dsm` 前後逐字相同、pytest 486 passed、ruff 全過。
-並投了一筆 question 說 8 條全卡住。
