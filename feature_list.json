@@ -28,27 +28,6 @@
   ],
   "features": [
     {
-      "id": "F160",
-      "name": "單筆 mutation 被伺服器拒絕時不得連坐整批 outbox",
-      "status": "failing",
-      "evidence": "",
-      "touches": [
-        "android/app/src/main/java/com/ryanleeyi/liftlog/SyncClient.java",
-        "android/app/src/main/java/com/ryanleeyi/liftlog/LocalStore.java",
-        "android/app/src/test/java/com/ryanleeyi/liftlog/SyncClientTest.java",
-        "app/services/sync.py",
-        "tests/test_sync.py"
-      ],
-      "requires": [],
-      "prerequisites": [],
-      "non_goals": [
-        "不改伺服器端的 push 契約",
-        "不做整批重試的退避策略調整（那是另一件事）"
-      ],
-      "acceptance": "**草案，尚未簽核凍結**（2026-08-20 起草；**2026-08-21 依 Discovery 結果重寫範圍**）。動工前必須經 Ryan 逐條簽核。\n\n## 2026-08-21 Discovery：② 的前置問題已有答案，原草案的起因描述過期\n\n草案 ② 要求「動工前先確認 server 的 422 回應是否帶得出 mutation_id」。查證結果（唯讀開檔，證據見下）：\n\n**server 對單筆驗證失敗根本不回 422。** `app/services/sync.py::_process` 對 upsert 與 delete 都攔了\n`(ValidationError, ValueError, UnprocessableError)`，逐筆退成 `_conflict(mutation_id, \"validation_failed\")`，\n整個 request 仍是 **200**，`conflicts[]` 每一筆都帶 `mutation_id`（`app/schemas.py::SyncConflict`），\n同批其他 mutation 照常 accepted。那段程式碼上方的註解描述的正是本條要防的災難，是 F105 就寫下的守衛。\n\n因此草案的起因（「一筆時間型組被回 422 → 整批連坐」）在現行程式碼**已不可達**，\n①「只有被拒絕的那筆標永久失敗」在單筆驗證失敗這條路上**已經成立**。\n\n## 但連坐機制仍在，只是觸發條件不同\n\n`SyncClient.syncOnce()` 的 catch（`SyncClient.java:88-97`）：非 retryable、非 session、且 body 有 mutation\n→ `markPushPermanentFailure(body, errorCode)` → 整批每筆 `next_attempt_at = NULL`，**永不再送**。\n`SyncHttpTransport.java:39` 的 retryable 只認 408／429／5xx，所以能走到連坐的是**整包層級的 HTTP 錯誤**：\n\n| 狀態 | 來源 | 連坐後果 |\n|---|---|---|\n| **409 `unsupported_schema`** | `app/api/sync.py:104` | **最危險**。server bump schema 後，還沒更新的 APK 第一次同步就把手上全部 pending（上限 500 筆）永久報廢。這是版本落差，不是壞資料——那些 mutation 全部合法 |\n| 403 `device_mismatch` | `app/api/sync.py:106` | 身分／裝置綁定不符，同樣整批陪葬 |\n| 422 | FastAPI 對 `SyncPushIn` 的外層驗證（`extra=\"forbid\"`、`max_length=500`、device_id 型別） | 整包畸形，連坐尚屬合理，但仍應可恢復 |\n\n「靜默」一詞要修正：失敗的 mutation **不會被刪除**，`syncStatus()` 會回 `failed` 筆數且 state 轉 `error`\n（`LocalStore.java:739-748`）。使用者看得到「有幾筆沒送出去」，看不到的是**哪幾筆**，也沒有重送的路。\n\n## 重新界定的驗收\n\n① **整包層級的 HTTP 錯誤不得使 mutation 永久失敗。** 409／403 屬於「環境或版本不對」而非「這批資料不對」，\n   必須維持可重送（走既有 backoff 或等使用者更新 APK 後自然恢復），不得 `next_attempt_at = NULL`。\n   `markPushPermanentFailure` 的適用範圍要縮到「server 明確指認的壞資料」——而那條路現在走 `conflicts[]`，\n   不走 HTTP 錯誤，所以它可能整個不再需要。\n\n② 真正無法重送的那筆（例如 `payload_too_large`，已由 `BatchTooLarge` 逐筆處理）維持逐筆永久失敗，\n   並保留可辨識的錯誤碼與時間；毒藥不得造成無限重試。\n\n③ 使用者要能知道**哪一筆**沒送出去，不只是幾筆。至少讓失敗的 mutation 能對應到實體（動作／組／體重）。\n\n④ **回歸測試補兩處現有缺口**（查證：目前兩邊都零覆蓋）：\n   - server 端：`tests/` 內找不到任何 `validation_failed` 的斷言。`sync.py` 那道守衛——本條原本要防的災難的唯一防線\n     ——**拿掉不會有任何測試變紅**。要有一條：一批 N 筆、其中一筆 mode 互斥違規，斷言 HTTP 200、\n     該筆進 `conflicts[]` 且帶對的 `mutation_id`、其餘 N-1 筆 accepted\n   - Android 端：`SyncClientTest` 有 `authFailureNeverPoisonsLocalMutations`（session 分支），\n     但**沒有**涵蓋非 retryable HTTP 錯誤的連坐分支。要有一條：push 回 409 `unsupported_schema`，\n     斷言 pending 數量不變、下一輪仍會重送\n\n⑤ 不回歸：F125（排入→回 app 寫入）、既有 retryable／session 失敗分支行為不變、`BatchTooLarge` 逐筆路徑不變。\n\n⑥ 這是既有設計的缺陷，**不是 F159 引入的**。F159 的 /code-review 把它照出來，但當時描述的觸發路徑（422）\n   是誤判——那條路 F105 已經堵住。真正的暴露面是版本落差，跟時間型動作無關。\n\n## 待 Ryan 拍板\n\n- ① 的「縮到不再需要」若成立，`markPushPermanentFailure` 可整個刪掉。要刪還是留一條保險？\n- ③ 的「知道哪一筆」要做到什麼程度：只在同步狀態列出實體名稱，還是進 F-系列既有的 `sync_conflicts` 收件匣？\n",
-      "signed_off": true
-    },
-    {
       "id": "F89",
       "name": "浮動休息視窗原生重做（收合／展開兩態 ＋ 圓環倒數）",
       "status": "failing",
