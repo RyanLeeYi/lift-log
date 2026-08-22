@@ -4,12 +4,25 @@ import { apiBase, isNativeApp } from "./env.js";
 import { getNativeAccessToken, getWebCsrfToken, restoreNativeSession } from "./auth.js";
 
 const TOKEN_KEY = "liftlog.token";
+// F165 ④：使用者自填的 LLM API key。只留在這台裝置的 localStorage——不進同步、不上傳，
+// 只在呼叫 /api/chat 時以 header 夾帶給 server 代打（F164 決議 (a)）。
+const LLM_KEY = "liftlog.llm_key";
 
 export class ApiError extends Error {
   constructor(status, message) {
     super(message);
     this.status = status;
   }
+}
+
+export function getLlmKey() {
+  return localStorage.getItem(LLM_KEY) || "";
+}
+
+export function setLlmKey(key) {
+  const trimmed = (key || "").trim();
+  if (trimmed) localStorage.setItem(LLM_KEY, trimmed);
+  else localStorage.removeItem(LLM_KEY);
 }
 
 export function getToken() {
@@ -523,6 +536,29 @@ export const api = {
     return request(
       "POST", "/api/mcp-tokens/", payload, isNativeApp() ? getNativeAccessToken() : getToken(),
     );
+  },
+  // F165：對話一律走真的 REST（native 也是）——tool 執行與 LLM 呼叫都在 server。
+  // 自填 key 每次請求以 header 夾帶，不寫進任何請求 body，也不進本機 domain DB。
+  chat: async ({ message = "", pendingWrite = null } = {}) => {
+    if (isNativeApp()) await restoreNativeSession();
+    const token = isNativeApp() ? getNativeAccessToken() : getToken();
+    const body = { message, pending_write: pendingWrite };
+    const { headers, credentials } = authHeaders(body, { token });
+    const key = getLlmKey();
+    let resp;
+    try {
+      resp = await fetch(apiBase() + "/api/chat/", {
+        method: "POST",
+        headers: { ...headers, ...(key ? { "X-LLM-API-Key": key } : {}) },
+        credentials,
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new ApiError(0, "llm_unreachable");
+    }
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new ApiError(resp.status, data.error || `HTTP ${resp.status}`);
+    return data;
   },
   revokeMcpToken: async (id) => {
     if (isNativeApp()) await restoreNativeSession();

@@ -1723,3 +1723,27 @@ body {
 .setup .setup-alt {
   margin-top: 18px; color: var(--text-mute); font-size: 12px;
 }
+
+/* ---------- F165：內建對話 ---------- */
+.chat-screen { gap: 12px; }
+.chat-log { display: flex; flex-direction: column; gap: 8px; }
+.chat-bubble {
+  border-radius: var(--r-card); padding: 10px 12px; font-size: 15px; line-height: 1.5;
+  max-width: 88%; white-space: pre-wrap;
+}
+.chat-user { align-self: flex-end; background: var(--card-hi); color: var(--text); }
+.chat-assistant { align-self: flex-start; background: var(--card); color: var(--text-mid); }
+.chat-busy { color: var(--text-mute); font-size: 13px; }
+.chat-dryrun { display: flex; flex-direction: column; gap: 10px; }
+.chat-dryrun-counts { font-size: 15px; color: var(--text); }
+.chat-preview { display: flex; flex-direction: column; gap: 4px; margin: 0; padding-left: 18px; }
+.chat-preview-row { color: var(--text-mid); font-size: 13px; }
+.chat-input-row { display: flex; gap: 8px; align-items: center; }
+.chat-input {
+  flex: 1; background: var(--card-hi); border: none; border-radius: var(--r-input);
+  color: var(--text); font-size: 16px; padding: 12px 14px; min-height: 44px;
+}
+.chat-input:focus-visible { outline: 2px solid var(--accent); }
+.chat-send { min-width: 56px; min-height: 44px; }
+.llm-key-card { display: flex; flex-direction: column; gap: 10px; }
+.settings-hint { color: var(--text-mute); font-size: 13px; line-height: 1.5; }

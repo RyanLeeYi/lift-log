@@ -3,7 +3,7 @@
 // 寫入的兩段式在 server（F164）：第一次只算會發生什麼並回 pending_write，
 // 這裡把它原樣存著，使用者按「確認寫入」才帶回去。按取消就整包丟掉，不送第二次請求。
 
-import * as api from "./api.js";
+import { api } from "./api.js";
 import { el } from "./dom.js";
 import { icon, iconLabel } from "./icons.js";
 

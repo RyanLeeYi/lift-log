@@ -4,7 +4,7 @@
 // ⚠ 任何 SHELL 內資產（js/css/html）有改動就要遞增版本——否則既有安裝
 // 會拿快取舊檔，新舊資產混版（sw.js 沒變 byte，瀏覽器不會重跑 install）
 // F93：開發與正式環境分離（環境標示、兩顆可並存的 APK）。
-const CACHE_NAME = "liftlog-shell-v157"; // F162 體重圖改折線、折線圖抽共用模組並支援聚合
+const CACHE_NAME = "liftlog-shell-v158"; // F165 內建對話畫面（新增 js/chat.js）
 const SHELL = [
   "/",
   "/css/app.css",
@@ -15,6 +15,7 @@ const SHELL = [
   "/js/app.js",
   "/js/body.js",
   "/js/calendar.js",
+  "/js/chat.js",
   "/js/custom-exercise.js",
   "/js/dom.js",
   "/js/drag-sort.js",

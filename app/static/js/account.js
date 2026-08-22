@@ -2,7 +2,7 @@
 // 網頁登出已經在 app.js 的 webSignOutRow 做完（web 沒有本機 domain 副本要清），這裡只補
 // 三件事：匯出、原生登出（要清 LocalStore）、刪帳（web／native 共用）。
 
-import { api } from "./api.js";
+import { api, getLlmKey, setLlmKey } from "./api.js";
 import {
   promptGoogleReauth,
   promptGoogleReauthNative,
@@ -507,5 +507,43 @@ export function mcpTokenSection({ webAuthenticated, nativeAuthenticated }, reren
     ]),
     ...mcpRevokeModal(rerender, guard),
     ...mcpCreateModal(rerender),
+  ];
+}
+
+
+// F165 ④：自填 LLM API key。只存這台裝置的 localStorage——不進同步、不上傳，
+// 每次對話請求以 header 夾帶給 server 代打（F164 決議 (a)）。
+export function llmKeySection(rerender) {
+  const stored = getLlmKey();
+  const input = el("input", {
+    type: "password", class: "acct-confirm-input llm-key-input",
+    "data-testid": "llm-key-input", placeholder: stored ? "已設定（重填即覆蓋）" : "sk-ant-...",
+  });
+  return [
+    el("section", { class: "card llm-key-card" }, [
+      el("div", { class: "card-label" }, ["對話 API KEY"]),
+      el("div", { class: "settings-hint", "data-testid": "llm-key-state" }, [
+        stored ? "使用自己的 key" : "未設定：改用伺服器的 key（沒有的話對話會提示要設定）",
+      ]),
+      input,
+      el("div", { class: "modal-actions" }, [
+        el("button", {
+          class: "btn chip", "data-testid": "llm-key-save",
+          onclick: () => {
+            setLlmKey(input.value);
+            rerender();
+          },
+        }, ["儲存"]),
+        ...(stored
+          ? [el("button", {
+              class: "btn btn-ghost", "data-testid": "llm-key-clear",
+              onclick: () => {
+                setLlmKey("");
+                rerender();
+              },
+            }, ["清除"])]
+          : []),
+      ]),
+    ]),
   ];
 }

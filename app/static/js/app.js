@@ -1,8 +1,14 @@
 // lift-log 記錄頁：setup → home →（templateSelect）→ picker → logger，全部由 render() 重繪；
 // 課表管理（templates / templateEdit）在 templates.js。
 
-import { accountSettingsSection, completePendingAccountWipe, mcpTokenSection } from "./account.js";
+import {
+  accountSettingsSection,
+  completePendingAccountWipe,
+  llmKeySection,
+  mcpTokenSection,
+} from "./account.js";
 import { api, ApiError, getToken, setToken } from "./api.js";
+import { renderChat, resetChat } from "./chat.js";
 import {
   getNativeAccessToken,
   restoreNativeSession,
@@ -720,6 +726,8 @@ function bottomNav() {
       render();
     }],
     ["scale", "體重", () => go("body", openBody)],
+    // F165：內建對話。每次進來都是新的一輪——後端本來就不存對話歷史
+    ["message", "對話", () => go("chat", async () => resetChat())],
   ];
   return el(
     "nav",
@@ -1112,6 +1120,7 @@ function renderSettings() {
     ...mcpTokenSection(
       { webAuthenticated, nativeAuthenticated }, render, guard,
     ),
+    ...llmKeySection(render),  // F165 ④：自填 LLM key（存本機，不同步）
     ...conflictInboxSection(),
     ...weeklyTargetRow(),
     // F31/F62：休息結束提醒開關（不支援的環境不顯示）。
@@ -2912,6 +2921,7 @@ function render() {
       renderTemplates(render, backHome, guard),
     templateEdit: () => renderTemplateEdit(render, guard),
     calendar: () => renderCalendar(render, backHome, guard),
+    chat: () => renderChat(render, backHome, guard),
     body: () => renderBody(render, backHome, guard),
     exerciseDetail: () =>
       renderExerciseDetail(
