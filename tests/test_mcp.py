@@ -15,9 +15,10 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings
 from app.control_models import McpToken
+from app.control_models import User as ControlUser
 from app.db import make_engine
 from app.main import create_app
-from app.mcp import create_mcp
+from app.mcp import create_mcp, run_tool
 from app.models import BodyMetric, Exercise, Workout, WorkoutSet
 from app.schemas import BodyMetricIn, LogSetIn, LogWorkoutIn, TemplateCreate, TemplateExerciseIn
 from app.services.body_metrics import upsert_body_metric
@@ -198,9 +199,7 @@ async def test_mcp_get_progress_unknown_exercise(mcp_server: FastMCP) -> None:
 
 
 @pytest.mark.asyncio
-async def test_mcp_list_templates(
-    mcp_server: FastMCP, session_factory: sessionmaker
-) -> None:
+async def test_mcp_list_templates(mcp_server: FastMCP, session_factory: sessionmaker) -> None:
     with session_factory() as session:
         exercise_id = session.query(Exercise).one().id
         items = [TemplateExerciseIn(exercise_id=exercise_id, default_sets=3)]
@@ -219,9 +218,7 @@ async def test_mcp_list_templates_includes_rest_hint(
     """F12（PRD R10）：MCP 課表輸出帶 rest_hint_seconds，agent 才能討論休息配置。"""
     with session_factory() as session:
         exercise_id = session.query(Exercise).one().id
-        items = [
-            TemplateExerciseIn(exercise_id=exercise_id, default_sets=3, rest_hint_seconds=90)
-        ]
+        items = [TemplateExerciseIn(exercise_id=exercise_id, default_sets=3, rest_hint_seconds=90)]
         create_template(session, TemplateCreate(name="背日", exercises=items))
     async with Client(mcp_server) as client:
         result = await client.call_tool("list_templates", {})
@@ -232,9 +229,7 @@ async def test_mcp_list_templates_includes_rest_hint(
 def test_http_mcp_requires_token(anon_client: TestClient) -> None:
     resp = anon_client.post("/mcp/", json={})
     assert resp.status_code == 401
-    resp = anon_client.post(
-        "/mcp/", json={}, headers={"Authorization": "Bearer wrong-token"}
-    )
+    resp = anon_client.post("/mcp/", json={}, headers={"Authorization": "Bearer wrong-token"})
     assert resp.status_code == 401
 
 
@@ -264,9 +259,7 @@ def test_http_mcp_without_trailing_slash_reaches_mcp(client: TestClient) -> None
             "clientInfo": {"name": "probe", "version": "1.0"},
         },
     }
-    resp = client.post(
-        "/mcp", json=init, headers={"Accept": "application/json, text/event-stream"}
-    )
+    resp = client.post("/mcp", json=init, headers={"Accept": "application/json, text/event-stream"})
     assert resp.status_code == 200
 
     bad_token = client.post(
@@ -307,9 +300,7 @@ def _google_claims(raw_token: str) -> dict[str, object]:
 
 def _rest_client(app) -> httpx.AsyncClient:
     """走真的 ASGI 呼叫鏈（含 lifespan、middleware），不必開真連線。"""
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="https://testserver"
-    )
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://testserver")
 
 
 async def _login_android(hc: httpx.AsyncClient, name: str) -> dict:
@@ -429,9 +420,7 @@ async def test_mcp_revoked_user_token_rejected_immediately(tmp_path: Path) -> No
 
             await hc.delete(f"/api/mcp-tokens/{created['id']}", headers=headers)
 
-            resp = await hc.post(
-                "/mcp/", json={}, headers={"Authorization": f"Bearer {plaintext}"}
-            )
+            resp = await hc.post("/mcp/", json={}, headers={"Authorization": f"Bearer {plaintext}"})
             assert resp.status_code == 401
 
 
@@ -568,9 +557,7 @@ async def test_expired_mcp_token_rejected_like_a_revoked_one(tmp_path: Path) -> 
                 row.expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1)
                 control.commit()
 
-            resp = await hc.post(
-                "/mcp/", json={}, headers={"Authorization": f"Bearer {plaintext}"}
-            )
+            resp = await hc.post("/mcp/", json={}, headers={"Authorization": f"Bearer {plaintext}"})
             assert resp.status_code == 401
 
 
@@ -625,9 +612,7 @@ async def test_writable_mcp_token_still_writes_after_f158_scopes(tmp_path: Path)
                 await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
             ).json()["token"]
         async with _mcp_client(app, plaintext) as mcp_client:
-            out = _structured(
-                await mcp_client.call_tool("log_body_metrics", {"weight_kg": 91.2})
-            )
+            out = _structured(await mcp_client.call_tool("log_body_metrics", {"weight_kg": 91.2}))
             assert "error" not in out, out
 
 
@@ -680,8 +665,204 @@ def test_control_db_adds_f158_columns_to_existing_mcp_tokens_table(tmp_path: Pat
 
     factory = make_control_session_factory(str(db_path))
     with factory() as control:
-        columns = {
-            row[1] for row in control.execute(text("PRAGMA table_info(mcp_tokens)"))
-        }
+        columns = {row[1] for row in control.execute(text("PRAGMA table_info(mcp_tokens)"))}
     assert "expires_at" in columns
     assert "read_only" in columns
+
+
+# ---------- F163: in-process tool bridge ----------
+
+
+def _bridge_server(app) -> FastMCP:
+    """與 /mcp 掛的那台同構的 MCP server（同一個 create_mcp、同一組 settings 與 DB）。
+
+    in-process 呼叫用不到 HTTP 層，但身分解析與 tool 表都必須是同一份。
+    """
+    return create_mcp(
+        app.state.session_factory,
+        app.state.settings.token,
+        control_session_factory=app.state.control_session_factory,
+        settings=app.state.settings,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_tool_binds_caller_db_and_never_touches_other_user(tmp_path: Path) -> None:
+    """F163(1)(2)：只給 user id 就綁到本人 data DB；沒有任何參數能換到別人的 DB。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+            bob = await _login_android(hc, "bob")
+            bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}
+            created = await hc.post(
+                "/api/body-metrics",
+                headers=bob_headers,
+                json={"weight_kg": 70, "date": "2026-08-01"},
+            )
+            assert created.status_code == 201
+
+        mcp_server = _bridge_server(app)
+        alice_id = alice["user"]["id"]
+        assert await run_tool(mcp_server, alice_id, "get_body_metrics", {}) == {"metrics": []}
+
+        written = await run_tool(
+            mcp_server, alice_id, "log_body_metrics", {"weight_kg": 88.8, "date": "2026-08-10"}
+        )
+        assert written["weight_kg"] == 88.8
+
+        bob_seen = await run_tool(mcp_server, bob["user"]["id"], "get_body_metrics", {})
+        assert [row["date"] for row in bob_seen["metrics"]] == ["2026-08-01"]
+
+        async with _rest_client(app) as hc:
+            rows = (await hc.get("/api/body-metrics", headers=bob_headers)).json()
+            assert {row["date"] for row in rows} == {"2026-08-01"}
+
+
+@pytest.mark.asyncio
+async def test_bridge_exposes_exactly_the_same_tools_as_mcp(tmp_path: Path) -> None:
+    """F163(2)：橋接層可用的 tool 名稱集合與 schema ＝ /mcp 對外那份，沒有第二套 tool。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+            plaintext = (
+                await hc.post(
+                    "/api/mcp-tokens/",
+                    headers={"Authorization": f"Bearer {alice['access_token']}"},
+                    json={"name": "claude"},
+                )
+            ).json()["token"]
+
+        async with _mcp_client(app, plaintext) as http_client:
+            over_http = {tool.name: tool.inputSchema for tool in await http_client.list_tools()}
+
+        async with Client(_bridge_server(app)) as bridge_client:
+            in_process = {tool.name: tool.inputSchema for tool in await bridge_client.list_tools()}
+
+        assert set(in_process) == set(over_http)
+        for name, schema in in_process.items():
+            assert schema == over_http[name]
+            # 身分不是 tool 參數：沒有任何 tool 收 user id 或 DB 路徑
+            assert not {"user_id", "user", "db_path"} & set(schema.get("properties", {}))
+
+
+@pytest.mark.asyncio
+async def test_bridge_write_reaches_sync_change_log(tmp_path: Path) -> None:
+    """F163(3)：經橋接層的寫入走同一段 services，change log 拿得到。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {alice['access_token']}"}
+
+        summary = await run_tool(
+            _bridge_server(app),
+            alice["user"]["id"],
+            "log_workout",
+            {
+                "sets": [{"exercise": "深蹲", "weight_kg": 60, "reps": 5}],
+                "date": "2026-08-12",
+                "create_missing": True,
+            },
+        )
+        assert summary["sets_count"] == 1
+
+        async with _rest_client(app) as hc:
+            pulled = await hc.get("/api/sync/pull", headers=headers, params={"cursor": 0})
+            assert any(c["entity_type"] == "set" for c in pulled.json()["changes"])
+
+
+@pytest.mark.asyncio
+async def test_bridge_log_workout_dry_run_writes_nothing(tmp_path: Path) -> None:
+    """F163(4)：dry_run=True 回 F152 摘要，零新增列、零 change log。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {alice['access_token']}"}
+
+        async with _rest_client(app) as hc:
+            seed_changes = (
+                await hc.get("/api/sync/pull", headers=headers, params={"cursor": 0})
+            ).json()["changes"]
+
+        preview = await run_tool(
+            _bridge_server(app),
+            alice["user"]["id"],
+            "log_workout",
+            {
+                "sets": [{"exercise": "深蹲", "weight_kg": 60, "reps": 5}],
+                "date": "2026-08-12",
+                "create_missing": True,
+                "dry_run": True,
+            },
+        )
+        assert preview["will_create_count"] == 1
+        assert preview["will_skip_count"] == 0
+        assert preview["preview"][0]["disposition"] == "create"
+
+        async with _rest_client(app) as hc:
+            listed = await hc.get(
+                "/api/workouts",
+                headers=headers,
+                params={"start_date": "2026-08-01", "end_date": "2026-08-31"},
+            )
+            assert listed.json() == []
+            pulled = await hc.get("/api/sync/pull", headers=headers, params={"cursor": 0})
+            # 種子動作本來就有 change log；dry-run 不得多出 workout／set，
+            # create_missing 試建的動作也不能留下
+            assert [c for c in pulled.json()["changes"] if c["entity_type"] != "exercise"] == []
+            assert seed_changes == pulled.json()["changes"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_log_workout_dry_run_also_available_to_external_agent(tmp_path: Path) -> None:
+    """F163(4) 後半：同一個 dry_run 參數對 /mcp 外部 agent 一樣生效。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+            headers = {"Authorization": f"Bearer {alice['access_token']}"}
+            plaintext = (
+                await hc.post("/api/mcp-tokens/", headers=headers, json={"name": "claude"})
+            ).json()["token"]
+
+        async with _mcp_client(app, plaintext) as http_client:
+            preview = _structured(
+                await http_client.call_tool(
+                    "log_workout",
+                    {
+                        "sets": [{"exercise": "深蹲", "weight_kg": 60, "reps": 5}],
+                        "create_missing": True,
+                        "dry_run": True,
+                    },
+                )
+            )
+        assert preview["will_create_count"] == 1
+
+        async with _rest_client(app) as hc:
+            pulled = await hc.get("/api/sync/pull", headers=headers, params={"cursor": 0})
+            assert [c for c in pulled.json()["changes"] if c["entity_type"] != "exercise"] == []
+
+
+@pytest.mark.asyncio
+async def test_run_tool_unknown_or_inactive_user_returns_data_unavailable(tmp_path: Path) -> None:
+    """F163(5)：user 不存在／非 active 都回既有錯誤契約，不拋例外、不洩漏檔案路徑。"""
+    app = create_app(_multi_user_settings(tmp_path), google_token_verifier=_google_claims)
+    async with app.router.lifespan_context(app):
+        async with _rest_client(app) as hc:
+            alice = await _login_android(hc, "alice")
+
+        mcp_server = _bridge_server(app)
+        assert await run_tool(mcp_server, "no-such-user", "get_body_metrics", {}) == {
+            "error": "data unavailable"
+        }
+
+        with app.state.control_session_factory() as control:
+            control.get(ControlUser, alice["user"]["id"]).status = "disabled"
+            control.commit()
+
+        result = await run_tool(mcp_server, alice["user"]["id"], "get_body_metrics", {})
+        assert result == {"error": "data unavailable"}
+        assert str(tmp_path) not in json.dumps(result)

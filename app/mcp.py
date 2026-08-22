@@ -10,7 +10,9 @@ user MCP token（F147，`app/services/mcp_tokens.resolve_token`）驗證後只�
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date as date_type
+from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import TokenVerifier
@@ -67,6 +69,15 @@ INTERVIEW_PROMPT = """\
 """
 
 
+_INPROCESS_USER_ID: ContextVar[str | None] = ContextVar("liftlog_inprocess_user_id", default=None)
+"""F163：in-process 呼叫（`run_tool`）綁定的 user id。
+
+`/mcp` 走 access token，in-process 沒有 token（`get_access_token()` 回 None），
+少了這個綁定就會落回 legacy 共用 DB。tool 參數不得帶 user id 或 DB 路徑——身分
+只從這裡來。
+"""
+
+
 class _DataUnavailable(Exception):
     """user 的 data DB 打不開（非 active、DB 不存在等）→ tool 回 {"error": "data unavailable"}。"""
 
@@ -100,9 +111,7 @@ class DomainTokenVerifier(TokenVerifier):
     靜默變成無認證。bytes 比較讓非 ASCII token 也走常數時間比對回 401，不會 TypeError。
     """
 
-    def __init__(
-        self, token: str, control_session_factory: sessionmaker[Session] | None
-    ) -> None:
+    def __init__(self, token: str, control_session_factory: sessionmaker[Session] | None) -> None:
         super().__init__()
         self._expected = token.encode()
         self._control_session_factory = control_session_factory
@@ -127,15 +136,60 @@ class DomainTokenVerifier(TokenVerifier):
         return AccessToken(token=token, client_id=user_id, scopes=scopes)
 
 
+@contextmanager
+def _user_session(
+    control_session_factory: sessionmaker[Session],
+    settings: Settings | None,
+    user_id: str,
+) -> Iterator[Session]:
+    """開這個 user 專屬 data DB 的 session（F147 路徑推導，F163 共用）。
+
+    user 不存在／非 active／DB 檔不在都收斂成 `_DataUnavailable`，由 tool 轉成
+    `{"error": "data unavailable"}`，不外洩檔案路徑。
+    """
+    if settings is None:
+        raise _DataUnavailable
+    with control_session_factory() as control:
+        user = control.get(User, user_id)
+    if user is None or user.status != "active":
+        raise _DataUnavailable
+    try:
+        path = canonical_user_db_path(settings.user_data_dir, user.id, user.data_db_name)
+    except UserDataUnavailable as exc:
+        raise _DataUnavailable from exc
+    if not path.is_file():
+        raise _DataUnavailable
+
+    engine = make_engine(str(path))
+    try:
+        with sessionmaker(bind=engine)() as session:
+            yield session
+    finally:
+        engine.dispose()
+
+
+async def run_tool(mcp: FastMCP, user_id: str, name: str, arguments: dict) -> Any:
+    """F163：以 user 身分在 server 內部呼叫與 /mcp 完全相同的那組 tool。
+
+    刻意不另建 tool 表：名稱與 schema 就是 `/mcp` 暴露的那份，寫入也走同一段
+    `app/services/`（因此同樣進 sync change log）。回傳 tool 的 structured 結果
+    （dict），未知 tool 由 FastMCP 拋 NotFoundError。
+    """
+    token = _INPROCESS_USER_ID.set(user_id)
+    try:
+        result = await mcp.call_tool(name, arguments)
+    finally:
+        _INPROCESS_USER_ID.reset(token)
+    return result.structured_content
+
+
 def create_mcp(
     session_factory: sessionmaker,
     token: str,
     control_session_factory: sessionmaker[Session] | None = None,
     settings: Settings | None = None,
 ) -> FastMCP:
-    mcp = FastMCP(
-        name="lift-log", auth=DomainTokenVerifier(token, control_session_factory)
-    )
+    mcp = FastMCP(name="lift-log", auth=DomainTokenVerifier(token, control_session_factory))
 
     @contextmanager
     def domain_session() -> Iterator[Session]:
@@ -147,6 +201,16 @@ def create_mcp(
         user MCP token 才會依 access token 的 client_id（=user id）解析專屬 DB，
         用完 dispose 這顆臨時 engine。
         """
+        # F163：in-process 綁定優先於 access token 與 legacy fallback——否則登入中的
+        # web/app 使用者會讀寫到 legacy 共用 DB。
+        inprocess_user_id = _INPROCESS_USER_ID.get()
+        if inprocess_user_id is not None:
+            if control_session_factory is None or settings is None:
+                raise _DataUnavailable
+            with _user_session(control_session_factory, settings, inprocess_user_id) as session:
+                yield session
+            return
+
         if control_session_factory is None:
             with session_factory() as session:
                 yield session
@@ -158,25 +222,8 @@ def create_mcp(
                 yield session
             return
 
-        with control_session_factory() as control:
-            user = control.get(User, access_token.client_id)
-        if user is None or user.status != "active":
-            raise _DataUnavailable
-        try:
-            path = canonical_user_db_path(
-                settings.user_data_dir, user.id, user.data_db_name
-            )
-        except UserDataUnavailable as exc:
-            raise _DataUnavailable from exc
-        if not path.is_file():
-            raise _DataUnavailable
-
-        engine = make_engine(str(path))
-        try:
-            with sessionmaker(bind=engine)() as session:
-                yield session
-        finally:
-            engine.dispose()
+        with _user_session(control_session_factory, settings, access_token.client_id) as session:
+            yield session
 
     @mcp.tool
     def query_workouts(
@@ -193,8 +240,7 @@ def create_mcp(
                     wanted_id = found.id
 
                 names = {
-                    e.id: exercise_label(e)
-                    for e in exercises_svc.search_exercises(session, None)
+                    e.id: exercise_label(e) for e in exercises_svc.search_exercises(session, None)
                 }
                 listed = workouts_svc.list_workouts(session, start_date, end_date)
                 sets_by_workout = workouts_svc.get_active_sets_by_workout(
@@ -254,9 +300,7 @@ def create_mcp(
         try:
             with domain_session() as session:
                 return {
-                    "templates": [
-                        t.model_dump() for t in templates_svc.list_templates(session)
-                    ]
+                    "templates": [t.model_dump() for t in templates_svc.list_templates(session)]
                 }
         except _DataUnavailable:
             return {"error": "data unavailable"}
@@ -281,6 +325,7 @@ def create_mcp(
         note: str | None = None,
         create_missing: bool = False,
         client_uuid: str | None = None,
+        dry_run: bool = False,
     ) -> dict:
         """代主人記錄一次訓練（整包寫入或整包拒絕）。
 
@@ -293,22 +338,30 @@ def create_mcp(
         經主人同意後帶 create_missing=true 才自動建新動作。
         每次記錄請自產一個 client_uuid（≥8 字元）；timeout 重試帶同值
         即冪等，不會重複寫入。
+
+        dry_run=true 只回「將新增／將略過／將衝突」摘要與前 5 筆預覽，
+        零寫入、零 change log——寫入前先給主人確認用（F152）。
         """
         if denied := _write_denied():
             return denied
         try:
             with domain_session() as session:
                 try:
-                    summary = workouts_svc.log_workout(
-                        session,
-                        LogWorkoutIn(
-                            sets=sets,
-                            date=date,
-                            template=template,
-                            note=note,
-                            create_missing=create_missing,
-                            client_uuid=client_uuid,
-                        ),
+                    payload = LogWorkoutIn(
+                        sets=sets,
+                        date=date,
+                        template=template,
+                        note=note,
+                        create_missing=create_missing,
+                        client_uuid=client_uuid,
+                        dry_run=dry_run,
+                    )
+                    # dry_run 的分派與 app/api/workouts.py 同一套：service 的
+                    # log_workout 簽名不動（共用契約），只是換一個入口函式。
+                    summary = (
+                        workouts_svc.dry_run_log_workout(session, payload)
+                        if dry_run
+                        else workouts_svc.log_workout(session, payload)
                     )
                 except ValidationError as exc:
                     return {"error": validation_message(exc)}
@@ -336,9 +389,7 @@ def create_mcp(
         try:
             with domain_session() as session:
                 try:
-                    data = BodyMetricIn(
-                        date=date, weight_kg=weight_kg, body_fat_pct=body_fat_pct
-                    )
+                    data = BodyMetricIn(date=date, weight_kg=weight_kg, body_fat_pct=body_fat_pct)
                 except ValidationError as exc:
                     return {"error": validation_message(exc)}
                 row, _created = body_metrics_svc.upsert_body_metric(session, data)
