@@ -1,18 +1,60 @@
 # session handoff
 
-最後更新：2026-08-22（無人看管 dispatch 場，第五場）。**153/164 passing、11 failing**
-（F89、F95、F104、F124、F128、F149、F153、F160、**F163、F164、F165**）。
+最後更新：2026-08-22（無人看管 dispatch 場，第六場）。**156/164 passing、8 failing**
+（F89、F95、F104、F124、F128、F149、F153、F160）。
 
 ## 接手第一件事
 
-1. **F153 已拆成三個 slice：F163 → F164 → F165，三條都是草案、等 Ryan 簽核**（hook 會擋 executor）。
-   F153 本身不再直接派工，`frozen acceptance` 一字未動，只改了 `touches` 並加 `slices`／`note` 欄位。
-2. **F164 有一題要 Ryan 拍板才動得了**：使用者自填的 LLM key 要不要每次請求以 header 交給 server 代打。
-   建議 (a) server 代打（key 不落地不進 log）；(b) 前端直打會逼出第二條寫入路徑，與 E1 約束衝突。
-   已投進收件匣。
-3. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節），維運指令從那裡跑。
+1. **F163／F164／F165 已 passing 並歸檔**（app 內建對話的三個 slice：後端橋接層 → `/api/chat` → UI）。
+   APK **v158** 已在 `G:\我的雲端硬碟\lift-log-apk\lift-log-v158-F165.apk`。
+2. **內建對話還沒真的用過**——正式站沒設 `LIFTLOG_LLM_API_KEY`，Ryan 也還沒在 app 設定頁填自己的 key。
+   要試就填一把 Anthropic key（設定頁「對話 API KEY」），或在正式站 `.env` 設
+   `LIFTLOG_LLM_API_KEY`（其餘 `LIFTLOG_LLM_*` 有預設值，見 `.env.example`）。
+   **本場沒有部署正式站**。
+3. **F153（母條）仍 failing**：它的驗證方式要求「同一句指令分別經外部 Claude 與內建對話產生相同資料列」，
+   要真 key ＋ Ryan 本人操作。三個 slice 都好了，只差這一次對照。
+   另外它條文寫的「自填 key 存本機不上傳 server」已被 F164 的 (a) 決議取代，
+   替代紀錄在 `docs/evidence/F153-supersede.md`（frozen acceptance 一字未動）。
+4. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節），維運指令從那裡跑。
 
-## 本場做的事（2026-08-22 第五場 dispatch，收件匣回覆「先重寫 F153 的 touches 並拆成可簽核的 slice」）
+## 本場做的事（2026-08-22 第六場 dispatch，收件匣回覆「簽核三條，F164 採 (a) server 代打」）
+
+依收件匣答案把 F163/F164/F165 簽核（`signed_off: true`，commit `9ca32fd` 已 push），
+F164 的待拍板題以 (a) **server 代打** 寫進條文，然後依 prerequisites 順序做完三條。
+
+| slice | 交付 | 驗證 |
+|---|---|---|
+| F163 | `app/mcp.py::run_tool()`：以 user id 綁該 user 的 data DB（`ContextVar` 優先於 access token 與 legacy fallback），tool 表就是 `/mcp` 那份；`log_workout` 補 `dry_run` | `tests/test_mcp.py` 34 passed（6 條新增） |
+| F164 | `POST /api/chat/`：兩段式寫入、key 兩來源（自填 header 優先）、上游錯誤轉可讀碼、單輪不存歷史 | `tests/test_chat.py` 14 passed（上游全 stub，不打外網） |
+| F165 | 對話畫面（底部導覽第五顆）、dry-run 摘要卡＋確認／取消、設定頁自填 key、sw.js v158、APK v158 | `tests/e2e/verify_f165.py` **27/27**，只攔 `/api/chat/`，其餘打真 server |
+
+全套 `uv run pytest` **486 passed**、`uv run ruff check .` 全過。
+
+### 獨立驗收開了一條真的洞（F164 ③，P2）
+
+**確認路徑原本只檢查 tool 名在不在寫入清單裡**，其餘完全信任 client——驗收者實測：
+從沒呼叫過 `/api/chat`、直接送一份自己捏的 `pending_write` 就寫進去了，
+等於整個「先 dry-run 再確認」流程可以跳過。
+
+修法（commit `d1b73d1`）：`pending_write` 由 server 對 `(tool, arguments)` 做 HMAC 簽章
+（金鑰沿用 `web_csrf_secret`，不另外生一把），確認時 `compare_digest` 比對，
+對不上回 400 `pending_write_invalid`。無狀態，不必為一次確認建表。
+新增兩條回歸測試（沒跑第一段就送、拿到簽章後改參數）。第 2 輪針對性重驗：兩條皆 pass。
+
+**教訓**：兩段式確認只要沒有「這份是我核發的」這個證明，第一段就是裝飾品。
+下次寫這類 acceptance，「帶回同一份」要明寫成 server 可驗證的東西。
+
+同一輪驗收另開一條 P2：`app/static/js/chat.js` 被掃進標記 F164 的 commit（`247eada`）——
+那是 F165 的檔案，本場 commit 順序造成的。git 歷史沒改，`docs/evidence/F164.md` 加了更正段。
+
+## 卡住的事
+
+- **剩下 8 條 failing 沒有一條 headless agent 推得動**：F89／F95／F104／F128 要真機、
+  F124／F128／F160 未簽核（hook 擋 executor）、F149 要 Ryan 的 Google 身分、
+  F153 要真 LLM key ＋ 人工對照。
+- 本場沒排保溫鬧鐘：`ScheduleWakeup` 只在 `/loop` dynamic mode 可用，headless dispatch 進不去。
+
+## 上一場做的事（2026-08-22 第五場 dispatch，收件匣回覆「先重寫 F153 的 touches 並拆成可簽核的 slice」）
 
 沒有動任何程式碼，只改 `feature_list.json`。
 
