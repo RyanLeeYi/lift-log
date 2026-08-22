@@ -130,6 +130,16 @@ DEFAULT_MUTED = (
     "{ channels: [{ id: 'default', importance: 0 }, { id: 'rest-timer', importance: 2 }] }"
 )
 TIMER_ABSENT = "{ channels: [{ id: 'default', importance: 3 }] }"
+# F166：第三個 channel `rest-alarm`（歸零那則「休息時間到」）。
+# ALL_OK 是 ④ 的反面——三個都正常時必須顯示「開」，否則新條件只是把開關焊死。
+ALL_OK = (
+    "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },"
+    " { id: 'rest-alarm', importance: 4 }] }"
+)
+ALARM_MUTED = (
+    "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },"
+    " { id: 'rest-alarm', importance: 0 }] }"
+)
 
 
 def toggle_label(page) -> str:
@@ -252,6 +262,25 @@ def run_checks(base: str) -> None:
         check(
             "休息提醒：關" in toggle_label(page),
             f"切回前景後，設定畫面上的開關要跟著更新（實際：{toggle_label(page)}）",
+        )
+        ctx.close()
+
+        # F166 ④：另外兩個 channel 都正常，只有 rest-alarm 被關 → 仍要顯示「關」。
+        # 那則才是「時間到」本身，漏掉它等於讓最該響的提醒靜默失敗。
+        ctx, page = open_app(browser, base, ALARM_MUTED)
+        label = toggle_label(page)
+        check(
+            "休息提醒：關" in label,
+            f"F166 ④ rest-alarm importance=0（另兩個正常）→ 顯示「關」（實際：{label}）",
+        )
+        ctx.close()
+
+        # F166 ④ 反面：三個 channel 全部正常時要顯示「開」
+        ctx, page = open_app(browser, base, ALL_OK)
+        label = toggle_label(page)
+        check(
+            "休息提醒：開" in label,
+            f"F166 ④ 反面：三個 channel 都正常 → 顯示「開」（實際：{label}）",
         )
         ctx.close()
 

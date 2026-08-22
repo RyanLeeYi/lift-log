@@ -44,11 +44,14 @@ const IMPORTANCE_NONE = 0;
 //   平常就是這一則——使用者被吵到時長按的也是它。
 // - `default`：Capacitor LocalNotifications 的預設 channel（我們排通知時沒指定 channelId）。
 //   只有前景服務啟不動時才走到。
+// - `rest-alarm`：F166 補上的第三個（RestTimerService，顯示名「休息時間到」，IMPORTANCE_HIGH）。
+//   休息**歸零**那則提醒掛在這裡——它才是「時間到」這件事本身。漏掉它的話，
+//   使用者只關掉「休息時間到」，另外兩個 channel 都正常，開關就會顯示「開」而提醒不出現。
 //
 // 任一個被關就顯示「關」是刻意的保守：JS 這一側無法預知這次休息會走哪一條
 // （startForegroundRest 成不成功要到當下才知道），寧可多提醒一次，
 // 也不要讓使用者以為提醒是開著的。
-const REST_CHANNEL_IDS = ["rest-timer", "default"];
+const REST_CHANNEL_IDS = ["rest-timer", "rest-alarm", "default"];
 
 /**
  * 這一類通知是不是被單獨關掉了。
@@ -62,6 +65,7 @@ const REST_CHANNEL_IDS = ["rest-timer", "default"];
  *
  * F95 起 `rest-timer`（F63 前景服務那則倒數通知的 channel）也算在內，見上方
  * REST_CHANNEL_IDS——平常使用者長按到的就是它，只看 default 等於漏掉主要路徑。
+ * F166 再補 `rest-alarm`（歸零那則提醒）：判定規則一字不動，只是清單多一個 id。
  */
 async function restChannelMuted() {
   const api = plugin();
