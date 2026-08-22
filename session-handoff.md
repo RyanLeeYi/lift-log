@@ -1,15 +1,15 @@
 # session handoff
 
-最後更新：2026-08-22（無人看管 dispatch 場，第九場）。**158/166 passing、8 failing**
-（F89、F104、F124、F128、F149、F153、**F160**、**F166**）。
-F160 實作完成、待驗收結果；F166 實作完成、卡在真機那條。
+最後更新：2026-08-22（無人看管 dispatch 場，第九場）。**159/166 passing、7 failing**
+（F89、F104、F124、F128、F149、F153、**F166**）。
+**F160 已 passing 並歸檔**；F166 實作完成、卡在真機那條。
 
 ## 接手第一件事
 
 1. **8 條全部簽核了**（收件匣 8 筆 `[sign-off]` 都回 "Sign off as-is"，commit `a20771a` 已 push）。
    `delegation-warmup` 的 ②③ 兩道閘門不再擋任何一條。
-2. **F160 已實作並 commit（`241a3b3`）**，`acceptance-verifier` 的判定結果見下方；
-   verifier 判 pass 就改 `passing` ＋ 整條原文搬 `docs/archive/features.jsonl`。
+2. **F160 已 passing 並歸檔**（實作 `241a3b3`、收官 `9d2ad17`）。整條原文在
+   `docs/archive/features.jsonl`。**APK `lift-log-v160-F160.apk` 已上 Google Drive 並裝機。**
 3. **F166 卡在 ⑥ 真機**——不是 F166 的問題，是那支手機上 lift-log 的通知在系統層是關的。
    已投 question（high）。細節見下。
 4. **F124 簽核了但沒答案**——條文本身是「待決」清單。已投 question 建議不做。
@@ -47,15 +47,26 @@ predicate 與既有 `failed` 計數完全相同。
 修法在 code-path 層級生效（任何非 retryable、非 session 的 `TransportFailure` 都涵蓋），
 所以數字對不上不影響結果，但條文那句話是錯的。
 
+**驗收（`acceptance-verifier`，fresh context）：①–⑤ 全 pass、無 severity、無問題。**
+最值得記的是它自己做了突變測試證明 ④ 的兩條新測試不是空測：
+還原 `SyncClient.java:99` 的 `markPushPermanentFailure` → Android 測試
+`AssertionError at SyncClientTest.java:145`；移除 `app/services/sync.py:304` 的
+`UnprocessableError` 攔截 → server 測試 `assert 422 == 200` 變紅。還原後皆轉綠，
+`git status --porcelain` 乾淨。① 另外逐一追蹤了 `LocalStore` 全部 `next_attempt_at`
+寫入點，確認整包 HTTP 錯誤分支已無設 NULL 的路徑，`markPushPermanentFailure` 全 repo 零呼叫點。
+
 ⚠ **F160 動到 Android Java，要出 APK 才會到手機上**（CLAUDE.md 那條規則的字面是
-「動到 `app/static/` 才要出」，但 Java 改動同樣只能靠 APK 送達）。**本場還沒出。**
+「動到 `app/static/` 才要出」，但 Java 改動同樣只能靠 APK 送達——**這條規則的判準該改成
+「這個改動要不要靠 APK 才到得了手機」**）。本場已出：`APP_VERSION` v160、
+`G:\我的雲端硬碟\lift-log-apk\lift-log-v160-F160.apk`，複製後用 `unzip` 驗過版號，
+也已 `adb install -r` 裝上 SM-N9750。
 
 ### F166（direct，`09afde9`）
 
 `REST_CHANNEL_IDS` 補上第三個 channel `rest-alarm`（歸零那則「休息時間到」，importance 4）。
 判定規則一字沒動（查不到不算被關、拋錯退回 `areEnabled`），只是清單多一個 id。
 `verify_f95.py` 補 ④ 的正反兩條，**11/11 passed**（原 9/9）。`ruff` 全過。
-`APP_VERSION` 升到 **v159**，APK 已 build 並裝上 SM-N9750（路徑確認是
+`APP_VERSION` 當時升到 v159（本場最終出的是含 F160 的 **v160**），APK 已裝上 SM-N9750（路徑確認是
 `apk/prod/release/app-prod-release.apk`，`unzip` 驗過版號與那行常數）。
 
 ## 卡住的事
