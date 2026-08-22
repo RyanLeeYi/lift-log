@@ -11,6 +11,7 @@ from app.api import (
     app_release,
     auth,
     body_metrics,
+    chat,
     daily_status,
     deps,
     exercises,
@@ -68,9 +69,7 @@ def create_app(
                 # tombstone 仍是獨立的第二道關卡——刪過的帳號不會因為這樣就被復原為 active。
                 if account_service.is_tombstoned(control, user.id):
                     raise RuntimeError
-                path = canonical_user_db_path(
-                    settings.user_data_dir, user.id, user.data_db_name
-                )
+                path = canonical_user_db_path(settings.user_data_dir, user.id, user.data_db_name)
                 if not path.is_file():
                     raise RuntimeError
                 initialize_data_db(path)
@@ -78,15 +77,18 @@ def create_app(
                 unavailable_user_ids.add(user.id)
 
     # MCP 先建：FastAPI 必須接 mcp_app.lifespan，session manager 才會初始化
-    mcp_app = create_mcp(
+    mcp_server = create_mcp(
         session_factory,
         settings.token,
         control_session_factory=control_session_factory,
         settings=settings,
-    ).http_app(path="/")
+    )
+    mcp_app = mcp_server.http_app(path="/")
 
     app = FastAPI(title="lift-log", lifespan=mcp_app.lifespan)
     app.state.settings = settings
+    # F164：內建對話經 F163 橋接層呼叫同一台 MCP server 的同一組 tool
+    app.state.mcp_server = mcp_server
     app.state.session_factory = session_factory
     app.state.control_session_factory = control_session_factory
     # 明示設定優先；沒設就用 control DB 持久化的那顆，自架者零設定也有真金鑰。
@@ -163,6 +165,7 @@ def create_app(
     app.include_router(settings_api.router)  # F80：每週目標天數等設定
     app.include_router(sync.router)
     app.include_router(mcp_tokens.router)
+    app.include_router(chat.router)  # F164：內建對話
     app.include_router(account.router)  # F148：匯出／刪帳
     app.include_router(app_release.router)  # F67：app 版自我更新的版本查詢與 APK 供檔
     app.mount(MCP_MOUNT, mcp_app)

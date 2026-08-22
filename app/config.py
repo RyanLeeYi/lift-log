@@ -48,6 +48,14 @@ class Settings(BaseSettings):
         反過來把正式站標成「測試環境」，你會以為在動假資料而放心亂改。
         """
         return value if value in ("prod", "dev") else "prod"
+
+    # F164 內建對話：server 代打 LLM。key 選填——未設時使用者仍可自填（前端每次請求
+    # 以 X-LLM-API-Key 夾帶），兩者皆無時 /api/chat 回 llm_key_missing。
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.anthropic.com"
+    llm_model: str = "claude-sonnet-5"
+    llm_max_tokens: int = 2048
+    llm_timeout_seconds: float = 60.0
     # F31 Web Push（休息結束通知）：缺任一則推播功能停用、其餘照常運作
     vapid_private_key: str = ""  # PKCS8 DER 的 base64url（.env 單行）
     vapid_public_key: str = ""  # 未壓縮公鑰點 base64url＝前端 applicationServerKey
