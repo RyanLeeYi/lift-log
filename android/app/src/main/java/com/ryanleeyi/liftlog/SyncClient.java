@@ -93,7 +93,10 @@ final class SyncClient {
             } else if (!hasPushMutations(body)) {
                 store.markSyncError(error.errorCode);
             } else {
-                store.markPushPermanentFailure(body, error.errorCode);
+                // F160：整包層級的 HTTP 錯誤（409 unsupported_schema／403 device_mismatch／
+                // 422 等）代表環境或版本不對，不是這批 mutation 本身有問題——不得連坐永久失敗，
+                // 走跟 retryable 一樣的 backoff，讓它們保持可重送。
+                scheduleRetry(body, error.errorCode, nowMillis);
             }
             return new Result("error", store.pendingMutationCount(), store.serverCursor());
         } catch (IOException error) {

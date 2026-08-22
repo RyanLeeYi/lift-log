@@ -751,7 +751,29 @@ public class LocalStore extends SQLiteOpenHelper {
         put(result, "nextSyncAt", nextSyncAt());
         put(result, "bootstrapComplete", "1".equals(syncState(db, "bootstrap_complete")));
         put(result, "conflicts", count("sync_conflicts", "resolved_at IS NULL", null));
+        put(result, "failed_items", failedItems(db));
         return result;
+    }
+
+    /** F160 ③：讓使用者知道哪一筆沒送出去，不只是幾筆——每筆帶可辨識的實體與錯誤碼。 */
+    private JSONArray failedItems(SQLiteDatabase db) {
+        JSONArray items = new JSONArray();
+        try (Cursor cursor = db.query(
+            "sync_outbox",
+            new String[]{"mutation_id", "entity_type", "entity_id", "error_code", "created_at"},
+            "acked_at IS NULL AND error_code IS NOT NULL", null, null, null, "created_at ASC"
+        )) {
+            while (cursor.moveToNext()) {
+                JSONObject item = jsonObject();
+                put(item, "mutationId", cursor.getString(0));
+                put(item, "entityType", cursor.getString(1));
+                put(item, "entityId", cursor.getString(2));
+                put(item, "errorCode", cursor.getString(3));
+                put(item, "createdAt", cursor.getString(4));
+                items.put(item);
+            }
+        }
+        return items;
     }
 
     public void markSyncSuccess(long nowMillis) {
@@ -872,6 +894,11 @@ public class LocalStore extends SQLiteOpenHelper {
         });
     }
 
+    /**
+     * F160：整包層級的 HTTP 錯誤（409/403/422 等）不再呼叫這個方法——SyncClient 那類錯誤一律
+     * 走 retryable 相同的 backoff（見 SyncClient.syncOnce）。這裡沒有 HTTP 呼叫點了，留給未來
+     * server 明確指認「就是這批資料本身壞了」（而不是版本/環境不對）時使用。
+     */
     public void markPushPermanentFailure(JSONObject body, String errorCode) {
         transaction(db -> {
             try {

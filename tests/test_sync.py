@@ -232,6 +232,92 @@ def test_invalid_mutation_does_not_block_valid_sibling_or_advance_for_it(
         assert changes[0]["entity_id"] == valid["entity_id"]
 
 
+def test_mode_exclusivity_violation_becomes_conflict_not_batch_failure(
+    sync_client: TestClient,
+) -> None:
+    """F160 ④：一批 N 筆裡一筆 mode 互斥違規（UnprocessableError）只退成 conflict，
+
+    不拖累同批其餘 N-1 筆——涵蓋 app/services/sync.py::_process 的
+    (ValidationError, ValueError, UnprocessableError) 分支，目前零覆蓋。
+    """
+    with sync_client as client:
+        headers, device_id = _login(client, "mode-exclusive")
+        workout_id = str(uuid4())
+        exercise_id = str(uuid4())
+        bad_set_id = str(uuid4())
+        good_set_id = str(uuid4())
+        workout = _mutation(
+            entity_type="workout",
+            entity_id=workout_id,
+            payload={
+                "sync_id": workout_id,
+                "date": "2026-08-11",
+                "template_sync_id": None,
+                "note": None,
+                "ended_at": None,
+                "owner_device_id": device_id,
+                "lease_generation": 1,
+            },
+        )
+        exercise = _mutation(
+            entity_type="exercise",
+            entity_id=exercise_id,
+            payload={
+                "sync_id": exercise_id,
+                # 種子動作庫以外的名字，避免撞自然鍵；預設 mode="reps"（省略即次數型）
+                "name_zh": "互斥驗證專用動作",
+                "name_en": "Mode Exclusive Test Lift",
+                "muscle_group": "胸",
+                "is_bodyweight": False,
+            },
+        )
+        # 次數型動作卻兩個量測欄位都不帶 → assert_set_matches_mode 丟 UnprocessableError
+        bad_set = _mutation(
+            entity_type="set",
+            entity_id=bad_set_id,
+            payload={
+                "sync_id": bad_set_id,
+                "client_uuid": str(uuid4()),
+                "workout_sync_id": workout_id,
+                "exercise_sync_id": exercise_id,
+                "set_number": 1,
+                "weight_kg": 80,
+                "reps": None,
+                "rpe": None,
+                "rest_seconds": None,
+            },
+        )
+        good_set = _mutation(
+            entity_type="set",
+            entity_id=good_set_id,
+            payload={
+                "sync_id": good_set_id,
+                "client_uuid": str(uuid4()),
+                "workout_sync_id": workout_id,
+                "exercise_sync_id": exercise_id,
+                "set_number": 2,
+                "weight_kg": 80,
+                "reps": 8,
+                "rpe": 8,
+                "rest_seconds": 90,
+            },
+        )
+        mutations = [workout, exercise, bad_set, good_set]
+
+        result = _push(client, headers, device_id, mutations)
+
+        assert result.status_code == 200
+        body = result.json()
+        assert len(body["conflicts"]) == 1
+        assert body["conflicts"][0]["reason"] == "validation_failed"
+        assert body["conflicts"][0]["mutation_id"] == bad_set["mutation_id"]
+        assert len(body["accepted"]) == len(mutations) - 1
+        accepted_ids = {item["mutation_id"] for item in body["accepted"]}
+        assert accepted_ids == {
+            workout["mutation_id"], exercise["mutation_id"], good_set["mutation_id"]
+        }
+
+
 def test_missing_dependency_can_retry_after_parent_arrives(sync_client: TestClient) -> None:
     with sync_client as client:
         headers, device_id = _login(client, "dependency")

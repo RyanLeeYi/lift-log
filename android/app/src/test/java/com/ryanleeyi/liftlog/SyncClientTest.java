@@ -130,6 +130,28 @@ public class SyncClientTest {
     }
 
     @Test
+    public void unsupportedSchemaFailureStaysRetryableAndDoesNotPoisonPending() throws Exception {
+        // F160 ①：409 unsupported_schema 是整包層級的環境/版本錯誤，不是這批資料壞了——
+        // 不得連坐永久失敗，pending 數量要維持不變，下一輪仍要重送同一筆。
+        String mutationId = uuid();
+        store.saveBodyMetric(uuid(), "2026-08-11", 80, null, mutationId);
+        SchemaRejectThenAcceptTransport transport =
+            new SchemaRejectThenAcceptTransport(mutationId);
+        SyncClient client = new SyncClient(store, uuid(), transport, () -> 0.0);
+
+        SyncClient.Result first = client.syncOnce(0);
+        assertEquals("error", first.state);
+        assertEquals(1, store.pendingMutationCount());
+        assertEquals(1, store.syncStatus().getInt("pending"));
+        assertEquals(0, store.syncStatus().getInt("failed"));
+        assertEquals(5_000, store.nextSyncAt());
+
+        SyncClient.Result second = client.syncOnce(5_000);
+        assertEquals("synced", second.state);
+        assertEquals(0, store.pendingMutationCount());
+    }
+
+    @Test
     public void pullOnlyFailuresPersistAndIncreaseBackoff() {
         SyncClient client = new SyncClient(store, uuid(), new SyncClient.Transport() {
             @Override
@@ -231,6 +253,36 @@ public class SyncClientTest {
         @Override
         public JSONObject pull(long cursor) throws JSONException {
             calls.add("pull");
+            return new JSONObject()
+                .put("changes", new JSONArray())
+                .put("next_cursor", cursor)
+                .put("has_more", false);
+        }
+    }
+
+    /** 第一次 push 回 409 unsupported_schema，第二次（backoff 之後）才接受。 */
+    private static final class SchemaRejectThenAcceptTransport implements SyncClient.Transport {
+        private final String mutationId;
+        private int pushes;
+
+        SchemaRejectThenAcceptTransport(String mutationId) {
+            this.mutationId = mutationId;
+        }
+
+        @Override
+        public JSONObject push(JSONObject body) throws IOException, JSONException {
+            pushes++;
+            if (pushes == 1) throw new SyncClient.TransportFailure("unsupported_schema", false);
+            return new JSONObject()
+                .put("accepted", new JSONArray().put(new JSONObject()
+                    .put("mutation_id", mutationId)
+                    .put("version", 1)
+                    .put("server_seq", 1)))
+                .put("conflicts", new JSONArray());
+        }
+
+        @Override
+        public JSONObject pull(long cursor) throws JSONException {
             return new JSONObject()
                 .put("changes", new JSONArray())
                 .put("next_cursor", cursor)
