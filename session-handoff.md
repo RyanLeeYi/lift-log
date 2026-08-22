@@ -1,107 +1,79 @@
 # session handoff
 
-最後更新：2026-08-22（無人看管 dispatch 場，第九場）。**159/166 passing、7 failing**
-（F89、F104、F124、F128、F149、F153、**F166**）。
-**F160 已 passing 並歸檔**；F166 實作完成、卡在真機那條。
+最後更新：2026-08-22（無人看管 dispatch 場，第十場）。**160/166 passing、6 failing**
+（F89、F104、F128、F149、F153、F166）。
+**F124 已 passing 並歸檔**；APK `lift-log-v161-F124.apk` 已上 Google Drive（**尚未裝機**）。
 
 ## 接手第一件事
 
-1. **8 條全部簽核了**（收件匣 8 筆 `[sign-off]` 都回 "Sign off as-is"，commit `a20771a` 已 push）。
-   `delegation-warmup` 的 ②③ 兩道閘門不再擋任何一條。
-2. **F160 已 passing 並歸檔**（實作 `241a3b3`、收官 `9d2ad17`）。整條原文在
-   `docs/archive/features.jsonl`。**APK `lift-log-v160-F160.apk` 已上 Google Drive 並裝機。**
-3. **F166 卡在 ⑥ 真機**——不是 F166 的問題，是那支手機上 lift-log 的通知在系統層是關的。
-   已投 question（high）。細節見下。
-4. **F124 簽核了但沒答案**——條文本身是「待決」清單。已投 question 建議不做。
-5. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節）。
+1. **F124 做完了**：原生→前端控制事件不再被丟掉。整條原文在 `docs/archive/features.jsonl`，
+   證據在 `docs/evidence/F124.md`。驗收（`acceptance-verifier`）①–⑥ 全 pass、無 severity。
+2. **APK v161 已出但沒裝機**（headless 沒接手機）。Ryan 要驗 ⑤ 的真機流程就裝這顆。
+3. **收件匣答案有一則過期**：`Run, start with F160` ——F160 在**同一天更早的第九場**就
+   已 passing 並歸檔。這是 2026-08-21 記過一次的同型故障（DEVLOG 第四場）。
+   另一則 `全做：六個原生→前端事件都暫存重播` 就是本場做的 F124。
+4. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節）。
 
-## 本場做的事（2026-08-22 第九場 dispatch）
+## 本場做的事（2026-08-22 第十場 dispatch）
 
-收件匣解鎖的是 8 條 feature 的簽核。照 `baton-dispatch` 五問把它們按**共用檔案**分四組，
-不是一條一個 worker：
+收件匣解鎖的是 **F124 的三個待決問題**（① 要不要做延後派送、② 就緒訊號從哪來、
+③ 範圍是否擴及六個事件）。Ryan 答「全做」，所以先把原本的「待決清單」改寫成
+可逐條判定的 ①–⑥ acceptance 才動工（Plan → 條文凍結 → 實作）。
 
-| 組 | feature | 判定 | 理由 |
-|---|---|---|---|
-| rest-overlay | F89 F104 F124 F128 | **direct**（本場未動工） | 四條全撞 `RestTimerPlugin.java`，永遠不能平行；且要真機互動迴圈 |
-| sync | **F160** | **dispatched**（executor / worktree） | 檔案自足、done criteria 可斷言、與其他組零交集 |
-| notify-gate | **F166** | **direct** | 一行常數 ＋ 兩條 E2E，派工成本大於工作本身 |
-| blocked | F149 F153 | 不動工 | 要 Ryan 的 Google `sub`／真 LLM key ＋ 人工對照 |
+`baton-dispatch` 五問：只有一組工作、三個檔案互相咬合（Java retain ↔ static queue ↔
+JS 訂閱時機）、核心是「事件順序 vs 還原順序」的未知行為判斷 → **direct**，
+唯一派出去的是唯讀的 `acceptance-verifier`。
 
-### F160（dispatched，`241a3b3`）
+### 做法：三層，缺一層就還是會掉事件
 
-整包層級的 HTTP 錯誤（409 `unsupported_schema`／403 `device_mismatch`）不再連坐整批 outbox：
-`SyncClient.syncOnce()` 那個 `else` 分支從 `markPushPermanentFailure` 改走 `scheduleRetry`。
-`markPushPermanentFailure` 保留但已無 HTTP 呼叫點（主 session 的裁決，不是刪掉）。
-`syncStatus()` 新增 `failed_items`（`mutationId`/`entityType`/`entityId`/`errorCode`/`createdAt`），
-predicate 與既有 `failed` 計數完全相同。
+| 情況 | 處置 |
+|---|---|
+| plugin 在、JS 也訂閱了 | 直接送 |
+| plugin 在、JS 還沒訂閱（Activity 重建，onCreate 早於 WebView） | Capacitor 內建 `notifyListeners(..., retainUntilConsumed=true)` |
+| plugin 不在（Activity 被回收，`instance == null`） | `PendingRestControl` static FIFO（上限 32、TTL 5 分鐘），`load()` 重放 |
 
-主 session 集中驗證（不是只看 worker 回報）：
-- `uv run pytest` **487 passed**（基準 486 ＋ 新增 1）
-- `uv run ruff check .` 全過
-- `gradlew testProdDebugUnitTest --tests '*SyncClientTest*'` **tests=8 failures=0**，
-  含新增的 `unsupportedSchemaFailureStaysRetryableAndDoesNotPoisonPending`，
-  且 `oversizedMutationBecomesPermanentErrorWithoutCrashing`（⑤ 的 BatchTooLarge）仍綠
+**第二層是平台既有能力，不是自寫的**——`Plugin.java` 在沒有 listener 時把 payload 存進
+`retainedEventArguments`，第一個 listener 掛上時 `sendRetainedArgumentsForEvent()` 依序送出。
+只有第三層它救不了。原本以為要自建「前端取件」握手（F125 ③ 那種），實際上只要換一個
+既有 API 的參數。
 
-⚠ **worker 回報裡有一個值得記的查證**：規格背景寫「422 來自 FastAPI 對 `SyncPushIn` 的外層驗證」，
-但 `app/errors.py::on_validation_error` 實際把 `RequestValidationError` 轉成 **400**。
-修法在 code-path 層級生效（任何非 retryable、非 session 的 `TransportFailure` 都涵蓋），
-所以數字對不上不影響結果，但條文那句話是錯的。
+判定放在 `RestTimerPlugin.dispatch()` 這個唯一出口，所以九種動作全涵蓋，不逐動作列舉。
 
-**驗收（`acceptance-verifier`，fresh context）：①–⑤ 全 pass、無 severity、無問題。**
-最值得記的是它自己做了突變測試證明 ④ 的兩條新測試不是空測：
-還原 `SyncClient.java:99` 的 `markPushPermanentFailure` → Android 測試
-`AssertionError at SyncClientTest.java:145`；移除 `app/services/sync.py:304` 的
-`UnprocessableError` 攔截 → server 測試 `assert 422 == 200` 變紅。還原後皆轉綠，
-`git status --porcelain` 乾淨。① 另外逐一追蹤了 `LocalStore` 全部 `next_attempt_at`
-寫入點，確認整包 HTTP 錯誤分支已無設 NULL 的路徑，`markPushPermanentFailure` 全 repo 零呼叫點。
+### 順序才是真正的坑（④）
 
-⚠ **F160 動到 Android Java，要出 APK 才會到手機上**（CLAUDE.md 那條規則的字面是
-「動到 `app/static/` 才要出」，但 Java 改動同樣只能靠 APK 送達——**這條規則的判準該改成
-「這個改動要不要靠 APK 才到得了手機」**）。本場已出：`APP_VERSION` v160、
-`G:\我的雲端硬碟\lift-log-apk\lift-log-v160-F160.apk`，複製後用 `unzip` 驗過版號，
-也已 `adb install -r` 裝上 SM-N9750。
+前端訂閱從 module eval 當下改成 `startupRestore.then(...)`。**事件不掉了以後，
+「什麼時候訂閱」就直接決定它們落在 F66 快照還原之前還是之後**：還原之前收到 `stop`
+會撞上 `restStartedAt === null` 直接 return、隨後還原又生出一輪殭屍倒數；
+`focus` 讀不到 `restExerciseId` 而 early-return（＝「停了但沒跳頁」）。
+修好丟失卻沒修順序，等於把靜默丟棄換成靜默錯序。
 
-### F166（direct，`09afde9`）
+`MainActivity.onCreate` 因此才敢恢復處理 `EXTRA_BACK_TO_APP`／`EXTRA_FOCUS_REST`
+（⑤；原本刻意不掛，理由就是 F124 本身）。
 
-`REST_CHANNEL_IDS` 補上第三個 channel `rest-alarm`（歸零那則「休息時間到」，importance 4）。
-判定規則一字沒動（查不到不算被關、拋錯退回 `areEnabled`），只是清單多一個 id。
-`verify_f95.py` 補 ④ 的正反兩條，**11/11 passed**（原 9/9）。`ruff` 全過。
-`APP_VERSION` 當時升到 v159（本場最終出的是含 F160 的 **v160**），APK 已裝上 SM-N9750（路徑確認是
-`apk/prod/release/app-prod-release.apk`，`unzip` 驗過版號與那行常數）。
+### 驗證
+
+- Android 單元測試 **41 tests / 0 failures**（新增 `PendingRestControlTest` 4 條）
+- `tests/e2e/verify_f124.py` **3/3**——量的是 `addListener` 與開機還原的先後
+- `uv run pytest` **487 passed**（與 F160 收官基準相同）、`ruff` 全過
+- 兩處都做了突變測試：Java 側改 `removeFirst`→`removeLast`／拿掉 TTL 過濾 → 2 條紅；
+  JS 側把訂閱改回 module eval → E2E 第三條紅（2/3、exit 1）。還原後皆綠
 
 ## 卡住的事
 
-### F166 ⑥ 真機：手機上 lift-log 的通知在系統層是關的
+### F166 ⑥ 真機：手機上 lift-log 的通知在系統層是關的（延續上一場）
 
-三個 channel 全部正常（default=3、rest-timer=2、rest-alarm=4），系統「應用程式通知 →
-顯示通知」畫面上讀到「開」，**但** `dumpsys notification` 說
-`AppSettings: com.ryanleeyi.liftlog (10917) allowNoti=false`。
-
-`areEnabled()` 是 `native-notify.js` 的唯一事實來源，它一 false，app 內「休息提醒」開關
-就一定顯示「關」，**跟 channel 狀態無關**。所以「關掉 rest-alarm → 開關顯示關」這個觀察
-在目前狀態下**無法區分是不是 F166 造成的**——我把 rest-alarm 關掉再開回，兩邊都是「關」。
-證據無效，沒有拿它充數。
-
-同一份 dumpsys 裡 `com.ipass.ipassmoney` 也是 `allowNoti=false`，所以懷疑是 Samsung 那層的
-批次設定，不是這個 app 的問題。**這條也會讓 F89／F104／F128 的真機驗收不可靠**
-（F89 ⑥ 的浮動計時開關要先開休息提醒）。
-
-**裝置狀態已還原**：rest-alarm importance 回到 4；app 內「休息提醒」開關點過兩次（一開一關，
-淨值為零）；沒動 app 層通知設定；沒碰那筆 pre-existing 的「待處理衝突 1 筆」。
-
-### F124 簽核了，但條文是「待決」清單不是規格
-
-三個問號（要不要做延後派送／就緒訊號從哪來／範圍是否擴及六個事件）都沒答案。
-已投 question 並建議**不做**：F123 之後殘留風險只剩「銷毀與收掉之間那一瞬按下去」，
-後果是那一按沒反應、鈴照響、再按一次即可；為它加一套事件暫存 ＋ 就緒握手，
-等於在幾乎走不到的路徑上新增一條狀態機（重播順序、過期命令、重複派送都是新的錯誤面）。
+`dumpsys notification` 說 `AppSettings: com.ryanleeyi.liftlog allowNoti=false`，
+但系統設定畫面顯示「開」。`areEnabled()` 是 `native-notify.js` 的唯一事實來源，
+它一 false，app 內「休息提醒」開關就一定顯示「關」，跟 channel 狀態無關 →
+**F166 ⑥ 在這台手機上無法產生有效證據**。同一份 dumpsys 裡 `com.ipass.ipassmoney`
+也是 `allowNoti=false`，懷疑是 Samsung 那層的批次設定。已投 question（high）。
+這條也讓 F89／F104／F128 的真機驗收不可靠。
 
 ### 其餘
 
 - F149 要 Ryan 的 Google 身分、F153 要真 LLM key ＋ 人工對照，headless 一律做不了。
-- **e2e 腐爛確認擴大**：`verify_f65.py` 本場實跑，卡在 `wait_for_selector("input")`，
-  與上一場對 `verify_f95.py` 的診斷完全同型。上一場說的「18 支可能全部腐爛」不是猜測。
-  修法（假 plugin 補 `AuthSession`/`LocalStore`/`Sync`、假 token 用 `LIFTLOG_TOKEN`、
-  `**/api/mcp-tokens/**` stub 成 `[]` 且註冊在 `reroute_public_host()` 之後）已在
-  `verify_f95.py` 驗證可行，抽成共用 helper 值得獨立開一條 feature。
+- **e2e 腐爛**：18 支舊腳本多半卡在登入畫面（`verify_f65.py`／`verify_f95.py` 實測同型）。
+  修法（假 plugin 補 `AuthSession`/`LocalStore`/`Sync`、`**/api/mcp-tokens/**` stub 成 `[]`
+  且註冊在 `reroute_public_host()` 之後）在 `verify_f95.py` 與本場的 `verify_f124.py`
+  都驗證可行，**同一段假 plugin 已經抄第三次了**——抽成共用 helper 值得獨立開一條 feature。
 - 本場沒排保溫鬧鐘：`ScheduleWakeup` 只在 `/loop` dynamic mode 可用，headless dispatch 進不去。

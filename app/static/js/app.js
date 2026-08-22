@@ -3443,11 +3443,14 @@ async function restoreNativeActiveWorkout() {
   await resumeRestAfterRestore();
 }
 
-if (isNativeApp()) {
-  if (nativeAuthenticated) guard(restoreNativeActiveWorkout);
-} else {
-  guard(confirmActiveWorkout);
-}
+// F124 ④：這個 promise 是「啟動還原做完了沒」的訊號，下面的 subscribeRestControl()
+// 要等它——原生補送的 stop／focus 若在 F66 快照還原之前跑掉，就是本 feature 要修的半套狀態。
+// guard() 不會 reject，所以 .then() 一定會走到。
+const startupRestore = isNativeApp()
+  ? nativeAuthenticated
+    ? guard(restoreNativeActiveWorkout)
+    : Promise.resolve()
+  : guard(confirmActiveWorkout);
 // F62：app 版的通知權限／精確鬧鐘狀態是非同步查詢，但 render() 是同步的——
 // 啟動時先查一次填進 cache，查完重繪讓開關顯示真實狀態（web 版是同步判定，這裡 no-op）。
 // ⚠ 這裡只更新「權限狀態」，**不重排通知**：休息倒數（state.restStartedAt）本來就不持久化，
@@ -3457,7 +3460,7 @@ refreshRestNotifyState().then(() => {
 });
 // F71 ⑥：原生端（浮動視窗）的暫停／繼續／停止回傳。只訂閱一次，事件驅動不輪詢。
 // 前端仍是狀態的事實來源——原生只回報「使用者按了什麼」，實際的計時狀態在這裡改。
-subscribeRestControl((action, seconds, draft, startedAt) => {
+const handleRestControl = (action, seconds, draft, startedAt) => {
   // F103 ③：「再開始」是唯一在「前端這份倒數已經停掉」時仍要處理的動作——
   // 其餘動作沒有進行中的休息就無事可做。這個判斷要放在 restStartedAt 檢查之前。
   if (action === "restart") {
@@ -3527,7 +3530,12 @@ subscribeRestControl((action, seconds, draft, startedAt) => {
     if (seconds === null || !syncRestTargetFromNative(seconds)) return;
   } else return;
   render();
-});
+};
+// F124 ④：訂閱要等啟動還原做完。原生那半在 Activity 重建期間送出的事件不會掉
+// （① 的 retainUntilConsumed 會存著，訂閱那一刻依序補送），但**順序不能反**：
+// 還原之前收到 stop 會撞上 restStartedAt === null 直接 return，隨後還原又生出一輪；
+// focus 也會因為讀不到 restExerciseId 而 early-return（＝「停了但沒跳頁」）。
+startupRestore.then(() => subscribeRestControl(handleRestControl));
 // F67：查有沒有新版（見上方 runUpdateCheck 的說明）。只在已有 token 時查——
 // setup 畫面查一定 401，而且那次失敗會讓首次設定的人到下次開 app 才看得到更新。
 if (getToken() || getNativeAccessToken() || webAuthenticated) runUpdateCheck();

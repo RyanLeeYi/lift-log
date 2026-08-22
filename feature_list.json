@@ -85,22 +85,6 @@
       "signed_off": true
     },
     {
-      "id": "F124",
-      "name": "Activity 重建時原生送給前端的控制事件會被丟掉（尚未簽核）",
-      "status": "failing",
-      "acceptance": "（2026-08-03 Codex review P2 發現，**條文未簽核**——動工前要 Ryan 拍板值不值得做。）\n\n## 症狀\n\n`RestTimerPlugin.emit()` 不暫存事件：JS 那邊 `subscribeRestControl()` 還沒跑起來時送出的\n事件會被靜默丟棄。Activity 需要**重建**（而非只是回到前景）時，onCreate 早於 WebView 載入，\n此時派送的任何原生→前端命令都會消失，而原生那半的動作（例如停掉服務）已經發生\n→ 前端從 F66 的快照還原出一輪「原生已經不存在」的休息，兩邊對不上。\n\n## 現況（F123 的處置）\n\nF123 的「回到 app」**只掛 onNewIntent，不掛 onCreate**，寧可什麼都不做也不做一半。\n那條路在 F123 的設計下幾乎不會走到：heads-up 只在 app 前景時存在，Activity 一被銷毀就\n`setAppForeground(false)` → `refreshAlarmSurface()` 把通知收掉。**殘留的風險只有\n「銷毀與收掉之間那一瞬按下去」，結果是那一按沒反應（鈴照響，再按一次即可）。**\n\n## 待決\n\n① 要不要做「延後派送」——原生把待處理命令存起來，等前端訂閱就緒後補送。\n② 若要做，就緒訊號從哪來（Capacitor 沒有現成的 listener-ready 回呼，\n   可能要前端啟動時主動呼叫 plugin 取件）。\n③ 範圍是否擴及其他原生→前端事件（stop / halt / focus / plus15 / minus15 / logset）\n   ——它們在 app 被系統回收後重建時有同一個問題，只是觸發條件更罕見。\n\n⚠ 這條**不是** F123 的缺口：F123 ⑨ 驗的路徑全部通過。這是既有機制的邊界，\n被 F123 的 review 順手照出來。",
-      "evidence": "",
-      "prerequisites": [
-        "F66",
-        "F123"
-      ],
-      "touches": [
-        "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerPlugin.java",
-        "android/app/src/main/java/com/ryanleeyi/liftlog/MainActivity.java"
-      ],
-      "signed_off": true
-    },
-    {
       "id": "F128",
       "name": "浮動視窗按「完成這組」後當場開新一輪倒數（不等前端解凍）",
       "status": "failing",

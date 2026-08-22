@@ -29,13 +29,42 @@ public class RestTimerPlugin extends Plugin {
      * 用事件而不是讓前端輪詢——app 在背景時輪詢會被節流，而「人在別的 app 裡按浮動視窗」
      * 正是最需要它可靠的那一刻。
      *
-     * <p>前端不在（WebView 已被回收）時 instance 為 null，送不出去也無妨：⑦ 只要求
-     * 服務與通知照常反應，畫面狀態等回到 app 再重新產生。
+     * <p>F124 起，前端不在（instance 為 null）時事件不再被丟掉，改進
+     * {@link PendingRestControl} 等下一次 {@link #load()} 重放。
      */
     private static RestTimerPlugin instance;
 
     static void emit(String action) {
         emit(action, -1);
+    }
+
+    /**
+     * F124 ①②：原生→前端事件的唯一派送點。
+     *
+     * <p>三種情況要分開處理，少一種就是靜默丟事件：
+     * <ul>
+     *   <li>plugin 在、JS 也訂閱了 → 直接送。</li>
+     *   <li>plugin 在、JS 還沒訂閱（Activity 剛重建，onCreate 早於 WebView 載入）→
+     *       交給 Capacitor 的 {@code retainUntilConsumed}，它會在 addListener 當下依序補送。</li>
+     *   <li>plugin 不在（Activity 被回收，instance 為 null）→ retain 那層無處可存，
+     *       改進 {@link PendingRestControl}，由 {@link #load()} 重放。</li>
+     * </ul>
+     */
+    private static void dispatch(String action, int seconds, long startedAt) {
+        RestTimerPlugin plugin = instance;
+        if (plugin == null) {
+            PendingRestControl.offer(action, seconds, startedAt, System.currentTimeMillis());
+            return;
+        }
+        plugin.notifyListeners("restControl", payload(action, seconds, startedAt), true);
+    }
+
+    private static JSObject payload(String action, int seconds, long startedAt) {
+        JSObject data = new JSObject();
+        data.put("action", action);
+        if (seconds >= 0) data.put("seconds", seconds);
+        if (startedAt >= 0) data.put("startedAt", startedAt);
+        return data;
     }
 
     /**
@@ -45,12 +74,7 @@ public class RestTimerPlugin extends Plugin {
      * 只送動作名的話兩邊必然各說各話（⑤ 點名的實作風險）。負數＝這個動作沒有秒數語意。
      */
     static void emit(String action, int seconds) {
-        RestTimerPlugin plugin = instance;
-        if (plugin == null) return;
-        JSObject data = new JSObject();
-        data.put("action", action);
-        if (seconds >= 0) data.put("seconds", seconds);
-        plugin.notifyListeners("restControl", data);
+        dispatch(action, seconds, -1L);
     }
 
     /**
@@ -73,18 +97,17 @@ public class RestTimerPlugin extends Plugin {
      * （背景時整條鏈是凍住的），只給秒數的話前端會從「現在」重數，兩邊當場分叉。
      */
     static void emitNextRound(int seconds, long startedAt) {
-        RestTimerPlugin plugin = instance;
-        if (plugin == null) return;
-        JSObject data = new JSObject();
-        data.put("action", "nextround");
-        data.put("seconds", seconds);
-        data.put("startedAt", startedAt);
-        plugin.notifyListeners("restControl", data);
+        dispatch("nextround", seconds, startedAt);
     }
 
     @Override
     public void load() {
         instance = this;
+        // F124 ②：Activity 不在的那段時間累積的事件，重放回 Capacitor 的 retain 佇列，
+        // 由它在 JS 訂閱當下依序補送。順序保持不變（F123 的 focus→stop 反了會靜默失效）。
+        for (PendingRestControl.Event event : PendingRestControl.drain(System.currentTimeMillis())) {
+            notifyListeners("restControl", payload(event.action, event.seconds, event.startedAt), true);
+        }
     }
 
     @Override
