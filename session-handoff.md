@@ -1,23 +1,41 @@
 # session handoff
 
-最後更新：2026-08-22（無人看管 dispatch 場，第六場）。**156/164 passing、8 failing**
+最後更新：2026-08-22（無人看管 dispatch 場，第七場）。**157/165 passing、8 failing**
 （F89、F95、F104、F124、F128、F149、F153、F160）。
 
 ## 接手第一件事
 
-1. **F163／F164／F165 已 passing 並歸檔**（app 內建對話的三個 slice：後端橋接層 → `/api/chat` → UI）。
-   APK **v158** 已在 `G:\我的雲端硬碟\lift-log-apk\lift-log-v158-F165.apk`。
-2. **內建對話還沒真的用過**——正式站沒設 `LIFTLOG_LLM_API_KEY`，Ryan 也還沒在 app 設定頁填自己的 key。
-   要試就填一把 Anthropic key（設定頁「對話 API KEY」），或在正式站 `.env` 設
-   `LIFTLOG_LLM_API_KEY`（其餘 `LIFTLOG_LLM_*` 有預設值，見 `.env.example`）。
-   **本場沒有部署正式站**。
-3. **F153（母條）仍 failing**：它的驗證方式要求「同一句指令分別經外部 Claude 與內建對話產生相同資料列」，
-   要真 key ＋ Ryan 本人操作。三個 slice 都好了，只差這一次對照。
-   另外它條文寫的「自填 key 存本機不上傳 server」已被 F164 的 (a) 決議取代，
-   替代紀錄在 `docs/evidence/F153-supersede.md`（frozen acceptance 一字未動）。
-4. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節），維運指令從那裡跑。
+1. **收件匣那句「Run, start with F163」已經沒有對象**——F163/F164/F165 上一場就做完並歸檔了。
+   本場沒有動任何實作程式碼。
+2. **8 條 failing 沒有一條 headless agent 推得動**（與上一場相同）：
+   F89／F95／F104／F128 要真機、F124／F128／F160 未簽核（`delegation-warmup` hook 擋 executor）、
+   F149 要 Ryan 的 Google 身分、F153 要真 LLM key ＋ 人工對照。
+   **`feature_list.json` 裡 8 條 failing 現在全部 `signed_off` 皆無**，所以派 executor 一律被擋。
+3. 內建對話仍未真的用過（正式站沒設 `LIFTLOG_LLM_API_KEY`，app 設定頁也沒填 key）。
+4. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節）。
 
-## 本場做的事（2026-08-22 第六場 dispatch，收件匣回覆「簽核三條，F164 採 (a) server 代打」）
+## 本場做的事（2026-08-22 第七場 dispatch）
+
+**只做歸檔收尾，沒動程式碼**（commit `7651152`）。
+
+發現歸檔規則有兩處沒收乾淨：
+- **F161 的整條原文只在 `docs/archive/acceptance.jsonl`**（舊慣例，全檔就它一筆），
+  不在 `docs/archive/features.jsonl` 裡——而 `harness-plan.py` 只讀後者。
+- **F161／F162 的骨架還留在 `feature_list.json`**（`acceptance` 被抽走的空殼），
+  主檔應該只留 failing 與 envelopes。F162 的原文已在 features.jsonl，是重複。
+
+處置：F161 整條原文（一字未動）append 進 `features.jsonl`（157 筆、無重複），
+刪掉只剩空殼的 `acceptance.jsonl`，主檔移除兩條骨架。
+`tests/e2e/verify_f87.py` 兩處指向 `feature_list.json F162.supersedes` 的註解改指歸檔檔。
+
+驗證：`harness-plan.py . --dsm` 改動前後輸出 **逐字相同**（波次仍是
+wave1 F124/F149/F160/F95 → wave2 F128/F153 → wave3 F89 → wave4 F104）；
+`uv run pytest` **486 passed**、`uv run ruff check .` 全過。
+
+已投一筆 question 進收件匣：8 條全卡住，要動的話得先解鎖一條（建議簽核 F160，
+唯一純軟體、不需真機、規格已可逐條判定）。
+
+## 上一場做的事（2026-08-22 第六場 dispatch，收件匣回覆「簽核三條，F164 採 (a) server 代打」）
 
 依收件匣答案把 F163/F164/F165 簽核（`signed_off: true`，commit `9ca32fd` 已 push），
 F164 的待拍板題以 (a) **server 代打** 寫進條文，然後依 prerequisites 順序做完三條。
