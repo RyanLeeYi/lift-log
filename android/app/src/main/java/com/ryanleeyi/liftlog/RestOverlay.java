@@ -159,7 +159,7 @@ final class RestOverlay {
      * 也是拿它當減少動態的判斷。查不到就當作要動效（預設 1.0）——判不出來時給正常體驗，
      * 不要反過來把所有人的動效都關掉。
      */
-    private static boolean reduceMotion(Context context) {
+    static boolean reduceMotion(Context context) {
         try {
             float scale = Settings.Global.getFloat(
                 context.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
@@ -170,7 +170,7 @@ final class RestOverlay {
     }
 
     /** F89 ⑨：出現／換態時的 160ms ease-out。reduced-motion 時直接就位，不做過場。 */
-    private static void animateIn(Context context, View target) {
+    static void animateIn(Context context, View target) {
         if (target == null) return;
         if (reduceMotion(context)) {
             target.setAlpha(1f);

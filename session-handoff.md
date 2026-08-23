@@ -1,79 +1,69 @@
 # session handoff
 
-最後更新：2026-08-22（無人看管 dispatch 場，第十場）。**160/166 passing、6 failing**
-（F89、F104、F128、F149、F153、F166）。
-**F124 已 passing 並歸檔**；APK `lift-log-v161-F124.apk` 已上 Google Drive（**尚未裝機**）。
+最後更新：2026-08-23（無人看管 dispatch 場，第十一場）。**160/166 passing、6 failing**
+（F89、F104、F128、F149、F153、F166）。本場**沒有 feature 轉 passing**——F89 卡在真機。
 
 ## 接手第一件事
 
-1. **F124 做完了**：原生→前端控制事件不再被丟掉。整條原文在 `docs/archive/features.jsonl`，
-   證據在 `docs/evidence/F124.md`。驗收（`acceptance-verifier`）①–⑥ 全 pass、無 severity。
-2. **APK v161 已出但沒裝機**（headless 沒接手機）。Ryan 要驗 ⑤ 的真機流程就裝這顆。
-3. **收件匣答案有一則過期**：`Run, start with F160` ——F160 在**同一天更早的第九場**就
-   已 passing 並歸檔。這是 2026-08-21 記過一次的同型故障（DEVLOG 第四場）。
-   另一則 `全做：六個原生→前端事件都暫存重播` 就是本場做的 F124。
-4. 正式站在 `SideProject\lift-log-prod\`（見 `docs/operations.md` 第 1b 節）。
+1. **先看收件匣**：本場投了一則 high question
+   `[blocked] F89 ⑩ 真機驗收：dev app 要你登入、prod 會寫真資料、通知仍被系統關著`。
+   在 Ryan 答之前，F89／F104／F128／F166 的真機部分**全部動不了**，不要再重試一次同樣的路。
+2. 08/22 那則 `allowNoti=false` 的 high question **仍未回答**，本場重新確認症狀還在。
+3. 本場改動：`RestOverlay.java`（兩個 private → package-private）＋
+   新檔 `android/app/src/test/java/com/ryanleeyi/liftlog/RestOverlayMotionTest.java`。
+   feature 狀態未動，只補 F89 的 evidence。
 
-## 本場做的事（2026-08-22 第十場 dispatch）
+## 本場做的事（2026-08-23 第十一場 dispatch）
 
-收件匣解鎖的是 **F124 的三個待決問題**（① 要不要做延後派送、② 就緒訊號從哪來、
-③ 範圍是否擴及六個事件）。Ryan 答「全做」，所以先把原本的「待決清單」改寫成
-可逐條判定的 ①–⑥ acceptance 才動工（Plan → 條文凍結 → 實作）。
+收件匣答案是 `Run, start with F89`（兩則同內容）。
 
-`baton-dispatch` 五問：只有一組工作、三個檔案互相咬合（Java retain ↔ static queue ↔
-JS 訂閱時機）、核心是「事件順序 vs 還原順序」的未知行為判斷 → **direct**，
-唯一派出去的是唯讀的 `acceptance-verifier`。
+`baton-dispatch` 五問：Outcome 清楚、Ownership 可切，但 **Independence 直接否決**——
+F89／F104／F128 共用同三支 Java 檔，F166 雖然檔案不重疊，剩下的工作卻同樣需要**那一支實體手機**。
+adb 是獨佔資源，worktree 隔離不了它，兩個 worker 同時操作同一台手機只會互相踩。
+→ **全部 direct，零派工**（連唯讀 agent 都沒派：沒有需要 fresh context 判定的成品）。
 
-### 做法：三層，缺一層就還是會掉事件
+### F89 ⑧：code audit 通過
 
-| 情況 | 處置 |
-|---|---|
-| plugin 在、JS 也訂閱了 | 直接送 |
-| plugin 在、JS 還沒訂閱（Activity 重建，onCreate 早於 WebView） | Capacitor 內建 `notifyListeners(..., retainUntilConsumed=true)` |
-| plugin 不在（Activity 被回收，`instance == null`） | `PendingRestControl` static FIFO（上限 32、TTL 5 分鐘），`load()` 重放 |
+`RestOverlay` 的 13 個非 private 進入點逐一比對：11 個第一行就 `onMain(() -> ...)`；
+`permitted`／`headsUpWanted`／`advanceDraftSetNumber` 不碰 view（後者只把 int 加一，
+唯一呼叫端 `requestLog` 本身已在 onMain 區塊內）。
+→ ⑧ 的「所有碰 view 的進入點經 onMain()」**目前成立**。⑧ 剩下的 F63／F64／F69–F71 回歸仍未做。
 
-**第二層是平台既有能力，不是自寫的**——`Plugin.java` 在沒有 listener 時把 payload 存進
-`retainedEventArguments`，第一個 listener 掛上時 `sendRetainedArgumentsForEvent()` 依序送出。
-只有第三層它救不了。原本以為要自建「前端取件」握手（F125 ③ 那種），實際上只要換一個
-既有 API 的參數。
+### F89 ⑨：補上回歸檢查（本場唯一的程式碼產出）
 
-判定放在 `RestTimerPlugin.dispatch()` 這個唯一出口，所以九種動作全涵蓋，不逐動作列舉。
+原缺口是「reduced-motion 只驗到不崩」——而「動效整條被拿掉」的實作也不會崩。
+`RestOverlayMotionTest`（Robolectric）兩個方向各驗：
+`ANIMATOR_DURATION_SCALE=0` → `animateIn` 直接就位；`=1` → 確實從 alpha 0 / scale .92 起跑。
+另加「查不到＝預設要動效」與 null target 不炸。
 
-### 順序才是真正的坑（④）
+- Android 單元測試 **46 tests / 0 failures**（原 41 ＋ 新 5）
+- 突變測試：`reduceMotion` 改成恆 `false` → 2 條紅；還原後全綠
+- `uv run pytest` **487 passed**、`uv run ruff check .` 全過
 
-前端訂閱從 module eval 當下改成 `startupRestore.then(...)`。**事件不掉了以後，
-「什麼時候訂閱」就直接決定它們落在 F66 快照還原之前還是之後**：還原之前收到 `stop`
-會撞上 `restStartedAt === null` 直接 return、隨後還原又生出一輪殭屍倒數；
-`focus` 讀不到 `restExerciseId` 而 early-return（＝「停了但沒跳頁」）。
-修好丟失卻沒修順序，等於把靜默丟棄換成靜默錯序。
-
-`MainActivity.onCreate` 因此才敢恢復處理 `EXTRA_BACK_TO_APP`／`EXTRA_FOCUS_REST`
-（⑤；原本刻意不掛，理由就是 F124 本身）。
-
-### 驗證
-
-- Android 單元測試 **41 tests / 0 failures**（新增 `PendingRestControlTest` 4 條）
-- `tests/e2e/verify_f124.py` **3/3**——量的是 `addListener` 與開機還原的先後
-- `uv run pytest` **487 passed**（與 F160 收官基準相同）、`ruff` 全過
-- 兩處都做了突變測試：Java 側改 `removeFirst`→`removeLast`／拿掉 TTL 過濾 → 2 條紅；
-  JS 側把訂閱改回 module eval → E2E 第三條紅（2/3、exit 1）。還原後皆綠
+⚠ 這**不等於** ⑨ 通過：160ms 過場的實際觀感仍需真機或高幀率錄影，
+自動化只證明了分支邏輯與起始狀態。
 
 ## 卡住的事
 
-### F166 ⑥ 真機：手機上 lift-log 的通知在系統層是關的（延續上一場）
+### F89 ⑩ 真機：三個獨立擋路點（本場的主要發現）
 
-`dumpsys notification` 說 `AppSettings: com.ryanleeyi.liftlog allowNoti=false`，
-但系統設定畫面顯示「開」。`areEnabled()` 是 `native-notify.js` 的唯一事實來源，
-它一 false，app 內「休息提醒」開關就一定顯示「關」，跟 channel 狀態無關 →
-**F166 ⑥ 在這台手機上無法產生有效證據**。同一份 dumpsys 裡 `com.ipass.ipassmoney`
-也是 `allowNoti=false`，懷疑是 Samsung 那層的批次設定。已投 question（high）。
-這條也讓 F89／F104／F128 的真機驗收不可靠。
+1. **dev app 要 Google 登入**。已把既有 `app-dev-release.apk`（v161）裝上 RF8NB0BSEFE，
+   停在登入畫面。**這是新變化**：07/08 那幾場用 dev app 驗 F89／F104 時 legacy 單一 token
+   路徑還在，F149 關掉之後 dev app 就從「裝了就能用」變成「要 Ryan 本人登入」。
+   → 下一個接手的人：**不要再花時間找繞過登入的路**，沒有。
+2. **走 prod app 會寫進真實訓練資料**。休息倒數只由 `app.js:2574`（記完一組）啟動；
+   `RestTimerService` 是 `exported="false"`，`adb am` 叫不動，沒有純原生的拉起入口。
+3. **`allowNoti=false`**（延續 08/21、08/22）。F63／F72／F73 的通知回歸在這台手機上產不出證據。
 
-### 其餘
+### 其餘（延續前場，未變）
 
+- F166：③④ 的程式碼早在 `09afde9` 就落地、E2E 也補了，只剩 ⑥ 真機——與上面第 3 點同一個擋路點。
 - F149 要 Ryan 的 Google 身分、F153 要真 LLM key ＋ 人工對照，headless 一律做不了。
-- **e2e 腐爛**：18 支舊腳本多半卡在登入畫面（`verify_f65.py`／`verify_f95.py` 實測同型）。
-  修法（假 plugin 補 `AuthSession`/`LocalStore`/`Sync`、`**/api/mcp-tokens/**` stub 成 `[]`
-  且註冊在 `reroute_public_host()` 之後）在 `verify_f95.py` 與本場的 `verify_f124.py`
-  都驗證可行，**同一段假 plugin 已經抄第三次了**——抽成共用 helper 值得獨立開一條 feature。
+- **e2e 腐爛**：18 支舊腳本多半卡在登入畫面。同一段假 plugin 已經抄第三次，抽成共用 helper
+  值得獨立開一條 feature（尚未開，因為需要簽核）。
 - 本場沒排保溫鬧鐘：`ScheduleWakeup` 只在 `/loop` dynamic mode 可用，headless dispatch 進不去。
+
+## 順帶觀察（未追）
+
+prod app v160 首頁今晚顯示「同步錯誤 · 待同步 1 筆」。可能是 08/21 實機冒煙後
+以 delete mutation 清資料留下的殘骸，也可能是真的同步失敗。已寫進 question 與 F89 evidence。
