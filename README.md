@@ -20,6 +20,10 @@ and AI clients.
 - Lets MCP clients query progress and log workouts through the same services used by REST and Web.
 - Supports versioned JSON export, account deletion, encrypted backups, and restore drills.
 
+## Screenshots
+
+_TODO: production screenshots — to be added in a follow-up pass._
+
 ## Architecture
 
 ```mermaid
@@ -95,27 +99,11 @@ there is no frontend build step. Android build and signing instructions are in
 
 ## Project docs
 
-- Local-first and multi-user PRD: [`docs/prd/local-first-cloud-sync.md`](docs/prd/local-first-cloud-sync.md)
-- Original MVP PRD: [`docs/prd/mvp-lift-log.md`](docs/prd/mvp-lift-log.md)
-- Feature status and frozen acceptance: [`feature_list.json`](feature_list.json)
+- Feature status and frozen acceptance (the only source of truth): [`feature_list.json`](feature_list.json)
+- Local-first and multi-user design notes (historical, context only): [`docs/archive/local-first-cloud-sync.md`](docs/archive/local-first-cloud-sync.md)
+- Original MVP design notes (historical, context only): [`docs/archive/mvp-lift-log.md`](docs/archive/mvp-lift-log.md)
 - Development workflow: [`CLAUDE.md`](CLAUDE.md)
 
 ## License
 
 [MIT](LICENSE) © 2026 Ryan Lee
-
-## docs/archive/
-
-Historical material, kept for context and never used to judge anything.
-
-- `features.jsonl` — one line per feature that passed: the whole entry, moved out
-  of `feature_list.json` at wrap-up (acceptance text, evidence pointer, `touches`,
-  `requires`). The main list keeps only failing entries. Read one back with:
-  `python -c "import json;print([json.loads(l) for l in open('docs/archive/features.jsonl',encoding='utf-8') if '\"F35\"' in l])"`
-  `harness-plan.py` merges this file back in for hub detection and prerequisite
-  checks, so archiving does not distort its analysis.
-- `*.md` — design documents written before a feature was signed off.
-
-The only spec is the `acceptance` field in `feature_list.json`. A feature being
-reopened gets its acceptance restored there; nothing in this directory is
-authoritative.
