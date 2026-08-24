@@ -11,6 +11,9 @@ from pathlib import Path
 # ——腳本自己釘 UTF-8，不依賴呼叫端帶 PYTHONUTF8／PYTHONIOENCODING（F138）。
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import Page, sync_playwright  # noqa: E402
 
 APP_URL = "http://127.0.0.1:8765/"
@@ -30,59 +33,60 @@ def install_native_mocks(page: Page, *, bootstrap_complete: bool) -> None:
     bootstrap_js = json.dumps(bootstrap_complete)
     retry_state = json.dumps("pending" if bootstrap_complete else "offline")
     retry_pending = 2 if bootstrap_complete else 0
+    preamble = """
+globalThis.fetch = async () => ({
+  ok: false,
+  status: 503,
+  json: async () => ({ error: "offline" }),
+});
+globalThis.__syncCalls = 0;
+const emptySnapshot = {
+  exercises: [], templates: [], workouts: [], sets: [],
+  body_metrics: [], daily_status: [],
+  settings: [{ key: "weekly_target_days", value: "4" }],
+};
+"""
+    auth_session = """
+      loadSession: async () => ({
+        accessToken: "test-access",
+        refreshToken: "test-refresh",
+        accessExpiresAt: Date.now() + 900000,
+        deviceId: "11111111-1111-4111-8111-111111111111",
+      }),
+    """
+    local_store = """
+      initialize: async () => ({ schemaVersion: 3, seededExercises: 0 }),
+      snapshot: async () => emptySnapshot,
+      status: async () => ({ pendingMutations: 0 }),
+    """
+    sync = f"""
+      initialize: async () => ({initial_status}),
+      status: async () => ({{
+        state: "pending", pending: 2, failed: 0, cursor: 3,
+        lastSyncedAt: 1000, bootstrapComplete: true,
+      }}),
+      syncNow: async () => {{
+        globalThis.__syncCalls += 1;
+        if ({bootstrap_js} && globalThis.__syncCalls >= 2) {{
+          return {{
+            state: "synced", pending: 0, failed: 0, cursor: 5,
+            lastSyncedAt: Date.now(), bootstrapComplete: true,
+          }};
+        }}
+        return {{
+          state: {retry_state},
+          pending: {retry_pending}, failed: 0, cursor: 0,
+          bootstrapComplete: {bootstrap_js},
+        }};
+      }},
+    """
     page.add_init_script(
-        script=f"""
-        globalThis.fetch = async () => ({{
-          ok: false,
-          status: 503,
-          json: async () => ({{ error: "offline" }}),
-        }});
-        globalThis.__syncCalls = 0;
-        const emptySnapshot = {{
-          exercises: [], templates: [], workouts: [], sets: [],
-          body_metrics: [], daily_status: [],
-          settings: [{{ key: "weekly_target_days", value: "4" }}],
-        }};
-        globalThis.Capacitor = {{
-          isNativePlatform: () => true,
-          Plugins: {{
-            AuthSession: {{
-              loadSession: async () => ({{
-                accessToken: "test-access",
-                refreshToken: "test-refresh",
-                accessExpiresAt: Date.now() + 900000,
-                deviceId: "11111111-1111-4111-8111-111111111111",
-              }}),
-            }},
-            LocalStore: {{
-              initialize: async () => ({{ schemaVersion: 3, seededExercises: 0 }}),
-              snapshot: async () => emptySnapshot,
-              status: async () => ({{ pendingMutations: 0 }}),
-            }},
-            Sync: {{
-              initialize: async () => ({initial_status}),
-              status: async () => ({{
-                state: "pending", pending: 2, failed: 0, cursor: 3,
-                lastSyncedAt: 1000, bootstrapComplete: true,
-              }}),
-              syncNow: async () => {{
-                globalThis.__syncCalls += 1;
-                if ({bootstrap_js} && globalThis.__syncCalls >= 2) {{
-                  return {{
-                    state: "synced", pending: 0, failed: 0, cursor: 5,
-                    lastSyncedAt: Date.now(), bootstrapComplete: true,
-                  }};
-                }}
-                return {{
-                  state: {retry_state},
-                  pending: {retry_pending}, failed: 0, cursor: 0,
-                  bootstrapComplete: {bootstrap_js},
-                }};
-              }},
-            }},
-          }},
-        }};
-        """
+        script=build_fake_capacitor(
+            preamble=preamble,
+            auth_session=auth_session,
+            local_store=local_store,
+            sync=sync,
+        )
     )
 
 
