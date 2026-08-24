@@ -200,19 +200,6 @@
         "F95"
       ],
       "signed_off": true
-    },
-    {
-      "id": "F167",
-      "name": "e2e 假 Capacitor plugin 抽成共用 helper",
-      "status": "failing",
-      "signed_off": true,
-      "acceptance": "（2026-08-24 起草；同日 Ryan 簽核凍結）\n\n① 背景：tests/e2e/ 下 18 支腳本各自手刻同一段假 Capacitor plugin（fake_plugins / add_init_script 樣板），已重複第三次；上游 plugin 介面一變就要改 18 處，且各副本已有細微漂移。\n② 抽一個共用 helper 模組（tests/e2e/ 下、非產品碼）：提供組裝假 Capacitor.Plugins 的單一入口，channel 清單、LocalNotifications、RestTimer、NotifyStatus 等 stub 可按腳本需求覆寫；預設值與現行多數腳本一致。\n③ 逐支遷移既有 e2e 腳本改用 helper，刪除各自的內嵌副本；遷移前後每支腳本的 PASS 數不變（遷移是重構不是改行為）。\n④ 驗收：全部 e2e 腳本跑過與遷移前相同的結果；rg 確認 repo 內不再有第二份假 plugin 樣板；helper 本身不含任何產品行為（app/ 不動）。\n⑤ 不做：修復那些本來就卡在登入畫面的舊腳本（那是另一個問題，不混進本條）。",
-      "evidence": "",
-      "touches": [
-        "tests/e2e/"
-      ],
-      "requires": [],
-      "prerequisites": []
     }
   ]
 }
