@@ -270,17 +270,27 @@ public class RestTimerService extends Service {
         if (ACTION_PAUSE.equals(action)) {
             if (halted) return START_NOT_STICKY; // ② 沒有在跑的倒數可暫停
             // 只停計時器，服務與通知都留著——使用者要看得到「暫停中，剩餘 X」
+            // 超時中暫停要記得自己是超時：stopTimer() 會清 overtime，但此時
+            // remainingSeconds 存的是「已超時幾秒」，resume 拿它當剩餘秒數開新倒數
+            // 就會與 REST 卡片分岔（F89 真機驗收抓到的 P1）。
+            boolean wasOvertime = overtime;
             stopTimer();
+            overtime = wasOvertime;
             paused = true;
             RestOverlay.setPaused(this, true);
-            notifyUpdate(buildNotification(remainingSeconds, false));
+            notifyUpdate(buildNotification(remainingSeconds, overtime));
             return START_NOT_STICKY;
         }
 
         if (ACTION_RESUME.equals(action)) {
             paused = false;
             RestOverlay.setPaused(this, false);
-            startTimer(remainingSeconds); // ②：從剩餘秒數接續，不重頭算
+            if (overtime) {
+                // 從凍結的超時秒數接續往上數；鬧鐘不重響（使用者已在操作視窗）
+                startOvertimeTicker();
+            } else {
+                startTimer(remainingSeconds); // ②：從剩餘秒數接續，不重頭算
+            }
             return START_NOT_STICKY;
         }
 
