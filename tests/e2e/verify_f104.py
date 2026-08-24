@@ -24,6 +24,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import (  # noqa: E402
+    DEFAULT_LOCAL_NOTIFICATIONS,
+    DEFAULT_LOCAL_STORE,
+    DEFAULT_LOCAL_STORE_PREAMBLE,
+    DEFAULT_NOTIFY_STATUS,
+    build_fake_capacitor,
+)
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -46,47 +53,7 @@ def check(ok: bool, label: str) -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {label}")
 
 
-FAKE = """
-window.__native = { starts: [], handler: null };
-const local = {
-  exercises: [{ id: 1, name_zh: '深蹲', name_en: 'Squat', muscle_group: '腿', is_bodyweight: 0 }],
-  templates: [], workouts: [], sets: [], body_metrics: [], daily_status: [], settings: [],
-};
-let nextWorkout = 1;
-let nextSet = 1;
-window.Capacitor = {
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {
-    LocalStore: {
-      initialize: async () => ({ schemaVersion: 2, seededExercises: 1, pendingMutations: 0 }),
-      snapshot: async () => structuredClone(local),
-      createWorkout: async (o) => {
-        const row = { id: nextWorkout++, date: o.date, template_id: o.templateId ?? null,
-          note: o.note ?? null, created_at: new Date().toISOString(), ended_at: null };
-        local.workouts.push(row);
-        return structuredClone(row);
-      },
-      addSet: async (o) => {
-        const row = { id: nextSet, client_uuid: o.clientUuid, workout_id: o.workoutId,
-          exercise_id: o.exerciseId, set_number: o.setNumber ?? nextSet++,
-          weight_kg: o.weightKg, reps: o.reps, rpe: o.rpe ?? null,
-          rest_seconds: o.restSeconds ?? null };
-        local.sets.push(row);
-        return structuredClone(row);
-      },
-      status: async () => ({ schemaVersion: 2, pendingMutations: 0 }),
-    },
-    LocalNotifications: {
-      schedule: async () => ({}), cancel: async () => ({}),
-      checkPermissions: async () => ({ display: 'granted' }),
-      requestPermissions: async () => ({ display: 'granted' }),
-      areEnabled: async () => ({ value: true }),
-      listChannels: async () => ({ channels: [
-        { id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },
-      ] }),
-    },
-    RestTimer: {
+REST_TIMER = """
       available: async () => ({ available: true }),
       start: async (o) => { window.__native.starts.push(o); return {}; },
       stop: async () => ({}), pause: async () => ({}), resume: async () => ({}),
@@ -97,11 +64,18 @@ window.Capacitor = {
         if (name === 'restControl') window.__native.handler = cb;
         return { remove: () => {} };
       },
-    },
-    NotifyStatus: { openSettings: async () => {} },
-  },
-};
 """
+
+FAKE = build_fake_capacitor(
+    preamble=f"""
+window.__native = {{ starts: [], handler: null }};
+{DEFAULT_LOCAL_STORE_PREAMBLE}
+""",
+    local_store=DEFAULT_LOCAL_STORE,
+    local_notifications=DEFAULT_LOCAL_NOTIFICATIONS,
+    rest_timer=REST_TIMER,
+    notify_status=DEFAULT_NOTIFY_STATUS,
+)
 
 
 def open_app(browser, base: str):

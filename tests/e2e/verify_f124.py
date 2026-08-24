@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -44,18 +45,7 @@ def check(ok: bool, label: str) -> None:
 
 def fake_plugins() -> str:
     token = TOKEN
-    return f"""
-window.__log = [];
-const mark = (name) => {{ window.__log.push(name); }};
-const __snapshot = {{
-  exercises: [], templates: [], workouts: [], sets: [],
-  body_metrics: [], daily_status: [], settings: [],
-}};
-window.Capacitor = {{
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {{
-    AuthSession: {{
+    auth_session = f"""
       loadSession: async () => ({{
         accessToken: '{token}',
         refreshToken: 'test-refresh',
@@ -64,65 +54,75 @@ window.Capacitor = {{
       }}),
       saveSession: async () => ({{}}),
       clearSession: async () => ({{}}),
-    }},
-    LocalStore: {{
-      initialize: async () => ({{ schemaVersion: 3, seededExercises: 0 }}),
-      snapshot: async () => {{
+    """
+    local_store = """
+      initialize: async () => ({ schemaVersion: 3, seededExercises: 0 }),
+      snapshot: async () => {
         mark('snapshot:start');
         // 開機還原是非同步的。這 800ms 就是「還原還沒做完」那段窗口——
         // module eval 當下註冊的訂閱會落在這裡面。
         await new Promise((r) => setTimeout(r, 800));
         mark('snapshot:done');
         return __snapshot;
-      }},
-      status: async () => ({{ pendingMutations: 0 }}),
-    }},
-    Sync: {{
-      initialize: async () => ({{
+      },
+      status: async () => ({ pendingMutations: 0 }),
+    """
+    sync = """
+      initialize: async () => ({
         state: 'synced', pending: 0, failed: 0, cursor: 1,
         lastSyncedAt: 1000, bootstrapComplete: true,
-      }}),
-      status: async () => ({{
+      }),
+      status: async () => ({
         state: 'synced', pending: 0, failed: 0, cursor: 1,
         lastSyncedAt: 1000, bootstrapComplete: true,
-      }}),
-      syncNow: async () => ({{
+      }),
+      syncNow: async () => ({
         state: 'synced', pending: 0, failed: 0, cursor: 1,
         lastSyncedAt: 1000, bootstrapComplete: true,
-      }}),
-    }},
-    LocalNotifications: {{
-      schedule: async () => ({{}}),
-      cancel: async () => ({{}}),
-      checkPermissions: async () => ({{ display: 'granted' }}),
-      requestPermissions: async () => ({{ display: 'granted' }}),
-      areEnabled: async () => ({{ value: true }}),
-      listChannels: async () => ({{ channels: [
-        {{ id: 'default', importance: 3 }},
-        {{ id: 'rest-timer', importance: 2 }},
-        {{ id: 'rest-alarm', importance: 4 }},
-      ] }}),
-    }},
-    RestTimer: {{
-      start: async () => ({{ started: true }}),
-      stop: async () => ({{}}),
-      pause: async () => ({{}}),
-      resume: async () => ({{}}),
-      overlayPermitted: async () => ({{ granted: false }}),
-      setCardVisible: async () => ({{}}),
-      getRestStoppedAt: async () => ({{ stoppedAt: 0 }}),
+      }),
+    """
+    local_notifications = """
+      schedule: async () => ({}),
+      cancel: async () => ({}),
+      checkPermissions: async () => ({ display: 'granted' }),
+      requestPermissions: async () => ({ display: 'granted' }),
+      areEnabled: async () => ({ value: true }),
+      listChannels: async () => ({ channels: [
+        { id: 'default', importance: 3 },
+        { id: 'rest-timer', importance: 2 },
+        { id: 'rest-alarm', importance: 4 },
+      ] }),
+    """
+    rest_timer = """
+      start: async () => ({ started: true }),
+      stop: async () => ({}),
+      pause: async () => ({}),
+      resume: async () => ({}),
+      overlayPermitted: async () => ({ granted: false }),
+      setCardVisible: async () => ({}),
+      getRestStoppedAt: async () => ({ stoppedAt: 0 }),
       // Capacitor 真正的行為：addListener 當下才把 retained 的事件送出來。
-      addListener: async () => {{
+      addListener: async () => {
         mark('addListener');
-        return {{ remove: () => {{}} }};
-      }},
-    }},
-    NotifyStatus: {{
-      openSettings: async () => {{}},
-    }},
-  }},
-}};
-"""
+        return { remove: () => {} };
+      },
+    """
+    return build_fake_capacitor(
+        preamble="""
+window.__log = [];
+const mark = (name) => { window.__log.push(name); };
+const __snapshot = {
+  exercises: [], templates: [], workouts: [], sets: [],
+  body_metrics: [], daily_status: [], settings: [],
+};
+""",
+        auth_session=auth_session,
+        local_store=local_store,
+        sync=sync,
+        local_notifications=local_notifications,
+        rest_timer=rest_timer,
+        notify_status="openSettings: async () => {},",
+    )
 
 
 def run_checks(base: str) -> None:

@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -46,22 +47,17 @@ def api(base: str, path: str):
     return json.load(urllib.request.urlopen(req))
 
 
-FAKE_PLUGIN = """
-() => {
-  window.__f71 = { calls: [], listeners: {} };
-  window.Capacitor = {
-    isNativePlatform: () => true,
-    getPlatform: () => 'android',
-    Plugins: {
-      LocalNotifications: {
+FAKE_PLUGIN = build_fake_capacitor(
+    preamble="window.__f71 = { calls: [], listeners: {} };",
+    local_notifications="""
         checkPermissions: async () => ({ display: 'granted' }),
         requestPermissions: async () => ({ display: 'granted' }),
         areEnabled: async () => ({ value: true }),
         checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
         schedule: async () => {}, cancel: async () => {},
-      },
-      NotifyStatus: { openSettings: async () => {} },
-      RestTimer: {
+    """,
+    notify_status="openSettings: async () => {},",
+    rest_timer="""
         available: async () => ({ available: true }),
         start: async (o) => { window.__f71.calls.push(['start', o]); },
         stop: async () => { window.__f71.calls.push(['stop']); },
@@ -74,11 +70,8 @@ FAKE_PLUGIN = """
           window.__f71.listeners[name] = cb;
           return { remove: () => {} };
         },
-      },
-    },
-  };
-}
-"""
+    """,
+)
 
 JAVA_DIR = REPO / "android/app/src/main/java/com/ryanleeyi/liftlog"
 
@@ -108,7 +101,7 @@ PUBLIC_HOST = "https://lift-log.my-super-dev-server.work"
 
 def native(page, base: str):
     """app 版：假 plugin ＋ 把打向公開站的 API 導回本機（同 verify_f67 的做法，別碰正式站）。"""
-    page.add_init_script(FAKE_PLUGIN.strip().join(["(", ")()"]))
+    page.add_init_script(FAKE_PLUGIN)
 
     def reroute(route):
         req = route.request

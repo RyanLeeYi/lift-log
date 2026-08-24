@@ -29,6 +29,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import (  # noqa: E402
+    DEFAULT_LOCAL_NOTIFICATIONS,
+    DEFAULT_NOTIFY_STATUS,
+    build_fake_capacitor,
+)
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -51,22 +56,7 @@ def check(ok: bool, label: str) -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {label}")
 
 
-FAKE = """
-window.__native = { starts: 0, visible: [] };
-window.Capacitor = {
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {
-    LocalNotifications: {
-      schedule: async () => ({}), cancel: async () => ({}),
-      checkPermissions: async () => ({ display: 'granted' }),
-      requestPermissions: async () => ({ display: 'granted' }),
-      areEnabled: async () => ({ value: true }),
-      listChannels: async () => ({ channels: [
-        { id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },
-      ] }),
-    },
-    RestTimer: {
+REST_TIMER = """
       available: async () => ({ available: true }),
       start: async () => { window.__native.starts += 1; return {}; },
       stop: async () => ({}), pause: async () => ({}), resume: async () => ({}),
@@ -77,11 +67,14 @@ window.Capacitor = {
         return {};
       },
       addListener: async () => ({ remove: () => {} }),
-    },
-    NotifyStatus: { openSettings: async () => {} },
-  },
-};
 """
+
+FAKE = build_fake_capacitor(
+    preamble="window.__native = { starts: 0, visible: [] };",
+    local_notifications=DEFAULT_LOCAL_NOTIFICATIONS,
+    rest_timer=REST_TIMER,
+    notify_status=DEFAULT_NOTIFY_STATUS,
+)
 
 
 def open_app(browser, base: str):

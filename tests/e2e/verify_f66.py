@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -135,13 +136,9 @@ def secs(text: str) -> int | None:
 # ---------- 通知外掛替身（③ 用） ----------
 
 # 記錄原生層真的收到什麼。**不要**照著實作寫期待——這裡只錄事實，斷言在外面下。
-FAKE_LOCAL_NOTIFICATIONS = """
-window.__notifyLog = [];
-window.Capacitor = {
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {
-    LocalNotifications: {
+FAKE_LOCAL_NOTIFICATIONS = build_fake_capacitor(
+    preamble="window.__notifyLog = [];",
+    local_notifications="""
       schedule: async (opts) => {
         // 只錄「幾秒後響」——那才是斷言看得懂的事實（Date 物件跨橋序列化不可靠）
         const at = opts && opts.notifications && opts.notifications[0]
@@ -155,10 +152,8 @@ window.Capacitor = {
       requestPermissions: async () => ({ display: 'granted' }),
       listChannels: async () => ({ channels: [{ id: 'default', importance: 4 }] }),
       areEnabled: async () => ({ value: true }),
-    },
-  },
-};
-"""
+    """,
+)
 
 
 def main() -> int:  # noqa: C901

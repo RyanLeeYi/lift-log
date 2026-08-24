@@ -65,82 +65,10 @@ def start_server(port: int, db: Path, release_dir: Path) -> subprocess.Popen:
     raise RuntimeError("server did not come up")
 
 
-# canInstall 由 window.__canInstall 控制，才能同時驗「已授權」與「未授權」兩條路。
-FAKE_PLUGIN = """
-(currentVersion, canInstall) => {
-  window.__au = { downloads: [], installs: [], openedSettings: 0 };
-  window.__canInstall = canInstall;
-  const local = {
-    exercises: [{ id: 1, name_zh: '深蹲', name_en: 'Squat', muscle_group: '腿', is_bodyweight: 0 }],
-    templates: [], workouts: [], sets: [], body_metrics: [], daily_status: [], settings: [],
-  };
-  let nextWorkout = 1;
-  let nextSet = 1;
-  window.Capacitor = {
-    isNativePlatform: () => true,
-    getPlatform: () => 'android',
-    Plugins: {
-      // F141：舊 feature 的 native 模擬代表「已登入過的裝置」；登入本身由 verify_f141 驗。
-      AuthSession: {
-        loadSession: async () => ({ deviceId: '11111111-1111-4111-8111-111111111111',
-          deviceName: 'Test Pixel', accessToken: 'f141-access', refreshToken: 'f141-refresh',
-          accessExpiresAt: Date.now() + 600000 }),
-      },
-      LocalStore: {
-        initialize: async () => ({ schemaVersion: 2, seededExercises: 1, pendingMutations: 0 }),
-        snapshot: async () => structuredClone(local),
-        createWorkout: async (o) => {
-          const row = { id: nextWorkout++, date: o.date, template_id: o.templateId ?? null,
-            note: o.note ?? null, created_at: new Date().toISOString(), ended_at: null };
-          local.workouts.push(row);
-          return structuredClone(row);
-        },
-        addSet: async (o) => {
-          const row = { id: nextSet++, client_uuid: o.clientUuid, workout_id: o.workoutId,
-            exercise_id: o.exerciseId, set_number: o.setNumber ?? nextSet - 1,
-            weight_kg: o.weightKg, reps: o.reps, rpe: o.rpe ?? null,
-            rest_seconds: o.restSeconds ?? null };
-          local.sets.push(row);
-          return structuredClone(row);
-        },
-        putSetting: async (o) => {
-          const row = { key: o.key, value: o.value };
-          local.settings = local.settings.filter((item) => item.key !== o.key);
-          local.settings.push(row);
-          return structuredClone(row);
-        },
-        status: async () => ({ schemaVersion: 2, pendingMutations: 0 }),
-      },
-      AppUpdate: {
-        currentVersion: async () => ({ versionCode: currentVersion }),
-        canInstall: async () => ({ allowed: window.__canInstall }),
-        openInstallSettings: async () => { window.__au.openedSettings += 1; },
-        addListener: async (name, cb) => { window.__cb = cb; return { remove: () => {} }; },
-        download: async (opts) => {
-          window.__au.downloads.push(opts);
-          window.__cb && window.__cb({ written: 5, total: 10 });
-          return { path: '/data/updates/lift-log-update.apk' };
-        },
-        install: async (opts) => { window.__au.installs.push(opts); },
-      },
-      // F131 起開機會呼叫 initializeNativeSync()／readNativeSyncStatus()——沒有這顆
-      // 外掛會拋錯，害 nativeBootstrapRequired 卡死在「正在準備本機資料」而永遠到不了首頁
-      // （F61/F81/F110 三支腳本 2026-08-13 之前就是卡在這裡，見 handoff）。
-      Sync: {
-        initialize: async () => ({ state: 'synced', pending: 0, failed: 0, cursor: 0,
-          lastSyncedAt: Date.now(), errorCode: null, nextSyncAt: 0,
-          bootstrapComplete: true, conflicts: 0 }),
-        status: async () => ({ state: 'synced', pending: 0, failed: 0, cursor: 0,
-          lastSyncedAt: Date.now(), errorCode: null, nextSyncAt: 0,
-          bootstrapComplete: true, conflicts: 0 }),
-        syncNow: async () => ({ state: 'synced', pending: 0, failed: 0, cursor: 0,
-          lastSyncedAt: Date.now(), errorCode: null, nextSyncAt: 0,
-          bootstrapComplete: true, conflicts: 0 }),
-      },
-    },
-  };
-}
-"""
+# F167：這份原本手刻在這裡，現在搬進 fake_capacitor.py（單一入口，見 F167）。
+# 這裡重新匯出 FAKE_PLUGIN，維持 verify_f61.py／verify_f110.py 既有的
+# `from verify_f67 import FAKE_PLUGIN` 用法不必跟著改。
+from fake_capacitor import FAKE_PLUGIN  # noqa: E402
 
 
 def gradle_checks() -> None:

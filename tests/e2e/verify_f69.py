@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import PHONE, REPO, e2e_tmp, free_port, start_server  # noqa: E402
 
@@ -31,34 +32,26 @@ def check(ok: bool, label: str) -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {label}")
 
 
-FAKE_PLUGIN = """
-() => {
-  window.__f69 = { cardVisible: [], starts: [] };
-  window.Capacitor = {
-    isNativePlatform: () => true,
-    getPlatform: () => 'android',
-    Plugins: {
-      LocalNotifications: {
+FAKE_PLUGIN = build_fake_capacitor(
+    preamble="window.__f69 = { cardVisible: [], starts: [] };",
+    local_notifications="""
         checkPermissions: async () => ({ display: 'granted' }),
         requestPermissions: async () => ({ display: 'granted' }),
         areEnabled: async () => ({ value: true }),
         checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
         schedule: async () => {},
         cancel: async () => {},
-      },
-      NotifyStatus: { openSettings: async () => {} },
-      RestTimer: {
+    """,
+    notify_status="openSettings: async () => {},",
+    rest_timer="""
         available: async () => ({ available: true }),
         start: async (o) => { window.__f69.starts.push(o); },
         stop: async () => {},
         overlayPermitted: async () => ({ granted: true }),
         requestOverlayPermission: async () => {},
         setRestCardVisible: async (o) => { window.__f69.cardVisible.push(o.visible); },
-      },
-    },
-  };
-}
-"""
+    """,
+)
 
 JAVA_DIR = REPO / "android/app/src/main/java/com/ryanleeyi/liftlog"
 
@@ -116,7 +109,7 @@ def source_checks() -> None:
 
 
 def native(page, base: str):
-    page.add_init_script(FAKE_PLUGIN.strip().join(["(", ")()"]))
+    page.add_init_script(FAKE_PLUGIN)
     page.goto(base, wait_until="domcontentloaded")
     page.wait_for_selector("input", timeout=10_000)
     return page
