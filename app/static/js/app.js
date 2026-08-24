@@ -3512,9 +3512,25 @@ const handleRestControl = (action, seconds, draft, startedAt) => {
     return;
   }
   if (state.restStartedAt === null) return;
-  if (action === "pause" && !restPaused()) pauseRest();
-  else if (action === "resume" && restPaused()) resumeRest();
-  else if (action === "stop") {
+  // F89 P1：pause/resume 帶原生權威秒數（負＝已超時 |seconds| 秒）。事件可能在 WebView
+  // 凍結期間積著、解凍後才處理——用「處理當下」的時鐘暫停會差掉整段凍結時間，
+  // 所以有秒數就直接把卡片的累計對到原生的值；沒有（舊版 APK）才退回原本的行為。
+  const alignRestClockFromNative = (display, { toPaused }) => {
+    if (state.restTargetSeconds === null) return false;
+    const elapsed = Math.max(0, state.restTargetSeconds - display); // display<0（超時)＝target+|display|
+    state.restAccumulatedMs = elapsed * 1000;
+    state.restResumedAt = toPaused ? null : Date.now();
+    return true;
+  };
+  if (action === "pause") {
+    if (seconds === null || !alignRestClockFromNative(seconds, { toPaused: true })) {
+      if (!restPaused()) pauseRest();
+    }
+  } else if (action === "resume") {
+    if (seconds === null || !alignRestClockFromNative(seconds, { toPaused: false })) {
+      if (restPaused()) resumeRest();
+    }
+  } else if (action === "stop") {
     state.pendingRestSeconds = restElapsedSeconds(); // ④：等同繼續下一組
     stopRestTimer();
   } else if (action === "halt") {

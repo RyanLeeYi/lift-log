@@ -749,14 +749,14 @@ final class RestOverlay {
         row1.setOrientation(LinearLayout.HORIZONTAL);
         pauseButton = iconButton(context,
             paused ? R.drawable.ic_rest_play : R.drawable.ic_rest_pause, v -> {
+                // F89 P1：事件改由服務端統一發（帶權威秒數），這裡不再自己 emit——
+                // 兩處都發會讓前端收到一份沒秒數的舊格式事件，對表被空事件蓋掉。
                 if (paused) {
                     RestTimerService.resume(context);
                     setPaused(context, false);
-                    RestTimerPlugin.emit("resume");
                 } else {
                     RestTimerService.pause(context);
                     setPaused(context, true);
-                    RestTimerPlugin.emit("pause");
                 }
             });
         LinearLayout.LayoutParams pauseLp = pillParams(context, true);

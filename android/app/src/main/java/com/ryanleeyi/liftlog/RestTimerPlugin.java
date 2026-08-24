@@ -34,8 +34,11 @@ public class RestTimerPlugin extends Plugin {
      */
     private static RestTimerPlugin instance;
 
+    /** 「這個事件沒有秒數語意」的哨兵。不能用 -1：pause/resume 的秒數帶正負號（負＝超時）。 */
+    static final int NO_SECONDS = Integer.MIN_VALUE;
+
     static void emit(String action) {
-        emit(action, -1);
+        emit(action, NO_SECONDS);
     }
 
     /**
@@ -62,7 +65,9 @@ public class RestTimerPlugin extends Plugin {
     private static JSObject payload(String action, int seconds, long startedAt) {
         JSObject data = new JSObject();
         data.put("action", action);
-        if (seconds >= 0) data.put("seconds", seconds);
+        // 帶正負號：pause/resume 的負值＝已超時 |seconds| 秒（F89 P1 修復——事件不帶
+        // 權威秒數時，前端只能用「事件被處理的當下」暫停，WebView 凍住多久就差多久）
+        if (seconds != NO_SECONDS) data.put("seconds", seconds);
         if (startedAt >= 0) data.put("startedAt", startedAt);
         return data;
     }

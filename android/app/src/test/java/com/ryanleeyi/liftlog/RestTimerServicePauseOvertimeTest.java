@@ -55,6 +55,19 @@ public class RestTimerServicePauseOvertimeTest {
         svc.onStartCommand(new Intent(RestTimerService.ACTION_RESUME), 0, 0);
         assertTrue("繼續後仍是超時狀態", (Boolean) get(svc, "overtime"));
         assertNull("不得把超時秒數當剩餘秒數開新倒數", get(svc, "timer"));
+
+        // F89 P1（第二輪）：事件要帶正負號的權威秒數（負＝已超時），前端才能把卡片
+        // 對到「按下那一刻」而不是「事件被處理的當下」。plugin instance 不在（本測試環境）
+        // 時事件進 PendingRestControl，正好拿來驗 payload 契約。
+        java.util.List<PendingRestControl.Event> events =
+            PendingRestControl.drain(System.currentTimeMillis());
+        assertTrue("pause 事件要進佇列", events.size() >= 2);
+        PendingRestControl.Event pause = events.get(events.size() - 2);
+        PendingRestControl.Event resume = events.get(events.size() - 1);
+        assertTrue("倒數第二件是 pause", "pause".equals(pause.action));
+        assertTrue("pause 帶負的超時秒數", pause.seconds == -415);
+        assertTrue("最後一件是 resume", "resume".equals(resume.action));
+        assertTrue("resume 帶負的超時秒數", resume.seconds == -415);
     }
 
     @Test

@@ -279,6 +279,9 @@ public class RestTimerService extends Service {
             paused = true;
             RestOverlay.setPaused(this, true);
             notifyUpdate(buildNotification(remainingSeconds, overtime));
+            // F89 P1：帶權威秒數（負＝已超時）。前端據此把卡片凍在**按下暫停那一刻**的值，
+            // 而不是事件被處理的當下——WebView 凍住多久，兩邊就差多久。
+            RestTimerPlugin.emit("pause", overtime ? -remainingSeconds : remainingSeconds);
             return START_NOT_STICKY;
         }
 
@@ -291,6 +294,7 @@ public class RestTimerService extends Service {
             } else {
                 startTimer(remainingSeconds); // ②：從剩餘秒數接續，不重頭算
             }
+            RestTimerPlugin.emit("resume", overtime ? -remainingSeconds : remainingSeconds);
             return START_NOT_STICKY;
         }
 
