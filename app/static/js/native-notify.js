@@ -39,19 +39,12 @@ async function systemNotificationsEnabled() {
 // importance 設成 IMPORTANCE_NONE(0)，app 層仍是允許的。只看 areEnabled 的話，
 // 開關會顯示「開」而提醒永遠不出現——F62 review 指出的靜默失敗。
 const IMPORTANCE_NONE = 0;
-// F95：休息提醒實際上會出現在**兩個** channel 的其中一個，兩個都要看。
-// - `rest-timer`：F63 前景服務自己建的（RestTimerService，顯示名「休息倒數」）。
-//   平常就是這一則——使用者被吵到時長按的也是它。
-// - `default`：Capacitor LocalNotifications 的預設 channel（我們排通知時沒指定 channelId）。
-//   只有前景服務啟不動時才走到。
-// - `rest-alarm`：F166 補上的第三個（RestTimerService，顯示名「休息時間到」，IMPORTANCE_HIGH）。
-//   休息**歸零**那則提醒掛在這裡——它才是「時間到」這件事本身。漏掉它的話，
-//   使用者只關掉「休息時間到」，另外兩個 channel 都正常，開關就會顯示「開」而提醒不出現。
-//
-// 任一個被關就顯示「關」是刻意的保守：JS 這一側無法預知這次休息會走哪一條
-// （startForegroundRest 成不成功要到當下才知道），寧可多提醒一次，
-// 也不要讓使用者以為提醒是開著的。
-const REST_CHANNEL_IDS = ["rest-timer", "rest-alarm", "default"];
+// F166（2026-08-24 Ryan 拍板）：開關「關」的判定**只看 `rest-alarm`**
+// （RestTimerService，顯示名「休息時間到」，IMPORTANCE_HIGH）。休息**歸零**那則提醒
+// 掛在這裡——它才是「時間到」這件事本身，被關掉就是真正會漏掉的提醒。
+// `rest-timer`（倒數常駐）與 `default` 是資訊不是提醒，被關不再影響開關顯示
+// ——F95 的「任一被關就顯示關」誤報面積太大（只想關倒數常駐的人會被說成「關」）。
+const REST_CHANNEL_IDS = ["rest-alarm"];
 
 /**
  * 這一類通知是不是被單獨關掉了。
@@ -63,9 +56,8 @@ const REST_CHANNEL_IDS = ["rest-timer", "rest-alarm", "default"];
  * channel 概念）時，該由 areEnabled() 這個 app 層的事實來源說了算，不該因為問不到
  * 附加條件就把功能擋死。
  *
- * F95 起 `rest-timer`（F63 前景服務那則倒數通知的 channel）也算在內，見上方
- * REST_CHANNEL_IDS——平常使用者長按到的就是它，只看 default 等於漏掉主要路徑。
- * F166 再補 `rest-alarm`（歸零那則提醒）：判定規則一字不動，只是清單多一個 id。
+ * F166 起清單只剩 `rest-alarm`（歸零那則提醒），理由見上方 REST_CHANNEL_IDS；
+ * 「查不到不算被關、拋錯退回 areEnabled」的判定規則一字不動。
  */
 async function restChannelMuted() {
   const api = plugin();
@@ -75,7 +67,7 @@ async function restChannelMuted() {
     const channels = res?.channels ?? [];
     return REST_CHANNEL_IDS.some((id) => {
       const channel = channels.find((c) => c?.id === id);
-      // 不存在就跳過：`rest-timer` 要到前景服務第一次啟動才建立，全新裝置上本來就沒有。
+      // 不存在就跳過：`rest-alarm` 要到前景服務第一次啟動才建立，全新裝置上本來就沒有。
       return channel ? channel.importance === IMPORTANCE_NONE : false;
     });
   } catch {

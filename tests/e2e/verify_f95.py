@@ -130,7 +130,8 @@ DEFAULT_MUTED = (
     "{ channels: [{ id: 'default', importance: 0 }, { id: 'rest-timer', importance: 2 }] }"
 )
 TIMER_ABSENT = "{ channels: [{ id: 'default', importance: 3 }] }"
-# F166：第三個 channel `rest-alarm`（歸零那則「休息時間到」）。
+# F166（2026-08-24 Ryan 拍板選 (b)）：開關「關」的判定只看 `rest-alarm`
+# （歸零那則「休息時間到」——真正會漏掉的提醒）；rest-timer／default 是資訊不是提醒。
 # ALL_OK 是 ④ 的反面——三個都正常時必須顯示「開」，否則新條件只是把開關焊死。
 ALL_OK = (
     "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },"
@@ -139,6 +140,11 @@ ALL_OK = (
 ALARM_MUTED = (
     "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 },"
     " { id: 'rest-alarm', importance: 0 }] }"
+)
+# ④ 反面：rest-timer 被關但 rest-alarm 正常 → 依 (b) 要顯示「開」
+TIMER_MUTED_ALARM_OK = (
+    "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 0 },"
+    " { id: 'rest-alarm', importance: 4 }] }"
 )
 
 
@@ -218,12 +224,12 @@ def run_checks(base: str) -> None:
         )
         ctx.close()
 
-        # ③ 主要情境：前景服務那個 channel 被單獨關掉
-        ctx, page = open_app(browser, base, TIMER_MUTED)
+        # ③（F166 (b) 改定）：只有 rest-alarm 被關才算「關」——這裡同時驗 ⑤ 的引導
+        ctx, page = open_app(browser, base, ALARM_MUTED)
         label = toggle_label(page)
         check(
             "休息提醒：關" in label,
-            f"③ rest-timer importance=0（default 正常）→ 顯示「關」（實際：{label}）",
+            f"③ rest-alarm importance=0 → 顯示「關」（實際：{label}）",
         )
         # ⑤ 引導：把人送到設定頁，訊息不寫死類別名稱
         page.locator(".switch-row [role=switch]").first.click()
@@ -243,20 +249,27 @@ def run_checks(base: str) -> None:
         )
         ctx.close()
 
-        # ③ 回歸 F65：default 被關同樣要擋（不能因為改看 rest-timer 就把舊的漏掉）
+        # F166 (b)：default／rest-timer 被關**不再**影響開關（只想關倒數常駐的人不該被說成「關」）
         ctx, page = open_app(browser, base, DEFAULT_MUTED)
         check(
-            "休息提醒：關" in toggle_label(page),
-            "③ 回歸 F65：default importance=0 仍然要顯示「關」",
+            "休息提醒：開" in toggle_label(page),
+            "F166 (b)：default importance=0（rest-alarm 未建立）→ 顯示「開」",
+        )
+        ctx.close()
+
+        ctx, page = open_app(browser, base, TIMER_MUTED_ALARM_OK)
+        check(
+            "休息提醒：開" in toggle_label(page),
+            "F166 ④ 反面：rest-timer importance=0 但 rest-alarm 正常 → 顯示「開」",
         )
         ctx.close()
 
         # 回前景要重查——而且**在設定畫面上也要重繪**。
         # F81 把開關搬進設定畫面後，原本「只有首頁重繪」的條件剛好蓋不到它：
         # 使用者跑去系統設定關掉這類通知、切回來，開關繼續顯示舊狀態（真機實測抓到）。
-        ctx, page = open_app(browser, base, BOTH_OK)
+        ctx, page = open_app(browser, base, ALL_OK)
         check("休息提醒：開" in toggle_label(page), "前提：一開始顯示「開」（人在設定畫面）")
-        page.evaluate(f"() => {{ window.__channels = {TIMER_MUTED}; }}")
+        page.evaluate(f"() => {{ window.__channels = {ALARM_MUTED}; }}")
         page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
         page.wait_for_timeout(900)
         check(
@@ -284,11 +297,11 @@ def run_checks(base: str) -> None:
         )
         ctx.close()
 
-        # 邊界：rest-timer 還沒建立（服務從未啟動過）不算被關
+        # 邊界：rest-alarm 還沒建立（服務從未啟動過）不算被關
         ctx, page = open_app(browser, base, TIMER_ABSENT)
         check(
             "休息提醒：開" in toggle_label(page),
-            "邊界：rest-timer 尚未建立（服務沒跑過）不算被關——否則新裝置永遠開不了",
+            "邊界：rest-alarm 尚未建立（服務沒跑過）不算被關——否則新裝置永遠開不了",
         )
         ctx.close()
 
