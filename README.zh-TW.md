@@ -19,6 +19,10 @@
 - MCP client 能查詢進步與代記錄，且與 REST／Web 共用相同 service 邏輯。
 - 支援版本化 JSON 匯出、刪除帳號、加密備份與 restore drill。
 
+## 螢幕截圖
+
+_待補：正式螢幕截圖將於後續作業補上。_
+
 ## 架構
 
 ```mermaid
@@ -92,9 +96,9 @@ build step。Android 建置與簽章見 [`docs/android-build-setup.md`](docs/and
 
 ## 專案文件
 
-- Local-first 與多帳號 PRD：[`docs/prd/local-first-cloud-sync.md`](docs/prd/local-first-cloud-sync.md)
-- 原始 MVP PRD：[`docs/prd/mvp-lift-log.md`](docs/prd/mvp-lift-log.md)
-- Feature 狀態與 frozen acceptance：[`feature_list.json`](feature_list.json)
+- Feature 狀態與 frozen acceptance（唯一權威來源）：[`feature_list.json`](feature_list.json)
+- Local-first 與多帳號設計筆記（歷史文件，僅供參考）：[`docs/archive/local-first-cloud-sync.md`](docs/archive/local-first-cloud-sync.md)
+- 原始 MVP 設計筆記（歷史文件，僅供參考）：[`docs/archive/mvp-lift-log.md`](docs/archive/mvp-lift-log.md)
 - 開發流程：[`CLAUDE.md`](CLAUDE.md)
 
 ## 授權
