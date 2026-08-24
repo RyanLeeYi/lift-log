@@ -87,9 +87,9 @@
     {
       "id": "F128",
       "name": "浮動視窗按「完成這組」後當場開新一輪倒數（不等前端解凍）",
-      "status": "failing",
+      "status": "closed",
       "acceptance": "（2026-08-04 起草；2026-08-24 Ryan 簽核凍結，⑥ 拍板選 (a)。）\n\n起因：Ryan 原本預期浮動視窗按「完成這組」之後，視窗會像 app 內一樣長出\n±15s／停止／暫停，結果只看到「已排入，回 app 後記錄」。\n根因是**開新一輪的決定在前端 JS**（logCurrentSet 成功後才 scheduleRestNotify），\n而 app 在背景時 WebView 被凍住 → 沒寫入 → 沒開新一輪 → 視窗停在就緒態。\n（記錄本身沒掉，F125 已保證。這條要解的是「介面停在那裡不動」。）\n\n① **app 在背景**時，浮動視窗按「完成這組」→ **原生當場開新一輪倒數**，不等前端。\n   視窗立刻切成休息態（F116 ② 既有的兩態切換：暫停／停止／±15s 出現，「完成這組」收起）。\n\n② 新一輪的秒數＝**剛結束那一輪的 targetSeconds**（原生手上就有，不必問前端）。\n\n③ 那一組的寫入**行為完全不變**（F125）：一樣排進 PendingLog，一樣等回 app 才落地。\n   ⚠ 本條只改「介面何時開始倒數」，不改「資料何時寫入」。\n\n④ **回到 app 時不得變成兩輪**：前端補送完那一組後，必須**接手原生已經在跑的那一輪**，\n   而不是再 scheduleRestNotify 開一輪新的。判準與秒數以原生為準（原生才是真的在數）。\n\n⑤ **app 在前景**時走原路徑不變（JS 活著，本來就沒這個問題）。\n   ⚠ 不要為了統一而把前景也改成原生先開——那會多一條沒必要的分歧路徑。\n\n⑥ **樂觀倒數的代價要講清楚**（這是本條最需要 Ryan 拍板的地方）：\n   倒數是先開的，但那筆寫入可能之後被判定不該補送（F125 的驗證關卡——\n   換了 workout、換了動作、workoutId 對不上就會清掉）。\n   那種情況會出現「休息倒數跑了，但那組沒進資料庫」。\n   **Ryan 2026-08-24 拍板選 (a)：接受**——罕見，且 F125 的關卡本來就只在狀態真的對不上時才清；不另做回報路徑。\n\n⑦ **不得回歸**：F125（排入→回 app 寫入）、F116 ②（兩態按鈕互斥）、\n   F103 ①（導頁不是結束這輪的入口）、F71 ④（停止＝結束這輪並凍結累計）、\n   F127（原生明確結束的輪次不得復活——新開的這一輪不可被舊標記誤殺）。\n\n⑧ 驗收（真機）：\n   1. app 在背景・浮動視窗按「完成這組」→ 視窗**當場**顯示新倒數與 ±15s／停止／暫停\n   2. 承上，回到 app → 那一組寫進資料庫（F125 不變）、且**只有一輪**倒數在跑，\n      秒數與視窗上顯示的一致（④）\n   3. 承上，回 app 後在計時頁看到的卡片與視窗是同一輪（不是兩個各數各的）\n   4. app 在前景時的行為與 v137 完全相同（⑤）",
-      "evidence": "",
+      "evidence": "（2026-08-24 Ryan 拍板：F131（已 passing）以「背景當場寫入＋原生 nextRound ＋前端 adoptNativeRound 接手」涵蓋本條 ①②④⑤ 的行為，③ 引用的 PendingLog 機制已由 F131 移除。真機佐證（背景按完成→當場新倒數＋回 app 只有一輪）併入 F104 驗收場補拍。）",
       "prerequisites": [
         "F71",
         "F103",
@@ -102,7 +102,8 @@
         "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerService.java",
         "android/app/src/main/java/com/ryanleeyi/liftlog/RestTimerPlugin.java"
       ],
-      "signed_off": true
+      "signed_off": true,
+      "superseded_by": "F131"
     },
     {
       "id": "F149",
@@ -199,6 +200,19 @@
         "F95"
       ],
       "signed_off": true
+    },
+    {
+      "id": "F167",
+      "name": "e2e 假 Capacitor plugin 抽成共用 helper",
+      "status": "failing",
+      "signed_off": false,
+      "acceptance": "（2026-08-24 起草，Ryan 已同意開條；acceptance 待簽核凍結）\n\n① 背景：tests/e2e/ 下 18 支腳本各自手刻同一段假 Capacitor plugin（fake_plugins / add_init_script 樣板），已重複第三次；上游 plugin 介面一變就要改 18 處，且各副本已有細微漂移。\n② 抽一個共用 helper 模組（tests/e2e/ 下、非產品碼）：提供組裝假 Capacitor.Plugins 的單一入口，channel 清單、LocalNotifications、RestTimer、NotifyStatus 等 stub 可按腳本需求覆寫；預設值與現行多數腳本一致。\n③ 逐支遷移既有 e2e 腳本改用 helper，刪除各自的內嵌副本；遷移前後每支腳本的 PASS 數不變（遷移是重構不是改行為）。\n④ 驗收：全部 e2e 腳本跑過與遷移前相同的結果；rg 確認 repo 內不再有第二份假 plugin 樣板；helper 本身不含任何產品行為（app/ 不動）。\n⑤ 不做：修復那些本來就卡在登入畫面的舊腳本（那是另一個問題，不混進本條）。",
+      "evidence": "",
+      "touches": [
+        "tests/e2e/"
+      ],
+      "requires": [],
+      "prerequisites": []
     }
   ]
 }
