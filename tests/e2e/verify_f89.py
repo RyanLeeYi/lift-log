@@ -25,6 +25,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import (  # noqa: E402
+    DEFAULT_LOCAL_NOTIFICATIONS,
+    DEFAULT_NOTIFY_STATUS,
+    build_fake_capacitor,
+)
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -53,23 +58,7 @@ def check(ok: bool, label: str) -> None:
 def fake_plugins(granted: bool) -> str:
     """假 Capacitor：通知全開（設定列才會出現），overlay 授權由參數決定。"""
     js_granted = "true" if granted else "false"
-    return f"""
-window.__overlay = {{ requested: 0 }};
-window.Capacitor = {{
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {{
-    LocalNotifications: {{
-      schedule: async () => ({{}}),
-      cancel: async () => ({{}}),
-      checkPermissions: async () => ({{ display: 'granted' }}),
-      requestPermissions: async () => ({{ display: 'granted' }}),
-      areEnabled: async () => ({{ value: true }}),
-      listChannels: async () => ({{ channels: [
-        {{ id: 'default', importance: 3 }}, {{ id: 'rest-timer', importance: 2 }},
-      ] }}),
-    }},
-    RestTimer: {{
+    rest_timer = f"""
       start: async () => ({{ started: true }}),
       stop: async () => ({{}}),
       pause: async () => ({{}}),
@@ -78,11 +67,13 @@ window.Capacitor = {{
       requestOverlayPermission: async () => {{ window.__overlay.requested += 1; }},
       setRestCardVisible: async () => ({{}}),
       addListener: async () => ({{ remove: () => {{}} }}),
-    }},
-    NotifyStatus: {{ openSettings: async () => {{}} }},
-  }},
-}};
-"""
+    """
+    return build_fake_capacitor(
+        preamble="window.__overlay = { requested: 0 };",
+        local_notifications=DEFAULT_LOCAL_NOTIFICATIONS,
+        rest_timer=rest_timer,
+        notify_status=DEFAULT_NOTIFY_STATUS,
+    )
 
 
 def overlay_toggle(page):

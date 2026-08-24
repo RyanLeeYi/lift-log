@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -56,26 +57,20 @@ def fake_plugins(*, app_enabled: bool, channels_js: str) -> str:
     自己決定——「沒有 channel」「channel importance=0」「listChannels 直接拋錯」
     是三種不同的情況，不能混為一談。
     """
-    return f"""
-window.__notifyStatus = {{ openedSettings: 0 }};
-window.Capacitor = {{
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {{
-    LocalNotifications: {{
+    local_notifications = f"""
       schedule: async () => ({{}}),
       cancel: async () => ({{}}),
       checkPermissions: async () => ({{ display: 'granted' }}),
       requestPermissions: async () => ({{ display: 'granted' }}),
       areEnabled: async () => ({{ value: {str(app_enabled).lower()} }}),
       listChannels: async () => ({channels_js}),
-    }},
-    NotifyStatus: {{
-      openSettings: async () => {{ window.__notifyStatus.openedSettings += 1; }},
-    }},
-  }},
-}};
-"""
+    """
+    notify_status = "openSettings: async () => { window.__notifyStatus.openedSettings += 1; },"
+    return build_fake_capacitor(
+        preamble="window.__notifyStatus = { openedSettings: 0 };",
+        local_notifications=local_notifications,
+        notify_status=notify_status,
+    )
 
 
 HEALTHY_CHANNELS = "{ channels: [{ id: 'default', importance: 4 }] }"

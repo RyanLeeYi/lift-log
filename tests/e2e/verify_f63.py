@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import PHONE, REPO, e2e_tmp, free_port, start_server  # noqa: E402
 
@@ -36,31 +37,25 @@ def check(ok: bool, label: str) -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {label}")
 
 
-FAKE_PLUGIN = """
-(fgAvailable) => {
-  window.__f63 = { starts: [], stops: 0, localScheduled: [], localCancels: 0 };
-  window.Capacitor = {
-    isNativePlatform: () => true,
-    getPlatform: () => 'android',
-    Plugins: {
-      LocalNotifications: {
+def fake_plugins(fg_available: bool) -> str:
+    rest_timer = f"""
+        available: async () => ({{ available: {str(fg_available).lower()} }}),
+        start: async (opts) => {{ window.__f63.starts.push(opts); }},
+        stop: async () => {{ window.__f63.stops += 1; }},
+    """
+    return build_fake_capacitor(
+        preamble="window.__f63 = { starts: [], stops: 0, localScheduled: [], localCancels: 0 };",
+        local_notifications="""
         checkPermissions: async () => ({ display: 'granted' }),
         requestPermissions: async () => ({ display: 'granted' }),
         areEnabled: async () => ({ value: true }),
         checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
         schedule: async (opts) => { window.__f63.localScheduled.push(opts); },
         cancel: async () => { window.__f63.localCancels += 1; },
-      },
-      NotifyStatus: { openSettings: async () => {} },
-      RestTimer: {
-        available: async () => ({ available: fgAvailable }),
-        start: async (opts) => { window.__f63.starts.push(opts); },
-        stop: async () => { window.__f63.stops += 1; },
-      },
-    },
-  };
-}
-"""
+    """,
+        notify_status="openSettings: async () => {},",
+        rest_timer=rest_timer,
+    )
 
 
 def manifest_and_source_checks() -> None:
@@ -102,8 +97,7 @@ def manifest_and_source_checks() -> None:
 
 
 def native(page, base: str, fg_available: bool):
-    page.add_init_script(
-        FAKE_PLUGIN.strip().join(["(", f")({str(fg_available).lower()})"]))
+    page.add_init_script(fake_plugins(fg_available))
     page.goto(base, wait_until="domcontentloaded")
     page.wait_for_selector("input", timeout=10_000)
     return page

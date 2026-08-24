@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -57,14 +58,7 @@ def fake_plugins(granted: bool, exact: bool = True) -> str:
     """假 Capacitor：通知全開（兩列才會出現），overlay 授權與精確鬧鐘由參數決定。"""
     js_granted = "true" if granted else "false"
     js_exact = "true" if exact else "false"
-    return f"""
-window.__overlay = {{ requested: 0 }};
-window.__exact = {{ requested: 0 }};
-window.Capacitor = {{
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {{
-    LocalNotifications: {{
+    local_notifications = f"""
       schedule: async () => ({{}}),
       cancel: async () => ({{}}),
       checkPermissions: async () => ({{ display: 'granted' }}),
@@ -76,8 +70,8 @@ window.Capacitor = {{
       listChannels: async () => ({{ channels: [
         {{ id: 'default', importance: 3 }}, {{ id: 'rest-timer', importance: 2 }},
       ] }}),
-    }},
-    RestTimer: {{
+    """
+    rest_timer = f"""
       start: async () => ({{ started: true }}),
       stop: async () => ({{}}),
       pause: async () => ({{}}),
@@ -86,11 +80,13 @@ window.Capacitor = {{
       requestOverlayPermission: async () => {{ window.__overlay.requested += 1; }},
       setRestCardVisible: async () => ({{}}),
       addListener: async () => ({{ remove: () => {{}} }}),
-    }},
-    NotifyStatus: {{ openSettings: async () => {{}} }},
-  }},
-}};
-"""
+    """
+    return build_fake_capacitor(
+        preamble="window.__overlay = { requested: 0 };\nwindow.__exact = { requested: 0 };",
+        local_notifications=local_notifications,
+        rest_timer=rest_timer,
+        notify_status="openSettings: async () => {},",
+    )
 
 
 def row(page, label: str):

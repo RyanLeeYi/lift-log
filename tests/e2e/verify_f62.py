@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # ——腳本自己釘 UTF-8，不依賴呼叫端帶 PYTHONUTF8／PYTHONIOENCODING（F138）。
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import e2e_tmp  # noqa: E402
 
@@ -74,45 +75,43 @@ def start_server(port: int, db: Path) -> subprocess.Popen:
 # `sysOn` 模擬「系統層通知開關」——2026-07-28 真機抓到的坑：出現過「開關顯示開、通知被系統丟掉」。
 # checkPermissions() 的語意分兩段（13 以下查 areNotificationsEnabled、13+ 查 POST_NOTIFICATIONS），
 # 不能當唯一事實來源。測試要能讓 perm=granted 與 sysOn=false 同時成立，那正是靜默失敗的組合。
-FAKE_PLUGIN = """
-(perm, exact, sysOn) => {
-  window.__ln = { schedule: [], cancel: [], requested: 0, openedSettings: 0,
-                  exactRequested: 0, fgStarts: [], fgStops: 0 };
-  window.__fgAvailable = false;  // 預設不接手＝維持 F62 既有行為，既有斷言不受影響
-  window.__sysOn = sysOn;
-  window.__exact = exact;
-  window.Capacitor = {
-    isNativePlatform: () => true,
-    getPlatform: () => 'android',
-    Plugins: {
-      LocalNotifications: {
-        checkPermissions: async () => ({ display: perm }),
-        requestPermissions: async () => { window.__ln.requested += 1; return { display: perm }; },
+def fake_plugins(perm: str, exact: str, sys_on: bool) -> str:
+    local_notifications = f"""
+        checkPermissions: async () => ({{ display: {perm!r} }}),
+        requestPermissions: async () => {{
+          window.__ln.requested += 1; return {{ display: {perm!r} }}; }},
         // 狀態的唯一事實來源（review：不要退回 checkPermissions）
-        areEnabled: async () => ({ value: window.__sysOn }),
-        checkExactNotificationSetting: async () => ({ exact_alarm: window.__exact }),
-        changeExactNotificationSetting: async () => {
+        areEnabled: async () => ({{ value: window.__sysOn }}),
+        checkExactNotificationSetting: async () => ({{ exact_alarm: window.__exact }}),
+        changeExactNotificationSetting: async () => {{
           window.__ln.exactRequested += 1;
           window.__exact = 'granted';       // 模擬使用者在系統頁授權
-          return { exact_alarm: 'granted' };
-        },
-        schedule: async (opts) => { window.__ln.schedule.push(opts); },
-        cancel: async (opts) => { window.__ln.cancel.push(opts); },
-      },
-      NotifyStatus: {
-        openSettings: async () => { window.__ln.openedSettings += 1; },
-      },
-      // F63：前景服務。window.__fgAvailable 控制它接不接手，
-      // 用來驗 ⑥ 的分工（接手就不排本機通知，啟不動才退回 F62）
-      RestTimer: {
+          return {{ exact_alarm: 'granted' }};
+        }},
+        schedule: async (opts) => {{ window.__ln.schedule.push(opts); }},
+        cancel: async (opts) => {{ window.__ln.cancel.push(opts); }},
+    """
+    notify_status = "openSettings: async () => { window.__ln.openedSettings += 1; },"
+    # F63：前景服務。window.__fgAvailable 控制它接不接手，
+    # 用來驗 ⑥ 的分工（接手就不排本機通知，啟不動才退回 F62）
+    rest_timer = """
         available: async () => ({ available: window.__fgAvailable }),
         start: async (opts) => { window.__ln.fgStarts.push(opts); },
         stop: async () => { window.__ln.fgStops += 1; },
-      },
-    },
-  };
-}
+    """
+    preamble = f"""
+window.__ln = {{ schedule: [], cancel: [], requested: 0, openedSettings: 0,
+                exactRequested: 0, fgStarts: [], fgStops: 0 }};
+window.__fgAvailable = false;  // 預設不接手＝維持 F62 既有行為，既有斷言不受影響
+window.__sysOn = {str(sys_on).lower()};
+window.__exact = {exact!r};
 """
+    return build_fake_capacitor(
+        preamble=preamble,
+        local_notifications=local_notifications,
+        notify_status=notify_status,
+        rest_timer=rest_timer,
+    )
 
 
 def manifest_checks() -> None:
@@ -175,13 +174,12 @@ def verify_native(
     F107 起「可能延遲」要**兩個**條件都成立才警告——精確鬧鐘被關，而且前景服務
     實際發生過接不了手。只有權限被關時倒數仍走前景服務，根本不碰鬧鐘排程。
     """
-    args = f"({perm!r}, {exact!r}, {str(sys_on).lower()})"
     seed = (
         "localStorage.setItem('liftlog.fgFallbackSeen', '1');"
         if fallback
         else "localStorage.removeItem('liftlog.fgFallbackSeen');"
     )
-    page.add_init_script(FAKE_PLUGIN.strip().join(["(", f"){args}"]))
+    page.add_init_script(fake_plugins(perm, exact, sys_on))
     page.goto(base, wait_until="domcontentloaded")
     page.wait_for_selector("input", timeout=10_000)
     return page.evaluate(

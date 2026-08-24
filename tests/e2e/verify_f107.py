@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -65,14 +66,7 @@ def fake_plugins(exact: bool, fg_takes: bool) -> str:
     """
     js_exact = "true" if exact else "false"
     js_started = "true" if fg_takes else "false"
-    return f"""
-window.__exact = {{ requested: 0 }};
-window.__fg = {{ starts: 0 }};
-window.Capacitor = {{
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {{
-    LocalNotifications: {{
+    local_notifications = f"""
       schedule: async () => ({{}}),
       cancel: async () => ({{}}),
       checkPermissions: async () => ({{ display: 'granted' }}),
@@ -84,8 +78,8 @@ window.Capacitor = {{
       listChannels: async () => ({{ channels: [
         {{ id: 'default', importance: 3 }}, {{ id: 'rest-timer', importance: 2 }},
       ] }}),
-    }},
-    RestTimer: {{
+    """
+    rest_timer = f"""
       available: async () => ({{ available: true }}),
       start: async () => {{
         window.__fg.starts += 1;
@@ -99,11 +93,13 @@ window.Capacitor = {{
       requestOverlayPermission: async () => {{}},
       setRestCardVisible: async () => ({{}}),
       addListener: async () => ({{ remove: () => {{}} }}),
-    }},
-    NotifyStatus: {{ openSettings: async () => {{}} }},
-  }},
-}};
-"""
+    """
+    return build_fake_capacitor(
+        preamble="window.__exact = { requested: 0 };\nwindow.__fg = { starts: 0 };",
+        local_notifications=local_notifications,
+        rest_timer=rest_timer,
+        notify_status="openSettings: async () => {},",
+    )
 
 
 def notify_row(page):

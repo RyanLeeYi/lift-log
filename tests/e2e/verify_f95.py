@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import (  # noqa: E402
     PHONE,
@@ -54,19 +55,7 @@ def fake_plugins(channels_js: str) -> str:
     RestTimer 存在才會走到 F63 的前景服務路徑——這正是 F65 漏掉的那條。
     """
     token = TOKEN
-    return f"""
-window.__notifyStatus = {{ openedSettings: 0 }};
-// F149 之後 app 版的開機路徑是「Google session -> LocalStore -> Sync bootstrap」，
-// 不再有 token 輸入框。假 plugin 少了這三個就永遠停在登入畫面，整支腳本連設定頁都到不了。
-const __snapshot = {{
-  exercises: [], templates: [], workouts: [], sets: [],
-  body_metrics: [], daily_status: [], settings: [],
-}};
-window.Capacitor = {{
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {{
-    AuthSession: {{
+    auth_session = f"""
       loadSession: async () => ({{
         // 用伺服器認得的那把 token 當 access token：本機 e2e server 走 legacy Bearer，
         // 隨便給一個字串會 401，app 會判定登入失效並把畫面踢回 setup。
@@ -77,49 +66,62 @@ window.Capacitor = {{
       }}),
       saveSession: async () => ({{}}),
       clearSession: async () => ({{}}),
-    }},
-    LocalStore: {{
-      initialize: async () => ({{ schemaVersion: 3, seededExercises: 0 }}),
+    """
+    local_store = """
+      initialize: async () => ({ schemaVersion: 3, seededExercises: 0 }),
       snapshot: async () => __snapshot,
-      status: async () => ({{ pendingMutations: 0 }}),
-    }},
-    Sync: {{
-      initialize: async () => ({{
+      status: async () => ({ pendingMutations: 0 }),
+    """
+    sync = """
+      initialize: async () => ({
         state: 'synced', pending: 0, failed: 0, cursor: 1,
         lastSyncedAt: 1000, bootstrapComplete: true,
-      }}),
-      status: async () => ({{
+      }),
+      status: async () => ({
         state: 'synced', pending: 0, failed: 0, cursor: 1,
         lastSyncedAt: 1000, bootstrapComplete: true,
-      }}),
-      syncNow: async () => ({{
+      }),
+      syncNow: async () => ({
         state: 'synced', pending: 0, failed: 0, cursor: 1,
         lastSyncedAt: 1000, bootstrapComplete: true,
-      }}),
-    }},
-    LocalNotifications: {{
+      }),
+    """
+    local_notifications = f"""
       schedule: async () => ({{}}),
       cancel: async () => ({{}}),
       checkPermissions: async () => ({{ display: 'granted' }}),
       requestPermissions: async () => ({{ display: 'granted' }}),
       areEnabled: async () => ({{ value: true }}),
       listChannels: async () => (window.__channels || {channels_js}),
-    }},
-    RestTimer: {{
-      start: async () => ({{ started: true }}),
-      stop: async () => ({{}}),
-      pause: async () => ({{}}),
-      resume: async () => ({{}}),
-      overlayPermitted: async () => ({{ granted: false }}),
-      setCardVisible: async () => ({{}}),
-      addListener: async () => ({{ remove: () => {{}} }}),
-    }},
-    NotifyStatus: {{
-      openSettings: async () => {{ window.__notifyStatus.openedSettings += 1; }},
-    }},
-  }},
-}};
+    """
+    rest_timer = """
+      start: async () => ({ started: true }),
+      stop: async () => ({}),
+      pause: async () => ({}),
+      resume: async () => ({}),
+      overlayPermitted: async () => ({ granted: false }),
+      setCardVisible: async () => ({}),
+      addListener: async () => ({ remove: () => {} }),
+    """
+    notify_status = "openSettings: async () => { window.__notifyStatus.openedSettings += 1; },"
+    # F149 之後 app 版的開機路徑是「Google session -> LocalStore -> Sync bootstrap」，
+    # 不再有 token 輸入框。假 plugin 少了這三個就永遠停在登入畫面，整支腳本連設定頁都到不了。
+    preamble = """
+window.__notifyStatus = { openedSettings: 0 };
+const __snapshot = {
+  exercises: [], templates: [], workouts: [], sets: [],
+  body_metrics: [], daily_status: [], settings: [],
+};
 """
+    return build_fake_capacitor(
+        preamble=preamble,
+        auth_session=auth_session,
+        local_store=local_store,
+        sync=sync,
+        local_notifications=local_notifications,
+        rest_timer=rest_timer,
+        notify_status=notify_status,
+    )
 
 
 BOTH_OK = "{ channels: [{ id: 'default', importance: 3 }, { id: 'rest-timer', importance: 2 }] }"

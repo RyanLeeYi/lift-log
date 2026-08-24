@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
+from fake_capacitor import build_fake_capacitor
 from playwright.sync_api import Route, sync_playwright
 
 # 報告裡有 ≥、①、⚠ 這類字，Windows console 預設 CP950 編不出來會 UnicodeEncodeError exit 1
@@ -31,12 +32,8 @@ def main() -> int:
         context.expose_function("authSave", save_session)
         page = context.new_page()
         page.add_init_script(
-            """
-            window.Capacitor = {
-              isNativePlatform: () => true,
-              getPlatform: () => 'android',
-              Plugins: {
-                AuthSession: {
+            build_fake_capacitor(
+                auth_session="""
                   loadSession: async () => window.authLoad(),
                   saveSession: async (value) => window.authSave(value),
                   clearSession: async () => {},
@@ -46,19 +43,15 @@ def main() -> int:
                       deviceId: '11111111-1111-4111-8111-111111111111',
                       deviceName: 'Test Pixel' };
                   },
-                },
-                LocalStore: {
+                """,
+                local_store="""
                   initialize: async () => ({ schemaVersion: 2, pendingMutations: 0 }),
                   snapshot: async () => ({ exercises: [], templates: [], workouts: [], sets: [],
                     body_metrics: [], daily_status: [], settings: [] }),
                   status: async () => ({ schemaVersion: 2, pendingMutations: 0 }),
-                },
-                AppUpdate: {
-                  currentVersion: async () => ({ versionCode: 150 }),
-                },
-              },
-            };
-            """
+                """,
+                app_update="currentVersion: async () => ({ versionCode: 150 }),",
+            )
         )
 
         def route_api(route: Route) -> None:

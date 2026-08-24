@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import PHONE, REPO, e2e_tmp, free_port, start_server  # noqa: E402
 
@@ -35,34 +36,30 @@ def check(ok: bool, label: str) -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {label}")
 
 
-FAKE_PLUGIN = """
-(overlayGranted) => {
-  window.__f64 = { starts: [], stops: 0, overlayRequests: 0, localScheduled: [] };
-  window.__f64.granted = overlayGranted;
-  window.Capacitor = {
-    isNativePlatform: () => true,
-    getPlatform: () => 'android',
-    Plugins: {
-      LocalNotifications: {
+def fake_plugins(overlay_granted: bool) -> str:
+    preamble = f"""
+window.__f64 = {{ starts: [], stops: 0, overlayRequests: 0, localScheduled: [] }};
+window.__f64.granted = {str(overlay_granted).lower()};
+"""
+    return build_fake_capacitor(
+        preamble=preamble,
+        local_notifications="""
         checkPermissions: async () => ({ display: 'granted' }),
         requestPermissions: async () => ({ display: 'granted' }),
         areEnabled: async () => ({ value: true }),
         checkExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
         schedule: async (opts) => { window.__f64.localScheduled.push(opts); },
         cancel: async () => {},
-      },
-      NotifyStatus: { openSettings: async () => {} },
-      RestTimer: {
+    """,
+        notify_status="openSettings: async () => {},",
+        rest_timer="""
         available: async () => ({ available: true }),
         start: async (opts) => { window.__f64.starts.push(opts); },
         stop: async () => { window.__f64.stops += 1; },
         overlayPermitted: async () => ({ granted: window.__f64.granted }),
         requestOverlayPermission: async () => { window.__f64.overlayRequests += 1; },
-      },
-    },
-  };
-}
-"""
+    """,
+    )
 
 JAVA_DIR = REPO / "android/app/src/main/java/com/ryanleeyi/liftlog"
 
@@ -113,8 +110,7 @@ def manifest_and_source_checks() -> None:
 
 
 def native(page, base: str, overlay_granted: bool):
-    page.add_init_script(
-        FAKE_PLUGIN.strip().join(["(", f")({str(overlay_granted).lower()})"]))
+    page.add_init_script(fake_plugins(overlay_granted))
     page.goto(base, wait_until="domcontentloaded")
     page.wait_for_selector("input", timeout=10_000)
     return page

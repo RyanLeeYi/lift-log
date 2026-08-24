@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+from fake_capacitor import build_fake_capacitor  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from verify_f67 import PHONE, TOKEN, e2e_tmp, safe_port, start_server  # noqa: E402
 
@@ -46,14 +47,7 @@ def check(ok: bool, label: str) -> None:
 
 # 只需要 isNativePlatform() 為真＋LocalStore 的幾個方法：不驅動 UI，
 # 所以不必假 AuthSession/Sync/AppUpdate（api.js 的 local* 計算不碰那些外掛）。
-FAKE_LOCAL_STORE = """
-const __db = { exercises: [], workouts: [], sets: [] };
-let __nextExercise = 1, __nextWorkout = 1, __nextSet = 1;
-window.Capacitor = {
-  isNativePlatform: () => true,
-  getPlatform: () => 'android',
-  Plugins: {
-    LocalStore: {
+LOCAL_STORE = """
       initialize: async () => ({ schemaVersion: 2, seededExercises: 0, pendingMutations: 0 }),
       snapshot: async () => structuredClone({
         ...__db, templates: [], body_metrics: [], daily_status: [], settings: [],
@@ -80,10 +74,15 @@ window.Capacitor = {
         __db.sets.push(row);
         return structuredClone(row);
       },
-    },
-  },
-};
 """
+
+FAKE_LOCAL_STORE = build_fake_capacitor(
+    preamble="""
+const __db = { exercises: [], workouts: [], sets: [] };
+let __nextExercise = 1, __nextWorkout = 1, __nextSet = 1;
+""",
+    local_store=LOCAL_STORE,
+)
 
 # 全部在一次 evaluate 裡跑完——同一個 page，dynamic import 的模組實例（含 localReady 快取）
 # 在多次呼叫間本來就會延續，不需要分次 evaluate。
