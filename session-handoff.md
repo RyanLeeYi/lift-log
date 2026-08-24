@@ -1,69 +1,58 @@
 # session handoff
 
-最後更新：2026-08-23（無人看管 dispatch 場，第十一場）。**160/166 passing、6 failing**
-（F89、F104、F128、F149、F153、F166）。本場**沒有 feature 轉 passing**——F89 卡在真機。
+最後更新：2026-08-25 00:30（互動場，第十二場）。**161/167 passing、5 failing ＋ 1 closed**
+（F89、F104、F149、F153、F166 failing；F128 closed=superseded by F131；F167 本場收官）。
+收工原因：usage-guard 5h 額度 94%。
 
-## 接手第一件事
+## 接手第一件事：F89 只差一輪補測就能轉 passing
 
-1. **先看收件匣**：本場投了一則 high question
-   `[blocked] F89 ⑩ 真機驗收：dev app 要你登入、prod 會寫真資料、通知仍被系統關著`。
-   在 Ryan 答之前，F89／F104／F128／F166 的真機部分**全部動不了**，不要再重試一次同樣的路。
-2. 08/22 那則 `allowNoti=false` 的 high question **仍未回答**，本場重新確認症狀還在。
-3. 本場改動：`RestOverlay.java`（兩個 private → package-private）＋
-   新檔 `android/app/src/test/java/com/ryanleeyi/liftlog/RestOverlayMotionTest.java`。
-   feature 狀態未動，只補 F89 的 evidence。
+主場景已修好並在真機確認（兩輪修復都在 main）：
+- `c0e3528`：超時中暫停→繼續不再把超時秒數當新倒數（Robolectric 釘住，突變驗證過）
+- `19a7fd1`：pause/resume 事件帶正負號權威秒數（負＝超時），前端對表——真機誤差從 ~50 秒降到 1 秒
 
-## 本場做的事（2026-08-23 第十一場 dispatch）
+**缺口只是「未跑」不是「跑了壞」**（第三輪驗收者撞 usage-guard 壓縮範圍）：
+1. 未超時的 pause/resume 回歸
+2. app 內計時頁按暫停/繼續 → overlay 反向同步
+3. REST 卡片與通知列兩條停止路徑（overlay 停止鈕已有證據）
+4. 「靜默停止」疑點用完整原序列再重現一次（pause→resume→±15s→二次背景切換；
+   第三輪單次壓縮版未重現；halted=true 唯一入口是 overlay 停止鈕，第二輪疑似驗收誤觸）
 
-收件匣答案是 `Run, start with F89`（兩則同內容）。
+補測全過 → F89 轉 passing 並歸檔（整條原文進 docs/archive/features.jsonl）→ 接著派 F104
+真機驗收（順帶補拍 F128 佐證：背景按「完成這組」→ 當場新倒數＋回 app 只有一輪）。
 
-`baton-dispatch` 五問：Outcome 清楚、Ownership 可切，但 **Independence 直接否決**——
-F89／F104／F128 共用同三支 Java 檔，F166 雖然檔案不重疊，剩下的工作卻同樣需要**那一支實體手機**。
-adb 是獨佔資源，worktree 隔離不了它，兩個 worker 同時操作同一台手機只會互相踩。
-→ **全部 direct，零派工**（連唯讀 agent 都沒派：沒有需要 fresh context 判定的成品）。
+## 環境（真機驗收前必讀）
 
-### F89 ⑧：code audit 通過
+- **機上 dev app（com.ryanleeyi.liftlog.dev）現在是真 dev 站**（v161-F89fix，
+  `scripts/build-apk.ps1 -Site dev` 建的，env.js 已驗證指向 lift-log-dev），Ryan 已登入。
+  寫測試資料安全，但收尾照樣刪測試組＋結束訓練。
+- **重大教訓（本場最貴的發現）**：機上舊的 dev APK 一直指向正式站——`npx cap sync`＋
+  gradle 直建不會 patch env.js。**建 APK 一律走 `scripts/build-apk.ps1`**，且要用
+  **pwsh（PowerShell 7）**跑（5.1 會把 UTF-8 無 BOM 腳本按 Big5 誤讀而語法錯誤）。
+- **正式站測試殘留待 Ryan 清**：user DB `68ea7b49…` 在 8/24 有 4 個 workout、
+  5 組「臥推 50kg×11」（21:26–22:14，deleted_at 空）——第一輪驗收寫進去的。
+  請 Ryan 在 prod app 內刪（軟刪＋sync 才安全），不要直接改表。
 
-`RestOverlay` 的 13 個非 private 進入點逐一比對：11 個第一行就 `onMain(() -> ...)`；
-`permitted`／`headsUpWanted`／`advanceDraftSetNumber` 不碰 view（後者只把 int 加一，
-唯一呼叫端 `requestLog` 本身已在 onMain 區塊內）。
-→ ⑧ 的「所有碰 view 的進入點經 onMain()」**目前成立**。⑧ 剩下的 F63／F64／F69–F71 回歸仍未做。
+## 其他 failing 的狀態
 
-### F89 ⑨：補上回歸檢查（本場唯一的程式碼產出）
+- **F166**：程式與 E2E 已完成（(b) 只看 rest-alarm，`1fc590e`），只差 ⑥ 真機重現一次
+  （關「休息時間到」channel → 開關顯示「關」）。注意：改了 app/static/，收官出 APK 要包進去。
+- **F153**：`.env` 的 `LIFTLOG_LLM_API_KEY` 是**空的**（等 Ryan 補 key）。對照腳本已備好：
+  `scratchpad/f153_compare2.py`（in-process，外部 MCP 路徑已驗通、寫入 60kg×8 成功），
+  key 一到跑一次即可完成對照證據。
+- **F149**：⑨ 已完成大半——LICENSE/雙語 README/docker 已上 main（`b12ab57`），
+  `docker compose build`＋`up`＋API 記錄一組實測通過（Ryan 拍板容器實測即可）。
+  剩 ①–⑧：遷移、帳號綁定（要 Ryan 身分，不可外包）、release APK 全流程、測試矩陣。
+  注意本機 127.0.0.1:8000 被 offer-radar 占用，compose 測試用 override 換埠。
+- **F128**：closed（Ryan 拍板 superseded by F131），佐證併入 F104 驗收場。
 
-原缺口是「reduced-motion 只驗到不崩」——而「動效整條被拿掉」的實作也不會崩。
-`RestOverlayMotionTest`（Robolectric）兩個方向各驗：
-`ANIMATOR_DURATION_SCALE=0` → `animateIn` 直接就位；`=1` → 確實從 alpha 0 / scale .92 起跑。
-另加「查不到＝預設要動效」與 null target 不炸。
+## 本場收掉的
 
-- Android 單元測試 **46 tests / 0 failures**（原 41 ＋ 新 5）
-- 突變測試：`reduceMotion` 改成恆 `false` → 2 條紅；還原後全綠
-- `uv run pytest` **487 passed**、`uv run ruff check .` 全過
+- **F167**（e2e 假 plugin 共用 helper）：passing 已歸檔。18＋1 支（含補的 verify_f144）
+  全遷移，逐支與遷移前行為一致；獨立驗收兩輪（P2 修復後 R3 CLOSED）。
+- F128 裁決、F166 ⑤ 裁決、F167 簽核、F149 ⑨ 判準——四項都是 Ryan 8/24 當場拍板。
 
-⚠ 這**不等於** ⑨ 通過：160ms 過場的實際觀感仍需真機或高幀率錄影，
-自動化只證明了分支邏輯與起始狀態。
+## failures.jsonl 備註
 
-## 卡住的事
-
-### F89 ⑩ 真機：三個獨立擋路點（本場的主要發現）
-
-1. **dev app 要 Google 登入**。已把既有 `app-dev-release.apk`（v161）裝上 RF8NB0BSEFE，
-   停在登入畫面。**這是新變化**：07/08 那幾場用 dev app 驗 F89／F104 時 legacy 單一 token
-   路徑還在，F149 關掉之後 dev app 就從「裝了就能用」變成「要 Ryan 本人登入」。
-   → 下一個接手的人：**不要再花時間找繞過登入的路**，沒有。
-2. **走 prod app 會寫進真實訓練資料**。休息倒數只由 `app.js:2574`（記完一組）啟動；
-   `RestTimerService` 是 `exported="false"`，`adb am` 叫不動，沒有純原生的拉起入口。
-3. **`allowNoti=false`**（延續 08/21、08/22）。F63／F72／F73 的通知回歸在這台手機上產不出證據。
-
-### 其餘（延續前場，未變）
-
-- F166：③④ 的程式碼早在 `09afde9` 就落地、E2E 也補了，只剩 ⑥ 真機——與上面第 3 點同一個擋路點。
-- F149 要 Ryan 的 Google 身分、F153 要真 LLM key ＋ 人工對照，headless 一律做不了。
-- **e2e 腐爛**：18 支舊腳本多半卡在登入畫面。同一段假 plugin 已經抄第三次，抽成共用 helper
-  值得獨立開一條 feature（尚未開，因為需要簽核）。
-- 本場沒排保溫鬧鐘：`ScheduleWakeup` 只在 `/loop` dynamic mode 可用，headless dispatch 進不去。
-
-## 順帶觀察（未追）
-
-prod app v160 首頁今晚顯示「同步錯誤 · 待同步 1 筆」。可能是 08/21 實機冒煙後
-以 delete mutation 清資料留下的殘骸，也可能是真的同步失敗。已寫進 question 與 F89 evidence。
+F89 有多筆 open：22:03（原 P1，已由 c0e3528 修復）、22:50（環境：dev APK 指向 prod
+＋登入被清，皆已解決）、23:33（分岔 ~50s，已由 19a7fd1 修復並真機反駁）。
+補測全過後可在 retro 時標 resolved。F167 那筆已 CLOSED。
