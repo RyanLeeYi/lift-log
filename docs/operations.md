@@ -144,3 +144,38 @@ uv run python scripts/restore_drill.py --db <user-uuid> `
 Google `sub` 或絕對路徑；所有 `print()` 輸出同樣只印相對路徑或 db 名稱。這對應 PRD R9：
 「Log、metrics 與錯誤不得包含 token、Google ID token、email、訓練 payload、體重、MCP 參數或
 user DB 絕對路徑」。
+
+## 7. Legacy 資料遷移怎麼跑（F149 ①③④）
+
+`scripts/migrate_legacy.py` 把 cutover 前的單庫 `liftlog.db` 搬進某個 user 的 data DB。
+方向永遠是 legacy → target，**target 既有列一律勝出**，所以重跑第二次會全部 skip。
+
+### 識別值只走環境變數或互動輸入
+
+目標 user 的 Google `sub`（或 email）**不接受命令列參數**——參數會留在 shell 歷史
+（`ConsoleHost_history.txt`、`.bash_history`）與 process table 裡，那就是 F149 ③ 要防的留痕。
+腳本只從兩個地方取：
+
+1. 環境變數 `LIFTLOG_MIGRATE_GOOGLE_SUB`，或 `LIFTLOG_MIGRATE_EMAIL`
+2. 兩個都沒設且 stdin 是 TTY 時，用 `getpass` 提示輸入（不回顯、不進歷史）
+
+非互動環境（排程、CI）沒設環境變數就直接中止，不 fallback。用環境變數時記得別讓那行
+`$env:...=` 進 shell 歷史——互動輸入是預設也是最安全的做法。查無 user 的錯誤訊息只會說
+「依 google_sub 查詢」，不回印識別值本身。
+
+### 順序
+
+```powershell
+# 1. 先試算：不備份、不寫入，只印逐表 row counts 與 conflicts
+uv run python scripts/migrate_legacy.py --legacy-db ./liftlog.db --dry-run
+
+# 2. 正式跑：開頭會先印出快照路徑，那就是回滾要用的檔案
+uv run python scripts/migrate_legacy.py --legacy-db ./liftlog.db
+
+# 3. 要回滾時
+uv run python scripts/migrate_legacy.py --rollback <步驟 2 印出的快照路徑>
+```
+
+每次輸出的 JSON 摘要含每張表的 `before_target`／`legacy_total`／`migrated`／`conflicts`／
+`after_target`——**把它整段留存**，那就是 ① 要求的「逐表 row counts」與 ④ 遷移後一致性的比對基準。
+`conflicts` 非 0 代表自然鍵撞到但內容不同，那些列不會寫入，要人工處理後再跑一次。

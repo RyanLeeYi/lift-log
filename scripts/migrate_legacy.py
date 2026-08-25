@@ -8,11 +8,18 @@
 同步層（D17：domain 表是唯一事實來源，同步層是版本簿），不自己組 sync payload。
 
 用法（repo 根目錄）：
-    uv run python scripts/migrate_legacy.py --legacy-db ./liftlog.db --google-sub <sub> [--dry-run]
-    uv run python scripts/migrate_legacy.py --rollback <snapshot 路徑> --google-sub <sub>
+    uv run python scripts/migrate_legacy.py --legacy-db ./liftlog.db [--dry-run]
+    uv run python scripts/migrate_legacy.py --rollback <snapshot 路徑>
 
-`--email` 可替代 `--google-sub` 查詢目標 user（二選一）。目標 user 由 control DB 的
-`User` 表查出，data DB 路徑一律走 `app.db.canonical_user_db_path`。
+**目標 user 的識別值不從命令列取得**（F149 ③：不得留在指令歷史或 process table）。
+依序從這兩個地方拿，二選一即可：
+
+1. 環境變數 `LIFTLOG_MIGRATE_GOOGLE_SUB`，或 `LIFTLOG_MIGRATE_EMAIL`
+2. 互動式安全輸入——沒設環境變數且 stdin 是 TTY 時，用不回顯的提示字元讀 Google sub
+
+非互動環境又沒設環境變數就直接中止，不 fallback 到命令列參數。查不到 user 時的錯誤訊息
+只說用了哪個來源，**不回印識別值本身**。目標 user 由 control DB 的 `User` 表查出，
+data DB 路徑一律走 `app.db.canonical_user_db_path`。
 
 非 dry-run 開始寫入前，會先用 `backfill_sync.backup_before_run` 對 target DB 做快照備份，
 快照路徑印在輸出最前面——那就是 `--rollback` 要用的路徑。
@@ -21,7 +28,9 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -99,13 +108,50 @@ def _count(session: Session, model: type) -> int:
 # ---- user／路徑解析 ----
 
 
+ENV_GOOGLE_SUB = "LIFTLOG_MIGRATE_GOOGLE_SUB"
+ENV_EMAIL = "LIFTLOG_MIGRATE_EMAIL"
+
+
+def resolve_identifier(
+    env: dict[str, str] | None = None, *, interactive: bool | None = None
+) -> tuple[str | None, str | None]:
+    """回傳 (google_sub, email)，兩者恰有一個非 None。
+
+    F149 ③：識別值只從環境變數或互動式安全輸入取得。命令列參數會留在 shell 歷史與
+    process table 裡，所以這條路徑不存在——拿不到就中止，不做 fallback。
+    """
+    env = os.environ if env is None else env
+    sub = (env.get(ENV_GOOGLE_SUB) or "").strip()
+    if sub:
+        return sub, None
+    email = (env.get(ENV_EMAIL) or "").strip()
+    if email:
+        return None, email
+
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if not interactive:
+        raise MigrationAbort(
+            f"未取得目標 user 識別值：請設定 {ENV_GOOGLE_SUB} 或 {ENV_EMAIL}，"
+            "或在互動式終端執行以安全輸入（識別值不接受命令列參數）"
+        )
+
+    # getpass 不回顯，因此識別值不會留在終端畫面上（也不會進 shell 歷史）。
+    sub = getpass.getpass("目標 user 的 Google sub（輸入不會顯示）：").strip()
+    if not sub:
+        raise MigrationAbort("未輸入 Google sub，中止")
+    return sub, None
+
+
 def resolve_target_user(session: Session, google_sub: str | None, email: str | None) -> User:
     if google_sub:
         user = session.scalar(select(User).where(User.google_sub == google_sub))
     else:
         user = session.scalar(select(User).where(User.email == email))
     if user is None:
-        raise MigrationAbort(f"找不到符合的 user（google_sub={google_sub!r} email={email!r}）")
+        # F149 ③：不回印識別值本身，只說用了哪個欄位查。
+        field = "google_sub" if google_sub else "email"
+        raise MigrationAbort(f"找不到符合的 user（依 {field} 查詢，識別值已隱去）")
     if user.status == "closed":
         raise MigrationAbort(f"user {user.id} 已刪除（status=closed），不遷入已關閉帳號")
     return user
@@ -556,8 +602,6 @@ def _run_migration(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="F149：既有單庫資料遷移進 user data DB")
     parser.add_argument("--legacy-db", type=Path, default=None, help="cutover 前的單庫 liftlog.db")
-    parser.add_argument("--google-sub", type=str, default=None)
-    parser.add_argument("--email", type=str, default=None, help="查詢 user 的替代方式，二選一")
     parser.add_argument("--dry-run", action="store_true", help="只試算摘要，不備份、不寫入")
     parser.add_argument(
         "--rollback", type=Path, default=None, metavar="SNAPSHOT", help="還原指定快照回 target DB"
@@ -570,8 +614,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not args.google_sub and not args.email:
-        print("[ERROR] 需提供 --google-sub 或 --email 其中一個查詢目標 user", file=sys.stderr)
+    try:
+        google_sub, email = resolve_identifier()
+    except MigrationAbort as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
     settings = Settings()
@@ -581,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         with factory() as control_session:
-            user = resolve_target_user(control_session, args.google_sub, args.email)
+            user = resolve_target_user(control_session, google_sub, email)
         target_path = resolve_target_db_path(str(user_data_dir), user)
     except MigrationAbort as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)

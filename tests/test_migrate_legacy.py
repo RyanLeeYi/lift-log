@@ -13,6 +13,7 @@ from datetime import date, datetime
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
@@ -32,12 +33,24 @@ from app.models import (
     WorkoutSet,
 )
 from app.sync_models import SyncEntity
-from scripts.migrate_legacy import main
+from scripts.migrate_legacy import (
+    ENV_EMAIL,
+    ENV_GOOGLE_SUB,
+    main,
+    resolve_identifier,
+)
 
 
 def _open_session(db_path: Path):
     engine = make_engine(str(db_path))
     return engine, sessionmaker(bind=engine)()
+
+
+@pytest.fixture(autouse=True)
+def _identifier_from_env(monkeypatch):
+    """F149 ③：識別值只從環境變數／互動輸入取得，所以測試也一律走環境變數。"""
+    monkeypatch.setenv(ENV_GOOGLE_SUB, "sub-1")
+    monkeypatch.delenv(ENV_EMAIL, raising=False)
 
 
 def _build_legacy_db(tmp_path: Path) -> Path:
@@ -154,7 +167,6 @@ def test_full_migration_into_empty_target(tmp_path: Path, capsys) -> None:
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "sub-1",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
         ]
@@ -188,7 +200,6 @@ def test_rerun_is_idempotent(tmp_path: Path, capsys) -> None:
     _build_target_db(user_data_dir, user_id)
     argv = [
         "--legacy-db", str(legacy_path),
-        "--google-sub", "sub-1",
         "--control-db", str(control_path),
         "--user-data-dir", str(user_data_dir),
     ]
@@ -227,7 +238,6 @@ def test_natural_key_conflict_recorded_and_not_overwritten(tmp_path: Path, capsy
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "sub-1",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
         ]
@@ -294,7 +304,6 @@ def test_same_day_workouts_merge_without_integrity_error(tmp_path: Path, capsys)
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "sub-1",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
         ]
@@ -328,7 +337,6 @@ def test_dry_run_creates_no_files(tmp_path: Path, capsys) -> None:
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "sub-1",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
             "--dry-run",
@@ -357,7 +365,6 @@ def test_rollback_restores_target(tmp_path: Path, capsys) -> None:
     control_path, user_data_dir, user_id = _build_control_and_user(tmp_path)
     target_path = _build_target_db(user_data_dir, user_id)
     argv_common = [
-        "--google-sub", "sub-1",
         "--control-db", str(control_path),
         "--user-data-dir", str(user_data_dir),
     ]
@@ -384,7 +391,9 @@ def test_rollback_restores_target(tmp_path: Path, capsys) -> None:
     engine.dispose()
 
 
-def test_lookup_by_email(tmp_path: Path, capsys) -> None:
+def test_lookup_by_email(tmp_path: Path, capsys, monkeypatch) -> None:
+    monkeypatch.delenv(ENV_GOOGLE_SUB, raising=False)
+    monkeypatch.setenv(ENV_EMAIL, "ryan@example.com")
     legacy_path = _build_legacy_db(tmp_path)
     control_path, user_data_dir, user_id = _build_control_and_user(
         tmp_path, email="ryan@example.com"
@@ -394,7 +403,6 @@ def test_lookup_by_email(tmp_path: Path, capsys) -> None:
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--email", "ryan@example.com",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
             "--dry-run",
@@ -403,14 +411,14 @@ def test_lookup_by_email(tmp_path: Path, capsys) -> None:
     assert exit_code == 0
 
 
-def test_missing_user_returns_error(tmp_path: Path) -> None:
+def test_missing_user_returns_error(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv(ENV_GOOGLE_SUB, "no-such-sub")
     legacy_path = _build_legacy_db(tmp_path)
     control_path, user_data_dir, _ = _build_control_and_user(tmp_path)
 
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "no-such-sub",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
         ]
@@ -425,7 +433,6 @@ def test_closed_user_returns_error(tmp_path: Path) -> None:
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "sub-1",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
         ]
@@ -441,7 +448,6 @@ def test_missing_target_db_returns_error(tmp_path: Path) -> None:
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "sub-1",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
         ]
@@ -474,7 +480,6 @@ def test_app_settings_migrate_and_never_overwrite_target(tmp_path: Path, capsys)
     exit_code = main(
         [
             "--legacy-db", str(legacy_path),
-            "--google-sub", "sub-1",
             "--control-db", str(control_path),
             "--user-data-dir", str(user_data_dir),
         ]
@@ -490,3 +495,73 @@ def test_app_settings_migrate_and_never_overwrite_target(tmp_path: Path, capsys)
     assert session.get(AppSetting, "default_rest_seconds").value == "90"
     session.close()
     engine.dispose()
+
+
+# ---- F149 ③：識別值不得留在指令歷史、process table 或錯誤訊息裡 ----
+
+
+def test_identifier_flags_are_rejected_on_argv(tmp_path: Path) -> None:
+    """命令列參數會被 shell 歷史與 process table 記下來，所以這條路徑必須不存在。"""
+    legacy_path = _build_legacy_db(tmp_path)
+    control_path, user_data_dir, _ = _build_control_and_user(tmp_path)
+
+    for flag, value in (("--google-sub", "sub-1"), ("--email", "ryan@example.com")):
+        with pytest.raises(SystemExit) as excinfo:
+            main(
+                [
+                    "--legacy-db", str(legacy_path),
+                    flag, value,
+                    "--control-db", str(control_path),
+                    "--user-data-dir", str(user_data_dir),
+                ]
+            )
+        assert excinfo.value.code != 0, flag
+
+
+def test_non_interactive_without_env_aborts(tmp_path: Path, monkeypatch, capsys) -> None:
+    """排程／CI 這種非互動環境拿不到識別值就中止，不 fallback 到參數。"""
+    monkeypatch.delenv(ENV_GOOGLE_SUB, raising=False)
+    monkeypatch.delenv(ENV_EMAIL, raising=False)
+    monkeypatch.setattr("scripts.migrate_legacy.sys.stdin.isatty", lambda: False, raising=False)
+    legacy_path = _build_legacy_db(tmp_path)
+    control_path, user_data_dir, _ = _build_control_and_user(tmp_path)
+
+    exit_code = main(
+        [
+            "--legacy-db", str(legacy_path),
+            "--control-db", str(control_path),
+            "--user-data-dir", str(user_data_dir),
+        ]
+    )
+    assert exit_code == 1
+    assert ENV_GOOGLE_SUB in capsys.readouterr().err
+
+
+def test_interactive_prompt_reads_sub_without_echo(monkeypatch) -> None:
+    """沒設環境變數但有 TTY 時，走 getpass（不回顯）而不是 input()。"""
+    monkeypatch.setattr(
+        "scripts.migrate_legacy.getpass.getpass", lambda prompt="": "  typed-sub  "
+    )
+    google_sub, email = resolve_identifier(env={}, interactive=True)
+    assert (google_sub, email) == ("typed-sub", None)
+
+
+def test_error_message_never_echoes_the_identifier(tmp_path: Path, monkeypatch, capsys) -> None:
+    """查無 user 的錯誤訊息只說用了哪個欄位查，不回印識別值本身。"""
+    secret_sub = "108884400220000000000"
+    monkeypatch.setenv(ENV_GOOGLE_SUB, secret_sub)
+    legacy_path = _build_legacy_db(tmp_path)
+    control_path, user_data_dir, _ = _build_control_and_user(tmp_path)
+
+    exit_code = main(
+        [
+            "--legacy-db", str(legacy_path),
+            "--control-db", str(control_path),
+            "--user-data-dir", str(user_data_dir),
+        ]
+    )
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert secret_sub not in captured.err
+    assert secret_sub not in captured.out
+    assert "google_sub" in captured.err
