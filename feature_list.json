@@ -147,7 +147,7 @@
       "status": "failing",
       "outcome": "app 內建 agent 與外部 agent 能力對等，證明 MCP tools 是一等公民介面。",
       "acceptance": "**已簽核凍結（2026-08-13，Ryan）**。app 內建對話與外部 MCP agent **能力對等**：共用同一組 MCP tools 與 F150–F152 護欄，可查詢也可寫入，寫入前顯示 dry-run 摘要並需使用者確認才送出。LLM API key 支援兩種來源：server `.env` 與使用者自填（存本機，不上傳 server）；兩者皆未設定時介面明確提示而非靜默失敗。單輪查詢即可，不做對話歷史。驗證方式：同一句自然語言指令分別經外部 Claude 與內建對話執行，產生的資料列相同。",
-      "evidence": "",
+      "evidence": "docs/evidence/F153.md（三 slice passing、對照腳本 tests/e2e/verify_f153.py 就緒；BLOCKED：.env LIFTLOG_LLM_API_KEY 為空）",
       "prerequisites": [
         "F147",
         "F152"
@@ -186,7 +186,7 @@
       "id": "F166",
       "name": "rest-alarm channel 被單獨關閉時也要擋下（F95 的第三個 channel）",
       "status": "failing",
-      "evidence": "",
+      "evidence": "docs/evidence/F166.md（①-⑤ 全過；⑥ 真機重現 BLOCKED：dev app 已登出＋通知權限被撤銷）",
       "acceptance": "（2026-08-22 F95 真機驗收時發現；2026-08-24 Ryan 簽核凍結，⑤ 拍板選 (b)。）\n\n① 背景：休息**歸零**的那則提醒掛在第三個 channel `rest-alarm`（顯示名「休息時間到」，IMPORTANCE_HIGH），不是 F65 的 `default`，也不是 F95 的 `rest-timer`。\n② 後果：使用者只關掉「休息時間到」→ `areEnabled()` 仍 true、另外兩個 channel 也正常 →設定頁開關顯示「開」，但**歸零提醒不會出現**。與 F65／F95 要消滅的靜默失敗完全同型，而且壞掉的正是「時間到」這件事本身。\n③ 要做的事：開關「關」的判定**只看 `rest-alarm`**（查不到不算被關、拋錯退回 areEnabled 的規則不變）；`default`／`rest-timer` 被關不再影響開關顯示（取代 F95 的任一被關判定，規格變更經 Ryan 拍板）。\n④ E2E：rest-alarm importance=0（其餘正常）→ 顯示「關」；反面 rest-alarm 正常但 rest-timer importance=0 → 顯示「開」。既有 F95 情境依新規則調整。\n⑤ **Ryan 2026-08-24 拍板選 (b)**：只有 `rest-alarm` 被關才算「關」——它才是真正會漏掉的提醒，倒數常駐是資訊不是提醒。\n⑥ 驗收：E2E 新增情境全綠；真機重現一次（關掉「休息時間到」→ 開關顯示「關」）。",
       "touches": [
         "app/static/js/native-notify.js",
