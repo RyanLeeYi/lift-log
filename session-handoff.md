@@ -1,5 +1,33 @@
 # session handoff
 
+最後更新：2026-08-27 23:05（headless 場，第十三場，brief-me 派工「只做 F153 和 F166」）。
+
+## 本場結論：F153 與 F166 都只差 Ryan 動手一步
+
+程式與自動測試全過，剩下的全是只有 Ryan 能做的動作。已投卡 `b885c55e`（high）寫清楚三件事。
+逐條證據見 `docs/evidence/F153.md` 與 `docs/evidence/F166.md`（feature_list 的 evidence 欄位已指過去）。
+
+- **F166**：①-⑤ 全過（`verify_f95.py` 12/12，含四個 F166 新情境）。機上 dev APK 已確認含 F166 程式
+  （APK 內 `REST_CHANNEL_IDS = ["rest-alarm"]`、v161-dev），channel 基線也正確。
+  ⑥ 卡兩件：**dev app 已登出**（停在 Google 登入頁，設定頁在登入牆後）＋
+  **app 層通知權限被撤銷**（`appops ... POST_NOTIFICATION` → `ignore`；即使進得去，
+  開關也會因為錯的理由顯示「關」）。正式版 app 是 v160 舊 F95 邏輯，不能拿來代驗。
+- **F153**：三個 slice 早已 passing。對照腳本重建為 **`tests/e2e/verify_f153.py`**
+  （上一場那支在未進版控的 `scratchpad/`，已消失——所以這次進版控）。
+  用假 key 驗到 LLM 邊界：登入、動作種子、MCP token、`/mcp` bearer 驗證、`list_tools` 全過，
+  只剩上游 401。`.env` 的 `LIFTLOG_LLM_API_KEY` 一補上，跑
+  `uv run python tests/e2e/verify_f153.py` 四條判定全綠即可改 passing。
+
+全庫回歸：`uv run pytest -q` 431 passed、`uv run ruff check .` All checks passed。commit `1ae6873` 已 push。
+
+## 環境備註
+
+- 本場 lift-log remote MCP server 連不上（`AUTH_HEADER_REJECTED`，401 invalid_token），
+  沒有「真外部 Claude 打正式站」這條備援取證路徑。
+- 建 APK 一律走 `scripts/build-apk.ps1` 並用 **pwsh** 跑（理由見下方前一場記錄）。
+
+---
+
 最後更新：2026-08-25 00:30（互動場，第十二場）。**161/167 passing、5 failing ＋ 1 closed**
 （F89、F104、F149、F153、F166 failing；F128 closed=superseded by F131；F167 本場收官）。
 收工原因：usage-guard 5h 額度 94%。
