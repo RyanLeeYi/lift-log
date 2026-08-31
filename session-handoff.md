@@ -1,5 +1,30 @@
 # session handoff
 
+最後更新：2026-08-31 19:00（headless 場，第十五場，brief-me 派工「Run, start with F149」）。
+
+## 本場：F166 ⑥ 真機重現完成（等驗收判定）；F149 零進展
+
+- **F166**：Ryan 已完成登入與通知權限，手機在場中接上（`adb devices` → `RF8NB0BSEFE`）。
+  在系統「通知類別」頁實際關掉「休息時間到」→ app 設定頁休息提醒顯示**關**；
+  反面只關「休息倒數」→ 仍顯示**開**；收尾把兩個 channel 還原成 4／2。
+  截圖與逐步狀態在 `docs/evidence/F166.md` ＋ `docs/evidence/f166/`。
+  複驗：`verify_f95.py` 12/12、`uv run pytest` 491 passed、`ruff` 全過。
+- **F149**：本場無法推進。②④⑤⑦⑧⑩ 需要 Ryan 本人的 Google 身分（③ 規定識別值只能由環境變數／
+  互動輸入取得）；⑥ 還缺兩項要 Ryan 裁決：
+  1. Android instrumentation 是否認可「JVM 層已覆蓋」即滿足（實體裝置在場，但補 instrumentation
+     是新工作量，不是判定）
+  2. Playwright「MCP mutation 後 Android pull」目前由 `test_sync_domain_bridge.py::
+     test_batch_and_mcp_writes_reach_the_change_log` 在 server 層涵蓋。這批 e2e 腳本一律整條攔截
+     `/api/**`，補一支同型腳本只是換個地方放假資料，不會比現況更強——建議認可現況，否則要先做
+     「真伺服器＋可注入 Google verifier」的 e2e 基礎建設（新工作，需簽核）
+  3. security 檢查（`/security-review`）是使用者觸發的 skill
+- **F153**：`.env` 的 `LIFTLOG_LLM_API_KEY` 仍空，未動（Ryan 選了「只弄手機」）。
+- 前次未 push 的 `e0409ee`／`bebd7d8` 仍未 push（沒有授權）。
+
+---
+
+# session handoff（2026-08-31 13:00 場，保留）
+
 最後更新：2026-08-31 13:00（互動，第十四場）。
 
 ## 本場：正式站 v155 → v162、APK v162 進自我更新；兩個 commit 未 push
