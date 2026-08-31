@@ -1,5 +1,20 @@
 # session handoff
 
+最後更新：2026-08-31 13:00（互動，第十四場）。
+
+## 本場：正式站 v155 → v162、APK v162 進自我更新；兩個 commit 未 push
+
+- 正式站 `bebd7d8`（v162）健康；`lift-log-prod/release/lift-log-v162.apk` 與 Drive `lift-log-v162-F162.apk` 已放好，手機 v160 應跳更新。
+- 修了 `scripts/build-apk.ps1`：正式版 APK 改複製到 `..\lift-log-prodelease\`（F161 搬家後沒跟上，v160／v161 從沒進去過，app 內更新一直停在 v154）。
+- **`e0409ee`／`bebd7d8` 未 push**（未授權）。
+- 8/27 留在工作樹的 `scratchpad/devshots/`（644K 截圖）會擋 deploy 的髒樹檢查，已移到 session 暫存區未刪；下次別把截圖放 repo 內。
+- 部署途中撞到「中台 stop 回 success 但正式站進程活著」——根因在 mission-control（兩個 supervisor 並存），已由 F71 收掉；deploy.ps1 本身沒改。
+- 08/27 的內容（F153／F166 只差 Ryan 動手）照舊，見下。
+
+---
+
+# session handoff（2026-08-27 場，保留）
+
 最後更新：2026-08-27 23:05（headless 場，第十三場，brief-me 派工「只做 F153 和 F166」）。
 
 ## 本場結論：F153 與 F166 都只差 Ryan 動手一步
