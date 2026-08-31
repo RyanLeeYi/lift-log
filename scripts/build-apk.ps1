@@ -100,8 +100,8 @@ try {
     $name = if ($Site -eq "dev") { "lift-log-dev-$version$suffix.apk" } else { "lift-log-$version$suffix.apk" }
 
     # F161 起正式站在 git 工作樹之外（..\lift-log-prod\），它的自我更新讀的是那邊的 release\；
-    # 之前寫 $repoelease 讓 v160/v161 從沒進過正式站的目錄，app 內更新永遠停在 v154（2026-08-31 查出）。
-    $releaseDir = if ($Site -eq "dev") { Join-Path $repo "release-dev" } else { Join-Path (Split-Path -Parent $repo) "lift-log-prodelease" }
+    # 之前寫 $repo\release 讓 v160/v161 從沒進過正式站的目錄，app 內更新永遠停在 v154（2026-08-31 查出）。
+    $releaseDir = if ($Site -eq "dev") { Join-Path $repo "release-dev" } else { Join-Path (Split-Path -Parent $repo) "lift-log-prod\release" }
     New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
     # 自我更新的來源目錄。檔名**兩站都用 `lift-log-v<N>.apk`**——後端的
     # APK_PATTERN 是 `^lift-log-v(\d+)\.apk$`，帶 `-dev` 或 tag 都不匹配，
