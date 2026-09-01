@@ -1,5 +1,28 @@
 # session handoff
 
+最後更新：2026-09-01 03:00（headless 場，第十六場，brief-me 派工「只認可 Playwright、instrumentation 要補」）。
+
+## 本場：F149 ⑥ 的 instrumentation 缺口關閉；F149 仍 failing
+
+- 依 Ryan 的裁決（inbox `ed07dec9`）：Playwright「MCP mutation 後 Android pull」認可由伺服器層
+  `test_sync_domain_bridge.py::test_batch_and_mcp_writes_reach_the_change_log` 涵蓋，不補 e2e；
+  Android instrumentation 補寫。
+- 新增 `android/app/src/androidTest/.../F149SyncInstrumentedTest.java`（8 支），六個範圍逐項覆蓋：
+  local migration、transaction rollback、process death、離線數週、outbox retry、兩裝置 conflict/takeover。
+  對照表與已知天花板寫在 `docs/evidence/F149.md` 文末。
+- 實跑：實機 SM-N9750 / Android 12，androidTest suite **11 tests / 0 failures**；
+  突變驗證（`900_000` → `900_001`）當場紅。`pytest` 491 passed、`ruff` 全過、JVM unit BUILD SUCCESSFUL。
+- **要用 `connectedDevDebugAndroidTest`（dev flavor）跑**：手機上的 prod 是 release 簽章，
+  debug 測試 APK 蓋不上去；卸載正式版會清掉 Ryan 的正式資料，不要那樣做。
+- 刪掉 Capacitor 腳手架 `ExampleInstrumentedTest`（斷言 `com.getcapacitor.app`，兩個 flavor 都假紅）。
+- **F149 仍 failing**，剩下的卡點全部需要 Ryan 本人：②④⑤⑦⑧⑩（Google 身分／實機全流程），
+  以及 ⑥ 的 `/security-review`（使用者觸發的 skill）。
+- 前次未 push 的 `e0409ee`／`bebd7d8` 仍未 push（沒有授權）。
+
+---
+
+# session handoff（2026-08-31 19:00 場，保留）
+
 最後更新：2026-08-31 19:00（headless 場，第十五場，brief-me 派工「Run, start with F149」）。
 
 ## 本場：F166 ⑥ 真機重現完成（等驗收判定）；F149 零進展
