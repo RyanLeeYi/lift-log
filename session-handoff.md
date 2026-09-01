@@ -1,5 +1,29 @@
 # session handoff
 
+最後更新：2026-09-01（headless 場，第十七場，brief-me 派工「Run, start with F149」）。
+
+## 本場：F149 ⑥ 全項關閉（security 檢查）；F149 仍 failing
+
+- **前兩場的阻塞判斷是錯的**：`/security-review` 就在 headless session 的 skill 清單裡，
+  直接 `Skill(security-review)` 跑得起來。連續兩場記成「使用者觸發、無人看管無法啟動」，
+  卡點其實只是沒去試。下次遇到「這個 skill 我大概叫不動」，先叫一次再說。
+- 跑了兩個範圍，**都無發現**：skill 預設的 branch diff（`origin/main..HEAD`，6 commits／12 檔，
+  全是測試檔＋版本字串＋build 腳本路徑＋文件，沒碰信任邊界），以及 skill 涵蓋不到的
+  F149 `touches` 安全面（`deps.py` legacy 閘門與 CSRF、`auth.py` 全 hash＋`compare_digest`＋HMAC CSRF、
+  `migrate_legacy.py` 無 subprocess／無字串拼 SQL／錯誤訊息不回印識別值）。逐條寫在 `docs/evidence/F149.md`。
+- **F149 仍 failing**：剩 ②④⑤⑦⑧⑩，全部需要 Ryan 本人的 Google 身分或實機全流程。
+  本場手機**有**接上（`adb devices` → `RF8NB0BSEFE`），但 ⑧ 要的是全新 Google 登入／換機還原／刪帳，
+  不是裝置在不在的問題。
+- 委派：本場零派工（baton 五問 Independence 不成立——只剩單一工作項）。
+- 複驗：`uv run pytest` **491 passed**、`uv run ruff check .` All checks passed。
+- **未 push 的 commit 已累積 7 個**（`e0409ee`..本場）——仍未授權 push。
+  注意這會讓下一場**無法派 `executor`**（`delegation-warmup` 閘門 ②：worktree 從 `origin/main` 開，
+  規格沒 push worker 看不到）。
+
+---
+
+# session handoff（2026-09-01 03:00 場，保留）
+
 最後更新：2026-09-01 03:00（headless 場，第十六場，brief-me 派工「只認可 Playwright、instrumentation 要補」）。
 
 ## 本場：F149 ⑥ 的 instrumentation 缺口關閉；F149 仍 failing
