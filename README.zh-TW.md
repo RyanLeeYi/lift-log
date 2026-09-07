@@ -57,12 +57,6 @@ Android 以本機 transaction 成功作為操作完成，網路不在訓練流�
 則是 online client。REST、Web、MCP 與 sync 的 mutation 最終都走同一套 service 與 change log，
 因此 AI 寫入的訓練能被手機同步回來。
 
-## 為什麼不用 RAG
-
-健身紀錄是結構化資料。「我的深蹲進步多少？」需要的是精確的 SQL 篩選與聚合，不是從文字切片做
-檢索增強生成（Retrieval-Augmented Generation, RAG）。MCP tool 提供有型別、可稽核且結果穩定的
-操作，也少一套 embedding 與 vector database 的維運成本。若未來自由文字狀態多到需要搜尋，
-SQLite FTS5 已足夠；在它真的不夠以前，不引入向量資料庫。
 
 ## 用 Docker 快速啟動
 

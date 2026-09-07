@@ -54,12 +54,6 @@ Android treats a local transaction as success; the network is not on the critica
 Web and MCP are online clients. REST, Web, MCP, and sync mutations converge on the same service and
 change-log path, so an AI-written workout can be pulled by the phone.
 
-## Why this does not use RAG
-
-Workout history is structured data. Questions such as “How much has my squat improved?” need exact SQL
-filters and aggregates, not retrieval-augmented generation over text chunks. MCP tools provide typed,
-auditable operations with deterministic results and fewer moving parts. If free-form daily notes grow
-large enough to need search, SQLite FTS5 is sufficient before a vector database becomes justified.
 
 ## Quick start with Docker
 
