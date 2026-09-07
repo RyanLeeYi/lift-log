@@ -54,7 +54,6 @@ Android treats a local transaction as success; the network is not on the critica
 Web and MCP are online clients. REST, Web, MCP, and sync mutations converge on the same service and
 change-log path, so an AI-written workout can be pulled by the phone.
 
-
 ## Quick start with Docker
 
 Requirements: Git and a recent Docker Compose. Python and Node are not required.

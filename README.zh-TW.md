@@ -57,7 +57,6 @@ Android 以本機 transaction 成功作為操作完成，網路不在訓練流�
 則是 online client。REST、Web、MCP 與 sync 的 mutation 最終都走同一套 service 與 change log，
 因此 AI 寫入的訓練能被手機同步回來。
 
-
 ## 用 Docker 快速啟動
 
 需要 Git 與近期版本的 Docker Compose；不需要先安裝 Python 或 Node。
