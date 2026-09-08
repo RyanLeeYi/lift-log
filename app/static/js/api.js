@@ -391,8 +391,11 @@ const localApi = {
     .filter((row) => (!start || row.date >= start) && (!end || row.date <= end))
     .map(workoutOut),
   calendarStats: localCalendar,
+  // LocalStore.bodyMetrics() 是 date DESC，server 是 ASC；body.js 只認升冪（折線左舊右新、
+  // slice(-N) 取最近）。在這裡統一，不讓呼叫端各自排。
   listBodyMetrics: async (range) => (await snapshot()).body_metrics
-    .filter((row) => !range || row.date >= range.from && row.date <= range.to),
+    .filter((row) => !range || row.date >= range.from && row.date <= range.to)
+    .sort((a, b) => a.date.localeCompare(b.date)),
   bodyMetricBounds: async () => {
     const rows = (await snapshot()).body_metrics;
     const dates = rows.map((row) => row.date).sort();
